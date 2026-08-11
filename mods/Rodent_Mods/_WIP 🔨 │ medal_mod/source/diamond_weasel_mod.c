@@ -263,7 +263,6 @@ static const char *g_xml_block[15] = {
 };
 
 static char  g_logPath[MAX_PATH] = {0};
-static char  g_unlockPath[MAX_PATH] = {0};
 static FILE *g_log = NULL;
 
 static unsigned char *g_iconCave = NULL;
@@ -415,20 +414,40 @@ static void init_thresholds(void) {
     load_racedata_xml();
     g_configLoaded = 1;
 }
+#define REG_KEY        "Software\\Raptisoft\\Hamsterball"
+#define REG_VAL_MEDALS "DiamondMedals"
+#define DIAMOND_REGWIN  HKEY_CURRENT_USER
+
+static void save_unlocks_reg(void) {
+    HKEY hk;
+    DWORD disp, len = 15;
+    if (RegCreateKeyExA(DIAMOND_REGWIN, REG_KEY, 0, NULL, 0, KEY_WRITE,
+                        NULL, &hk, &disp) != ERROR_SUCCESS) {
+        diag_log("[diamond] reg create key failed");
+        return;
+    }
+    RegSetValueExA(hk, REG_VAL_MEDALS, 0, REG_BINARY, g_won, len);
+    RegCloseKey(hk);
+    diag_logf("[diamond] DiamondMedals registry value written (%u bytes)", (unsigned)len);
+}
 static void load_unlocks(void) {
-    FILE *f = fopen(g_unlockPath, "rb");
-    if (!f) { diag_logf("[diamond] no unlocks file"); return; }
-    size_t n = fread(g_won, 1, 15, f);
-    fclose(f);
-    diag_logf("[diamond] loaded %d unlock flags", (int)n);
+    HKEY hk;
+    DWORD type, size = 15;
+    if (RegOpenKeyExA(DIAMOND_REGWIN, REG_KEY, 0, KEY_READ, &hk) != ERROR_SUCCESS) {
+        diag_logf("[diamond] no DiamondMedals registry key");
+        return;
+    }
+    if (RegQueryValueExA(hk, REG_VAL_MEDALS, NULL, &type, g_won, &size) == ERROR_SUCCESS
+        && type == REG_BINARY && size <= 15) {
+        diag_logf("[diamond] loaded %u diamond unlock flags from registry", size);
+    } else {
+        diag_log("[diamond] no DiamondMedals registry value (or unexpected)");
+    }
+    RegCloseKey(hk);
 }
-static void save_unlocks(void) {
-    FILE *f = fopen(g_unlockPath, "wb");
-    if (!f) return;
-    fwrite(g_won, 1, 15, f);
-    fclose(f);
-    diag_log("[diamond] unlocks saved");
-}
+/* save_unlocks writes DiamondMedals to the registry ONLY when the mod is
+ * materializing its assets (called alongside diamond_materialize_pngs). */
+#define save_unlocks()  save_unlocks_reg()
 
 /* ================================================================
  * Runtime helpers
@@ -748,7 +767,6 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
         DisableThreadLibraryCalls(hinst);
         load_real_bass();
         get_own_dir(g_logPath, sizeof(g_logPath));
-        snprintf(g_unlockPath, sizeof(g_unlockPath), "%s\\diamond_weasel_unlocks.dat", g_logPath);
         snprintf(g_logPath,    sizeof(g_logPath), "%s\\diamond_weasel_mod.log", g_logPath);
         diag_log("=== DIAMOND WEASEL MOD LOADED ===");
         init_thresholds();
