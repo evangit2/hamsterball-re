@@ -256,7 +256,6 @@ static const char *g_xml_block[15] = {
 };
 
 static char  g_logPath[MAX_PATH] = {0};
-static char  g_cfgPath[MAX_PATH] = {0};
 static char  g_unlockPath[MAX_PATH] = {0};
 static FILE *g_log = NULL;
 
@@ -291,17 +290,6 @@ static void get_own_dir(char *out, DWORD cap) {
 /* ================================================================
  * Config
  * ================================================================ */
-static int race_index_from_name(const char *name) {
-    static const char *races[15] = {
-        "WARM-UP","BEGINNER","INTERMEDIATE","DIZZY","TOWER","UP","NEON",
-        "EXPERT","ODD","TOOB","WOBBLY","GLASS","SKY","MASTER","IMPOSSIBLE"
-    };
-    int i;
-    if (!name) return -1;
-    for (i = 0; i < 15; i++) if (_stricmp(name, races[i]) == 0) return i;
-    return -1;
-}
-
 /* Read a <DIAMOND> time from racedata.xml the same way the game reads its
  * other medal times. The game opens exactly "racedata.xml" (relative to the
  * working directory, string at 0x4cf5d0) and parser 0x40A120 matches each
@@ -351,62 +339,17 @@ static void load_racedata_xml(void) {
     fclose(f);
 }
 
-static void load_config(void) {
-    FILE *f; char line[256]; int cur = -1;
+/* Seed per-race diamond thresholds: start from the hardcoded DLL defaults,
+ * then let racedata.xml <DIAMOND> elements override them (same file the game
+ * reads, matched the same way). No config file anymore. */
+static void init_thresholds(void) {
     int i;
-    /* Seed per-race thresholds with the hardcoded DLL defaults, then let
-     * racedata.xml <DIAMOND> overrides apply, then the config SECRET override. */
     for (i = 0; i < 15; i++) {
         g_secret_cs[i] = (int)(g_default_diamond_s[i] * 100.0f);
         g_hasSecret[i] = 1;
     }
     load_racedata_xml();
-    f = fopen(g_cfgPath, "r");
-    if (!f) { diag_logf("[diamond] no config: %s", g_cfgPath); g_configLoaded = 1; return; }
-    while (fgets(line, sizeof(line), f)) {
-        char *p = line;
-        while (*p == ' ' || *p == '\t') p++;
-        if (*p == '#' || *p == ';' || *p == '\n' || *p == '\r' || *p == 0) continue;
-        if (*p == '[') {
-            char *end = strchr(p, ']');
-            if (end) { *end = 0; cur = race_index_from_name(p + 1); }
-            continue;
-        }
-        /* Top-level keys (ICON / MINIICON / DIAMOND_DELAY) apply regardless
-         * of the current section. Per-race SECRET only applies inside a race
-         * section. */
-        if (_strnicmp(p, "ICON=", 5) == 0) {
-            strncpy(g_iconFile, p + 5, sizeof(g_iconFile) - 1);
-            g_iconFile[sizeof(g_iconFile) - 1] = 0;
-            char *nl = strchr(g_iconFile, '\n'); if (nl) *nl = 0;
-            nl = strchr(g_iconFile, '\r'); if (nl) *nl = 0;
-            diag_logf("[diamond] icon = %s", g_iconFile);
-            continue;
-        }
-        if (_strnicmp(p, "MINIICON=", 9) == 0) {
-            strncpy(g_miniIconFile, p + 9, sizeof(g_miniIconFile) - 1);
-            g_miniIconFile[sizeof(g_miniIconFile) - 1] = 0;
-            char *nl = strchr(g_miniIconFile, '\n'); if (nl) *nl = 0;
-            nl = strchr(g_miniIconFile, '\r'); if (nl) *nl = 0;
-            diag_logf("[diamond] mini icon = %s", g_miniIconFile);
-            continue;
-        }
-        if (_strnicmp(p, "DIAMOND_DELAY=", 14) == 0) {
-            g_diamondDelay = atoi(p + 14);
-            if (g_diamondDelay < 0) g_diamondDelay = 0;
-            diag_logf("[diamond] diamond delay = %d frames", g_diamondDelay);
-            continue;
-        }
-        if (cur < 0 || cur > 14) continue;
-        if (_strnicmp(p, "SECRET=", 7) == 0) {
-            g_secret_cs[cur] = (int)(atof(p + 7) * 100.0f);
-            g_hasSecret[cur] = 1;
-            diag_logf("[diamond] race %d SECRET=%.2f", cur, (double)atof(p + 7));
-        }
-    }
-    fclose(f);
     g_configLoaded = 1;
-    diag_log("[diamond] config loaded");
 }
 static void load_unlocks(void) {
     FILE *f = fopen(g_unlockPath, "rb");
@@ -732,11 +675,10 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
         DisableThreadLibraryCalls(hinst);
         load_real_bass();
         get_own_dir(g_logPath, sizeof(g_logPath));
-        snprintf(g_cfgPath,    sizeof(g_cfgPath), "%s\\diamond_weasel_config.txt", g_logPath);
         snprintf(g_unlockPath, sizeof(g_unlockPath), "%s\\diamond_weasel_unlocks.dat", g_logPath);
         snprintf(g_logPath,    sizeof(g_logPath), "%s\\diamond_weasel_mod.log", g_logPath);
         diag_log("=== DIAMOND WEASEL MOD LOADED ===");
-        load_config();
+        init_thresholds();
         load_unlocks();
         install_hooks();
     }
