@@ -34,14 +34,19 @@ golden weasel** mini-icon for that race.
 There is **no config file** — the diamond times come from the game's own
 `racedata.xml` (see below), with DLL-baked fallbacks.
 
-## The diamond art is fully in-memory (not on disk)
+## The diamond art is write-on-first-unlock (not on disk)
 
-The diamond weasel medal and mini-icon **do not exist as files anywhere** —
-not in the game folder, not even inside the DLL as a recognizable image. The
-pixels are embedded in the DLL as XOR-encrypted raw data and decrypted + built
-into a D3D texture entirely in memory at runtime, then seeded straight into
-the game's texture cache. The game's file loader never runs for them, and no
-temporary file is ever written. Nothing named `diamond` can be found on disk.
+Before you earn your first diamond, `diamondweasel.png` and
+`diamondweasel-icon.png` **do not exist** — nothing named `diamond` is on disk
+to spoil the secret. The PNG bytes are embedded in the DLL as XOR-encrypted
+data. The instant you beat a secret time, the mod decrypts them and writes
+both files into `Textures\`, then they're loaded by the game through its
+normal file path — exactly like the golden weasel.
+
+After the first unlock the PNGs persist on disk so they render normally on
+subsequent visits.
+
+**You do not need to provide any diamond icon files.**
 
 ## Required icons
 
@@ -104,13 +109,12 @@ It hooks three things:
 2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
    for a race, appends a diamond mini-icon entry to the standings medal list
    right after the golden weasel, so it lays out to the right of it.
-3. **Icon load (in-memory)** — the diamond art is embedded in the DLL as
-   XOR-encrypted raw pixels. On first use the mod decrypts the pixels in
-   memory, builds a D3D8 texture via the game's device (CreateTexture +
-   LockRect + copy + UnlockRect), constructs a texture-cache object in the
-   game's exact layout, and seeds it into the game's texture cache under the
-   request name — so the game's own sprite loader resolves it from memory and
-   the file loader never runs. No `diamond*.png` file exists anywhere.
+3. **Icon load (write-on-first-unlock)** — the diamond PNG bytes are embedded
+   in the DLL as XOR-encrypted data (not extractable from the DLL). On the
+   *first* time a diamond is awarded, the mod decrypts them and writes
+   `diamondweasel.png` + `diamondweasel-icon.png` into `Textures\`, then the
+   game loads them through its normal file path. Before any unlock, no
+   `diamond*.png` exists on disk.
 
 The unlock flag is persisted to `diamond_weasel_unlocks.dat` (15 bytes, one
 per race) next to the DLL.
