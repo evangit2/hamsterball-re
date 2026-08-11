@@ -6,6 +6,22 @@
  *     -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
  *     -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
  *
+ * v7.9: Fixed three latent bugs (found in source review, verified vs EXE):
+ *   F1 — Hook 4 targeted the WRONG vtable slot: 0x4CF3C0 (BadBall slot 8
+ *     = Ball_FallDeath) instead of 0x4CF334 (PLAYER slot 8 = Ball_SplitDeath).
+ *     The player's death dispatch (CALL vtable[8] at 0x406C76/0x40721F) reads
+ *     0x4CF334, so the player was NEVER actually protected by Hook 4 — only
+ *     BadBalls were. Now hooks the player vtable (base 0x4CF314).
+ *   F2 — g_states table (32 slots) never freed/cleared: every ball that
+ *     penetrates a mesh or falls to death allocated a slot that was never
+ *     recycled, exhausting the table and silently killing water physics
+ *     for the rest of the session. Added dead-slot recycling to
+ *     get_ball_state + a lookup-only peek_ball_state for Hook 4.
+ *   F3 — Entry frame double-damp: trigger_water_contact damps all axes,
+ *     then the same frame the surface-crossing check fired again on Y
+ *     (prev_submersion=0 -> submersion>=0.5), making effective entry
+ *     damping entry_damping^2. Fixed by setting prev_submersion=1.0 on
+ *     entry (crossing check now skips the entry frame).
  * v7.8: Fix E:WATERFLOW(N) parser (PREFIX_LEN was 13, should be 11 —
  *     the '(' was never found, so flow silently fell back to calm water).
  *     Flow direction now also switches immediately when the ball touches
@@ -317,9 +333,16 @@ static void diag_log(const char *msg)
 #define TYPE5_NEXT_INSTR        0x0040737D  /* instruction after the JNZ */
 #define TYPE5_PATCH_SIZE        6           /* 5-byte JMP + 1 NOP */
 
-/* Hook 4: Ball vtable[8] — Ball_FallDeath (fall death) — grace period */
-#define ADDR_BALL_VTABLE        0x004CF3A0
-#define VTABLE_SLOT_ONRAMP      8           /* slot 8 → 0x409480 = fall death/shatter */
+/* Hook 4: Ball vtable[8] — Ball_FallDeath (fall death) — grace period
+ *
+ * v7.9: The vtable hooked here is the PLAYER ball vtable (base 0x4CF314,
+ * slot 8 @ 0x4CF334 = Ball_SplitDeath 0x409050). The player's death
+ * dispatch (CALL vtable[8] at 0x406C76 / 0x40721F) reads THIS slot.
+ * The previous code hooked 0x4CF3C0 which is the BADBALL vtable slot 8
+ * (Ball_FallDeath 0x409480) — that protected BadBalls from fall death
+ * but never the player. */
+#define ADDR_BALL_VTABLE        0x004CF314
+#define VTABLE_SLOT_ONRAMP      8           /* slot 8 → 0x409050 = player fall death/shatter */
 #define GRACE_PERIOD_FRAMES     120         /* ~5 seconds at 25fps to suppress death after leaving water */
 
 /* Ball struct offsets */
@@ -450,10 +473,35 @@ static water_state_t *get_ball_state(DWORD ball)
         if (g_states[i].ball == ball) return &g_states[i];
         if (free_idx == -1 && g_states[i].ball == 0) free_idx = i;
     }
+    /* v7.9: recycle dead slots before allocating. A slot whose ball is
+     * neither in water nor in grace is stale (ball fell to death, was
+     * respawned, or left the level) — its pointer key is dead. Reuse it
+     * instead of letting the table fill up with corpses. */
+    if (free_idx == -1) {
+        for (int i = 0; i < MAX_BALLS; i++) {
+            if (g_states[i].in_water == 0 && g_states[i].grace_frames == 0) {
+                free_idx = i;
+                break;
+            }
+        }
+    }
     if (free_idx >= 0) {
         memset(&g_states[free_idx], 0, sizeof(water_state_t));
         g_states[free_idx].ball = ball;
         return &g_states[free_idx];
+    }
+    return NULL;
+}
+
+/* Lookup-only getter — never allocates a slot. Used by Hook 4
+ * (fall-death suppression) where the ball may have no water state at
+ * all; allocating a slot there would leak table entries for every ball
+ * that ever falls to death outside water. */
+static water_state_t *peek_ball_state(DWORD ball)
+{
+    if (!ball) return NULL;
+    for (int i = 0; i < MAX_BALLS; i++) {
+        if (g_states[i].ball == ball) return &g_states[i];
     }
     return NULL;
 }
@@ -577,6 +625,16 @@ static void trigger_water_contact(void *ball_ptr, const char *name)
 
     /* Step 3: Capture ball Y as water surface height */
     st->water_surface_y = ball_y;
+
+    /* v7.9 (F3): Mark the ball as already-submerged this entry frame.
+     * Without this, prev_submersion defaults to 0.0, so the surface
+     * crossing check in apply_water_physics fires on the SAME frame
+     * (submersion >= 0.5) and damps Y velocity a second time —
+     * effective damping becomes entry_damping^2 (e.g. 0.9*0.9 = 0.81)
+     * on the entry frame. Setting prev_submersion = 1.0 makes the
+     * crossing check see "already submerged" and skip the re-damp;
+     * the entry damping below is the ONLY damping applied on entry. */
+    st->prev_submersion = 1.0f;
 
     g_trigger_count++;
 
@@ -1147,14 +1205,19 @@ static void install_type5_hook(void)
 /* ═══════════════════════════════════════════════════════════════════════════
  * HOOK 4: Ball vtable[8] — suppress fall death while in water or grace period
  *
- * vtable[8] at 0x4CF3C0 → Ball_FallDeath (0x409480) is called when
- * the player ball should shatter from falling off an edge. If the
- * ball is currently in water OR within the grace period after leaving
- * water, skip the death entirely. E:LIMIT deaths are NOT suppressed
- * here — those go through DispatchCollisionEvents which sets 0x2E9,
- * and the death check fires here, but we skip it during grace period
- * too. That's acceptable because the grace period is short (5 seconds)
- * and the ball should be landing on solid ground by then.
+ * vtable[8] at 0x4CF334 (player ball vtable base 0x4CF314) →
+ * Ball_SplitDeath (0x409050) is called when the player ball should
+ * shatter from falling off an edge. If the ball is currently in water
+ * OR within the grace period after leaving water, skip the death
+ * entirely. E:LIMIT deaths are NOT suppressed here — those go through
+ * DispatchCollisionEvents which sets 0x2E9, and the death check fires
+ * here, but we skip it during grace period too. That's acceptable
+ * because the grace period is short (5 seconds) and the ball should be
+ * landing on solid ground by then.
+ *
+ * v7.9: Player vtable (0x4CF314) — previously the BADBALL vtable
+ * (0x4CF3A0) was hooked, so the player's own fall death was never
+ * actually suppressed; only BadBalls were protected.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 typedef void (__thiscall *ball_falldeath_t)(void *ball);
@@ -1163,7 +1226,11 @@ static ball_falldeath_t orig_Ball_FallDeath = NULL;
 static void __thiscall Hook_Ball_FallDeath(void *ball)
 {
     if (ball) {
-        water_state_t *st = get_ball_state((DWORD)ball);
+        /* Lookup only — do NOT allocate a state slot here (v7.9).
+         * Every ball that falls to death outside water would otherwise
+         * leak a table entry and eventually exhaust the 32-slot table,
+         * silently killing water physics for the whole session. */
+        water_state_t *st = peek_ball_state((DWORD)ball);
         if (st && (st->in_water || st->grace_frames > 0)) {
             if (g_cfg.debug) {
                 char buf[128];
@@ -1214,7 +1281,7 @@ static DWORD WINAPI patch_thread(LPVOID param)
     (void)param;
     char buf[256];
 
-    diag_log("=== Water mod v7.8 loaded (E:WATERFLOW(N) fixed + same-body flow switch) ===");
+    diag_log("=== Water mod v7.9 loaded (player vtable hook fix + state table fix + entry damp fix) ===");
     Sleep(5000);
 
     g_water_fn_ptr = apply_water_physics;
@@ -1263,7 +1330,7 @@ BOOL APIENTRY DllMain(HMODULE hInst, DWORD reason, LPVOID lpReserved)
             if (p) strcpy(p + 1, "water_mod_log.txt");
         }
 
-        diag_log("=== Water mod v7.8 DLL attaching ===");
+        diag_log("=== Water mod v7.9 DLL attaching ===");
 
         load_real_bass();
         {

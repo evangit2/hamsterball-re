@@ -246,6 +246,63 @@ static void load_real_bass(void) {
 #define operator_new_      0x4BA57B
 
 /* ================================================================
+ * D3D8 device + render-state constants (verified references:
+ * hamsterball-re/references/d3d8-device-vtable-layout.md,
+ * hamsterball-sound-system/references/d3d8-screen-rect-overlay.md)
+ * Device chain: App(0x5341E0) --+0x174--> gfx --+0x154--> device
+ * ================================================================ */
+#define APP_DEV_OFFSET     0x174      /* App+0x174 = gfx ptr */
+#define GFX_DEV_OFFSET     0x154      /* gfx+0x154 = IDirect3DDevice8* */
+#define GFX_VIEW_W         0x15C      /* gfx+0x15C = viewport width (float) */
+#define GFX_VIEW_H         0x160      /* gfx+0x160 = viewport height */
+#define D3D_DEV_SETRENDERSTATE     0xC8
+#define D3D_DEV_SETTEXTURESTAGE    0xFC
+#define D3D_DEV_DRAWPRIMITIVEUP    0x120
+#define D3DRS_SRCBLEND             19
+#define D3DRS_DESTBLEND            20
+#define D3DRS_ALPHABLENDENABLE     27
+#define D3DRS_FOGENABLE            28
+#define D3DBLEND_SRCALPHA          5
+#define D3DBLEND_INVSRCALPHA       6
+#define D3DTSS_COLOROP             0
+#define D3DTSS_COLORARG2           2
+#define D3DTSS_ALPHAOP             3
+#define D3DTSS_ALPHAARG2           5
+#define D3DTOP_SELECTARG2          3
+#define D3DTA_DIFFUSE              0
+
+/* Screen-space transformed vertex (D3DFVF_TLVERTEX) — 20 bytes. */
+typedef struct {
+    float x, y, z, rhw;
+    DWORD color;   /* 0xAARRGGBB */
+} Diamond_TLVertex;
+
+/* Custom "suction vortex" around the golden weasel during the white-out.
+ * Small white streaks fade in randomly around the trophy, spiral inward,
+ * converge behind it, then vanish; the cycle runs ~100 result-frames.
+ * Drawn by Modulo the game's native sprite draw (before the weasel) via
+ * DrawPrimitiveUP so it renders BEHIND the trophy icon. Screen-space math.
+ */
+#define VORTEX_MAX     40            /* streaks at a time */
+#define VORTEX_FRAMES  100           /* ~100-frame cycle */
+#define VORTEX_GIFTSHOT_ANG  0.55f   /* random-in-circle start radius multiplier */
+#define VORTEX_MINR    6.0f          /* center kill radius (px, screen) */
+#define VORTEX_STRETCH 8.0f          /* streak length (px) */
+
+typedef struct {
+    float ax, ay;       /* angle + angular velocity */
+    float r, vr;        /* current radius (px) + radial speed (inward) */
+    int   born;         /* life counter (all share global cycle time) */
+    BYTE  alpha;        /* per-streak opacity 0..255 */
+    unsigned char active;
+} Diamond_VortexP;
+
+static Diamond_VortexP g_vortex[VORTEX_MAX];
+static int g_vortexActive = 0;       /* 1 while the cycle runs */
+static int g_vortexFrame = 0;        /* cycle time 0..VORTEX_FRAMES */
+static int g_vortexSeeded = 0;
+
+/* ================================================================
  * Mod globals
  * ================================================================ */
 static DWORD g_diamondSprite = 0;
@@ -686,6 +743,225 @@ __attribute__((used)) void diamond_weasel_mult_clear(DWORD results) {
     sc[0] = sc[1] = sc[2] = sc[3] = 1.0f;
 }
 
+/* ================================================================
+ * Golden-weasel "suction vortex" (raw D3D8 screen-space streaks)
+ *
+ * Small white streaks fade in at random angles/radii around the trophy,
+ * spiral inward toward its center, converge behind it, then vanish. The
+ * whole cycle runs ~VORTEX_FRAMES (100) result-frames, in sync with the
+ * white-out (started at WEASEL_WHITE_START, ends at WEASEL_WHITE_END).
+ *
+ * RENDERING BEHIND THE TROPHY: the vortex is drawn by the weasel cave
+ * BEFORE the weasel sprite draw, using DrawPrimitiveUP in screen-space
+ * (D3DFVF_TLVERTEX quads). Because it is issued first (and the trophy
+ * writes Z / draws opaque on top), the streaks render underneath it.
+ *
+ * Coordinate space: the trophy sits at world (0x208,0x63); its on-screen
+ * center is obtained by calling Gfx_TransformX/Y(0x453e90/0x453eb0) once
+ * per cycle and cached, so the vortex tracks the trophy at any resolution.
+ * ================================================================ */
+#define GFX_TRANSFORM_X   0x453E90    /* __thiscall(ecx=gfx, float x)->FPU */
+#define GFX_TRANSFORM_Y   0x453EB0
+#define VORTEX_WORLD_X    0x208       /* golden weasel world pos X */
+#define VORTEX_WORLD_Y    0x63
+static float g_vortexCx = 0.0f, g_vortexCy = 0.0f;   /* trophy screen center */
+
+/* Seed rand once. */
+static void vortex_seed(void) {
+    if (!g_vortexSeeded) { srand(12345); g_vortexSeeded = 1; }
+}
+
+/* Random float in [0,1). */
+static float vortex_frand(void) {
+    return (float)(rand() & 0x7FFF) / 32768.0f;
+}
+
+/* Cached trophy screen center — replicate Gfx_TransformX/Y (0x453e90/0x453eb0)
+ * arithmetic directly in C (verified from decompile):
+ *   screenX = worldX * *(gfx+0x5C)->0x1F8 + *(int*)(gfx+0x798)
+ *   screenY = worldY * *(gfx+0x5C)->0x1FC + *(int*)(gfx+0x79C)
+ * This avoids fragile inline-asm __thiscall + FPU-return calling. */
+static void vortex_compute_center(DWORD gfx) {
+    DWORD scale = 0;
+    float sx = 0.0f, sy = 0.0f;
+    if (!gfx) return;
+    if (IsBadReadPtr((void*)(gfx + 0x5C), 4)) return;
+    scale = *(DWORD*)(gfx + 0x5C);
+    if (!scale || IsBadReadPtr((void*)(scale + 0x1FC + 4), 4)) return;
+    sx = (float)VORTEX_WORLD_X * *(float*)(scale + 0x1F8) + (float)(*(int*)(gfx + 0x798));
+    sy = (float)VORTEX_WORLD_Y * *(float*)(scale + 0x1FC) + (float)(*(int*)(gfx + 0x79C));
+    if (sx > -5000.0f && sx < 5000.0f && sy > -5000.0f && sy < 5000.0f) {
+        g_vortexCx = sx; g_vortexCy = sy;
+    }
+}
+
+/* Reset the vortex cycle. Called by the weasel cave at WEASEL_WHITE_START. */
+static void vortex_start_cycle(DWORD gfx) {
+    int i;
+    if (!gfx) return;
+    vortex_seed();
+    vortex_compute_center(gfx);
+    g_vortexFrame = 0;
+    g_vortexActive = 1;
+    for (i = 0; i < VORTEX_MAX; i++) {
+        g_vortex[i].active = 0;
+        g_vortex[i].alpha = 0;
+        g_vortex[i].r = 0.0f;
+        g_vortex[i].born = 0;
+    }
+}
+
+/* Advance one vortex streak (spiral-in + fade). Called every frame the
+ * cycle is active, for every streak slot. */
+static void vortex_update_streak(Diamond_VortexP *p, int frame) {
+    float a;
+    if (!p->active) return;
+    /* angle advances (curl) */
+    a = p->ax + p->ay * p->born;
+    /* gradual inward pull */
+    p->r -= p->vr;
+    if (p->r < VORTEX_MINR || p->r > 4000.0f) { p->active = 0; return; }
+    /* fade in over first 8 frames, out over last 12 of the cycle */
+    if (p->born < 8)    p->alpha = (BYTE)(p->born * 32);
+    else if (frame > VORTEX_FRAMES - 12) p->alpha = (BYTE)((VORTEX_FRAMES - frame) * 21);
+    else p->alpha = 255;
+    p->born++;
+    (void)a;
+}
+
+/* Draw all active streaks around the trophy center as white screen-space
+ * quads (2 triangles each). Runs on the main thread inside the weasel cave
+ * (PUSHAD/POPAD), so D3D calls are safe. gfx is the graphics object. */
+static void vortex_draw(DWORD gfx) {
+    int i, n = 0;
+    DWORD device, vt;
+    Diamond_TLVertex verts[VORTEX_MAX * 3];  /* 1 streak = 1 tri (3 verts) */
+    Diamond_TLVertex *v;
+    float cx, cy, s, ex, ey, rr;
+    float ang, cang, sang;
+    BYTE a;
+    /* resolve device */
+    if (!g_vortexActive) return;
+    if (!gfx || IsBadReadPtr((void*)(gfx + GFX_DEV_OFFSET), 4)) return;
+    device = *(DWORD*)(gfx + GFX_DEV_OFFSET);
+    if (!device || IsBadReadPtr((void*)device, 4)) return;
+    vt = *(DWORD*)device;
+    if (!vt || IsBadReadPtr((void*)(vt + D3D_DEV_DRAWPRIMITIVEUP), 4)) return;
+    cx = g_vortexCx; cy = g_vortexCy;
+    /* build a small white triangle "streak" per active particle */
+    for (i = 0; i < VORTEX_MAX && n < VORTEX_MAX; i++) {
+        Diamond_VortexP *p = &g_vortex[i];
+        if (!p->active || p->alpha == 0) continue;
+        ang = p->ax + p->ay * p->born;
+        cang = (float)cos(ang); sang = (float)sin(ang);
+        rr   = p->r;
+        s    = 2.0f;                    /* streak thickness (px) */
+        ex   = cx + cang * (rr - VORTEX_STRETCH);   /* tip (inner) */
+        ey   = cy + sang * (rr - VORTEX_STRETCH);
+        a    = p->alpha;
+        v = &verts[n*3];
+        /* thin triangle: base at radius rr, tip slightly inward = "streak" */
+        v[0].x = cx + cang*rr - sang*s;  v[0].y = cy + sang*rr + cang*s;
+        v[1].x = cx + cang*rr + sang*s;  v[1].y = cy + sang*rr - cang*s;
+        v[2].x = ex;                     v[2].y = ey;
+        v[0].z = v[1].z = v[2].z = 0.0f;
+        v[0].rhw = v[1].rhw = v[2].rhw = 1.0f;
+        v[0].color = v[1].color = v[2].color =
+            (DWORD)(a << 24) | 0x00FFFFFF;   /* white, alpha */
+        n++;
+    }
+    if (n == 0) return;
+    /* --- render setup (see d3d8-screen-rect-overlay recipe) ---
+     * Use proper C function pointers to the device vtable slots. All D3D8
+     * device methods are __stdcall, so the callee cleans the stack. */
+    {
+        typedef HRESULT (__stdcall *PFN_SetRenderState)(void*, int, DWORD);
+        typedef HRESULT (__stdcall *PFN_SetTextureStageState)(void*, int, int, DWORD);
+        typedef HRESULT (__stdcall *PFN_DrawPrimitiveUP)(void*, DWORD, DWORD, const void*, DWORD);
+        PFN_SetRenderState      SetRenderState  = (PFN_SetRenderState)      (*(void**)(vt + D3D_DEV_SETRENDERSTATE));
+        PFN_SetTextureStageState SetTextureStageState = (PFN_SetTextureStageState)(*(void**)(vt + D3D_DEV_SETTEXTURESTAGE));
+        PFN_DrawPrimitiveUP     DrawPrimitiveUP = (PFN_DrawPrimitiveUP)     (*(void**)(vt + D3D_DEV_DRAWPRIMITIVEUP));
+        void *dev = (void*)device;
+
+        /* enable alpha blend (soft streaks) */
+        SetRenderState(dev, D3DRS_ALPHABLENDENABLE, 1);
+        SetRenderState(dev, D3DRS_SRCBLEND,  D3DBLEND_SRCALPHA);
+        SetRenderState(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+        SetRenderState(dev, D3DRS_FOGENABLE, 0);
+        /* texture stage: use vertex diffuse for color (SELECTARG2 / diffuse) */
+        SetTextureStageState(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG2);
+        SetTextureStageState(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+        SetTextureStageState(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG2);
+        SetTextureStageState(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+        /* draw n streak triangles */
+        DrawPrimitiveUP(dev, 4 /*D3DPT_TRIANGLELIST*/, (DWORD)n, verts,
+                        sizeof(Diamond_TLVertex));
+        /* restore render states a prior draw may rely on */
+        SetRenderState(dev, D3DRS_ALPHABLENDENABLE, 0);
+        SetRenderState(dev, D3DRS_FOGENABLE, 1);
+    }
+}
+
+/* Main vortex tick: called from the weasel cave each frame the weasel is
+ * drawn. Starts the cycle at WEASEL_WHITE_START, advances streaks, and
+ * draws them behind the trophy. Clears at WEASEL_WHITE_END. results = the
+ * results-screen object (READ ONLY for frame + to find gfx via the weasel
+ * sprite, same as the white-fade). */
+__attribute__((used)) void diamond_vortex_tick(DWORD results) {
+    int frame, i;
+    DWORD app, sprite, gfx;
+    if (!results) return;
+    if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
+    frame = *(int*)(results + RESULT_FRAME);
+    /* start the cycle a touch after the white-fade begins */
+    if (frame >= WEASEL_WHITE_START && frame < WEASEL_WHITE_START + (int)VORTEX_FRAMES) {
+        if (!g_vortexActive) {
+            /* find gfx the same way the white-fade does */
+            if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
+            app = *(DWORD*)(results + RESULT_APP);
+            if (!app || IsBadReadPtr((void*)(app + SPRITE_WEAEL_APP), 4)) return;
+            sprite = *(DWORD*)(app + SPRITE_WEAEL_APP);
+            if (sprite && IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)==0)
+                gfx = *(DWORD*)(sprite + SPRITE_GFX);
+            else gfx = 0;
+            vortex_start_cycle(gfx);
+        }
+    } else {
+        /* outside the window -> cycle ended */
+        if (g_vortexActive) { g_vortexActive = 0; }
+        return;
+    }
+    g_vortexFrame = frame - WEASEL_WHITE_START;
+    /* (re-)spawn and update streaks */
+    for (i = 0; i < VORTEX_MAX; i++) {
+        Diamond_VortexP *p = &g_vortex[i];
+        if (!p->active) {
+            /* random delay before a slot's first spawn (fade-in at random) */
+            int wait = (int)(vortex_frand() * 24.0f);
+            if (g_vortexFrame >= wait) {
+                p->active = 1; p->born = 0;
+                p->ax = vortex_frand() * 6.2832f;          /* random start angle */
+                p->ay = (0.06f + vortex_frand()*0.08f);    /* curl rate */
+                /* start at a random radius on the outer ring */
+                p->r = 34.0f + vortex_frand()*40.0f;
+                p->vr = 0.6f + vortex_frand()*1.2f;        /* suck-in speed */
+                p->alpha = 0;
+            } else { continue; }
+        } else {
+            vortex_update_streak(p, g_vortexFrame);
+        }
+    }
+    /* resolve gfx (for drawing) — reused from above if available */
+    if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
+    app = *(DWORD*)(results + RESULT_APP);
+    if (!app || IsBadReadPtr((void*)(app + SPRITE_WEAEL_APP), 4)) return;
+    sprite = *(DWORD*)(app + SPRITE_WEAEL_APP);
+    if (!sprite || IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)) return;
+    gfx = *(DWORD*)(sprite + SPRITE_GFX);
+    if (!gfx) return;
+    vortex_draw(gfx);
+}
+
 
 
 /* Genuine 5th-medal block: draws the diamond icon one "medal gap" AFTER gold.
@@ -962,53 +1238,60 @@ static void install_tt_cave(void) {
     diag_log("[diamond] TT-menu cave installed at 0x42F927");
 }
 
-/* Cave D: golden-weasel white-fade. Hook at 0x44E139 (call 0x42c7c0, the
- * golden-weasel draw, 5 bytes). Sequence per frame the weasel is drawn:
- *   pushad; push esi (results); call diamond_weasel_mult  (set tint by frame)
+/* Cave D: golden-weasel white-fade + suction vortex. Hook at 0x44E139
+ * (call 0x42c7c0, the golden-weasel draw, 5 bytes). Sequence per frame the
+ * weasel is drawn:
+ *   pushad; push esi (results); call diamond_vortex_tick   (draw vortex BEHIND)
  *          add esp,4; popad
- *   call 0x42c7c0                      ; re-emit weasel draw (with tint active)
+ *   pushad; push esi (results); call diamond_weasel_mult    (set tint by frame)
+ *          add esp,4; popad
+ *   call 0x42c7c0                      ; re-emit weasel draw (tinted, on top)
  *   pushad; push esi; call diamond_weasel_mult_clear (reset tint to 1.0)
  *          add esp,4; popad
  *   jmp 0x44E13E                       ; original next instruction
- * The multiplier runs only while weasel is on screen; cleared immediately
- * after so other draws are unaffected.
+ * The vortex is drawn first (primitive issued before the trophy sprite), so
+ * the streaks render BEHIND the trophy. The white multiplier is applied only
+ * to the weasel draw and cleared immediately after.
  */
 static void install_weasel_cave(void) {
     DWORD patchAddr = EXE_BASE + (WEASEL_DRAW_HOOK - EXE_BASE);
     DWORD retAddr = EXE_BASE + (WEASEL_RET - EXE_BASE);
-    g_weaselCave = (unsigned char*)VirtualAlloc(NULL, 192, MEM_COMMIT|MEM_RESERVE,
+    g_weaselCave = (unsigned char*)VirtualAlloc(NULL, 256, MEM_COMMIT|MEM_RESERVE,
                                                 PAGE_EXECUTE_READWRITE);
     if (!g_weaselCave) return;
     unsigned char *p = g_weaselCave;
-    /* pushad */
-    p[0]=0x60; p+=1;
-    /* push esi (results) */
-    p[0]=0x56; p+=1;
-    /* call diamond_weasel_mult */
+
+    /* 1) draw vortex behind the trophy */
+    p[0]=0x60; p+=1;                                  /* pushad */
+    p[0]=0x56; p+=1;                                  /* push esi (results) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_vortex_tick-(DWORD)(p+5); p+=5;
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
+    p[0]=0x61; p+=1;                                  /* popad */
+
+    /* 2) set the weasel white tint */
+    p[0]=0x60; p+=1;                                  /* pushad */
+    p[0]=0x56; p+=1;                                  /* push esi (results) */
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_weasel_mult-(DWORD)(p+5); p+=5;
-    /* add esp,4 */
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;
-    /* popad */
-    p[0]=0x61; p+=1;
-    /* call 0x42c7c0 (re-emit weasel draw; ecx=sprite + stack x,y intact) */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
+    p[0]=0x61; p+=1;                                  /* popad */
+
+    /* 3) re-emit weasel draw (ecx=sprite + stack x,y intact), tinted + on top */
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(SPRITE_DRAW)-(DWORD)(p+5); p+=5;
-    /* pushad */
-    p[0]=0x60; p+=1;
-    /* push esi */
-    p[0]=0x56; p+=1;
-    /* call diamond_weasel_mult_clear */
+
+    /* 4) clear the weasel tint */
+    p[0]=0x60; p+=1;                                  /* pushad */
+    p[0]=0x56; p+=1;                                  /* push esi */
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_weasel_mult_clear-(DWORD)(p+5); p+=5;
-    /* add esp,4 */
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;
-    /* popad */
-    p[0]=0x61; p+=1;
-    /* jmp retAddr */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
+    p[0]=0x61; p+=1;                                  /* popad */
+
+    /* 5) back to original flow */
     write_jmp(p, retAddr); p+=5;
     unsigned char patch[5];
     memset(patch, 0x90, 5);
     write_jmp(patch, (DWORD)g_weaselCave);
     patch_bytes((void*)patchAddr, patch, 5);
-    diag_log("[diamond] golden-weasel white-fade cave installed at 0x44E139");
+    diag_log("[diamond] golden-weasel white-fade + vortex cave installed at 0x44E139");
 }
 
 /* ================================================================

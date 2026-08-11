@@ -2,7 +2,22 @@
 
 # Water Mod (HB+ v2.1)
 
-Water physics mod for Hamsterball — HB+ API version of the bass.dll proxy water_mod, now at **v7.8 parity**.
+Water physics mod for Hamsterball — HB+ API version of the bass.dll proxy water_mod, now at **v7.9 parity**.
+
+## v7.9 Fixes (parity with bass v7.9)
+
+1. **Hook 4 now patches the PLAYER ball vtable** slot 8 @ `0x4CF334`
+   (base `0x4CF314`, `Ball_SplitDeath`). Previously `0x4CF3A0` (BadBall
+   vtable) was hooked, so the player was never actually protected by the
+   fall-death suppression — only BadBalls were.
+2. **Water-state table recycling** — the 32-slot `g_states` table now
+   recycles dead slots (ball not in water, no grace) instead of filling
+   up forever and silently killing water physics mid-session. Hook 4 uses
+   a lookup-only getter that never allocates.
+3. **No entry-frame double-damp** — water entry sets `prev_submersion=1.0`
+   so the same-frame surface-crossing check doesn't damp Y velocity a
+   second time (effective damping was `entry_damping²`).
+
 
 ## Features
 

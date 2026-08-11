@@ -1,0 +1,14 @@
+=== Custom Entities Mod v55n_49 Started ===
+Game dir: Z:\home\evan\hamsterball-re\test_env
+Mesh path: levels\testcube
+Grid speed: 3.0 seconds
+  DEBUG[1]: get_board()=0 (g_Scene=0x00000000, app=0x004FD680)
+    profile=0x00000000
+  DEBUG[2]: get_board()=0 (g_Scene=0x00000000, app=0x004FD680)
+    profile=0x00000000
+  DEBUG[3]: get_board()=0 (g_Scene=0x00000000, app=0x004FD680)
+    profile=0x00000000
+  DEBUG[4]: get_board()=0 (g_Scene=0x00000000, app=0x004FD680)
+    profile=0x00000000
+  DEBUG[5]: get_board()=0 (g_Scene=0x00000000, app=0x004FD680)
+    profile=0x00000000

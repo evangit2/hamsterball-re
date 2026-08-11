@@ -5,7 +5,16 @@
  * Uses the manual 17-entry vtable + nocrt + hbplus_api.h so it compiles
  * with i686-w64-mingw32-g++ and loads correctly under HB+.
  *
- * Port of hamsterball_water_mod v7.8 (bass.dll proxy) to HB+ API.
+ * Port of hamsterball_water_mod v7.9 (bass.dll proxy) to HB+ API.
+ *
+ * v7.9 fixes (parity with bass v7.9):
+ *   F1 — Hook 4 now patches the PLAYER ball vtable slot 8 @ 0x4CF334
+ *     (base 0x4CF314, Ball_SplitDeath). Previously 0x4CF3A0 (BADBALL
+ *     vtable) was hooked, so the player was never protected.
+ *   F2 — g_states table: dead-slot recycling in get_ball_state +
+ *     lookup-only peek_ball_state for Hook 4 (no more table exhaustion).
+ *   F3 — prev_submersion=1.0 on water entry (no more entry-frame
+ *     double-damp of Y velocity).
  *
  * Features (parity with bass v7.8):
  * - E:WATER collision event triggers water entry (velocity damping + surface capture)
@@ -92,8 +101,13 @@ static const char* nc_strstr(const char* haystack, const char* needle) {
 #define TYPE5_NEXT_INSTR        0x0040737D
 #define TYPE5_PATCH_SIZE        6
 
-/* Hook 4: Ball vtable[8] — Ball_FallDeath suppression */
-#define ADDR_BALL_VTABLE        0x004CF3A0
+/* Hook 4: Ball vtable[8] — Ball_FallDeath suppression.
+ * v7.9: Hook the PLAYER ball vtable (base 0x4CF314, slot 8 @ 0x4CF334 =
+ * Ball_SplitDeath 0x409050). The player's death dispatch (CALL vtable[8]
+ * at 0x406C76/0x40721F) reads THIS slot. The old value 0x4CF3A0 was the
+ * BADBALL vtable (slot 8 @ 0x4CF3C0 = Ball_FallDeath 0x409480) — that
+ * protected BadBalls from fall death but never the player. */
+#define ADDR_BALL_VTABLE        0x004CF314
 #define VTABLE_SLOT_FALLDEATH   8
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -131,10 +145,34 @@ static WaterState* get_ball_state(DWORD ball) {
         if (g_states[i].ball == ball) return &g_states[i];
         if (free_idx == -1 && g_states[i].ball == 0) free_idx = i;
     }
+    /* v7.9: recycle dead slots before allocating. A slot whose ball is
+     * neither in water nor in grace is stale (ball fell to death, was
+     * respawned, or left the level) — its pointer key is dead. Reuse it
+     * instead of letting the table fill up with corpses. */
+    if (free_idx == -1) {
+        for (int i = 0; i < MAX_BALLS; i++) {
+            if (g_states[i].in_water == 0 && g_states[i].grace_frames == 0) {
+                free_idx = i;
+                break;
+            }
+        }
+    }
     if (free_idx >= 0) {
         memset(&g_states[free_idx], 0, sizeof(WaterState));
         g_states[free_idx].ball = ball;
         return &g_states[free_idx];
+    }
+    return NULL;
+}
+
+/* Lookup-only getter — never allocates a slot. Used by Hook 4
+ * (fall-death suppression) where the ball may have no water state at
+ * all; allocating a slot there would leak table entries for every ball
+ * that ever falls to death outside water. */
+static WaterState* peek_ball_state(DWORD ball) {
+    if (!ball) return NULL;
+    for (int i = 0; i < MAX_BALLS; i++) {
+        if (g_states[i].ball == ball) return &g_states[i];
     }
     return NULL;
 }
@@ -215,6 +253,16 @@ static void trigger_water_contact(DWORD ball, const char* name) {
 
     /* Capture water surface Y */
     st->water_surface_y = ball_y;
+
+    /* v7.9 (F3): Mark the ball as already-submerged this entry frame.
+     * Without this, prev_submersion defaults to 0.0, so the surface
+     * crossing check in apply_water_physics fires on the SAME frame
+     * (submersion >= 0.5) and damps Y velocity a second time —
+     * effective damping becomes entry_damping^2 (e.g. 0.9*0.9 = 0.81)
+     * on the entry frame. Setting prev_submersion = 1.0 makes the
+     * crossing check see "already submerged" and skip the re-damp;
+     * the entry damping above is the ONLY damping applied on entry. */
+    st->prev_submersion = 1.0f;
 }
 
 /* Trigger: called when the ball touches an E:WATEREXIT plane.
@@ -419,7 +467,11 @@ static ball_falldeath_t orig_Ball_FallDeath = NULL;
 
 static void __thiscall Hook_Ball_FallDeath(void *ball) {
     if (ball) {
-        WaterState* st = get_ball_state((DWORD)ball);
+        /* Lookup only — do NOT allocate a state slot here (v7.9).
+         * Every ball that falls to death outside water would otherwise
+         * leak a table entry and eventually exhaust the 32-slot table,
+         * silently killing water physics for the whole session. */
+        WaterState* st = peek_ball_state((DWORD)ball);
         if (st && (st->in_water || st->grace_frames > 0)) {
             return;  /* suppress death */
         }
