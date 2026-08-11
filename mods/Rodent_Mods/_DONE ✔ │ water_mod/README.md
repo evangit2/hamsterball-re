@@ -1,6 +1,29 @@
-# Hamsterball Water Physics Mod v7.8
+# Hamsterball Water Physics Mod v7.9
 
 Custom water physics for Hamsterball via bass.dll proxy.
+
+## What's New in v7.9
+
+**Three latent bugs fixed** (found in a source-level review, verified against
+the game EXE):
+
+1. **Hook 4 was patching the WRONG vtable** — it hooked `0x4CF3C0`
+   (BadBall vtable slot 8 = `Ball_FallDeath`), but the player's death
+   dispatch reads slot 8 of the **player** vtable at `0x4CF334`
+   (`Ball_SplitDeath`). The player was never actually protected by the
+   fall-death suppression — only BadBalls were. Hook 4 now patches the
+   player vtable (base `0x4CF314`).
+2. **Water-state table could silently exhaust** — the 32-slot `g_states`
+   table only ever allocated and never recycled, so every ball that
+   penetrated a mesh or fell to death consumed a slot. After 32 distinct
+   ball objects, `get_ball_state` returned NULL and **water physics
+   silently stopped for the rest of the session**. Added dead-slot
+   recycling + a lookup-only getter for Hook 4.
+3. **Entry-frame double-damp** — `trigger_water_contact` damps all three
+   axes, then the same frame the surface-crossing check fired again on Y
+   (`prev_submersion` started at 0), making effective entry damping
+   `entry_damping²` (0.9 → 0.81). Entry now marks the ball as
+   already-submerged so only the single intended damping applies.
 
 ## What's New in v7.8
 

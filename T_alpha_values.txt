@@ -1,0 +1,249 @@
+Hamsterball T: (Decal) Object Alpha Values
+============================================================
+Alpha = 4th component (A) of the material's DIFFUSE color.
+Reported as a 0.0-1.0 float and as 0-255 byte equivalent.
+
+
+============================================================
+  RACES
+============================================================
+
+[Level1]  T: objects = 4
+  T:ArrowCurveRight(NOCOLLIDE)     diffuse RGBA=(255,255,255,255) alpha=1.00  [ArrowCurve2.png]
+  T:GoalImage(NOCOLLIDE)           diffuse RGBA=(255,255,255,191) alpha=0.75  [goal.png]
+  T:StartSpot(NOCOLLIDE)           diffuse RGBA=(255,255,255,255) alpha=1.00  [Decal-Start.png]
+  T:WarningDecalNOCOLLIDE)         diffuse RGBA=(255,255,255,255) alpha=1.00  [Decal-Warning.png]
+
+[Level2]  T: objects = 14
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow3.png]
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROW(NOCOLLIDE)01             diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:Arrow(NOCOLLIDE)               diffuse RGBA=(255,255,255,191) alpha=0.75  [Arrow1.png]
+  T:Arrow(NOCOLLIDE)01             diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:Arrow(NOCOLLIDE)01             diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:GOSPOT(NOCOLLIDE)              diffuse RGBA=(255,255,255,255) alpha=1.00  [Decal-Start.png]
+  T:GoalOverlay(NOCOLLIDE)         diffuse RGBA=(255,255,255,191) alpha=0.75  [goal.png]
+  T:TunnelArrow(NOCOLLIDE)         diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:TunnelArrow(NOCOLLIDE)         diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:WARNING(NOCOLLIDE)             diffuse RGBA=(255,255,255,128) alpha=0.50  [Decal-Warning.png]
+
+[Level3]  T: objects = 8
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROW01(NOCOLLIDE)             diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROWCURVE(NOCOLLIDE)          diffuse RGBA=(255,255,255,128) alpha=0.50  [ArrowCurve1.png]
+  T:GOALAREA                       diffuse RGBA=(255,255,255,191) alpha=0.75  [goal.png]
+  T:RAMPARROW(NOCOLLIDE)           diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:STARTSPOT(NOCOLLIDE)           diffuse RGBA=(255,255,255,255) alpha=1.00  [Decal-Start.png]
+  T:WARNING(NOCOLLIDE)             diffuse RGBA=(255,255,255,128) alpha=0.50  [Decal-Warning.png]
+
+[Level4]  T: objects = 9
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [ArrowCurve1.png]
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROW(NOCOLLIDE)01             diffuse RGBA=(255,255,255,128) alpha=0.50  [ArrowCurve1.png]
+  T:GOALAREA(NOCOLLIDE)            diffuse RGBA=(255,255,255,191) alpha=0.75  [goal-round.png]
+  T:GOALAREA(NOCOLLIDE)            diffuse RGBA=(255,255,255,191) alpha=0.75  [goal-round.png]
+  T:STARTSTOP(NOCOLLIDE)           diffuse RGBA=(255,255,255,255) alpha=1.00  [Decal-Start.png]
+  T:STARTSTOP01(NOCOLLIDE)         diffuse RGBA=(255,255,255,255) alpha=1.00  [Decal-Start.png]
+  T:Warning(NOCOLLIDE)             diffuse RGBA=(255,255,255,128) alpha=0.50  [Decal-Warning.png]
+
+[Level5]  T: objects = 9
+  T:GoalOverlay(NOCOLLIDE)         diffuse RGBA=(255,255,255,255) alpha=1.00  [goal.png]
+  T:JUMPARROW(NOCOLLIDE)           diffuse RGBA=(255,255,255,255) alpha=1.00  [YellowArrow.png]
+  T:SIDEARROW(NOCOLLIDE)           diffuse RGBA=(255,255,255,255) alpha=1.00  [YellowArrow.png]
+  T:STARTSPOT                      diffuse RGBA=(255,255,255,255) alpha=1.00  [Decal-Start.png]
+  T:WARNING(NOCOLLIDE)             diffuse RGBA=(255,255,255,128) alpha=0.50  [Decal-Warning.png]
+  T:WARNING(NOCOLLIDE)01           diffuse RGBA=(255,255,255,128) alpha=0.50  [Decal-Warning.png]
+  T:YELLOWARROW(NOCOLLIDE)         diffuse RGBA=(255,255,255,255) alpha=1.00  [YellowArrow.png]
+  T:ZIGZAG(NOCOLLIDE)              diffuse RGBA=(255,255,255,255) alpha=1.00  [ZigZagArrow.png]
+  T:ZIGZAG(NOCOLLIDE)              diffuse RGBA=(255,255,255,255) alpha=1.00  [ZigZagArrow.png]
+
+[Level6]  T: objects = 10
+  T:ARROW(NOCOLLIDE)02             diffuse RGBA=(255,255,255,255) alpha=1.00  [OddArrow.png]
+  T:ARROW(NOCOLLIDE)03             diffuse RGBA=(255,255,255,255) alpha=1.00  [OddArrow.png]
+  T:ARROW(NOCOLLIDE)04             diffuse RGBA=(255,255,255,255) alpha=1.00  [OddArrow.png]
+  T:ARROW(NOCOLLIDE)05             diffuse RGBA=(255,255,255,255) alpha=1.00  [OddArrow.png]
+  T:ARROW(NOCOLLIDE)06             diffuse RGBA=(255,255,255,255) alpha=1.00  [OddArrow.png]
+  T:ARROW(NOCOLLIDE)07             diffuse RGBA=(255,255,255,255) alpha=1.00  [OddArrow.png]
+  T:GOALAREA(NOCOLLIDE)            diffuse RGBA=(255,255,255,191) alpha=0.75  [goal.png]
+  T:STARTSPOT                      diffuse RGBA=(255,255,255,255) alpha=1.00  [Decal-Start.png]
+  T:WARNING(NOCOLLIDE)             diffuse RGBA=(255,255,255,128) alpha=0.50  [Decal-Warning.png]
+  T:WARNING(NOCOLLIDE)             diffuse RGBA=(255,255,255,128) alpha=0.50  [Decal-Warning.png]
+
+[Level7]  T: objects = 7
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow1.png]
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:GOALAREA(NOCOLLIDE)            diffuse RGBA=(255,255,255,191) alpha=0.75  [goal.png]
+  T:START(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Decal-Start.png]
+  T:START(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Decal-Start.png]
+
+[Level8]  T: objects = 18
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [StumpyArrow.png]
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [StumpyArrow.png]
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROW(NOCOLLIDE)01             diffuse RGBA=(255,255,255,128) alpha=0.50  [StumpyArrow.png]
+  T:ARROW(NOCOLLIDE)02             diffuse RGBA=(255,255,255,128) alpha=0.50  [StumpyArrow.png]
+  T:ARROW(NOCOLLIDE)03             diffuse RGBA=(255,255,255,128) alpha=0.50  [StumpyArrow.png]
+  T:ARROW(NOCOLLIDE)04             diffuse RGBA=(255,255,255,128) alpha=0.50  [StumpyArrow.png]
+  T:ARROW(NOCOLLIDE)05             diffuse RGBA=(255,255,255,128) alpha=0.50  [StumpyArrow.png]
+  T:ARROWROOT01                    diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROWROOT02                    diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:CURVEARROW(NOCOLLIDE)          diffuse RGBA=(255,255,255,128) alpha=0.50  [ArrowCurve1.png]
+  T:CURVEARROW01(NOCOLLIDE)        diffuse RGBA=(255,255,255,128) alpha=0.50  [ArrowCurve1.png]
+  T:CURVEARROW02(NOCOLLIDE)        diffuse RGBA=(255,255,255,128) alpha=0.50  [ArrowCurve2.png]
+  T:CURVEARROW02(NOCOLLIDE)        diffuse RGBA=(255,255,255,128) alpha=0.50  [ArrowCurve2.png]
+  T:GOALAREA(NOCOLLIDE)            diffuse RGBA=(255,255,255,191) alpha=0.75  [goal.png]
+  T:STARTSPOT                      diffuse RGBA=(253,253,253,128) alpha=0.50  [Decal-Start.png]
+  T:WARNING(NOCOLLIDE)             diffuse RGBA=(255,255,255,128) alpha=0.50  [Decal-Warning.png]
+
+[Level9]  T: objects = 2
+  T:GOALAREA(NOCOLLIDE)            diffuse RGBA=(255,255,255,191) alpha=0.75  [goal.png]
+  T:STARTSPOT                      diffuse RGBA=(255,255,255,255) alpha=1.00  [Decal-Start.png]
+
+[Level10]  T: objects = 5
+  T:GOALAREA(NOCOLLIDE)            diffuse RGBA=(255,255,255,255) alpha=1.00  [goal.png]
+  T:STARTSPOT                      diffuse RGBA=(255,255,255,255) alpha=1.00  [Decal-Start.png]
+  T:STARTSPOT                      diffuse RGBA=(255,255,255,255) alpha=1.00  [Decal-Start.png]
+  T:WARNING                        diffuse RGBA=(252,252,252,128) alpha=0.50  [Decal-Warning.png]
+  T:WARNING                        diffuse RGBA=(252,252,252,128) alpha=0.50  [Decal-Warning.png]
+
+[LevelCascade]  T: objects = 10
+  T:ARROW                          diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROW                          diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROW                          diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROW                          diffuse RGBA=(255,255,255,128) alpha=0.50  [ArrowCurve1.png]
+  T:ARROW01                        diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:ARROW01                        diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow2.png]
+  T:GOALAREA                       diffuse RGBA=(255,255,255,255) alpha=1.00  [goal-round.png]
+  T:GOALAREA                       diffuse RGBA=(255,255,255,255) alpha=1.00  [goal-round.png]
+  T:START                          diffuse RGBA=(255,255,255,255) alpha=1.00  [Decal-Start.png]
+  T:WARNING                        diffuse RGBA=(255,255,255,128) alpha=0.50  [Decal-Warning.png]
+
+[LevelUp]  T: objects = 9
+  T:ARROW                          diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow3.png]
+  T:ARROW                          diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow3.png]
+  T:ARROW                          diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow3.png]
+  T:ARROW01                        diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow3.png]
+  T:BULLSEYE(NOCOLLIDE)            diffuse RGBA=(255,255,255,191) alpha=0.75  [Bullseye.png]
+  T:BULLSEYE(NOCOLLIDE)01          diffuse RGBA=(255,255,255,191) alpha=0.75  [Bullseye.png]
+  T:GOALAREA(NOCOLLIDE)            diffuse RGBA=(255,255,255,255) alpha=1.00  [goal.png]
+  T:SPEEDARROW                     diffuse RGBA=(255,255,255,128) alpha=0.50  [Arrow3.png]
+  T:START                          diffuse RGBA=(255,255,255,255) alpha=1.00  [Decal-Start.png]
+
+[LevelDark]  T: objects = 33
+  T:FLOORLIGHTS                    diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:FLOORLIGHTS                    diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:FLOORLIGHTS                    diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:FLOORLIGHTS                    diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:FLOORLIGHTS                    diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:GoalOverlay(NOCOLLIDE)         diffuse RGBA=(255,255,0,255) alpha=1.00  [goal.png]
+  T:GoalOverlay(NOCOLLIDE)         diffuse RGBA=(255,255,0,255) alpha=1.00  [goal.png]
+  T:LIGHT                          diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:LIGHT01                        diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:Lighties                       diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:NEON                           diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:NEON08                         diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:NEON09                         diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:NEON10                         diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:NEON11                         diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:NEON12                         diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:NEON13                         diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:NEONARROW(NOCOLLIDE)           diffuse RGBA=(252,255,0,191) alpha=0.75  [NeonArrow.png]
+  T:NEONARROW(NOCOLLIDE)01         diffuse RGBA=(252,255,0,191) alpha=0.75  [NeonArrow.png]
+  T:NEONARROW(NOCOLLIDE)02         diffuse RGBA=(252,255,0,191) alpha=0.75  [NeonArrow.png]
+  T:NEONARROW(NOCOLLIDE)04         diffuse RGBA=(252,255,0,191) alpha=0.75  [NeonArrow.png]
+  T:NEONARROW(NOCOLLIDE)05         diffuse RGBA=(252,255,0,191) alpha=0.75  [NeonArrow.png]
+  T:NEONARROW(NOCOLLIDE)06         diffuse RGBA=(252,255,0,191) alpha=0.75  [NeonArrow.png]
+  T:NEONRING                       diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:NEONRING01                     diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:NEONRING02                     diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:NEONSTRIP                      diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:STARTSPOT                      diffuse RGBA=(255,255,255,255) alpha=1.00  [Decal-Start.png]
+  T:TUBETOP                        diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:TUBETOP01                      diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:TUBETOP02                      diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:TUBETOP03                      diffuse RGBA=(255,246,0,255) alpha=1.00  [(solid)]
+  T:WARNING(NOCOLLIDE)             diffuse RGBA=(150,150,150,255) alpha=1.00  [Decal-Warning.png]
+
+[LevelGlass]  T: objects = 10
+  T:ARROW                          diffuse RGBA=(255,255,255,255) alpha=1.00  [OddArrow.png]
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,255) alpha=1.00  [OddArrow.png]
+  T:ARROW01                        diffuse RGBA=(255,255,255,255) alpha=1.00  [OddArrow.png]
+  T:BULLSEYE(NOCOLLIDE)(WANTZ)     diffuse RGBA=(0,0,0,255) alpha=1.00  [Bullseye.png]
+  T:BULLSEYE(NOCOLLIDE)(WANTZ)01   diffuse RGBA=(0,0,0,255) alpha=1.00  [Bullseye.png]
+  T:BULLSEYE(NOCOLLIDE)(WANTZ)02   diffuse RGBA=(0,0,0,255) alpha=1.00  [Bullseye.png]
+  T:GOALAREA(NOCOLLIDE)            diffuse RGBA=(255,255,255,255) alpha=1.00  [goal.png]
+  T:STARTER                        diffuse RGBA=(150,150,150,255) alpha=1.00  [Decal-Start.png]
+  T:STARTER                        diffuse RGBA=(150,150,150,255) alpha=1.00  [Decal-Start.png]
+  T:WARNING(NOCOLLIDE)             diffuse RGBA=(150,150,150,128) alpha=0.50  [Decal-Warning.png]
+
+[LevelImpossible]  T: objects = 4
+  T:ARROW                          diffuse RGBA=(255,255,255,255) alpha=1.00  [YellowArrow.png]
+  T:ARROW(NOCOLLIDE)               diffuse RGBA=(255,255,255,255) alpha=1.00  [YellowArrow.png]
+  T:GOALAREA(NOCOLLIDE)            diffuse RGBA=(255,255,255,255) alpha=1.00  [goal.png]
+  T:START                          diffuse RGBA=(255,255,255,255) alpha=1.00  [Decal-Start.png]
+
+============================================================
+  ARENAS
+============================================================
+
+[Arena-Beginner]  T: objects = 0
+  (none)
+
+[Arena-Dizzy]  T: objects = 0
+  (none)
+
+[Arena-Expert]  T: objects = 0
+  (none)
+
+[Arena-Glass]  T: objects = 0
+  (none)
+
+[Arena-Impossible]  T: objects = 0
+  (none)
+
+[Arena-Intermediate]  T: objects = 0
+  (none)
+
+[Arena-Master]  T: objects = 0
+  (none)
+
+[Arena-Neon]  T: objects = 10
+  T:LIGHTS                         diffuse RGBA=(255,255,0,255) alpha=1.00  [(solid)]
+  T:LIGHTS                         diffuse RGBA=(255,255,0,255) alpha=1.00  [(solid)]
+  T:LIGHTS                         diffuse RGBA=(255,255,0,255) alpha=1.00  [(solid)]
+  T:LIGHTS                         diffuse RGBA=(255,255,0,255) alpha=1.00  [(solid)]
+  T:LIGHTS                         diffuse RGBA=(255,255,0,255) alpha=1.00  [(solid)]
+  T:LIGHTS                         diffuse RGBA=(255,255,0,255) alpha=1.00  [(solid)]
+  T:LIGHTS                         diffuse RGBA=(255,255,0,255) alpha=1.00  [(solid)]
+  T:LIGHTS                         diffuse RGBA=(255,255,0,255) alpha=1.00  [(solid)]
+  T:LIGHTS                         diffuse RGBA=(255,255,0,255) alpha=1.00  [(solid)]
+  T:LIGHTS                         diffuse RGBA=(255,255,0,255) alpha=1.00  [(solid)]
+
+[Arena-Odd]  T: objects = 0
+  (none)
+
+[Arena-Sky]  T: objects = 0
+  (none)
+
+[Arena-Toob]  T: objects = 0
+  (none)
+
+[Arena-Tower]  T: objects = 0
+  (none)
+
+[Arena-Up]  T: objects = 0
+  (none)
+
+[Arena-WarmUp]  T: objects = 0
+  (none)
+
+[Arena-Wobbly]  T: objects = 0
+  (none)

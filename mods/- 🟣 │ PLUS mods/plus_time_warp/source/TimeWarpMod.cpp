@@ -2333,9 +2333,7 @@ typedef struct {
     float pos_x, pos_y, pos_z;
     float radius, radius_sq;
     char name[64];
-    int inside_ghost1;
     int inside_ghost2;
-    int cooldown1;
     int cooldown2;
 } Trigger;
 static Trigger g_triggers[MAX_TRIGGERS];
@@ -2373,51 +2371,31 @@ static void scan_s1_triggers(DWORD board) {
             t->radius = *(float*)(entry + 20);
             if (t->radius <= 0.0f || t->radius > 5000.0f) t->radius = DEFAULT_TRIGGER_RADIUS;
             t->radius_sq = t->radius * t->radius;
-            t->inside_ghost1 = 0;
             t->inside_ghost2 = 0;
-            t->cooldown1 = 0;
             t->cooldown2 = 0;
             g_triggerCount++;
         }
     }
 }
 
-static void fire_trigger_event(Trigger* t, int ghostNum) {
-    LOG("TRIGGER FIRED: '%s' on ghost%d", t->name, ghostNum);
+static void fire_trigger_event(Trigger* t) {
+    LOG("TRIGGER FIRED: '%s' on ghost2 (purple Time Warp ghost)", t->name);
     if (_stricmp(t->name, "RESET") == 0) {
-        if (ghostNum == 2 && g_ghost2.active) g_ghost2.playbackIdx = 0;
+        if (g_ghost2.active) g_ghost2.playbackIdx = 0;
     } else if (_stricmp(t->name, "STOP") == 0) {
-        if (ghostNum == 2 && g_ghost2.btt) g_ghost2.active = FALSE;
+        if (g_ghost2.btt) g_ghost2.active = FALSE;
     } else if (_stricmp(t->name, "START") == 0) {
-        if (ghostNum == 2 && g_ghost2.btt) g_ghost2.active = TRUE;
+        if (g_ghost2.btt) g_ghost2.active = TRUE;
     }
 }
 
 static void check_ghost_triggers(DWORD board) {
     if (g_triggerCount == 0) return;
 
-    DWORD ghost1 = 0;
-    if (!IsBadReadPtr((void*)(board + BOARD_GHOST_BALL), 4))
-        ghost1 = *(DWORD*)(board + BOARD_GHOST_BALL);
-
-    if (ghost1 && !IsBadReadPtr((void*)ghost1, 0x200)) {
-        float bx = *(float*)(ghost1 + BALL_POS_X);
-        float by = *(float*)(ghost1 + BALL_POS_Y);
-        float bz = *(float*)(ghost1 + BALL_POS_Z);
-        for (int i = 0; i < g_triggerCount; i++) {
-            Trigger* t = &g_triggers[i];
-            if (t->cooldown1 > 0) t->cooldown1--;
-            float dx = bx - t->pos_x, dy = by - t->pos_y, dz = bz - t->pos_z;
-            float dist_sq = dx * dx + dy * dy + dz * dz;
-            int wasInside = t->inside_ghost1;
-            t->inside_ghost1 = (dist_sq < t->radius_sq) ? 1 : 0;
-            if (!wasInside && t->inside_ghost1 && t->cooldown1 == 0) {
-                fire_trigger_event(t, 1);
-                t->cooldown1 = TRIGGER_COOLDOWN_FRAMES;
-            }
-        }
-    }
-
+    /* Option 1 (purple-only): GT: triggers fire ONLY for ghost2 — the
+     * Time Warp purple ghost. The ghost1 (yellow replay ball) proximity
+     * loop was intentionally removed so the normal ghost can never
+     * activate GT: events. */
     if (g_ghost2.active && g_ghost2.ball && !IsBadReadPtr((void*)g_ghost2.ball, 0x200)) {
         float bx = *(float*)(g_ghost2.ball + BALL_POS_X);
         float by = *(float*)(g_ghost2.ball + BALL_POS_Y);
@@ -2430,7 +2408,7 @@ static void check_ghost_triggers(DWORD board) {
             int wasInside = t->inside_ghost2;
             t->inside_ghost2 = (dist_sq < t->radius_sq) ? 1 : 0;
             if (!wasInside && t->inside_ghost2 && t->cooldown2 == 0) {
-                fire_trigger_event(t, 2);
+                fire_trigger_event(t);
                 t->cooldown2 = TRIGGER_COOLDOWN_FRAMES;
             }
         }
