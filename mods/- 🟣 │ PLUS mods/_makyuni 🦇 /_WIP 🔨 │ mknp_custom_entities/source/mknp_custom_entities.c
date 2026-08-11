@@ -421,7 +421,7 @@ static int cEnt_speedcyl_read_trigger_box(float px, float py, float pz,
     snprintf(path, MAX_PATH, "%s\\levels\\Speedcylinder_trigger.MESHWORLD", g_game_dir);
     FILE* f = fopen(path, "rb");
     if (!f) {
-        if (logf) fprintf(logf, "  ROTATER: SC box: cannot open '%s'\\n", path);
+        if (logf) fprintf(logf, "  cENTITY: SC box: cannot open '%s'\\n", path);
         return 0;
     }
     /* Section 1: ref points (name + pos3 + rot3 + has_mat + optional material) */
@@ -462,7 +462,7 @@ static int cEnt_speedcyl_read_trigger_box(float px, float py, float pz,
     if (fseek(f, 6 * 4, SEEK_CUR) != 0) { fclose(f); return 0; }
     /* Section 5: uint32 vertex_count + count*32-byte Vertex structs. */
     unsigned int vc; if (fread(&vc, 4, 1, f) != 1 || vc == 0 || vc > 65536) {
-        if (logf) fprintf(logf, "  ROTATER: SC box: bad S5 vertex count (%u)\\n", vc);
+        if (logf) fprintf(logf, "  cENTITY: SC box: bad S5 vertex count (%u)\\n", vc);
         fclose(f); return 0;
     }
     float x1=0,x2=0,y1=0,y2=0,z1=0,z2=0;
@@ -480,13 +480,13 @@ static int cEnt_speedcyl_read_trigger_box(float px, float py, float pz,
     }
     fclose(f);
     if (!ok || first) {
-        if (logf) fprintf(logf, "  ROTATER: SC box: failed reading S5 vertices from '%s'\\n", path);
+        if (logf) fprintf(logf, "  cENTITY: SC box: failed reading S5 vertices from '%s'\\n", path);
         return 0;
     }
     sc->box_x1 = px + x1; sc->box_x2 = px + x2;
     sc->box_y1 = py + y1; sc->box_y2 = py + y2;
     sc->box_z1 = pz + z1; sc->box_z2 = pz + z2;
-    if (logf) fprintf(logf, "  ROTATER: SC box from Speedcylinder_trigger: local(X[%.1f,%.1f] Y[%.1f,%.1f] Z[%.1f,%.1f]) "
+    if (logf) fprintf(logf, "  cENTITY: SC box from Speedcylinder_trigger: local(X[%.1f,%.1f] Y[%.1f,%.1f] Z[%.1f,%.1f]) "
                       "world(X[%.1f,%.1f] Y[%.1f,%.1f] Z[%.1f,%.1f])\\n",
                       x1,x2,y1,y2,z1,z2, sc->box_x1,sc->box_x2,sc->box_y1,sc->box_y2,sc->box_z1,sc->box_z2);
     return 1;
@@ -599,11 +599,11 @@ static int cEnt_translate_collision_strips(DWORD coll_level, float dx, float dy,
     /* v55n_38>: granular diagnostics — log EVERY early-return so a level-start
      * test log reveals exactly which offset/check fails (v55n_38 showed no
      * "geom translated" line at all = silent early return). */
-    if (logf) fprintf(logf, "  ROTATER: TBtranslate enter coll=0x%08X d=(%.1f,%.1f,%.1f)\n", coll_level, dx, dy, dz);
-    if (!coll_level || coll_level < 0x10000 || IsBadReadPtr((void*)coll_level, 0x100)) { if(logf) fprintf(logf,"  ROTATER:   TBtx fail: bad coll_level\n"); return 0; }
+    if (logf) fprintf(logf, "  cENTITY: TBtranslate enter coll=0x%08X d=(%.1f,%.1f,%.1f)\n", coll_level, dx, dy, dz);
+    if (!coll_level || coll_level < 0x10000 || IsBadReadPtr((void*)coll_level, 0x100)) { if(logf) fprintf(logf,"  cENTITY:   TBtx fail: bad coll_level\n"); return 0; }
     DWORD mw = *(DWORD*)((char*)coll_level + 0x08);
-    if (logf) fprintf(logf, "  ROTATER:   TBtx mw=0x%08X\n", mw);
-    if (!mw || mw < 0x10000 || IsBadReadPtr((void*)mw, 0x460)) { if(logf) fprintf(logf,"  ROTATER:   TBtx fail: bad mw\n"); return 0; }
+    if (logf) fprintf(logf, "  cENTITY:   TBtx mw=0x%08X\n", mw);
+    if (!mw || mw < 0x10000 || IsBadReadPtr((void*)mw, 0x460)) { if(logf) fprintf(logf,"  cENTITY:   TBtx fail: bad mw\n"); return 0; }
     int total = 0;
 
     /* v55n_38: REMOVED the collision TREE-ITEM translation here. It crashed
@@ -681,7 +681,7 @@ static int cEnt_translate_collision_strips(DWORD coll_level, float dx, float dy,
             }
         }
     }
-    if (logf) fprintf(logf, "  ROTATER: TimeButton coll Level 0x%08X geom translated (%.1f,%.1f,%.1f) %d verts\n",
+    if (logf) fprintf(logf, "  cENTITY: TimeButton coll Level 0x%08X geom translated (%.1f,%.1f,%.1f) %d verts\n",
                       coll_level, dx, dy, dz, total);
     return total;
 }
@@ -703,9 +703,9 @@ static int cEnt_timebutton_translate_tree(TimeButtonState* tb, FILE* logf) {
     DWORD mwlist = mw + 0x18;   /* embedded AthenaList: count +0x4, items +0x40C */
     if (IsBadReadPtr((void*)mwlist, 0x20)) return 0;
     int tcount = *(int*)(mwlist + 0x4);
-    if (tcount <= 0 || tcount >= 65536) { if(logf)fprintf(logf,"  ROTATER: TBtx tree count=%d (bad)\n", tcount); return 0; }
+    if (tcount <= 0 || tcount >= 65536) { if(logf)fprintf(logf,"  cENTITY: TBtx tree count=%d (bad)\n", tcount); return 0; }
     DWORD* titems = *(DWORD**)(mwlist + 0x40C);
-    if (!titems || IsBadReadPtr((void*)titems, tcount * 4)) { if(logf)fprintf(logf,"  ROTATER: TBtx bad tree items ptr\n"); return 0; }
+    if (!titems || IsBadReadPtr((void*)titems, tcount * 4)) { if(logf)fprintf(logf,"  cENTITY: TBtx bad tree items ptr\n"); return 0; }
 
     /* Lazy-save originals (12 bytes/item). */
     if (!tb->tree_orig_mw) {
@@ -722,7 +722,7 @@ static int cEnt_timebutton_translate_tree(TimeButtonState* tb, FILE* logf) {
             tb->tree_count_mw = tcount;
         }
     }
-    if (!tb->tree_orig_mw || tb->tree_count_mw != tcount) { if(logf)fprintf(logf,"  ROTATER: TBtx save failed\n"); return 0; }
+    if (!tb->tree_orig_mw || tb->tree_count_mw != tcount) { if(logf)fprintf(logf,"  cENTITY: TBtx save failed\n"); return 0; }
 
     /* Non-cumulative translate from saved originals. */
     float* tsrc = (float*)tb->tree_orig_mw;
@@ -738,7 +738,7 @@ static int cEnt_timebutton_translate_tree(TimeButtonState* tb, FILE* logf) {
         done = 1;
     }
     if (done) tb->tree_ok_mw = 1;
-    if (logf) fprintf(logf, "  ROTATER: TBtx translated %d tree items to (%.1f,%.1f,%.1f)\n", tcount, tb->x, tb->y, tb->z);
+    if (logf) fprintf(logf, "  cENTITY: TBtx translated %d tree items to (%.1f,%.1f,%.1f)\n", tcount, tb->x, tb->y, tb->z);
     return tb->tree_ok_mw;
 }
 
@@ -756,8 +756,8 @@ static int cEnt_timebutton_translate_tree(TimeButtonState* tb, FILE* logf) {
  * +0x438 items (verified), MeshBuffer+0x424 = sub-mesh list (+0x428 count,
  * +0x830 items), sub-mesh+0x448 = source verts (8 floats/vert). Returns verts. */
 static int cEnt_translate_meshworld_verts(DWORD mw, float dx, float dy, float dz, FILE* logf) {
-    if (logf) fprintf(logf, "  ROTATER: TBtranslate meshworld enter mw=0x%08X d=(%.1f,%.1f,%.1f)\n", mw, dx, dy, dz);
-    if (!mw || mw < 0x10000 || IsBadReadPtr((void*)mw, 0x460)) { if(logf) fprintf(logf,"  ROTATER:   TBtx fail: bad mw\n"); return 0; }
+    if (logf) fprintf(logf, "  cENTITY: TBtranslate meshworld enter mw=0x%08X d=(%.1f,%.1f,%.1f)\n", mw, dx, dy, dz);
+    if (!mw || mw < 0x10000 || IsBadReadPtr((void*)mw, 0x460)) { if(logf) fprintf(logf,"  cENTITY:   TBtx fail: bad mw\n"); return 0; }
     int total = 0;
     int translated_something = 0;  /* v55n_38: any tree OR strip translated */
 
@@ -773,7 +773,7 @@ static int cEnt_translate_meshworld_verts(DWORD mw, float dx, float dy, float dz
      * still non-solid. Now +0x18 runs first and is NOT gated by +0x2C. */
     {
         int tcnt = *(int*)((char*)mw + 0x18 + 0x4);
-        if (logf) fprintf(logf, "  ROTATER:   TBtx tree_items(at +0x18) count=%d\n", tcnt);
+        if (logf) fprintf(logf, "  cENTITY:   TBtx tree_items(at +0x18) count=%d\n", tcnt);
         if (tcnt > 0 && tcnt < 65536) {
             DWORD* titems = *(DWORD**)((char*)mw + 0x18 + 0x40C);
             if (titems && !IsBadReadPtr((void*)titems, tcnt * 4)) {
@@ -791,7 +791,7 @@ static int cEnt_translate_meshworld_verts(DWORD mw, float dx, float dy, float dz
                 }
                 if (done) translated_something = 1;
             } else {
-                if (logf) fprintf(logf, "  ROTATER:   TBtx fail: bad tree_items pointer\n");
+                if (logf) fprintf(logf, "  cENTITY:   TBtx fail: bad tree_items pointer\n");
             }
         }
     }
@@ -802,14 +802,14 @@ static int cEnt_translate_meshworld_verts(DWORD mw, float dx, float dy, float dz
      * offsets. This is the strip/vertex data (Mesh_FindClosestCollision walks
      * it). It can be EMPTY at load (lazy) — do NOT gate correctness on it. */
     int mb_count = *(int*)((char*)mw + 0x2C + 0x4);
-    if (logf) fprintf(logf, "  ROTATER:   TBtx mb_count=%d (AthenaList@+0x2C count+0x4)\n", mb_count);
+    if (logf) fprintf(logf, "  cENTITY:   TBtx mb_count=%d (AthenaList@+0x2C count+0x4)\n", mb_count);
     if (mb_count > 0 && mb_count <= 64) {
     DWORD* mb_items = *(DWORD**)((char*)mw + 0x2C + 0x40C);
     if (mb_items && !IsBadReadPtr((void*)mb_items, mb_count * 4)) {
     int bi;
     for (bi = 0; bi < mb_count; bi++) {
         DWORD mb = mb_items[bi];
-        if (!mb || mb < 0x10000 || IsBadReadPtr((void*)mb, 0x850)) { if(logf) fprintf(logf,"  ROTATER:   TBtx skip mb %d bad\n", bi); continue; }
+        if (!mb || mb < 0x10000 || IsBadReadPtr((void*)mb, 0x850)) { if(logf) fprintf(logf,"  cENTITY:   TBtx skip mb %d bad\n", bi); continue; }
         /* sub-mesh +0x448 source arrays */
         int scnt = *(int*)((char*)mb + 0x428);
         if (scnt > 0 && scnt <= 4096) {
@@ -868,7 +868,7 @@ static int cEnt_translate_meshworld_verts(DWORD mw, float dx, float dy, float dz
     }      /* end for(bi) mb loop */
     }      /* end if (mb_items valid) */
     }      /* end if (mb_count > 0) */
-    if (logf) fprintf(logf, "  ROTATER: TB meshworld translated (%.1f,%.1f,%.1f) %d verts\n", dx, dy, dz, total);
+    if (logf) fprintf(logf, "  cENTITY: TB meshworld translated (%.1f,%.1f,%.1f) %d verts\n", dx, dy, dz, total);
     return total;
 }
 
@@ -2182,7 +2182,7 @@ static void __thiscall hook_DispatchCollisionEvents(void* this_, int* ball, int*
                 {
                     FILE* plf = fopen("mknp_custom_entities_press.log", "a");
                     if (plf) {
-                        fprintf(plf, "  ROTATER: TimeButton pressed (entity=0x%08X)\n", tb_entity);
+                        fprintf(plf, "  cENTITY: TimeButton pressed (entity=0x%08X)\n", tb_entity);
                         fclose(plf);
                     }
                 }
@@ -3264,11 +3264,11 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
     if (path) {
         mesh = cEnt_load_mesh_file(gfx_device, path, &is_mesh_node, logf);
         if (!mesh) {
-            if (logf) fprintf(logf, "  ROTATER: cEnt_load_mesh_file failed for '%s', trying Swirl fallback\n", path);
+            if (logf) fprintf(logf, "  cENTITY: cEnt_load_mesh_file failed for '%s', trying Swirl fallback\n", path);
             is_mesh_node = 0;
             mesh = cEnt_load_mesh_file(gfx_device, g_swirl_mesh_path, &is_mesh_node, logf);
             if (!mesh) {
-                if (logf) fprintf(logf, "  ROTATER: Swirl fallback also failed\n");
+                if (logf) fprintf(logf, "  cENTITY: Swirl fallback also failed\n");
                 return;
             }
         }
@@ -3286,7 +3286,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
         /* Extract MeshWorld* from MeshNode+0x08 */
         DWORD mesh_world_from_node = *(DWORD*)((char*)mesh + 0x08);
         if (!mesh_world_from_node || IsBadReadPtr((void*)mesh_world_from_node, 0x100)) {
-            if (logf) fprintf(logf, "  ROTATER: .MESH MeshWorld* invalid, skipping\n");
+            if (logf) fprintf(logf, "  cENTITY: .MESH MeshWorld* invalid, skipping\n");
             return;
         }
 
@@ -3294,20 +3294,20 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
         int swirl_is_node = 0;
         void* swirl_mesh = cEnt_load_mesh_file(gfx_device, g_swirl_mesh_path, &swirl_is_node, logf);
         if (!swirl_mesh || swirl_is_node) {
-            if (logf) fprintf(logf, "  ROTATER: Swirl placeholder failed, skipping .MESH entity\n");
+            if (logf) fprintf(logf, "  cENTITY: Swirl placeholder failed, skipping .MESH entity\n");
             return;
         }
 
         /* Create PopCylinder with Swirl mesh (proper vtable + position + collision) */
         void* obj = pfn_operator_new(POPCYLINDER_SIZE);
         if (!obj) {
-            if (logf) fprintf(logf, "  ROTATER: failed to alloc PopCylinder for .MESH\n");
+            if (logf) fprintf(logf, "  cENTITY: failed to alloc PopCylinder for .MESH\n");
             return;
         }
         memset(obj, 0, POPCYLINDER_SIZE);
         void* result0 = pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, swirl_mesh);
         if (!result0) {
-            if (logf) fprintf(logf, "  ROTATER: PopCylinder_ctor failed for .MESH entity\n");
+            if (logf) fprintf(logf, "  cENTITY: PopCylinder_ctor failed for .MESH entity\n");
             return;
         }
 
@@ -3318,7 +3318,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
         *(DWORD*)((char*)obj + 0x08) = mesh_world_from_node;
 
         if (logf) {
-            fprintf(logf, "  ROTATER: spawned (.MESH swap) at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s' MW=0x%08X\n",
+            fprintf(logf, "  cENTITY: spawned (.MESH swap) at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s' MW=0x%08X\n",
                     px, py, pz, (DWORD)obj, path, mesh_world_from_node);
             fflush(logf);
         }
@@ -3375,13 +3375,13 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
         /* AI 6: Rotator_ctor_Impossible (SWIRL with rotation) */
         obj = pfn_operator_new(ROTATER_SIZE);
         if (!obj) {
-            if (logf) fprintf(logf, "  ROTATER: failed to alloc object\n");
+            if (logf) fprintf(logf, "  cENTITY: failed to alloc object\n");
             return;
         }
         memset(obj, 0, ROTATER_SIZE);
         void* result = pfn_Rotator_ctor(obj, (void*)board, px, py, pz, mesh);
         if (!result) {
-            if (logf) fprintf(logf, "  ROTATER: Rotator_ctor failed\n");
+            if (logf) fprintf(logf, "  cENTITY: Rotator_ctor failed\n");
             return;
         }
         /* v55m_48d: The native SWIRL ctor (0x00435940) sets the initial
@@ -3398,37 +3398,37 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
         switch (ai_type) {
             case 7:  /* cEnt_DFloor1_ctor — Neon DFLOOR1 */
                 obj = pfn_operator_new(ARENASTANDS_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc DFloor1\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc DFloor1\n"); return; }
                 memset(obj, 0, ARENASTANDS_SIZE);
                 cEnt_DFloor1_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
             case 17: /* cEnt_DFloor2_ctor — Neon DFLOOR2 */
                 obj = pfn_operator_new(ARENASTANDS_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc DFloor2\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc DFloor2\n"); return; }
                 memset(obj, 0, ARENASTANDS_SIZE);
                 cEnt_DFloor2_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
             case 18: /* cEnt_DFloor3_ctor — Neon DFLOOR3 */
                 obj = pfn_operator_new(ARENASTANDS_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc DFloor3\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc DFloor3\n"); return; }
                 memset(obj, 0, ARENASTANDS_SIZE);
                 cEnt_DFloor3_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
             case 19: /* cEnt_DFloor4_ctor — Neon DFLOOR4 (with post-construction config) */
                 obj = pfn_operator_new(ARENASTANDS_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc DFloor4\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc DFloor4\n"); return; }
                 memset(obj, 0, ARENASTANDS_SIZE);
                 cEnt_DFloor4_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
             case 20: /* cEnt_FlickRing_ctor — Neon Arena FLICKRING */
                 obj = pfn_operator_new(ARENASTANDS_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc FlickRing\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc FlickRing\n"); return; }
                 memset(obj, 0, ARENASTANDS_SIZE);
                 cEnt_FlickRing_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
             case 21: /* cEnt_Trode_ctor — Neon TRODE */
                 obj = pfn_operator_new(ARENASTANDS_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Trode\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Trode\n"); return; }
                 memset(obj, 0, ARENASTANDS_SIZE);
                 cEnt_Trode_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
@@ -3438,14 +3438,14 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                      * The game's render pipeline renders via vtable[2] (BuildStrips).
                      * Sound state machine tracked via mesh_path match in spawn_done. */
                 obj = pfn_operator_new(POPCYLINDER_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Chomper PopCylinder\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Chomper PopCylinder\n"); return; }
                 memset(obj, 0, POPCYLINDER_SIZE);
                 pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
             case 27: /* Spinner_Level_ctor — Expert Race "BRIDGE" (falling bridge piece)
                       * 6 params: (this, board, x, y, z, mesh, float_param) */
                 obj = pfn_operator_new(SPINNER_LEVEL_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Spinner\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Spinner\n"); return; }
                 memset(obj, 0, SPINNER_LEVEL_SIZE);
                 pfn_Spinner_Level_ctor(obj, (void*)board, px, py, pz, mesh, 0.0f);
                 break;
@@ -3454,9 +3454,9 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                 {
                     DWORD app = *(DWORD*)(board + BOARD_APP);
                     DWORD gfx_device = app ? *(DWORD*)(app + APP_GFX_DEVICE) : 0;
-                    if (!gfx_device) { if (logf) fprintf(logf, "  ROTATER: no gfx_device for Cloudscape\n"); return; }
+                    if (!gfx_device) { if (logf) fprintf(logf, "  cENTITY: no gfx_device for Cloudscape\n"); return; }
                     obj = pfn_operator_new(SPRITE_SIZE);
-                    if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Cloudscape\n"); return; }
+                    if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Cloudscape\n"); return; }
                     memset(obj, 0, SPRITE_SIZE);
                     const char* cloud_path = mesh_path && mesh_path[0] ? mesh_path : "levels\\Cloudscape";
                     /* Check if Cloudscape.MESHWORLD exists, else use _default */
@@ -3464,7 +3464,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                     snprintf(check_path, 255, "%s.meshworld", cloud_path);
                     if (pfn_check_file_access(check_path, 0) != 0) {
                         cloud_path = "levels\\_default";
-                        if (logf) fprintf(logf, "  ROTATER: Cloudscape.MESHWORLD not found, using _default\n");
+                        if (logf) fprintf(logf, "  cENTITY: Cloudscape.MESHWORLD not found, using _default\n");
                     }
                     pfn_Sprite_ctor(obj, (void*)gfx_device, cloud_path);
                 }
@@ -3473,7 +3473,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                       * (this, board, x1, y1, z1, x2, y2, z2, mesh)
                       * x2/y2/z2 are a second position point — use same as x1/y1/z1 */
                 obj = pfn_operator_new(GEAR_REAL_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Gear\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Gear\n"); return; }
                 memset(obj, 0, GEAR_REAL_SIZE);
                 pfn_Gear_ctor_real(obj, (void*)board, px, py, pz, px, py, pz, mesh);
                 break;
@@ -3489,11 +3489,11 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                 {
                     DWORD app2 = *(DWORD*)(board + BOARD_APP);
                     DWORD gfx2 = app2 ? *(DWORD*)(app2 + APP_GFX_DEVICE) : 0;
-                    if (!gfx2) { if (logf) fprintf(logf, "  ROTATER: no gfx for Bell\n"); return; }
+                    if (!gfx2) { if (logf) fprintf(logf, "  cENTITY: no gfx for Bell\n"); return; }
                     /* Load Bell.MESH via MeshNode_ctor */
                     void* bell_meshnode = cEnt_load_mesh_file(gfx2, "meshes\\Bell", &is_mesh_node, logf);
                     if (!bell_meshnode || !is_mesh_node) {
-                        if (logf) fprintf(logf, "  ROTATER: Bell.MESH load failed, trying Swirl\n");
+                        if (logf) fprintf(logf, "  cENTITY: Bell.MESH load failed, trying Swirl\n");
                         bell_meshnode = cEnt_load_mesh_file(gfx2, g_swirl_mesh_path, &is_mesh_node, logf);
                         if (!bell_meshnode) return;
                     }
@@ -3502,11 +3502,11 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                     int bell_isnode = 0;
                     void* bell_swirl = cEnt_load_mesh_file(gfx2, g_swirl_mesh_path, &bell_isnode, logf);
                     if (!bell_swirl || bell_isnode) {
-                        if (logf) fprintf(logf, "  ROTATER: Bell Swirl base failed\n");
+                        if (logf) fprintf(logf, "  cENTITY: Bell Swirl base failed\n");
                         return;
                     }
                     obj = pfn_operator_new(BELL_SIZE);
-                    if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Bell\n"); return; }
+                    if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Bell\n"); return; }
                     memset(obj, 0, BELL_SIZE);
                     pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, bell_swirl);
                     /* Swap MeshWorld to Bell mesh */
@@ -3520,10 +3520,10 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                 {
                     DWORD app2 = *(DWORD*)(board + BOARD_APP);
                     DWORD gfx2 = app2 ? *(DWORD*)(app2 + APP_GFX_DEVICE) : 0;
-                    if (!gfx2) { if (logf) fprintf(logf, "  ROTATER: no gfx for Fan\n"); return; }
+                    if (!gfx2) { if (logf) fprintf(logf, "  cENTITY: no gfx for Fan\n"); return; }
                     void* fan_meshnode = cEnt_load_mesh_file(gfx2, "meshes\\fanbody", &is_mesh_node, logf);
                     if (!fan_meshnode || !is_mesh_node) {
-                        if (logf) fprintf(logf, "  ROTATER: FanBody.MESH load failed, trying Swirl\n");
+                        if (logf) fprintf(logf, "  cENTITY: FanBody.MESH load failed, trying Swirl\n");
                         fan_meshnode = cEnt_load_mesh_file(gfx2, g_swirl_mesh_path, &is_mesh_node, logf);
                         if (!fan_meshnode) return;
                     }
@@ -3531,11 +3531,11 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                     int fan_isnode = 0;
                     void* fan_swirl = cEnt_load_mesh_file(gfx2, g_swirl_mesh_path, &fan_isnode, logf);
                     if (!fan_swirl || fan_isnode) {
-                        if (logf) fprintf(logf, "  ROTATER: Fan Swirl base failed\n");
+                        if (logf) fprintf(logf, "  cENTITY: Fan Swirl base failed\n");
                         return;
                     }
                     obj = pfn_operator_new(FAN_SIZE);
-                    if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Fan\n"); return; }
+                    if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Fan\n"); return; }
                     memset(obj, 0, FAN_SIZE);
                     pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, fan_swirl);
                     if (fan_mw) *(DWORD*)((char*)obj + 0x08) = fan_mw;
@@ -3548,16 +3548,16 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                 {
                     DWORD app2 = *(DWORD*)(board + BOARD_APP);
                     DWORD gfx2 = app2 ? *(DWORD*)(app2 + APP_GFX_DEVICE) : 0;
-                    if (!gfx2) { if (logf) fprintf(logf, "  ROTATER: no gfx for SawBlade\n"); return; }
+                    if (!gfx2) { if (logf) fprintf(logf, "  cENTITY: no gfx for SawBlade\n"); return; }
                     /* SawBlade has a .MESHWORLD file: levels\\Level8-Saw */
                     void* saw_mesh = cEnt_load_mesh_file(gfx2, "levels\\Level8-Saw", &is_mesh_node, logf);
                     if (!saw_mesh) {
-                        if (logf) fprintf(logf, "  ROTATER: Level8-Saw.MESHWORLD load failed, trying Swirl\n");
+                        if (logf) fprintf(logf, "  cENTITY: Level8-Saw.MESHWORLD load failed, trying Swirl\n");
                         saw_mesh = cEnt_load_mesh_file(gfx2, g_swirl_mesh_path, &is_mesh_node, logf);
                         if (!saw_mesh) return;
                     }
                     obj = pfn_operator_new(SAWBLADE_SIZE);
-                    if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc SawBlade\n"); return; }
+                    if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc SawBlade\n"); return; }
                     memset(obj, 0, SAWBLADE_SIZE);
                     /* Use PopCylinder_ctor to set up the Level properly */
                     pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, saw_mesh);
@@ -3567,7 +3567,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
             case 33: /* Bonk_ctor — Warm-Up Race Bonk (5 params: this, board, x, y, z)
                       * Self-loads "levels\\level5-bonk" MESHWORLD via Level_MeshWorldCtor. */
                 obj = pfn_operator_new(BONK_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Bonk\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Bonk\n"); return; }
                 memset(obj, 0, BONK_SIZE);
                 pfn_Bonk_ctor(obj, (void*)board, px, py, pz);
                 /* Track Bonk for collision event hook (E:CALLHAMMER/E:HAMMERCHASE)
@@ -3581,7 +3581,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
             case 34: /* BreakBridge_ctor — Intermediate Race bridge (6 params: this, board, x, y, z, mesh)
                       * Uses Pendulum vtable with Rotator_Update for tilt animation. */
                 obj = pfn_operator_new(POPCYLINDER_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc BreakBridge\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc BreakBridge\n"); return; }
                 memset(obj, 0, POPCYLINDER_SIZE);
                 pfn_BreakBridge_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
@@ -3599,7 +3599,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                      *   5. E:CATAPULTBOTTOM collision event triggers Catapult_Launch (0x434290)
                      * Position: obj+0x10D8/0x10DC/0x10E0 (matches Tipper pattern) */
                 obj = pfn_operator_new(CATAPULT_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Catapult\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Catapult\n"); return; }
                 memset(obj, 0, CATAPULT_SIZE);
                 pfn_Catapult_ctor(obj, (void*)board, mesh);
                 *(float*)((char*)obj + 0x10D8) = px;
@@ -3623,7 +3623,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                         if (scene_col) {
                             pfn_AthenaList_Append((DWORD*)(scene_col + 0x18), (void*)cat_col_obj);
                         }
-                        if (logf) fprintf(logf, "  ROTATER: Catapult collision Level 0x%08X added to lists\n", cat_col_obj);
+                        if (logf) fprintf(logf, "  cENTITY: Catapult collision Level 0x%08X added to lists\n", cat_col_obj);
                     }
                 }
                 /* v55m_42f: Do NOT add to board+0x43B8 — causes heap corruption on non-Tower levels.
@@ -3674,7 +3674,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                                 cs->orig_vtable18 = new_vt[18];
                                 new_vt[18] = (DWORD)cEnt_catapult_render;
                                 *(DWORD**)obj = new_vt;
-                                if (logf) fprintf(logf, "  ROTATER: Catapult vtable[18] hook installed (0x%08X -> 0x%08X, full 0x400B copy)\n",
+                                if (logf) fprintf(logf, "  cENTITY: Catapult vtable[18] hook installed (0x%08X -> 0x%08X, full 0x400B copy)\n",
                                     cs->orig_vtable18, new_vt[18]);
                             }
                         }
@@ -3693,7 +3693,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                                     new_level_vt[18] = (DWORD)cEnt_catapult_render;
                                     *(DWORD**)cat_level = new_level_vt;
                                     cs->arm_obj = cat_level;
-                                    if (logf) fprintf(logf, "  ROTATER: Catapult Level vtable[18] hook installed (0x%08X -> 0x%08X)\n",
+                                    if (logf) fprintf(logf, "  cENTITY: Catapult Level vtable[18] hook installed (0x%08X -> 0x%08X)\n",
                                         cs->arm_orig_vtable18, new_level_vt[18]);
                                     /* v55m_43h: DUMP the collision Level's mesh structure so we can
                                      * find where the vertex array lives. */
@@ -3702,13 +3702,13 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                                         DWORD lvl_so = *(DWORD*)((char*)cat_level + 0x480);
                                         DWORD so_v440 = lvl_so ? *(DWORD*)((char*)lvl_so + 0x440) : 0;
                                         DWORD so_v43c = lvl_so ? *(DWORD*)((char*)lvl_so + 0x43C) : 0;
-                                        if (logf) fprintf(logf, "  ROTATER: DUMP colLevel=0x%08X mw=0x%08X sceneObj=0x%08X so+440=0x%08X so+43C=%d\n",
+                                        if (logf) fprintf(logf, "  cENTITY: DUMP colLevel=0x%08X mw=0x%08X sceneObj=0x%08X so+440=0x%08X so+43C=%d\n",
                                             cat_level, lvl_mw, lvl_so, so_v440, so_v43c);
                                         if (lvl_mw && !IsBadReadPtr((void*)lvl_mw, 0x40)) {
                                             DWORD* mwlist = (DWORD*)(lvl_mw + 0x2C);
                                             int mwcount = mwlist ? *(int*)(mwlist + 0x1) : -1;
                                             DWORD* mwitems = mwlist ? *(DWORD**)(mwlist + 0x103) : NULL;
-                                            if (logf) fprintf(logf, "  ROTATER: DUMP mw+2C count=%d items=0x%08X\n", mwcount, (DWORD)mwitems);
+                                            if (logf) fprintf(logf, "  cENTITY: DUMP mw+2C count=%d items=0x%08X\n", mwcount, (DWORD)mwitems);
                                             if (mwcount > 0 && mwcount < 64 && mwitems) {
                                                 DWORD mb = mwitems[0];
                                                 if (mb && !IsBadReadPtr((void*)mb, 0x50)) {
@@ -3749,15 +3749,15 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                                                         }
                                                     }
                                                     DWORD mb2 = mwcount > 1 ? mwitems[1] : 0;
-                                                    if (logf) fprintf(logf, "  ROTATER: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
+                                                    if (logf) fprintf(logf, "  cENTITY: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
                                                         mb, mb_vt, mb_v4, mb_v8, mb_vc, mb_v10, mb_v14);
-                                                    if (logf) fprintf(logf, "  ROTATER: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
+                                                    if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
                                                         mb_v418, mb_v438, mb_v43c, mb_v85d, mb_v860, mb_v864, mb_v868);
-                                                    if (logf) fprintf(logf, "  ROTATER: DUMP mb[0] +424 list=%d items=0x%08X; sub[0]=0x%08X sub+448=0x%08X sub+444=%d sub+8=0x%08X\n",
+                                                    if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +424 list=%d items=0x%08X; sub[0]=0x%08X sub+448=0x%08X sub+444=%d sub+8=0x%08X\n",
                                                         mb_subcount, (DWORD)mb_subitems, sub0, sub0_448, sub0_444, sub0_8);
-                                                    if (logf) fprintf(logf, "  ROTATER: DUMP mw+448=0x%08X +44C=0x%08X +434=0x%08X +45C=0x%08X\n",
+                                                    if (logf) fprintf(logf, "  cENTITY: DUMP mw+448=0x%08X +44C=0x%08X +434=0x%08X +45C=0x%08X\n",
                                                         mw_448, mw_44c, mw_434, mw_45c);
-                                                    if (logf) fprintf(logf, "  ROTATER: DUMP mb[1]=0x%08X\n", mb2);
+                                                    if (logf) fprintf(logf, "  cENTITY: DUMP mb[1]=0x%08X\n", mb2);
                                                 }
                                             }
                                         }
@@ -3768,7 +3768,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                     }
 
                     g_catapult_count++;
-                    if (logf) fprintf(logf, "  ROTATER: Catapult tracked in g_catapults[%d] (count=%d)\n",
+                    if (logf) fprintf(logf, "  cENTITY: Catapult tracked in g_catapults[%d] (count=%d)\n",
                         g_catapult_count - 1, g_catapult_count);
 
                     /* v55m_42f: load dropin sound via BASS for this catapult */
@@ -3777,7 +3777,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                 break;
             case 36: /* Mace_ctor */
                 obj = pfn_operator_new(MACE_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Mace\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Mace\n"); return; }
                 memset(obj, 0, MACE_SIZE);
                 pfn_Mace_ctor(obj, (void*)board, mesh);
                 *(float*)((char*)obj + 0x10D8) = px;
@@ -3792,7 +3792,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                      * list as the tipper raises/lowers. */
                 {
                     obj = pfn_operator_new(TIPPER_SIZE);
-                    if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Tipper\n"); return; }
+                    if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Tipper\n"); return; }
                     memset(obj, 0, TIPPER_SIZE);
                     pfn_Tipper_ctor(obj, (void*)board, mesh);
                     *(float*)((char*)obj + 0x10D8) = px;
@@ -3822,24 +3822,24 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                                         *(DWORD*)((char*)obj + 0x10D4) = (DWORD)visual;
                                         /* Attach visual to Tipper behavior object */
                                         pfn_TipperVisual_Attach(visual, (int)obj);
-                                        if (logf) fprintf(logf, "  ROTATER: TipperVisual created at 0x%08X, attached to Tipper 0x%08X\n",
+                                        if (logf) fprintf(logf, "  cENTITY: TipperVisual created at 0x%08X, attached to Tipper 0x%08X\n",
                                                 (DWORD)visual, (DWORD)obj);
                                     } else {
-                                        if (logf) fprintf(logf, "  ROTATER: TipperVisual_ctor failed\n");
+                                        if (logf) fprintf(logf, "  cENTITY: TipperVisual_ctor failed\n");
                                     }
                                 }
                             } else {
-                                if (logf) fprintf(logf, "  ROTATER: Level_RenderCtor failed for Tipper visual\n");
+                                if (logf) fprintf(logf, "  cENTITY: Level_RenderCtor failed for Tipper visual\n");
                             }
                         }
                     } else {
-                        if (logf) fprintf(logf, "  ROTATER: Tipper mesh invalid, skipping TipperVisual creation\n");
+                        if (logf) fprintf(logf, "  cENTITY: Tipper mesh invalid, skipping TipperVisual creation\n");
                     }
                 }
                 break;
             case 38: /* Lifter_ctor — 7 params (this, board, x, y, z, mesh, lifter_id) */
                 obj = pfn_operator_new(LIFTER_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Lifter\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Lifter\n"); return; }
                 memset(obj, 0, LIFTER_SIZE);
                 pfn_Lifter_ctor(obj, (void*)board, px, py, pz, mesh, 0);
                 break;
@@ -3854,7 +3854,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                       *   3. Set entity+0x47C = entity (self-ref, needed by vtable[1] Rotator_Update)
                       *   4. Track in g_speedcyls[] for the per-frame slot 11 (0x43D8C0) driver */
                 obj = pfn_operator_new(SPEEDCYLINDER_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc SpeedCylinder\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc SpeedCylinder\n"); return; }
                 memset(obj, 0, SPEEDCYLINDER_SIZE);
                 pfn_SpeedCylinder_ctor(obj, (void*)board, px, py, pz, 0, mesh);
                 *(float*)((char*)obj + 0x10D4) = px;
@@ -3887,7 +3887,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                         if (scene_col2) {
                             pfn_AthenaList_Append((DWORD*)(scene_col2 + 0x18), (void*)sc_col);
                         }
-                        if (logf) fprintf(logf, "  ROTATER: SpeedCyl collision Level 0x%08X registered\n", sc_col);
+                        if (logf) fprintf(logf, "  cENTITY: SpeedCyl collision Level 0x%08X registered\n", sc_col);
                     }
                     /* 3. Entity self-ref +0x47C (needed by vtable[1] Rotator_Update 0x4606D0) */
                     *(DWORD*)((char*)obj + 0x47C) = (DWORD)obj;
@@ -3912,7 +3912,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                         g_speedcyls[g_speedcyl_count].col_level = sc_col2;
                         if (!cEnt_speedcyl_read_trigger_box(px, py, pz,
                                                              &g_speedcyls[g_speedcyl_count], logf)) {
-                            if (logf) fprintf(logf, "  ROTATER: SC box: using hardcoded fallback (spawn %.1f,%.1f,%.1f)\n",
+                            if (logf) fprintf(logf, "  cENTITY: SC box: using hardcoded fallback (spawn %.1f,%.1f,%.1f)\n",
                                               px, py, pz);
                             g_speedcyls[g_speedcyl_count].box_x1 = px;
                             g_speedcyls[g_speedcyl_count].box_x2 = px + 145.0f;
@@ -3966,7 +3966,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                  * If THIS is stable -> TimeButton_ctor is the culprit and this IS the fix.
                  * If it crashes -> the button MESH itself is broken on non-race levels. */
                 obj = pfn_operator_new(SPEEDCYLINDER_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc TimeButton(SpeedCyl shape)\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc TimeButton(SpeedCyl shape)\n"); return; }
                 memset(obj, 0, SPEEDCYLINDER_SIZE);
                 pfn_SpeedCylinder_ctor(obj, (void*)board, px, py, pz, 0, mesh);
                 /* v55n_38: Override the vtable to the native TimeButton vtable (0x4D5830)
@@ -4009,7 +4009,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                         if (tb_scene_col) {
                             pfn_AthenaList_Append((DWORD*)(tb_scene_col + 0x18), (void*)tb_col);
                         }
-                        if (logf) fprintf(logf, "  ROTATER: TimeButton(SpeedCyl shape) coll Level 0x%08X registered (board+0x10EC + scene tree)\n", tb_col);
+                        if (logf) fprintf(logf, "  cENTITY: TimeButton(SpeedCyl shape) coll Level 0x%08X registered (board+0x10EC + scene tree)\n", tb_col);
                     }
                     /* 4. Entity self-ref +0x47C (same as case 39) */
                     *(DWORD*)((char*)obj + 0x47C) = (DWORD)obj;
@@ -4030,7 +4030,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                 break;
             case 40: /* NeonPlatform_ctor — 6 params (this, board, x, y, z, mesh) — Rotator_ctor_t */
                 obj = pfn_operator_new(NEONPLATFORM_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc NeonPlatform\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc NeonPlatform\n"); return; }
                 memset(obj, 0, NEONPLATFORM_SIZE);
                 pfn_NeonPlatform_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
@@ -4041,17 +4041,17 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                     DWORD app = *(DWORD*)(board + BOARD_APP);
                     DWORD mesh_table = app ? *(DWORD*)(app + 0x878) : 0;
                     if (!mesh_table || IsBadReadPtr((void*)mesh_table, 0x5A4)) {
-                        if (logf) fprintf(logf, "  ROTATER: Trapdoor — App mesh table NULL, skipping\n");
+                        if (logf) fprintf(logf, "  cENTITY: Trapdoor — App mesh table NULL, skipping\n");
                         return;
                     }
                     DWORD trapdoor_mesh = *(DWORD*)(mesh_table + 0x594);
                     if (!trapdoor_mesh) {
-                        if (logf) fprintf(logf, "  ROTATER: Trapdoor — mesh at App+0x878+0x594 is NULL, skipping\n");
+                        if (logf) fprintf(logf, "  cENTITY: Trapdoor — mesh at App+0x878+0x594 is NULL, skipping\n");
                         return;
                     }
                 }
                 obj = pfn_operator_new(TRAPDOOR_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Trapdoor\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Trapdoor\n"); return; }
                 memset(obj, 0, TRAPDOOR_SIZE);
                 pfn_Trapdoor_ctor(obj, (void*)board);
                 /* Position set after construction at +0x10D8/DC/E0 */
@@ -4066,17 +4066,17 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                     DWORD app = *(DWORD*)(board + BOARD_APP);
                     DWORD mesh_table = app ? *(DWORD*)(app + 0x878) : 0;
                     if (!mesh_table || IsBadReadPtr((void*)mesh_table, 0x5CC)) {
-                        if (logf) fprintf(logf, "  ROTATER: Droplifter — App mesh table NULL, skipping\n");
+                        if (logf) fprintf(logf, "  cENTITY: Droplifter — App mesh table NULL, skipping\n");
                         return;
                     }
                     DWORD lifter_mesh = *(DWORD*)(mesh_table + 0x5C8);
                     if (!lifter_mesh) {
-                        if (logf) fprintf(logf, "  ROTATER: Droplifter — mesh at App+0x878+0x5C8 is NULL, skipping\n");
+                        if (logf) fprintf(logf, "  cENTITY: Droplifter — mesh at App+0x878+0x5C8 is NULL, skipping\n");
                         return;
                     }
                 }
                 obj = pfn_operator_new(ODD_LIFTER_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Droplifter\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Droplifter\n"); return; }
                 memset(obj, 0, ODD_LIFTER_SIZE);
                 pfn_Odd_Lifter_ctor(obj, (void*)board, px, py, pz);
                 break;
@@ -4087,7 +4087,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                      * which iterates board+0x4378 (Gluebie list, Dizzy-only).
                      * Position stored at obj+0x10D4/10D8/10DC (DWORD indices 0x435/436/437). */
                 obj = pfn_operator_new(GLUEBIE_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Gluebie\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Gluebie\n"); return; }
                 memset(obj, 0, GLUEBIE_SIZE);
                 pfn_Gluebie_ctor(obj, (void*)board, mesh);
                 /* Position at obj+0x10D4/10D8/10DC (matching native puVar4[0x435/436/437]) */
@@ -4109,9 +4109,9 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                     if (board_name && !IsBadReadPtr(board_name, 12) &&
                         _strnicmp(board_name, "Board (Dizzy)", 13) == 0) {
                         pfn_AthenaList_Append((DWORD*)(board + 0x4378), obj);
-                        if (logf) fprintf(logf, "  ROTATER: Gluebie added to Dizzy board+0x4378 (proximity list)\n");
+                        if (logf) fprintf(logf, "  cENTITY: Gluebie added to Dizzy board+0x4378 (proximity list)\n");
                     } else {
-                        if (logf) fprintf(logf, "  ROTATER: Gluebie on non-Dizzy level, using mod proximity check\n");
+                        if (logf) fprintf(logf, "  cENTITY: Gluebie on non-Dizzy level, using mod proximity check\n");
                     }
                 }
                 break;
@@ -4119,26 +4119,26 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                      * Tar sinking behavior handled by cEnt_tarpit_proximity_check
                      * in the Present hook (main thread, every frame). */
                 obj = pfn_operator_new(POPCYLINDER_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Tarpit\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Tarpit\n"); return; }
                 memset(obj, 0, POPCYLINDER_SIZE);
                 {
                     /* Load _default mesh for visibility */
                     DWORD app = *(DWORD*)(board + BOARD_APP);
                     DWORD gfx_device = app ? *(DWORD*)(app + APP_GFX_DEVICE) : 0;
-                    if (!gfx_device || !mesh) { if (logf) fprintf(logf, "  ROTATER: no gfx/mesh for Tarpit\n"); return; }
+                    if (!gfx_device || !mesh) { if (logf) fprintf(logf, "  cENTITY: no gfx/mesh for Tarpit\n"); return; }
                     void* result44 = pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, mesh);
-                    if (!result44) { if (logf) fprintf(logf, "  ROTATER: PopCylinder_ctor failed for Tarpit\n"); return; }
+                    if (!result44) { if (logf) fprintf(logf, "  cENTITY: PopCylinder_ctor failed for Tarpit\n"); return; }
                 }
                 break;
             case 8:  /* GameLevel_ctor — Wobbly */
                 obj = pfn_operator_new(GAMELEVEL_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc GameLevel\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc GameLevel\n"); return; }
                 memset(obj, 0, GAMELEVEL_SIZE);
                 pfn_GameLevel_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
             case 9:  /* Glass_Level_ctor — Drawbridge (3 params: this, board, mesh) */
                 obj = pfn_operator_new(GLASS_LEVEL_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Glass_Level\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Glass_Level\n"); return; }
                 memset(obj, 0, GLASS_LEVEL_SIZE);
                 pfn_Glass_Level_ctor(obj, (void*)board, mesh);
                 /* Position written after construction */
@@ -4148,30 +4148,30 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                 break;
             case 10: /* Gear_Level_ctor — Judge (5 params: this, board, x, y, z — no mesh!) */
                 obj = pfn_operator_new(GEAR_LEVEL_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Gear_Level\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Gear_Level\n"); return; }
                 memset(obj, 0, GEAR_LEVEL_SIZE);
                 pfn_Gear_Level_ctor(obj, (void*)board, px, py, pz);
                 break;
             case 11: /* Secret_ctor — GlassBonus (6 params: this, board, x, y, z, mesh) */
                 obj = pfn_operator_new(SECRET_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Secret\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Secret\n"); return; }
                 memset(obj, 0, SECRET_SIZE);
                 pfn_Secret_ctor(obj, (void*)board, px, py, pz, mesh);
                 break;
             case 12: /* FlagWaver_Ctor — Flag (2 params: this, gfx_device — code-generated mesh) */
                 obj = pfn_operator_new(FLAGWAVER_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc FlagWaver\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc FlagWaver\n"); return; }
                 memset(obj, 0, FLAGWAVER_SIZE);
                 {
                     DWORD app = *(DWORD*)(board + BOARD_APP);
                     DWORD gfx_device = app ? *(DWORD*)(app + APP_GFX_DEVICE) : 0;
-                    if (!gfx_device) { if (logf) fprintf(logf, "  ROTATER: no gfx_device for FlagWaver\n"); return; }
+                    if (!gfx_device) { if (logf) fprintf(logf, "  cENTITY: no gfx_device for FlagWaver\n"); return; }
                     pfn_FlagWaver_Ctor(obj, (void*)gfx_device);
                 }
                 break;
             case 13: /* Sign_ctor — Popup Sign (complex signature) */
                 obj = pfn_operator_new(SIGN_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Sign\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Sign\n"); return; }
                 memset(obj, 0, SIGN_SIZE);
                 {
                     DWORD app = *(DWORD*)(board + BOARD_APP);
@@ -4185,7 +4185,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                       * Wavy_ctor takes a string path (not mesh pointer!) and loads
                       * the mesh internally. Try "levels\Flag", fall back to _default. */
                 obj = pfn_operator_new(WAVY_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc WavyFlag2\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc WavyFlag2\n"); return; }
                 memset(obj, 0, WAVY_SIZE);
                 {
                     /* Check if Flag.MESHWORLD exists, else use _default */
@@ -4195,7 +4195,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                     if (pfn_check_file_access(check_path, 0) != 0) {
                         /* Flag.MESHWORLD not found — try _default */
                         wavy_path = "levels\\_default";
-                        if (logf) fprintf(logf, "  ROTATER: Flag.MESHWORLD not found, using _default\n");
+                        if (logf) fprintf(logf, "  cENTITY: Flag.MESHWORLD not found, using _default\n");
                     }
                     pfn_Wavy_ctor(obj, (void*)board, px, py, pz, wavy_path);
                     /* Configure wave parameters (same as native Wavy1) */
@@ -4213,7 +4213,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                       * the 8Ball mesh instead of the default Sphere mesh.
                       * This is the same pattern as cEnt_process_custom_tags. */
                 obj = pfn_operator_new(BADBALL_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc BadBall\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc BadBall\n"); return; }
                 memset(obj, 0, BADBALL_SIZE);
                 pfn_BadBall_ctor(obj, (void*)board);
                 /* Call vtable[1] — Ball_SetupCollisionRender + Ball_SetTrajectory */
@@ -4236,7 +4236,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                             *(DWORD*)(app + APP_MESH_ARRAY + 4) = mesh_8ball;
                             /* Set ball mesh index to 1 */
                             *(DWORD*)((char*)obj + BALL_MESH_INDEX_FIELD) = MESH_SLOT_8BALL;
-                            if (logf) fprintf(logf, "  ROTATER: 8ball mesh set (App+0x248=0x%08X, ball+0x754=1)\n", mesh_8ball);
+                            if (logf) fprintf(logf, "  cENTITY: 8ball mesh set (App+0x248=0x%08X, ball+0x754=1)\n", mesh_8ball);
                         }
                     }
                 }
@@ -4254,17 +4254,17 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                       * Per-frame update runs from cEnt_bridgeslam_update() in the thread. */
                 {
                     DWORD app = *(DWORD*)(board + BOARD_APP);
-                    if (!app || IsBadReadPtr((void*)app, 4)) { if (logf) fprintf(logf, "  ROTATER: no app for Bridgeslam\n"); return; }
+                    if (!app || IsBadReadPtr((void*)app, 4)) { if (logf) fprintf(logf, "  cENTITY: no app for Bridgeslam\n"); return; }
                     DWORD gfx_device = *(DWORD*)(app + APP_GFX_DEVICE);
-                    if (!gfx_device) { if (logf) fprintf(logf, "  ROTATER: no gfx_device for Bridgeslam\n"); return; }
+                    if (!gfx_device) { if (logf) fprintf(logf, "  cENTITY: no gfx_device for Bridgeslam\n"); return; }
 
                     /* Load bridge mesh */
                     const char* bridge_path = mesh_path && mesh_path[0] ? mesh_path : "levels\\Level2-Bridge";
                     void* mesh = cEnt_load_mesh_file(gfx_device, bridge_path, &is_mesh_node, logf);
                     if (!mesh) {
-                        if (logf) fprintf(logf, "  ROTATER: Bridgeslam mesh load failed, trying Swirl fallback\n");
+                        if (logf) fprintf(logf, "  cENTITY: Bridgeslam mesh load failed, trying Swirl fallback\n");
                         mesh = cEnt_load_mesh_file(gfx_device, g_swirl_mesh_path, &is_mesh_node, logf);
-                        if (!mesh) { if (logf) fprintf(logf, "  ROTATER: Bridgeslam Swirl fallback failed\n"); return; }
+                        if (!mesh) { if (logf) fprintf(logf, "  cENTITY: Bridgeslam Swirl fallback failed\n"); return; }
                     }
 
                     /* Create render object from mesh */
@@ -4281,7 +4281,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
 
                     /* Allocate a dummy object for board list registration */
                     obj = pfn_operator_new(BRIDGESLAM_SIZE);
-                    if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc Bridgeslam obj\n"); return; }
+                    if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc Bridgeslam obj\n"); return; }
                     memset(obj, 0, BRIDGESLAM_SIZE);
 
                     /* Register on board lists */
@@ -4303,7 +4303,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                         bs->counter = 50;  /* 0x32 */
                         bs->active = 1;
                         g_bridgeslam_count++;
-                        if (logf) fprintf(logf, "  ROTATER: Bridgeslam spawned at (%.1f,%.1f,%.1f) obj=0x%08X render=0x%08X mesh=0x%08X\n",
+                        if (logf) fprintf(logf, "  cENTITY: Bridgeslam spawned at (%.1f,%.1f,%.1f) obj=0x%08X render=0x%08X mesh=0x%08X\n",
                                 px, py, pz, (DWORD)obj, (DWORD)render_obj, (DWORD)mesh);
                     }
                 }
@@ -4324,18 +4324,18 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
             case 5:  ctor_fn = pfn_Gear_ctor;      alloc_sz = GEAR_SIZE;      break; /* Gear Big */
             default: /* AI 0: static PopCylinder */
                 obj = pfn_operator_new(POPCYLINDER_SIZE);
-                if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc\n"); return; }
+                if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc\n"); return; }
                 memset(obj, 0, POPCYLINDER_SIZE);
                 void* result0 = pfn_PopCylinder_ctor(obj, (void*)board, px, py, pz, mesh);
-                if (!result0) { if (logf) fprintf(logf, "  ROTATER: PopCylinder_ctor failed\n"); return; }
+                if (!result0) { if (logf) fprintf(logf, "  cENTITY: PopCylinder_ctor failed\n"); return; }
                 goto spawn_done;
         }
         
         obj = pfn_operator_new(alloc_sz);
-        if (!obj) { if (logf) fprintf(logf, "  ROTATER: failed to alloc (%d bytes)\n", alloc_sz); return; }
+        if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc (%d bytes)\n", alloc_sz); return; }
         memset(obj, 0, alloc_sz);
         void* result = ctor_fn(obj, (void*)board, px, py, pz, mesh);
-        if (!result) { if (logf) fprintf(logf, "  ROTATER: ctor failed for AI %d\n", ai_type); return; }
+        if (!result) { if (logf) fprintf(logf, "  cENTITY: ctor failed for AI %d\n", ai_type); return; }
         /* v55m_48d: Reset the initial rotation angle to 0.0 for the
          * Rotator family (AI 1-5). The native SWIRL ctor writes -0.2 in
          * race mode; these Rotator_ctor variants write 0/+1 but we keep
@@ -4406,7 +4406,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
     }
 
     if (logf) {
-        fprintf(logf, "  ROTATER: spawned at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s' rot=(%.4f,%.4f,%.4f) oc=(%.1f,%.1f,%.1f)\n",
+        fprintf(logf, "  cENTITY: spawned at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s' rot=(%.4f,%.4f,%.4f) oc=(%.1f,%.1f,%.1f)\n",
                 px, py, pz, (DWORD)obj, path, rot_x, rot_y, rot_z,
                 ros_x, ros_y, ros_z);
         fflush(logf);
@@ -4420,7 +4420,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
     if (obj && obj >= 0x10000 && !IsBadReadPtr((void*)obj, 0x10F0)) {
         g_dbg_ctor_angle = *(float*)(obj + 0x10E8);
         g_dbg_ctor_direction = *(float*)(obj + 0x10EC);
-        if (logf) fprintf(logf, "  ROTATER: ctor snapshot angle=%.2f dir=%.2f\\n",
+        if (logf) fprintf(logf, "  cENTITY: ctor snapshot angle=%.2f dir=%.2f\\n",
                 g_dbg_ctor_angle, g_dbg_ctor_direction);
     }
 
@@ -4531,7 +4531,7 @@ static void cEnt_Despawn_All_cEntities(DWORD board, FILE* logf) {
             if (remove_fn && remove_fn > 0x400000) {
                 typedef void (__thiscall *remove_t)(void* this_);
                 ((remove_t)remove_fn)((void*)obj);
-                if (logf) fprintf(logf, "  ROTATER: removed obj=0x%08X\n", obj);
+                if (logf) fprintf(logf, "  cENTITY: removed obj=0x%08X\n", obj);
             }
         }
     }
@@ -4567,7 +4567,7 @@ static void cEnt_Despawn_All_cEntities(DWORD board, FILE* logf) {
                     typedef void (__thiscall *dtor_t)(void* this_, int free_mem);
                     ((dtor_t)dtor)((void*)tobj, 1);
                 }
-                if (logf) fprintf(logf, "  ROTATER: despawned TimeButton obj=0x%08X\\n", tobj);
+                if (logf) fprintf(logf, "  cENTITY: despawned TimeButton obj=0x%08X\\n", tobj);
             }
         }
     }
@@ -4997,7 +4997,7 @@ static void cEnt_Apply_S1_cEntity_Tags(DWORD board, FILE* logf) {
                 }
 
                 if (logf) {
-                    fprintf(logf, "  ROTATER(S1-tag): obj=0x%08X at (%.1f,%.1f,%.1f) ROT_Y=%.4f ROS_Y=%.1f applied\n",
+                    fprintf(logf, "  cENTITY(S1-tag): obj=0x%08X at (%.1f,%.1f,%.1f) ROT_Y=%.4f ROS_Y=%.1f applied\n",
                             obj, px, py, pz, rot_y, ros_y);
                     fflush(logf);
                 }
@@ -6237,7 +6237,7 @@ static void __cdecl cEnt_speedcyl_present_check(DWORD board) {
         if (log_now) {
             FILE* slf = fopen("mknp_custom_entities_speedcyl.log", "a");
             if (slf) {
-                fprintf(slf, "  ROTATER: SC present ball=(%.1f,%.1f,%.1f) box_x=[%.1f,%.1f] box_z=[%.1f,%.1f] box_y=[%.1f,%.1f] in_zone=%d was=%d in_list=%d\n",
+                fprintf(slf, "  cENTITY: SC present ball=(%.1f,%.1f,%.1f) box_x=[%.1f,%.1f] box_z=[%.1f,%.1f] box_y=[%.1f,%.1f] in_zone=%d was=%d in_list=%d\n",
                     ball_x, ball_y, ball_z, sc->box_x1, sc->box_x2, sc->box_z1, sc->box_z2,
                     sc->box_y1, sc->box_y2, in_zone, sc->was_in_zone, sc->in_list);
                 fclose(slf);
@@ -6252,7 +6252,7 @@ static void __cdecl cEnt_speedcyl_present_check(DWORD board) {
                 sc->was_in_zone = 1;
                 FILE* slf = fopen("mknp_custom_entities_speedcyl.log", "a");
                 if (slf) {
-                    fprintf(slf, "  ROTATER: SC collision! ball=0x%08X -> tracked (entity=0x%08X)\n", ball, sc->obj);
+                    fprintf(slf, "  cENTITY: SC collision! ball=0x%08X -> tracked (entity=0x%08X)\n", ball, sc->obj);
                     fclose(slf);
                 }
             }
@@ -8510,7 +8510,7 @@ static void cENT_Treesearch__All(DWORD board, FILE* logf) {
 
     DWORD sceneobj = cEnt_get_sceneobj(board);
     if (!sceneobj) {
-        if (logf) fprintf(logf, "  ROTATER: sceneobj=NULL\n");
+        if (logf) fprintf(logf, "  cENTITY: sceneobj=NULL\n");
         return;
     }
 
@@ -8739,7 +8739,7 @@ static void cENT_Treesearch__All(DWORD board, FILE* logf) {
     if (found > 0 && logf) fprintf(logf, "  Processed %d cEnt entries\n", found);
 
     if (logf && found > 0) {
-        fprintf(logf, "  ROTATER: spawned %d SWIRL object(s)\n", found);
+        fprintf(logf, "  cENTITY: spawned %d SWIRL object(s)\n", found);
         fflush(logf);
     }
 }

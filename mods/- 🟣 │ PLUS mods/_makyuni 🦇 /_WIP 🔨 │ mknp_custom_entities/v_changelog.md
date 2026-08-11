@@ -1,3 +1,18 @@
+v55n_61 - Rename log prefixes ROTATER: -> cENTITY:
+------------------------------------------------------------
+USER REQUEST:
+ - Switched all in-game log prefixes from "ROTATER:" to "cENTITY:".
+   These are cosmetic log labels in the mod's debug output (the game logs
+   use them to mark lines from the cEnt entity system). No identifiers
+   changed — this is purely the log text.
+
+WHAT CHANGED:
+ - 121x "ROTATER:" -> "cENTITY:" in mknp_custom_entities.c log strings.
+ - 1x "ROTATER(S1-tag):" -> "cENTITY(S1-tag):".
+ - Rebuilt bass.dll (122 cENTITY log strings confirmed in binary, 0 ROTATER
+   log strings remain). No behavior change — cosmetic log relabel.
+ - ROTATER_SIZE macro/identifier untouched (not log text).
+
 v55n_60 - Rename remaining 'rotater' functions/identifiers -> cEntity naming
 ------------------------------------------------------------
 USER REQUEST (explicit new names):
