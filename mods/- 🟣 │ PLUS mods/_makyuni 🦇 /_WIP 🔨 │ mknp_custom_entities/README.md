@@ -1,4 +1,4 @@
-# Custom Entities Mod v55n_21
+# Custom Entities Mod v55n_66
 
 A mknp_custom_entities.dll proxy mod for Hamsterball that spawns custom objects from MESHWORLD level files.
 
@@ -62,58 +62,58 @@ cEnt_001 <ENTITY>Swirl</ENTITY>
 
 ## Entity Table
 
-| Entity        | Type | Mesh Path                       | Notes                                                       |
-| ------------- | ---- | ------------------------------- | ----------------------------------------------------------- |
-| 8ball         | 15   | meshes\8ball                    | cEnt_BadBall_ctor, 2 params: this+board                     |
-| BBridge       | 0    | levels\Level10-Bridge1          | BreakBridge                                                 |
-| Bell          | 0    | meshes\bell                     | PopCylinder - cEnt_Bell_ctor crashes (Level_ctor, no mesh)  |
-| Blockdawg     | 0    | levels\Level8-BlockDawg1        | cEnt_Blockdawg_ctor                                         |
-| Bonk          | 33   | levels\Level5-Bonk              | cEnt_Bonk_ctor (0x438850) - self-loads level5-bonk          |
-| Bridge        | 16   | levels\Level2-Bridge            | cEnt_Bridgeslam: isolated Intermediate bridge state machine |
-| Bridgeslam    | 16   | levels\Level2-Bridge            | Alias for Bridge                                            |
-| Bumper        | 0    | levels\_default                 | N:BUMPER tag, _default mesh                                 |
-| Catapult      | 35   | levels\Level4-Catapult          | cEnt_Catapult_ctor: Stands_ctor + Level_RenderCtor + per-frame vtable[11] + proximity trigger |
-| Chomper       | 22   | meshes\chomper                  | cEnt_Chomper_ctor (cEnt_MeshNode_ctor, 0x471C20)            |
-| Chrome        | 23   | levels\_default                 | cEnt_Chrome_ctor: no _ctor, PopCylinder fallback            |
-| Cloudscape    | 28   | levels\Cloudscape               | cEnt_Cloudscape (cEnt_Sprite_ctor, 0x45D0C0)                |
-| Drawbridge    | 9    | levels\Level4-Drawbridge        | cEnt_Glass_Level_ctor                                       |
-| Droplifter    | 0    | levels\Level6-Lifter            | Odd Race model                                              |
-| Fan           | 0    | meshes\fanbody                  | PopCylinder - cEnt_Fan_ctor crashes (Level_ctor, no mesh)   |
-| Flag          | 12   | NULL                            | cEnt_FlagWaver_Ctor, code-gen mesh                          |
-| Flag2         | 14   | levels\Flag                     | cEnt_WavyFlag2: Wavy_ctor copy, Flag.MESHWORLD or _default  |
-| Flickfloor1   | 7    | levels\LevelDark-DFloor1        | cEnt_DFloor1_ctor (ArenaStands_ctor)                        |
-| Flickfloor2   | 19   | levels\LevelDark-DFloor4        | cEnt_DFloor4_ctor (ArenaStands + post-config)               |
-| Flickring     | 20   | levels\LevelDark-Flickring      | cEnt_FlickRing_ctor (ArenaStands_ctor)                      |
-| Funball       | 24   | meshes\funball                  | cEnt_Funball_ctor: no _ctor, PopCylinder fallback           |
-| Gear          | 29   | levels\LevelImpossible-Gear     | cEnt_Gear_ctor_real (0x437690, 9 params!)                   |
-| Glassbreaker  | 11   | meshes\GlassBonus               | cEnt_Secret_ctor                                            |
-| Gluebie       | 0    | levels\Level3-Gluebie           | cEnt_Gluebie_ctor                                           |
-| Judge         | 10   | meshes\hammyjudge               | cEnt_Gear_Level_ctor, no mesh param                         |
-| Lifter        | 0    | levels\LevelUp-Lifter           | Up Race model                                               |
-| Looper        | 3    | levels\LevelImpossible-Looper   | cEnt_Looper_ctor (0x437460, 0x1500)                         |
-| Mace          | 0    | levels\Level4-Mace              | cEnt_Mace_ctor                                              |
-| Mag           | 0    | meshes\magnifyingglass          | .MESH, cEnt_Magnifier_ctor                                  |
-| Mousetrap     | 0    | levels\MouseTrap                | cEnt_MouseTrap_ctor                                         |
-| Neonplatform  | 0    | levels\LevelDark-NeonPlatform   | cEnt_NeonPlatform_ctor                                      |
-| Pendulum      | 2    | levels\LevelImpossible-Pendulum | cEnt_Pendulum_ctor                                          |
-| Popcylinder   | 0    | levels\Level9-PopCylinder1      | cEnt_PopCylinder_ctor                                       |
-| Rotator       | 1    | levels\LevelImpossible-Rotator  | cEnt_Rotator_ctor, constant rotation                        |
-| Saw           | 0    | levels\Level8-Saw               | cEnt_Saw_ctor                                               |
-| Sawblade      | 0    | meshes\sawblade                 | PopCylinder - cEnt_SawBlade_ctor crashes (Level_ctor)       |
-| Sign          | 13   | levels\PopupSign                | cEnt_Sign_ctor, complex signature                           |
-| Speedcylinder | 39   | levels\LevelUp-SpeedCylinder    | cEnt_SpeedCylinder_ctor - solid + spin/launch (v55n_2)      |
-| Spinner       | 27   | levels\Level8-Spinny            | cEnt_Spinner_Level_ctor (0x4396F0, 0x10FC)                  |
-| Swirl         | 6    | levels\Level3-Swirl             | cEnt_Rotator_ctor_Impossible                                |
-| Tarbubble     | 25   | levels\_default                 | Decorative bubble (native 0x44FB50)                         |
-| Tarpit        | 0    | levels\_default                 | N:TARPIT tag, _default mesh                                 |
-| Timebutton    | 45   | levels\LevelUp-Button           | TimeButton_ctor - solid + press (N:EXTRATIME, v55n_9)       |
-| Tipper        | 0    | levels\Level3-Tipper            | cEnt_Tipper_ctor                                            |
-| Trapdoor      | 0    | levels\Level4-Trapdoor1         | cEnt_Trapdoor_ctor                                          |
-| Trode         | 21   | levels\LevelDark-Trode          | cEnt_Trode_ctor (ArenaStands_ctor)                          |
-| Waterwheel    | 26   | levels\Waterwheel (fallback levels\_default) | cEnt_Waterwheel_ctor: no _ctor, PopCylinder fallback        |
-| Wavy          | 0    | levels\Level7-Wavy1             | cEnt_Wavy_ctor                                              |
-| Windmill      | 0    | levels\Level4-Windmill          | Tower: Level_RenderCtor + TipperVisual_Attach               |
-| Wobbly        | 8    | levels\Level7-Wobbly1           | cEnt_GameLevel_ctor                                         |
+| Entity        | Type | Mesh Path                                    | Notes                                                                                                                                          |
+| ------------- | ---- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| 8ball         |   15 | meshes\8ball                                 | cEnt_BadBall_ctor, 2 params: this+board                                                                                                        |
+| BBridge       |    0 | levels\Level10-Bridge1                       | BreakBridge                                                                                                                                    |
+| Bell          |    0 | meshes\bell                                  | PopCylinder - cEnt_Bell_ctor crashes (Level_ctor, no mesh)                                                                                     |
+| Blockdawg     |    0 | levels\Level8-BlockDawg1                     | cEnt_Blockdawg_ctor                                                                                                                            |
+| Bonk          |   33 | levels\Level5-Bonk                           | cEnt_Bonk_ctor (0x438850) - self-loads level5-bonk                                                                                             |
+| Bridge        |   16 | levels\Level2-Bridge                         | cEnt_Bridgeslam: isolated Intermediate bridge state machine                                                                                    |
+| Bridgeslam    |   16 | levels\Level2-Bridge                         | Alias for Bridge                                                                                                                               |
+| Bumper        |    0 | levels\_default                              | N:BUMPER tag, _default mesh                                                                                                                    |
+| Catapult      |   35 | levels\Level4-Catapult                       | cEnt_Catapult_ctor: Stands_ctor + Level_RenderCtor + per-frame vtable[11] + proximity trigger                                                  |
+| Chomper       |   22 | meshes\chomper                               | cEnt_Chomper_ctor (cEnt_MeshNode_ctor, 0x471C20)                                                                                               |
+| Chrome        |   23 | levels\_default                              | cEnt_Chrome_ctor: no _ctor, PopCylinder fallback                                                                                               |
+| Cloudscape    |   28 | levels\Cloudscape                            | cEnt_Cloudscape (cEnt_Sprite_ctor, 0x45D0C0)                                                                                                   |
+| Drawbridge    |    9 | levels\Level4-Drawbridge                     | cEnt_Glass_Level_ctor                                                                                                                          |
+| Droplifter    |    0 | levels\Level6-Lifter                         | Odd Race model                                                                                                                                 |
+| Fan           |    0 | meshes\fanbody                               | PopCylinder - cEnt_Fan_ctor crashes (Level_ctor, no mesh)                                                                                      |
+| Flag          |   12 | NULL                                         | cEnt_FlagWaver_Ctor, code-gen mesh                                                                                                             |
+| Flag2         |   14 | levels\Flag                                  | cEnt_WavyFlag2: Wavy_ctor copy, Flag.MESHWORLD or _default                                                                                     |
+| Flickfloor1   |    7 | levels\LevelDark-DFloor1                     | cEnt_DFloor1_ctor (ArenaStands_ctor)                                                                                                           |
+| Flickfloor2   |   19 | levels\LevelDark-DFloor4                     | cEnt_DFloor4_ctor (ArenaStands + post-config)                                                                                                  |
+| Flickring     |   20 | levels\LevelDark-Flickring                   | cEnt_FlickRing_ctor (ArenaStands_ctor)                                                                                                         |
+| Funball       |   24 | meshes\funball                               | cEnt_Funball_ctor: no _ctor, PopCylinder fallback                                                                                              |
+| Gear          |   29 | levels\LevelImpossible-Gear                  | cEnt_Gear_ctor_real (0x437690, 9 params!)                                                                                                      |
+| Glassbreaker  |   11 | meshes\GlassBonus                            | cEnt_Secret_ctor                                                                                                                               |
+| Gluebie       |    0 | levels\Level3-Gluebie                        | cEnt_Gluebie_ctor                                                                                                                              |
+| Judge         |   10 | meshes\hammyjudge                            | cEnt_Gear_Level_ctor, no mesh param                                                                                                            |
+| Lifter        |    0 | levels\LevelUp-Lifter                        | Up Race model                                                                                                                                  |
+| Looper        |    3 | levels\LevelImpossible-Looper                | cEnt_Looper_ctor (0x437460, 0x1500)                                                                                                            |
+| Mace          |    0 | levels\Level4-Mace                           | cEnt_Mace_ctor                                                                                                                                 |
+| Mag           |    0 | meshes\magnifyingglass                       | .MESH, cEnt_Magnifier_ctor                                                                                                                     |
+| Mousetrap     |    0 | levels\MouseTrap                             | cEnt_MouseTrap_ctor                                                                                                                            |
+| Neonplatform  |    0 | levels\LevelDark-NeonPlatform                | cEnt_NeonPlatform_ctor                                                                                                                         |
+| Pendulum      |    2 | levels\LevelImpossible-Pendulum              | cEnt_Pendulum_ctor                                                                                                                             |
+| Popcylinder   |    0 | levels\Level9-PopCylinder1                   | cEnt_PopCylinder_ctor                                                                                                                          |
+| Rotator       |    1 | levels\LevelImpossible-Rotator               | cEnt_Rotator_ctor, constant rotation                                                                                                           |
+| Saw           |    0 | levels\Level8-Saw                            | cEnt_Saw_ctor                                                                                                                                  |
+| Sawblade      |    0 | meshes\sawblade                              | PopCylinder - cEnt_SawBlade_ctor crashes (Level_ctor)                                                                                          |
+| Sign          |   13 | levels\PopupSign                             | cEnt_Sign_ctor, complex signature                                                                                                              |
+| Speedcylinder |   39 | levels\Speedcylinder                         | cEnt_SpeedCylinder_ctor - solid + spin/launch (v55n_2); trigger box from Speedcylinder_trigger.MESHWORLD (v55n_58), rendered visible (v55n_66) |
+| Spinner       |   27 | levels\Level8-Spinny                         | cEnt_Spinner_Level_ctor (0x4396F0, 0x10FC)                                                                                                     |
+| Swirl         |    6 | levels\Level3-Swirl                          | cEnt_Rotator_ctor_Impossible                                                                                                                   |
+| Tarbubble     |   25 | levels\_default                              | Decorative bubble (native 0x44FB50)                                                                                                            |
+| Tarpit        |    0 | levels\_default                              | N:TARPIT tag, _default mesh                                                                                                                    |
+| Timebutton    |   45 | levels\LevelUp-Button                        | TimeButton_ctor - solid + press (N:EXTRATIME, v55n_9)                                                                                          |
+| Tipper        |    0 | levels\Level3-Tipper                         | cEnt_Tipper_ctor                                                                                                                               |
+| Trapdoor      |    0 | levels\Level4-Trapdoor1                      | cEnt_Trapdoor_ctor                                                                                                                             |
+| Trode         |   21 | levels\LevelDark-Trode                       | cEnt_Trode_ctor (ArenaStands_ctor)                                                                                                             |
+| Waterwheel    |   26 | levels\Waterwheel (fallback levels\_default) | cEnt_Waterwheel_ctor: no _ctor, PopCylinder fallback                                                                                           |
+| Wavy          |    0 | levels\Level7-Wavy1                          | cEnt_Wavy_ctor                                                                                                                                 |
+| Windmill      |    0 | levels\Level4-Windmill                       | Tower: Level_RenderCtor + TipperVisual_Attach                                                                                                  |
+| Wobbly        |    8 | levels\Level7-Wobbly1                        | cEnt_GameLevel_ctor                                                                                                                            |
 
 ## Mod Functions (cEnt_ prefix)
 
