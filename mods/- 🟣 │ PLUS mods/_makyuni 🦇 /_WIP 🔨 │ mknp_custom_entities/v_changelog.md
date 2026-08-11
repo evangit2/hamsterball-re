@@ -1,3 +1,13 @@
+v55n_64 - Rename cEnt_update_constant_rotations -> cEnt_Update_Constant_Rotation
+------------------------------------------------------------
+USER REQUEST:
+ - Rename the last function still using old naming convention.
+
+WHAT CHANGED:
+ - 5x in mknp_custom_entities.c: function definition, Present-hook call
+   site, debug-table label, debug-table sub-row, comment.
+ - Rebuilt bass.dll (2x string refs in binary). Pure rename.
+
 v55n_63 - Final ROTATER sweep: docs + comments cleaned
 ------------------------------------------------------------
 USER REQUEST:

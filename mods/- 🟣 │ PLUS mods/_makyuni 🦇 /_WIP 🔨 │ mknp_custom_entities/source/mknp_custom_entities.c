@@ -4844,7 +4844,7 @@ static void cEnt_Apply_cEntity_Direction(void) {
  * The native render flips direction at ±2.0 radians. For ROS_Y=0,
  * we rewrite ROT_Y to the direction field every frame to prevent
  * the oscillation reversal, keeping rotation constant. */
-static void cEnt_update_constant_rotations(void) {
+static void cEnt_Update_Constant_Rotation(void) {
     int i;
     for (i = 0; i < g_cEntity_count; i++) {
         if (g_cEntity_cfg[i].ros_y != 0.0f) continue;  /* only for ROS_Y=0 */
@@ -6310,7 +6310,7 @@ static void __cdecl gluebie_present_helper(void) {
      * native render's ±2.0 flip check fires. This keeps ROS_Y=0 Rotators
      * spinning in one direction instead of oscillating. */
     if (board && g_cEntity_count > 0) {
-        cEnt_update_constant_rotations();
+        cEnt_Update_Constant_Rotation();
     }
     /* v55m_7: Chomper state machine + rendering MUST run on main thread.
      * It calls D3D/Gfx functions (Timer_Init, Gfx_Scale, mesh vtable[7])
@@ -7580,7 +7580,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
             "obj+0x10E8 (angle field)",
             "obj+0x10EC (direction field)",
             "cEnt_Apply_cEntity_Direction (write rot_y)",
-            "cEnt_update_constant_rotations (constant spin)",
+            "cEnt_Update_Constant_Rotation (constant spin)",
             "cEntityConfig struct (mod-side state)",
         };
         static const char* const rot_s3_subsub_names[][4] = {
@@ -7606,7 +7606,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
         };
         static const char* const rot_s4_subsub_names[][4] = {
             { "scans section 3 objects", "matches cEnt_XXX name", "parses <ENTITY> tag", "calls cEnt_Spawn_cEntity_at" },
-            { "present hook", "slot 9 (viewport clear)", "before slot 10 object render", "cEnt_update_constant_rotations" },
+            { "present hook", "slot 9 (viewport clear)", "before slot 10 object render", "cEnt_Update_Constant_Rotation" },
             { "vtable[11] RemoveAndFree", "resets cEntity count", "resets gluebie/tarpit/waterwheel", "level unload handler" },
         };
         static const char* const rot_s4_subsub_addrs[][4] = {
@@ -8723,7 +8723,7 @@ static void cENT_Treesearch__All(DWORD board, FILE* logf) {
 
         /* v52: Rotator (AI 1) uses constant rotation (ROS_Y=0).
          * The native render function oscillates at ±2.0 by default.
-         * With ROS_Y=0, cEnt_update_constant_rotations() rewrites the direction
+         * With ROS_Y=0, cEnt_Update_Constant_Rotation() rewrites the direction
          * field every frame to prevent oscillation reversal. */
         float spawn_ros_y = 2.0f;
         if (ai_type == 1) spawn_ros_y = 0.0f;  /* Rotator: constant rotation */
