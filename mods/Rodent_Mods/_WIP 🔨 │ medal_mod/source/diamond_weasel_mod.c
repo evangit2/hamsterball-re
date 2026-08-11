@@ -957,7 +957,7 @@ __attribute__((used)) void diamond_vortex_tick(DWORD results) {
                 p->ay = 0.0f;                              /* no angular motion — straight inward pull */
                 /* start at a random radius on the outer ring */
                 p->r = 34.0f + vortex_frand()*40.0f;
-                p->vr = 1.8f + vortex_frand()*2.4f;       /* suck-in speed (fast) */
+                p->vr = 3.6f + vortex_frand()*4.8f;       /* suck-in speed (fast x2) */
                 p->alpha = 0;
             } else { continue; }
         } else {
