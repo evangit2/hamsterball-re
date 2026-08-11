@@ -79,6 +79,15 @@ objects arcing out from the diamond's spot, exactly like a medal reveal. These
 fire only on the genuine first-earn for a race (gated by the atomic unlock), so
 re-visiting an already-earned diamond playback does not repeat them.
 
+**Golden-weasel white-fade**
+
+The golden weasel asset fades to white over the results screen: it starts
+turning white at ~55 result-frames and is fully white by ~150 frames. It drives
+the game's native color-multiplier (`Graphics_SetColorMultiplier` + gfx+0x7A8)
+up to a saturating 4.0, so the sprite blows out to pure white. Applied only
+around the weasel draw and cleared immediately after, so no other on-screen
+draw is tinted.
+
 After the first unlock the PNGs persist on disk so they render normally on
 subsequent visits.
 
