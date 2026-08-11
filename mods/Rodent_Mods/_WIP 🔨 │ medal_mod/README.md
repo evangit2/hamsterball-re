@@ -29,10 +29,26 @@ golden weasel** mini-icon for that race.
 | File | Purpose |
 |------|---------|
 | `bass.dll` | The mod (drop into the game folder next to `Hamsterball.exe`) |
-| `diamond_weasel_unlocks.dat` | Created by the mod, per-race unlock flags (don't edit) |
 
 There is **no config file** — the diamond times come from the game's own
 `racedata.xml` (see below), with DLL-baked fallbacks.
+
+## Unlocks are stored in the registry (like the game's own medals)
+
+The diamond unlock flags live in the **same registry key the game uses** for
+its medal and unlock state:
+
+```
+HKEY_CURRENT_USER\Software\Raptisoft\Hamsterball
+    DiamondMedals   REG_BINARY   (15 bytes, one flag per race)
+```
+
+This is the exact key the game itself writes (its own medal flags live in the
+`Medals` value there, plus per-race/arena unlock booleans). The `DiamondMedals`
+value is created by the mod **only at the same moment it writes the diamond
+PNG assets** (first unlock), so editing the registry the same way you'd edit
+the game's medals will also let you grant/revoke diamond unlocks. No `.dat`
+file is used.
 
 ## The diamond art is write-on-first-unlock (not on disk)
 
@@ -116,8 +132,9 @@ It hooks three things:
    game loads them through its normal file path. Before any unlock, no
    `diamond*.png` exists on disk.
 
-The unlock flag is persisted to `diamond_weasel_unlocks.dat` (15 bytes, one
-per race) next to the DLL.
+The unlock flag is persisted as the `DiamondMedals` registry value (15 bytes,
+one flag per race) in `HKCU\Software\Raptisoft\Hamsterball`, written at the
+same moment the PNG assets are created.
 
 ## Build
 
