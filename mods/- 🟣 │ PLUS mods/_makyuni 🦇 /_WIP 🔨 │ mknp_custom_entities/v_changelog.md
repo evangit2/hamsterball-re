@@ -1,3 +1,17 @@
+v55n_69 - Trigger box visible now: make it NON-solid (pass-through)
+------------------------------------------------------------
+USER REPORT:
+ - "Now it's visible, but apparently it's solid. I should be able to go
+   through it." — v68 visibility fix worked; its collision registration made
+   the box solid.
+
+FIX:
+ - case 39 trigger block keeps: update list (board+0x2578), render list
+   (board+0xCD4), scene tree (sceneobj+0x1C) — these give visibility.
+ - REMOVED the collision registration from v68 (PC_COLLISION_OBJ into
+   board+0x10EC + scene_col+0x18). The box is now pass-through (non-solid)
+   while still visible.
+
 v55n_68 - Trigger box still invisible: full GRID/testcube registration
 ------------------------------------------------------------
 USER REPORT:

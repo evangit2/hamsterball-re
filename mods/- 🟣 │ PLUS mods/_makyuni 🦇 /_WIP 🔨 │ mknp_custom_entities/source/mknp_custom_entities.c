@@ -1,5 +1,5 @@
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_68
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_69
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -3943,24 +3943,16 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                             void* tr = pfn_PopCylinder_ctor(trig_obj, (void*)board,
                                                            px, py, pz, trig_mesh);
                             if (tr) {
-                                /* Full GRID/testcube registration (PROVEN visible):
-                                 * update list (board+0x2578), render list (board+0xCD4),
-                                 * collision obj (board+0x10EC + scene_col+0x18), scene tree
-                                 * (sceneobj+0x1C). Exactly mirrors lines ~2751-2782. */
+                                /* Visible, NON-solid registration (v55n_69):
+                                 * update list (board+0x2578) + render list (board+0xCD4)
+                                 * + scene tree (sceneobj+0x1C). NO collision obj — the
+                                 * box must be pass-through. v68 made it solid by also
+                                 * registering PC_COLLISION_OBJ into board+0x10EC +
+                                 * scene_col+0x18; removing that un-solidifies it. */
                                 pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST),
                                                       trig_obj);
                                 pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST),
                                                       trig_obj);
-                                DWORD trig_col = *(DWORD*)((char*)trig_obj + PC_COLLISION_OBJ);
-                                if (trig_col && !IsBadReadPtr((void*)trig_col, 0x20)) {
-                                    pfn_AthenaList_Append((DWORD*)(board + BOARD_COLLISION_LIST),
-                                                          (void*)trig_col);
-                                    DWORD scene_col_trig = *(DWORD*)(board + BOARD_SCENE_OBJ);
-                                    if (scene_col_trig) {
-                                        pfn_AthenaList_Append((DWORD*)(scene_col_trig + 0x18),
-                                                              (void*)trig_col);
-                                    }
-                                }
                                 DWORD lvl_trig = cEnt_get_level(board);
                                 if (lvl_trig) {
                                     DWORD sceneobj_trig = *(DWORD*)(lvl_trig + LEVEL_SCENEOBJECT);
@@ -7252,7 +7244,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_68", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_69", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8869,7 +8861,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_68 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_69 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
