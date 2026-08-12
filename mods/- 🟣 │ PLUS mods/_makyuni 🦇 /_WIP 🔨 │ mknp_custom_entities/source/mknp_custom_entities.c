@@ -3995,24 +3995,25 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                                     g_speedcyls[sc_idx].trig_obj = (DWORD)trig_obj;
                                     g_speedcyls[sc_idx].trig_orig_vt18 = 0;
                                 }
-                                /* Visible, NON-solid registration (v55n_79):
-                                 * update list (board+0x2578) + render list (board+0xCD4)
-                                 * + scene tree (sceneobj+0x1C). NO collision obj — the
-                                 * box must be pass-through. v68 made it solid by also
-                                 * registering PC_COLLISION_OBJ into board+0x10EC +
-                                 * scene_col+0x18; removing that un-solidifies it. */
-                                pfn_AthenaList_Append((DWORD*)(board + BOARD_UPDATE_LIST),
-                                                      trig_obj);
+                                /* Visible, NON-solid registration (v55n_80):
+                                 * Render list ONLY (board+0xCD4). The board teardown
+                                 * walks each game-owned list and FREES the objects it
+                                 * finds. Registering the trigger box into 3 lists
+                                 * (0x2578 update + 0xCD4 render + sceneobj+0x1C tree,
+                                 * as done v55n_67-79) put the SAME PopCylinder in 3
+                                 * owning lists -> freed 3x on race restart -> heap
+                                 * double/triple-free -> corruption surfacing as an
+                                 * unstable crash (0x4526A0 Draw, then 0x478EDD
+                                 * MeshArchive_ctor memcpy on the next load).
+                                 * Native renderable objects live in ONLY board+0xCD4,
+                                 * which the board tears down exactly once. The
+                                 * trigger box has no rotation in v79/v80 (static
+                                 * mesh), so no update-list driver is needed, and
+                                 * sceneobj+0x1C (scene tree) is not required for
+                                 * visibility. Render-list-only = freed exactly once.
+                                 * NO collision obj — the box must be pass-through. */
                                 pfn_AthenaList_Append((DWORD*)(board + BOARD_RENDER_LIST),
                                                       trig_obj);
-                                DWORD lvl_trig = cEnt_get_level(board);
-                                if (lvl_trig) {
-                                    DWORD sceneobj_trig = *(DWORD*)(lvl_trig + LEVEL_SCENEOBJECT);
-                                    if (sceneobj_trig) {
-                                        pfn_AthenaList_Append((DWORD*)(sceneobj_trig + 0x1C),
-                                                              trig_obj);
-                                    }
-                                }
                                 if (logf) fprintf(logf, "  cENTITY: SC trigger VISIBLE at (%.1f,%.1f,%.1f) obj=0x%08X mesh=0x%08X%s\n",
                                                   px, py, pz, (DWORD)trig_obj, (DWORD)trig_mesh,
                                                   is_trig_node ? " (.MESH node)" : "");

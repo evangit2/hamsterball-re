@@ -844,6 +844,28 @@ __attribute__((used)) static int diamond_seq_frame(DWORD results) {
     return (frame < gold) ? 0 : (frame - gold);
 }
 
+/* True only while the diamond's FIRST-EARN reveal is running for the current
+ * race: the diamond time was met AND the race hasn't been earned before.
+ * The white-out, vortex, and trophy-swap reveal all gate on this so they play
+ * only on the genuine first earn — on a replay the golden weasel renders
+ * normal gold, then the diamond just swaps in at gold+240 with no buildup. */
+__attribute__((used)) static int diamond_first_earn(DWORD results) {
+    int race, cs, thr;
+    DWORD app;
+    if (!results) return 0;
+    if (!g_configLoaded) return 0;
+    if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return 0;
+    app = *(DWORD*)(results + RESULT_APP);
+    if (!app) return 0;
+    race = get_race_index();
+    if (race < 0 || race > 14) return 0;
+    if (!g_hasSecret[race]) return 0;
+    if (g_won[race]) return 0;                 /* already earned -> replay */
+    cs = get_player_time_cs(app);
+    thr = g_secret_cs[race];
+    return (cs > 0 && cs <= thr) ? 1 : 0;
+}
+
 /* Set the golden-weasel sprite's color-multiplier so it renders white,
  * phased over result-frames [55,150]. Sets gfx+0x7A8=1 and the RGBA scale at
  * gfx+0x7B0..0x7BC to (m,m,m,1). gfx comes from the weasel sprite (sprite+4).
@@ -854,6 +876,7 @@ __attribute__((used)) void diamond_weasel_mult(DWORD results) {
     DWORD app, sprite, gfx;
     if (!results) return;
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
+    if (!diamond_first_earn(results)) return;   /* replay -> no white-out */
     frame = diamond_seq_frame(results);          /* frames since gold award */
     if (frame <= WEASEL_WHITE_START) return;      /* not fading yet */
     if (frame >= WEASEL_WHITE_TOTAL) return;      /* white hold over -> normal gold */
@@ -1160,6 +1183,10 @@ __attribute__((used)) void diamond_vortex_tick(DWORD results) {
     DWORD app, sprite, gfx;
     if (!results) return;
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
+    if (!diamond_first_earn(results)) {          /* replay -> no vortex */
+        g_vortexResults = results;               /* keep session anchor fresh */
+        return;                                  /* (no cycle to tear down) */
+    }
     /* Fresh results session (pointer changed) -> any leftover cycle from a
      * previous results screen that was exited mid-cycle is torn down now:
      * stop the whoosh and reset the active flag so the new session starts
