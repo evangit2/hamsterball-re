@@ -221,6 +221,14 @@ static void load_real_bass(void) {
 #define STR_FMT_D          0x4D03F8   /* "%d" */
 #define STR_BUF            0x4F7448   /* AthenaString buffer */
 
+/* Graphics_PresentOrEnd (0x455A90): the per-frame Present/EndScene entry,
+ * __thiscall(ecx=gfx). Runs AFTER all game logic + rendering and right before
+ * the backbuffer is presented. Drawing from here (not from an inline Draw
+ * cave) avoids re-entering the game's draw loop. */
+#define PRESENT_HOOK       0x455A90   /* mov al,[esp+4]; sub esp,0x20 (7B prologue) */
+#define PRESENT_RET        0x455A97   /* next instr after the 7 patched bytes */
+
+
 /* Golden-weasel white-fade (result-frame keyed). The results screen
  * frame counter is at results+0x10 (incremented each frame by the update
  * fn FUN_0044cb90). The user wants the golden weasel to start turning white
@@ -278,6 +286,8 @@ static void load_real_bass(void) {
 #define D3D_DEV_SETRENDERSTATE     0xC8
 #define D3D_DEV_SETTEXTURESTAGE    0xFC
 #define D3D_DEV_DRAWPRIMITIVEUP    0x120
+#define D3D_DEV_SETVERTEXSHADER    0x130   /* vtable[76] SetVertexShader (set FVF) */
+#define D3D_DEV_GETVERTEXSHADER    0x134   /* vtable[77] GetVertexShader (get FVF) */
 #define D3DRS_SRCBLEND             19
 #define D3DRS_DESTBLEND            20
 #define D3DRS_ALPHABLENDENABLE     27
@@ -290,6 +300,9 @@ static void load_real_bass(void) {
 #define D3DTSS_ALPHAARG2           5
 #define D3DTOP_SELECTARG2          3
 #define D3DTA_DIFFUSE              0
+#define D3DFVF_XYZRHW              0x001
+#define D3DFVF_DIFFUSE             0x040
+#define D3DFVF_TLVERTEX            (D3DFVF_XYZRHW | D3DFVF_DIFFUSE)
 
 /* Screen-space transformed vertex (D3DFVF_TLVERTEX) — 20 bytes. */
 typedef struct {
@@ -405,6 +418,7 @@ static unsigned char *g_ttCave = NULL;
 static unsigned char *g_weaselCave = NULL;
 static unsigned char *g_skipCave = NULL;
 static unsigned char *g_pauseCave = NULL;
+static unsigned char *g_presentCave = NULL;
 
 /* ================================================================
  * Logging + path helpers
@@ -1126,10 +1140,23 @@ static void vortex_draw(DWORD gfx) {
         typedef HRESULT (__stdcall *PFN_SetRenderState)(void*, int, DWORD);
         typedef HRESULT (__stdcall *PFN_SetTextureStageState)(void*, int, int, DWORD);
         typedef HRESULT (__stdcall *PFN_DrawPrimitiveUP)(void*, DWORD, DWORD, const void*, DWORD);
+        typedef HRESULT (__stdcall *PFN_SetVertexShader)(void*, DWORD);
+        typedef HRESULT (__stdcall *PFN_GetVertexShader)(void*, DWORD*);
         PFN_SetRenderState      SetRenderState  = (PFN_SetRenderState)      (*(void**)(vt + D3D_DEV_SETRENDERSTATE));
         PFN_SetTextureStageState SetTextureStageState = (PFN_SetTextureStageState)(*(void**)(vt + D3D_DEV_SETTEXTURESTAGE));
         PFN_DrawPrimitiveUP     DrawPrimitiveUP = (PFN_DrawPrimitiveUP)     (*(void**)(vt + D3D_DEV_DRAWPRIMITIVEUP));
+        PFN_SetVertexShader     SetVertexShader = (PFN_SetVertexShader)     (*(void**)(vt + D3D_DEV_SETVERTEXSHADER));
+        PFN_GetVertexShader     GetVertexShader = (PFN_GetVertexShader)     (*(void**)(vt + D3D_DEV_GETVERTEXSHADER));
         void *dev = (void*)device;
+        DWORD savedFVF = 0;
+
+        /* Save the game's FVF, set our TL-vertex format. Without this the
+         * DrawPrimitiveUP reads the game's last-frame FVF (e.g. textured
+         * 3D vertex with extra fields) and walks past our 20-byte verts. */
+        if (GetVertexShader && SetVertexShader) {
+            GetVertexShader(dev, &savedFVF);
+            SetVertexShader(dev, D3DFVF_TLVERTEX);
+        }
 
         /* enable alpha blend (soft streaks) */
         SetRenderState(dev, D3DRS_ALPHABLENDENABLE, 1);
@@ -1144,7 +1171,8 @@ static void vortex_draw(DWORD gfx) {
         /* draw n streak triangles */
         DrawPrimitiveUP(dev, 4 /*D3DPT_TRIANGLELIST*/, (DWORD)n, verts,
                         sizeof(Diamond_TLVertex));
-        /* restore render states a prior draw may rely on */
+        /* restore render states + FVF a prior draw may rely on */
+        if (SetVertexShader) SetVertexShader(dev, savedFVF);
         SetRenderState(dev, D3DRS_ALPHABLENDENABLE, 0);
         SetRenderState(dev, D3DRS_FOGENABLE, 1);
     }
@@ -1452,6 +1480,103 @@ __attribute__((used)) void diamond_tt_append(DWORD standings, int race) {
 }
 
 /* ================================================================
+ * Present-hook reveal driver
+ * ================================================================
+ * The white-out + vortex + diamond trophy-swap used to run from an INLINE
+ * cave at 0x44E139 (the game's own golden-weasel draw call site), which
+ * re-emitted the gold draw (call 0x42c7c0) and re-entered the sprite loader
+ * from inside the game's Draw loop. That re-entrancy crashed on real Windows
+ * (Wine tolerates it). The whole reveal now runs from the Graphics_PresentOrEnd
+ * hook (0x455A90), which fires ONCE PER FRAME at a safe boundary — after all
+ * game logic + rendering, immediately before the backbuffer is presented. The
+ * game's own weasel draw at 0x44E139 is left 100% original; we draw the
+ * white-out weasel and the diamond ON TOP of it from present-time, so the
+ * layering is: gold (native) -> white weasel (55..240) -> diamond (240+).
+ */
+
+/* Locate the active results-screen object (scene+0x8B8 results list) or 0. */
+static DWORD find_results_object(void) {
+    DWORD app, scene, list, items, results, vt;
+    int count;
+    app = get_app();
+    if (!app) return 0;
+    if (IsBadReadPtr((void*)(app + APP_BOARD), 4)) return 0;
+    scene = *(DWORD*)(app + APP_BOARD);
+    if (!scene) return 0;
+    if (IsBadReadPtr((void*)(scene + SCENE_RESULTS_LIST), 4)) return 0;
+    list = scene + SCENE_RESULTS_LIST;
+    if (IsBadReadPtr((void*)(list + SCENE_LIST_COUNT), 4)) return 0;
+    count = *(int*)(list + SCENE_LIST_COUNT);
+    if (count <= 0) return 0;
+    if (IsBadReadPtr((void*)(list + SCENE_LIST_ITEMS), 4)) return 0;
+    items = *(DWORD*)(list + SCENE_LIST_ITEMS);
+    if (!items || IsBadReadPtr((void*)items, 4)) return 0;
+    results = *(DWORD*)items;
+    if (!results || IsBadReadPtr((void*)results, 4)) return 0;
+    vt = *(DWORD*)results;
+    if (vt != RESULTS_VTABLE && vt != 0x4D6C00) return 0;
+    return results;
+}
+
+/* Scoped white-out: tint the weasel sprite white over the trophy. Instead of
+ * tinting via the cave (set mult -> game draws -> clear), we set the color
+ * multiplier, draw the weasel sprite OURSELVES through the game's draw fn
+ * (0x42c7c0, tinted white by the multiplier), then clear it. Because this runs
+ * at present-time (not mid-draw), the multiplier only affects OUR draw, not the
+ * whole medal row. The game's native gold weasel stays underneath. */
+static void whiteout_tick(DWORD results) {
+    int frame;
+    DWORD app, sprite, gfx;
+    float m, *sc;
+    if (!results) return;
+    if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
+    if (!diamond_first_earn(results)) return;   /* replay -> no white-out */
+    frame = diamond_seq_frame(results);
+    if (frame <= WEASEL_WHITE_START || frame >= WEASEL_WHITE_TOTAL) return;
+    if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
+    app = *(DWORD*)(results + RESULT_APP);
+    if (!app || IsBadReadPtr((void*)(app + SPRITE_WEAEL_APP), 4)) return;
+    sprite = *(DWORD*)(app + SPRITE_WEAEL_APP);
+    if (!sprite || IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)) return;
+    gfx = *(DWORD*)(sprite + SPRITE_GFX);
+    if (!gfx || IsBadReadPtr((void*)(gfx + GFX_MULT_R), 4)) return;
+    if (frame >= WEASEL_WHITE_END) m = WEASEL_WHITE_MULT;
+    else m = 1.0f + (WEASEL_WHITE_MULT - 1.0f) *
+            ((float)(frame - WEASEL_WHITE_START) / (float)(WEASEL_WHITE_END - WEASEL_WHITE_START));
+    *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = 1;
+    sc = (float*)(gfx + GFX_MULT_R);
+    sc[0] = m; sc[1] = m; sc[2] = m; sc[3] = 1.0f;
+    /* draw the weasel sprite tinted white over the trophy spot (0x208, 0x63) */
+    __asm__ volatile(
+        "movl %1, %%ecx\n\t"          /* ecx = sprite */
+        "pushl $0x63\n\t"             /* y */
+        "pushl $0x208\n\t"            /* x */
+        "call *%0\n\t"                /* 0x42C7C0(sprite,x,y) -- ret $8 */
+        : : "r"((void*)SPRITE_DRAW), "r"(sprite)
+        : "eax", "ecx", "edx", "memory"
+    );
+    /* restore identity multiplier so the rest of the frame is unaffected */
+    *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = 0;
+    sc[0] = sc[1] = sc[2] = sc[3] = 1.0f;
+}
+
+/* Per-frame reveal driver, called from the present hook (ecx=gfx). Safe at the
+ * frame boundary: no re-entrancy into the game's draw loop. Derives everything
+ * itself (app -> scene -> results), so it takes no arguments. */
+__attribute__((used)) void diamond_present_tick(void) {
+    DWORD results;
+    results = find_results_object();
+    if (!results) {
+        /* no results screen -> tear down any leftover vortex cycle */
+        if (g_vortexActive) { g_vortexActive = 0; vortex_sound_stop(); }
+        return;
+    }
+    diamond_vortex_tick(results);   /* advances + draws vortex (raw D3D) */
+    whiteout_tick(results);         /* scoped white-out weasel draw */
+    diamond_trophy_swap(results);   /* commit unlock + draw diamond at 240+ */
+}
+
+/* ================================================================
  * Patch helpers + code caves
  * ================================================================ */
 static void write_jmp(unsigned char *at, DWORD target) {
@@ -1743,76 +1868,56 @@ static void install_tt_cave(void) {
     diag_log("[diamond] TT-menu cave installed (diamond(s) earned)");
 }
 
-/* Cave D: golden-weasel white-fade + suction vortex. Hook at 0x44E139
- * (call 0x42c7c0, the golden-weasel draw, 5 bytes). Sequence per frame the
- * weasel is drawn:
- *   pushad; push esi (results); call diamond_vortex_tick   (draw vortex BEHIND)
- *          add esp,4; popad
- *   pushad; push esi (results); call diamond_weasel_mult    (set tint by frame)
- *          add esp,4; popad
- *   call 0x42c7c0                      ; re-emit weasel draw (tinted, on top)
- *   pushad; push esi; call diamond_weasel_mult_clear (reset tint to 1.0)
- *          add esp,4; popad
- *   jmp 0x44E13E                       ; original next instruction
- * The vortex is drawn first (primitive issued before the trophy sprite), so
- * the streaks render BEHIND the trophy. The white multiplier is applied only
- * to the weasel draw and cleared immediately after.
- */
+/* Cave D (DISABLED 2026-08-12): the golden-weasel white-fade + suction vortex
+ * USED to run from an inline cave at 0x44E139 (the game's own weasel draw call
+ * site), re-emitting `call 0x42c7c0` and re-entering the sprite loader from
+ * inside the game's Draw loop. That re-entrancy crashed on real Windows with
+ * CRASH_ADDRESS 0000:00000000 (CURRENTOPERATION: Draw) — the third crash of
+ * this class (startup icon cave, TT-menu cave, now this). Wine tolerates it,
+ * which is why hbtestd never reproduced it.
+ *
+ * The white-out + vortex + diamond trophy-swap now runs from the
+ * Graphics_PresentOrEnd hook (install_present_cave -> diamond_present_tick),
+ * which fires once per frame at a safe boundary. 0x44E139 is left 100%
+ * original (the game draws the gold weasel natively; our white-out weasel and
+ * diamond draw OVER it at present time). */
 static void install_weasel_cave(void) {
-    DWORD patchAddr = EXE_BASE + (WEASEL_DRAW_HOOK - EXE_BASE);
-    DWORD retAddr = EXE_BASE + (WEASEL_RET - EXE_BASE);
-    g_weaselCave = (unsigned char*)VirtualAlloc(NULL, 256, MEM_COMMIT|MEM_RESERVE,
-                                                PAGE_EXECUTE_READWRITE);
-    if (!g_weaselCave) return;
-    unsigned char *p = g_weaselCave;
+    diag_log("[diamond] weasel white-fade cave DISABLED (reveal moved to present hook)");
+}
 
-    /* 1) draw vortex behind the trophy */
-    p[0]=0x60; p+=1;                                  /* pushad */
-    p[0]=0x56; p+=1;                                  /* push esi (results) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_vortex_tick-(DWORD)(p+5); p+=5;
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
-    p[0]=0x61; p+=1;                                  /* popad */
-
-    /* 2) set the weasel white tint */
-    p[0]=0x60; p+=1;                                  /* pushad */
-    p[0]=0x56; p+=1;                                  /* push esi (results) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_weasel_mult-(DWORD)(p+5); p+=5;
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
-    p[0]=0x61; p+=1;                                  /* popad */
-
-    /* 3) trophy swap: at frame>=240, diamond replaces the golden weasel.
-     *    diamond_trophy_swap draws the diamond (if earned) and returns 1
-     *    (skip gold) or 0 (draw gold). We preserve ecx (sprite) via push/pop
-     *    so the gold call below still works when not swapped, and keep the
-     *    return value in EAX (NOT pushad, which would clobber it).
-     *    NOTE: the game left x,y on the stack for the gold call (ret $8);
-     *    if we skip gold we still must pop x,y (add esp,8) to rebalance. */
-    p[0]=0x51; p+=1;                                  /* push ecx (save sprite) */
-    p[0]=0x56; p+=1;                                  /* push esi (results arg) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_trophy_swap-(DWORD)(p+5); p+=5;
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 (pop arg) */
-    p[0]=0x59; p+=1;                                  /* pop ecx (restore sprite) */
-    p[0]=0x85; p[1]=0xC0; p+=2;                       /* test eax,eax */
-    p[0]=0x74; p[1]=0x05; p+=2;                       /* jz +5 -> do_gold */
-    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;             /* add esp,8 (swap: pop x,y) */
-    p[0]=0xEB; p[1]=0x05; p+=2;                       /* jmp +5 -> skip_gold */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(SPRITE_DRAW)-(DWORD)(p+5); p+=5; /* do_gold: gold draw (ret $8 pops x,y) */
-    /* skip_gold: (after gold draw OR after add esp,8) */
-
-    /* 4) clear the weasel tint */
-    p[0]=0x60; p+=1;                                  /* pushad */
-    p[0]=0x56; p+=1;                                  /* push esi */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_weasel_mult_clear-(DWORD)(p+5); p+=5;
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
-    p[0]=0x61; p+=1;                                  /* popad */
-
-    /* 5) back to original flow */
+/* Present-hook cave: Graphics_PresentOrEnd (0x455A90), __thiscall(ecx=gfx).
+ * Original prologue (7 bytes): 8A 44 24 04  MOV AL,[ESP+4]
+ *                              83 EC 20     SUB ESP,0x20
+ * Detour: save ecx/edx (the game reads ecx=gfx at 0x455A9A `mov esi,ecx` right
+ * after this prologue), call diamond_present_tick (cdecl, no args), restore
+ * ecx/edx, then re-emit the 7-byte prologue and jump back to 0x455A97. */
+static void install_present_cave(void) {
+    DWORD patchAddr = EXE_BASE + (PRESENT_HOOK - EXE_BASE);
+    DWORD retAddr   = EXE_BASE + (PRESENT_RET - EXE_BASE);
+    unsigned char *p;
+    unsigned char patch[7];
+    g_presentCave = (unsigned char*)VirtualAlloc(NULL, 64, MEM_COMMIT|MEM_RESERVE,
+                                                 PAGE_EXECUTE_READWRITE);
+    if (!g_presentCave) return;
+    p = g_presentCave;
+    /* save ecx (gfx) + edx across the helper call */
+    p[0]=0x51; p+=1;                                  /* push ecx */
+    p[0]=0x52; p+=1;                                  /* push edx */
+    /* call diamond_present_tick (cdecl, no args) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_present_tick-(DWORD)(p+5); p+=5;
+    /* restore edx, ecx */
+    p[0]=0x5A; p+=1;                                  /* pop edx */
+    p[0]=0x59; p+=1;                                  /* pop ecx */
+    /* re-emit original 7-byte prologue: MOV AL,[ESP+4]; SUB ESP,0x20 */
+    p[0]=0x8A; p[1]=0x44; p[2]=0x24; p[3]=0x04; p+=4;
+    p[0]=0x83; p[1]=0xEC; p[2]=0x20; p+=3;
+    /* jump back */
     write_jmp(p, retAddr); p+=5;
-    unsigned char patch[5];
-    memset(patch, 0x90, 5);
-    write_jmp(patch, (DWORD)g_weaselCave);
-    patch_bytes((void*)patchAddr, patch, 5);
-    diag_log("[diamond] golden-weasel white-fade + vortex cave installed at 0x44E139");
+    /* 7-byte patch at 0x455A90: JMP rel32 (5 bytes) + 2 NOPs */
+    memset(patch, 0x90, 7);
+    write_jmp(patch, (DWORD)g_presentCave);
+    patch_bytes((void*)patchAddr, patch, 7);
+    diag_log("[diamond] present-hook reveal cave installed at 0x455A90");
 }
 
 /* ================================================================
@@ -1821,11 +1926,12 @@ static void install_weasel_cave(void) {
 static void install_hooks(void) {
     install_icon_cave();
     /* install_disp_cave() DISABLED: the diamond reveal now happens at the
-     * frame-240 trophy swap (install_weasel_cave), replacing the old
-     * gold-gap 5th-medal reveal. Keeping Cave B would draw+pop the diamond
-     * too early at ~frame 165 AND again at 240. */
+     * frame-240 trophy swap (diamond_present_tick via the present hook),
+     * replacing the old gold-gap 5th-medal reveal. Keeping Cave B would
+     * draw+pop the diamond too early at ~frame 165 AND again at 240. */
     install_tt_cave();
-    install_weasel_cave();
+    install_weasel_cave();   /* no-op — reveal moved to present hook */
+    install_present_cave();  /* NEW: safe frame-boundary reveal driver */
     install_skip_cave();
     install_pause_caves();
     diag_log("[diamond] hooks installed");

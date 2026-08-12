@@ -218,15 +218,20 @@ game actually uses.)
 The mod is a BASS proxy DLL (forwards all `BASS_*` calls to `bass_real.dll`).
 It hooks:
 
-1. **Golden-weasel draw (0x44E139)** — this cave (a) draws the **suction vortex**
-   behind the trophy (raw `DrawPrimitiveUP` screen-space streaks), (b) drives the
-   golden weasel's white-fade via the game's color-multiplier, and (c) at
-   **gold + 240** swaps the trophy: the golden weasel stops rendering and the
-   **diamond** is drawn in its place at (0x208, 0x63), firing the reveal effects
-   (medal pop + star ring) on the first swap frame. All timing is offset from the
-   gold-medal award frame (`results+0x4c`): before gold+55 the gold draws
-   normally; after gold+240 the white-hold ends and it reverts to gold unless the
-   diamond earned a swap.
+1. **Graphics_PresentOrEnd (0x455A90)** — the per-frame Present/EndScene entry.
+   The **entire reveal** — suction vortex, white-fade, and the diamond
+   trophy-swap — runs from here, once per frame at a safe frame boundary
+   (after all game logic + rendering, just before the backbuffer is presented):
+   - the **vortex** draws behind the trophy (raw `DrawPrimitiveUP` screen-space
+     streaks, FVF set explicitly),
+   - the white-fade drives the golden weasel's color-multiplier and re-draws the
+     weasel sprite tinted white over the trophy,
+   - at **gold + 240** the diamond is drawn in the trophy's place at (0x208,
+     0x63), firing the reveal effects (medal pop + star ring) on the first swap.
+   The game's own golden-weasel draw is left 100% original; the white weasel
+   and diamond draw over it at present time (layering: native gold → white
+   weasel 55..240 → diamond 240+). All timing is offset from the gold-medal
+   award frame (`results+0x4c`).
 2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
    for a race, appends a diamond mini-icon entry to the standings medal list
    right after the golden weasel, so it lays out to the right of it.
