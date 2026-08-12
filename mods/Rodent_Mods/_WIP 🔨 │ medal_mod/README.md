@@ -136,18 +136,21 @@ subsequent visits.
 **Click/keypress skip is blocked while the diamond reveal is pending.** Normally
 clicking or pressing a key on the results screen fast-forwards through the medal
 awards. To make sure you don't accidentally miss the diamond, the mod stops the
-skip from engaging while the diamond time was met for the current race and the
-reveal (gold + 240) hasn't played yet — the reveal plays out at normal speed. The
-skip behaves exactly as normal when the diamond was **not** achieved, and it is
-re-enabled after the reveal so you aren't stuck watching the white hold.
+skip from engaging while the diamond time was met for the current race, the race
+hasn't already been earned, and the reveal (gold + 240) hasn't played yet — the
+reveal plays out at normal speed. The skip behaves exactly as normal when the
+diamond was **not** achieved, and it is re-enabled after the reveal so you aren't
+stuck watching the white hold. On replays of an already-earned race the skip
+works normally (no lockout).
 
-**Pausing is also blocked from the moment you touch the goal until the reveal
-finishes.** The game's own ESC-pause path is already suppressed at goal (it sets
+**Pausing is also blocked while the diamond reveal is pending (first earn).**
+The game's own ESC-pause path is already suppressed at goal (it sets
 an internal latch), but the two other pause entry points — right-clicking, and
 the Win32 ESC key handler — would still open the pause menu and interrupt the
 reveal. The mod intercepts both of those for the same window (diamond achieved
-+ reveal not yet played), so you cannot pause away the diamond. Pause works
-normally during gameplay and after the reveal.
++ not yet earned + reveal not yet played), so you cannot pause away the diamond.
+Pause works normally during gameplay, on already-earned replays, and after the
+reveal.
 
 **You do not need to provide any diamond icon files.**
 

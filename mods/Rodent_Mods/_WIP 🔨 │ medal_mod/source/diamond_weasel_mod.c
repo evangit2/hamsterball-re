@@ -689,6 +689,7 @@ __attribute__((used)) int diamond_block_skip(DWORD results) {
     race = get_race_index();
     if (race < 0 || race > 14) return 0;
     if (!g_hasSecret[race]) return 0;
+    if (g_won[race]) return 0;                 /* only on the FIRST earn */
     cs = get_player_time_cs(app);
     thr = g_secret_cs[race];
     /* Block skip iff the diamond time was met (and the reveal hasn't passed). */
@@ -740,6 +741,7 @@ __attribute__((used)) int diamond_pause_blocked(DWORD scene) {
     race = get_race_index();
     if (race < 0 || race > 14) return 0;
     if (!g_hasSecret[race]) return 0;
+    if (g_won[race]) return 0;                 /* only on the FIRST earn */
     cs = get_player_time_cs(app);
     thr = g_secret_cs[race];
     return (cs > 0 && cs <= thr) ? 1 : 0;
