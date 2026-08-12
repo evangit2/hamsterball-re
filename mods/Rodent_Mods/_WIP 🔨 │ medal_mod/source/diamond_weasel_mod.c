@@ -288,7 +288,7 @@ typedef struct {
 #define VORTEX_TAIL    30            /* +30-frame tail: no new spawns, streaks fade */
 #define VORTEX_GIFTSHOT_ANG  0.55f   /* random-in-circle start radius multiplier */
 #define VORTEX_MINR    6.0f          /* center kill radius (px, screen) */
-#define VORTEX_STRETCH 11.0f         /* streak length (px) */
+#define VORTEX_STRETCH 44.0f         /* streak length (px) */
 #define VORTEX_SEGS    8             /* subdivisions along the streak length (gradient) */
 
 typedef struct {
