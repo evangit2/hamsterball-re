@@ -283,7 +283,7 @@ typedef struct {
  * Drawn by Modulo the game's native sprite draw (before the weasel) via
  * DrawPrimitiveUP so it renders BEHIND the trophy icon. Screen-space math.
  */
-#define VORTEX_MAX     40            /* streaks at a time */
+#define VORTEX_MAX     20            /* streaks at a time */
 #define VORTEX_FRAMES  100           /* ~100-frame active cycle */
 #define VORTEX_TAIL    30            /* +30-frame tail: no new spawns, streaks fade */
 #define VORTEX_GIFTSHOT_ANG  0.55f   /* random-in-circle start radius multiplier */
