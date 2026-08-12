@@ -98,9 +98,12 @@ it, and the cycle repeats for ~100 result-frames. Each streak has a soft
 (subdivided into `VORTEX_SEGS=8` segments with a tapered per-vertex alpha). It is
 drawn with the game's D3D8 device directly (`DrawPrimitiveUP`, screen-space
 `D3DFVF_TLVERTEX` quads) **before** the trophy sprite draw, so the streaks render
-behind the golden weasel. Its center is the trophy's true center (sprite
-top-left + half of its width/height), and center tracking replicates the game's
-own `Gfx_TransformX/Y` world→screen math so it stays anchored at any resolution.
+behind the golden weasel. Each streak also fades out as its inner tip nears the
+trophy center, reaching fully transparent exactly when the tip reaches the
+center — so the streak never visibly sticks out past the trophy before
+despawning. Its center is the trophy's true center (sprite top-left + half of
+its width/height), and center tracking replicates the game's own
+`Gfx_TransformX/Y` world→screen math so it stays anchored at any resolution.
 
 After the ~100-frame active cycle, a ~30-frame tail plays: no new streaks spawn,
 the weasel stays white, and any remaining streaks drift inward and fade to

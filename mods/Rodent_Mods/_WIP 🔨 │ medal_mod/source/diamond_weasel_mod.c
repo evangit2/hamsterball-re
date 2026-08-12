@@ -290,6 +290,7 @@ typedef struct {
 #define VORTEX_MINR    6.0f          /* center kill radius (px, screen) */
 #define VORTEX_STRETCH 22.0f         /* streak length (px) */
 #define VORTEX_SEGS    8             /* subdivisions along the streak length (gradient) */
+#define VORTEX_CENTER_FADE 12.0f     /* fade-to-0 as the streak's inner tip nears center */
 
 typedef struct {
     float ax, ay;       /* angle + angular velocity */
@@ -839,7 +840,11 @@ static void vortex_update_streak(Diamond_VortexP *p, int frame) {
     a = p->ax + p->ay * p->born;
     /* gradual inward pull */
     p->r -= p->vr;
-    if (p->r < VORTEX_MINR || p->r > 4000.0f) { p->active = 0; return; }
+    /* The rectangle's inner tip is at r - VORTEX_STRETCH. Kill the particle once
+     * that tip reaches the center (r - STRETCH <= 0) so the streak's leading end
+     * disappears exactly at the center rather than passing through it and
+     * sticking out the far side. */
+    if (p->r - VORTEX_STRETCH <= 0.0f || p->r > 4000.0f) { p->active = 0; return; }
     /* ease-in over first 15 frames of this streak's life */
     if (p->born < 15) {
         p->alpha = (BYTE)((p->born * 17) & 0xFF);
@@ -851,6 +856,17 @@ static void vortex_update_streak(Diamond_VortexP *p, int frame) {
         else p->alpha = (BYTE)((rem * 255) / (int)VORTEX_TAIL);
     } else {
         p->alpha = 255;
+    }
+    /* Fade out as the inner tip approaches the center, reaching fully
+     * transparent exactly when the tip hits 0 (center). This prevents the
+     * streak from visibly sticking out the far side before it despawns. */
+    {
+        float tip = p->r - VORTEX_STRETCH;            /* inner tip radius (0 = at center) */
+        if (tip < VORTEX_CENTER_FADE) {
+            float f = tip / VORTEX_CENTER_FADE;        /* 1..0 as tip -> center */
+            if (f <= 0.0f) p->alpha = 0;
+            else p->alpha = (BYTE)((int)p->alpha * (f * f));
+        }
     }
     p->born++;
     (void)a;
