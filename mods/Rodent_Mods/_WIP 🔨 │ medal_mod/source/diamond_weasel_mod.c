@@ -1688,35 +1688,26 @@ static void install_disp_cave(void) {
  *             jmp 0x42F92C         ; inc edi (original next instruction)
  */
 static void install_tt_cave(void) {
-    DWORD patchAddr = EXE_BASE + (TT_WEASEL_APPEND - EXE_BASE);
-    DWORD retAddr = patchAddr + 5;   /* 0x42F92C */
-    g_ttCave = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
-                                            PAGE_EXECUTE_READWRITE);
-    if (!g_ttCave) return;
-    unsigned char *p = g_ttCave;
-    /* mov ecx, esi */
-    p[0]=0x8B; p[1]=0xCE; p+=2;
-    /* call 0x44abf0 (re-emit weasel append) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(ABF0_APPEND)-(DWORD)(p+5); p+=5;
-    /* pushad */
-    p[0]=0x60; p+=1;
-    /* push esi */
-    p[0]=0x56; p+=1;
-    /* push edi */
-    p[0]=0x57; p+=1;
-    /* call diamond_tt_append */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_tt_append-(DWORD)(p+5); p+=5;
-    /* add esp,8 */
-    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;
-    /* popad */
-    p[0]=0x61; p+=1;
-    /* jmp retAddr */
-    write_jmp(p, retAddr); p+=5;
-    unsigned char patch[5];
-    memset(patch, 0x90, 5);
-    write_jmp(patch, (DWORD)g_ttCave);
-    patch_bytes((void*)patchAddr, patch, 5);
-    diag_log("[diamond] TT-menu cave installed at 0x42F927");
+    /* DISABLED (no-op) — root-cause of the Time-Trial-menu crash
+     * (CURRENTOBJECT: Game Menu / MouseDown / FinishLoad(OK)).
+     *
+     * The TT cave at 0x42F927 re-entered the game's medal-list append
+     * (0x44abf0) from inside a VirtualAlloc'd code cave during the TT
+     * standings render. It is the ONLY hook that fires when the TT menu is
+     * opened — the weasel-white, skip-latch and pause caves only run on the
+     * results screen / gameplay, none of which execute here.
+     *
+     * The mini diamond in the TT standings is purely cosmetic. When no
+     * diamond has been unlocked (g_won[] all zero) the helper would append
+     * nothing anyway, so re-entering menu code from a cave buys nothing at
+     * first-run and crashed the menu on real Windows (same re-entrancy
+     * family as the startup icon cave, which was also fixed the same way).
+     *
+     * The diamond mini-icon is still drawn where it counts (results screen /
+     * trophy swap) via the weasel-cave helper. Leaving 0x42F927 100% original.
+     */
+    (void)g_ttCave;
+    diag_log("[diamond] TT-menu cave DISABLED (cosmetic; avoids menu re-entrancy crash)");
 }
 
 /* Cave D: golden-weasel white-fade + suction vortex. Hook at 0x44E139
