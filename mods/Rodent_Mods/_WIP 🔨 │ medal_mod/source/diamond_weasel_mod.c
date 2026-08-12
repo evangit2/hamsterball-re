@@ -288,7 +288,7 @@ typedef struct {
 #define VORTEX_TAIL    30            /* +30-frame tail: no new spawns, streaks fade */
 #define VORTEX_GIFTSHOT_ANG  0.55f   /* random-in-circle start radius multiplier */
 #define VORTEX_MINR    6.0f          /* center kill radius (px, screen) */
-#define VORTEX_STRETCH 8.0f          /* streak length (px) */
+#define VORTEX_STRETCH 11.0f         /* streak length (px) */
 
 typedef struct {
     float ax, ay;       /* angle + angular velocity */
@@ -887,7 +887,7 @@ static void vortex_draw(DWORD gfx) {
         ang = p->ax + p->ay * p->born;
         cang = (float)cos(ang); sang = (float)sin(ang);
         rr = p->r;
-        s  = 2.0f;                    /* rectangle half-thickness (px) */
+        s  = 1.0f;                    /* rectangle half-thickness (px) — thin */
         a  = p->alpha;
         v = &verts[n*6];
         /* perpendicular unit vector (px,py) */
