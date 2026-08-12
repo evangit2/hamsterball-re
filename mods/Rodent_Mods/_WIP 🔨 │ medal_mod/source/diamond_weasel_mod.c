@@ -662,6 +662,8 @@ static int get_player_time_cs(DWORD app) {
 __attribute__((used)) void diamond_load_icon_impl(DWORD app);
 __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app);
 
+static int diamond_seq_frame(DWORD results);   /* frames since gold award */
+
 /* BLOCK the results-screen click/keypress skip when the diamond time was
  * achieved for the current race. The skip latch (results+0x25) drives the
  * frame counter forward at 10x/frame (multiplier computed at 0x44cbcf),
@@ -677,8 +679,8 @@ __attribute__((used)) int diamond_block_skip(DWORD results) {
     DWORD app;
     if (!results) return 0;
     if (IsBadReadPtr((void*)(results + 0x10), 4)) return 0;   /* RESULT_FRAME */
-    frame = *(int*)(results + 0x10);
-    /* After the reveal (frame 240) the skip is safe — allow it. */
+    frame = diamond_seq_frame(results);          /* frames since gold award */
+    /* After the reveal (gold + 240) the skip is safe — allow it. */
     if (frame >= WEASEL_WHITE_TOTAL) return 0;
     /* Only relevant while the results screen is awarding medals. */
     if (IsBadReadPtr((void*)(results + 0x0C), 4)) return 0;   /* RESULT_APP */
@@ -729,7 +731,7 @@ __attribute__((used)) int diamond_pause_blocked(DWORD scene) {
     if (IsBadReadPtr((void*)results, 4)) return 0;
     vt = *(DWORD*)results;
     if (vt != RESULTS_VTABLE && vt != 0x4D6C00) return 0;
-    frame = *(int*)(results + 0x10);                 /* RESULT_FRAME */
+    frame = diamond_seq_frame(results);          /* frames since gold award */
     if (frame < 0 || frame >= WEASEL_WHITE_TOTAL) return 0;   /* reveal done -> allow */
     /* Only block when the diamond was actually earned for this race. */
     if (IsBadReadPtr((void*)(results + 0x0C), 4)) return 0;   /* RESULT_APP */
@@ -817,8 +819,28 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
 
 /* RESULT_OBJ offsets used by the weasel white-fade + diamond 5th-medal. */
 #define RESULT_FRAME   0x10   /* frame counter [esi+0x10] */
-#define RESULT_GATE_GOLD 0x74 /* gold medal draws when frame > [esi+0x74] */
+#define RESULT_GOLD    0x4c   /* gold medal awarded when frame == [esi+0x4c];
+                                 drawn when frame > [esi+0x4c] (cmp 0x44e113).
+                                 NOTE: was mislabeled RESULT_GATE_GOLD 0x74 —
+                                 0x74 is a DIFFERENT medal's gate (0x44dd67). */
 #define RESULT_APP     0x0C   /* App ptr [esi+0xc] */
+
+/* Frames SINCE the gold medal was awarded: sequence frame = results+0x10
+ * (frame counter) minus results+0x4c (the gold-award gate). The unlock
+ * sequence (white-out, vortex, reveal) is rebased to this so it starts the
+ * moment gold is awarded, per the user's design: reveal lands at gold+240.
+ * Returns the raw frame counter if +0x4c is unreadable (defensive), and
+ * clamps below 0 in case the counter is read before the gate is set. */
+__attribute__((used)) static int diamond_seq_frame(DWORD results) {
+    int frame, gold;
+    if (!results) return 0;
+    if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return 0;
+    frame = *(int*)(results + RESULT_FRAME);
+    if (IsBadReadPtr((void*)(results + RESULT_GOLD), 4)) return frame;
+    gold = *(int*)(results + RESULT_GOLD);
+    if (gold < 0) gold = 0;
+    return (frame < gold) ? 0 : (frame - gold);
+}
 
 /* Set the golden-weasel sprite's color-multiplier so it renders white,
  * phased over result-frames [55,150]. Sets gfx+0x7A8=1 and the RGBA scale at
@@ -830,7 +852,7 @@ __attribute__((used)) void diamond_weasel_mult(DWORD results) {
     DWORD app, sprite, gfx;
     if (!results) return;
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
-    frame = *(int*)(results + RESULT_FRAME);
+    frame = diamond_seq_frame(results);          /* frames since gold award */
     if (frame <= WEASEL_WHITE_START) return;      /* not fading yet */
     if (frame >= WEASEL_WHITE_TOTAL) return;      /* white hold over -> normal gold */
     if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
@@ -1146,7 +1168,7 @@ __attribute__((used)) void diamond_vortex_tick(DWORD results) {
         if (g_vortexActive) { g_vortexActive = 0; vortex_sound_stop(); }
         g_vortexResults = results;
     }
-    frame = *(int*)(results + RESULT_FRAME);
+    frame = diamond_seq_frame(results);          /* frames since gold award */
     /* start the cycle a touch after the white-fade begins; active spawn
      * window is [START, START+VORTEX_FRAMES); the tail extends to
      * [START+VORTEX_FRAMES, START+VORTEX_FRAMES+VORTEX_TAIL) during which no
@@ -1216,8 +1238,8 @@ __attribute__((used)) void diamond_render_after(DWORD results) {
     app = *(DWORD*)(results + RESULT_APP);
     if (!app || !g_configLoaded) return;
     /* frame gate: only after gold + delay (mirrors native frame gate) */
-    if (IsBadReadPtr((void*)(results + RESULT_GATE_GOLD), 4)) return;
-    gold_gate = *(int*)(results + RESULT_GATE_GOLD);
+    if (IsBadReadPtr((void*)(results + RESULT_GOLD), 4)) return;
+    gold_gate = *(int*)(results + RESULT_GOLD);
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
     frame = *(int*)(results + RESULT_FRAME);
     if (frame <= gold_gate + g_diamondDelay) return;
@@ -1269,8 +1291,8 @@ __attribute__((used)) int diamond_trophy_swap(DWORD results) {
     DWORD app;
     if (!results) return 0;
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return 0;
-    frame = *(int*)(results + RESULT_FRAME);
-    if (frame < WEASEL_WHITE_TOTAL) return 0;       /* before hold end -> gold */
+    frame = diamond_seq_frame(results);          /* frames since gold award */
+    if (frame < WEASEL_WHITE_TOTAL) return 0;    /* before hold end -> gold */
     if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return 0;
     app = *(DWORD*)(results + RESULT_APP);
     if (!app || !g_configLoaded) return 0;
