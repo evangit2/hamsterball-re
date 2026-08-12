@@ -112,7 +112,15 @@ plays through the whole vortex window — from the 55-frame mark to the moment t
 streaks stop — and stops cleanly when the cycle ends.
 
 The white trophy then **holds for another 55 frames** with no particles, before
-reverting to its normal golden color.
+**reverting to its normal golden color.**
+
+## The reveal at frame 240
+
+At frame 240 the golden weasel **stops rendering entirely** and the **diamond
+trophy replaces it in that same frame**, firing the reveal effects (medal pop +
+star ring) on the first frame of the swap. This is the *only* diamond reveal —
+the old gold-gap 5th-medal reveal is disabled; the swap *is* the reveal, moved
+from ~frame 165 to frame 240.
 
 After the first unlock the PNGs persist on disk so they render normally on
 subsequent visits.

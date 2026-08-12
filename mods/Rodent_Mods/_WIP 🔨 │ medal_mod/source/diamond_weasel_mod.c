@@ -1135,6 +1135,53 @@ __attribute__((used)) void diamond_render_after(DWORD results) {
         : "eax", "ecx", "edx", "memory"
     );
 }
+
+/* Trophy swap at the end of the white hold: at frame >= WEASEL_WHITE_TOTAL
+ * (= 240), the golden weasel stops rendering and the diamond trophy appears in
+ * its place at the trophy spot (0x208, 0x63), firing the reveal effects on the
+ * first frame of the swap. Called from the weasel cave in place of the
+ * unconditional gold draw. Returns 1 to SKIP the gold draw (diamond shown), 0
+ * to draw gold as normal.
+ */
+__attribute__((used)) int diamond_trophy_swap(DWORD results) {
+    int frame, race, cs, thr;
+    DWORD app;
+    if (!results) return 0;
+    if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return 0;
+    frame = *(int*)(results + RESULT_FRAME);
+    if (frame < WEASEL_WHITE_TOTAL) return 0;       /* before hold end -> gold */
+    if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return 0;
+    app = *(DWORD*)(results + RESULT_APP);
+    if (!app || !g_configLoaded) return 0;
+    /* threshold check: only swap if the diamond time was met for this race */
+    race = get_race_index();
+    if (race < 0 || race > 14) return 0;
+    if (!g_hasSecret[race]) return 0;
+    cs = get_player_time_cs(app);
+    thr = g_secret_cs[race];
+    if (!(cs > 0 && cs <= thr)) return 0;
+    /* Atomic unlock commit on first reveal (mirrors diamond_render_after). */
+    if (!g_won[race]) {
+        if (!diamond_provision_unlock(race)) {
+            diag_logf("[diamond] trophy swap unlock aborted for race %d", race);
+            return 0;
+        }
+        diamond_spawn_medal_effects(results, app);   /* pop + star ring */
+    }
+    /* Ensure the diamond icon is loaded, then draw it at the trophy spot. */
+    if (!g_iconLoaded) diamond_load_icon_impl(app);
+    if (!g_diamondSprite) return 0;                  /* not loadable -> gold stays */
+    __asm__ volatile(
+        "movl %2, %%ecx\n\t"          /* ecx = g_diamondSprite */
+        "pushl $0x63\n\t"             /* y */
+        "pushl $0x208\n\t"            /* x */
+        "call *%1\n\t"                /* 0x42C7C0(sprite,x,y) -- ret $8 */
+        : : "r"(0), "r"(SPRITE_DRAW), "r"(g_diamondSprite)
+        : "eax", "ecx", "edx", "memory"
+    );
+    return 1;                                          /* skip the gold draw */
+}
+
 __attribute__((used)) void diamond_load_icon_impl(DWORD app) {
     DWORD mgr, vt, load;
     if (g_iconLoaded) return;
@@ -1283,6 +1330,11 @@ static void install_icon_cave(void) {
  * The diamond appears (gold_gate + g_diamondDelay) frames after gold, i.e.
  * one medal gap later, at the golden weasel's spot (0x208, 0x63).
  */
+/* Cave B (DISABLED 2026-08-12): the diamond reveal now fires at the frame-240
+ * trophy swap (install_weasel_cave -> diamond_trophy_swap). This cave used to
+ * draw the diamond as a 5th medal one gold-gap after gold; kept only for
+ * reference/re-support. Not installed (see install_hooks). */
+static void install_disp_cave(void) __attribute__((unused));
 static void install_disp_cave(void) {
     DWORD patchAddr = EXE_BASE + (GOLD_DRAW_HOOK - EXE_BASE);
     DWORD retAddr = patchAddr + 5;   /* 0x44EFD7 */
@@ -1392,8 +1444,24 @@ static void install_weasel_cave(void) {
     p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
     p[0]=0x61; p+=1;                                  /* popad */
 
-    /* 3) re-emit weasel draw (ecx=sprite + stack x,y intact), tinted + on top */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(SPRITE_DRAW)-(DWORD)(p+5); p+=5;
+    /* 3) trophy swap: at frame>=240, diamond replaces the golden weasel.
+     *    diamond_trophy_swap draws the diamond (if earned) and returns 1
+     *    (skip gold) or 0 (draw gold). We preserve ecx (sprite) via push/pop
+     *    so the gold call below still works when not swapped, and keep the
+     *    return value in EAX (NOT pushad, which would clobber it).
+     *    NOTE: the game left x,y on the stack for the gold call (ret $8);
+     *    if we skip gold we still must pop x,y (add esp,8) to rebalance. */
+    p[0]=0x51; p+=1;                                  /* push ecx (save sprite) */
+    p[0]=0x56; p+=1;                                  /* push esi (results arg) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_trophy_swap-(DWORD)(p+5); p+=5;
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 (pop arg) */
+    p[0]=0x59; p+=1;                                  /* pop ecx (restore sprite) */
+    p[0]=0x85; p[1]=0xC0; p+=2;                       /* test eax,eax */
+    p[0]=0x74; p[1]=0x05; p+=2;                       /* jz +5 -> do_gold */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;             /* add esp,8 (swap: pop x,y) */
+    p[0]=0xEB; p[1]=0x05; p+=2;                       /* jmp +5 -> skip_gold */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(SPRITE_DRAW)-(DWORD)(p+5); p+=5; /* do_gold: gold draw (ret $8 pops x,y) */
+    /* skip_gold: (after gold draw OR after add esp,8) */
 
     /* 4) clear the weasel tint */
     p[0]=0x60; p+=1;                                  /* pushad */
@@ -1416,7 +1484,10 @@ static void install_weasel_cave(void) {
  * ================================================================ */
 static void install_hooks(void) {
     install_icon_cave();
-    install_disp_cave();
+    /* install_disp_cave() DISABLED: the diamond reveal now happens at the
+     * frame-240 trophy swap (install_weasel_cave), replacing the old
+     * gold-gap 5th-medal reveal. Keeping Cave B would draw+pop the diamond
+     * too early at ~frame 165 AND again at 240. */
     install_tt_cave();
     install_weasel_cave();
     diag_log("[diamond] hooks installed");
