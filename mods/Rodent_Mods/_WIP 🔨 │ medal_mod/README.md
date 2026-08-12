@@ -79,13 +79,18 @@ objects arcing out from the diamond's spot, exactly like a medal reveal. These
 fire only on the genuine first-earn for a race (gated by the atomic unlock), so
 re-visiting an already-earned diamond playback does not repeat them.
 
-**Golden-weasel white-fade** (rebased to the gold medal award)
+**Golden-weasel white-fade** (first earn only)
 
-The unlock sequence is **timed relative to the moment the gold medal is
-awarded** — not from the moment you touch the goal. The game awards gold when
-the results frame counter reaches the gold gate (`results+0x4c`, frame 400 for
-the race results object). The mod computes a *sequence frame* since that instant
-(`results+0x10 − results+0x4c`), so the whole reveal plays off gold:
+The unlock sequence — white-fade, vortex, and the dramatic reveal — plays **only
+the first time you earn a race's diamond**. On an already-earned replay the
+golden weasel renders normal gold and the diamond simply swaps in at gold + 240
+with no buildup.
+
+When it does play (first earn), it is **timed relative to the moment the gold
+medal is awarded** — not from the moment you touch the goal. The game awards
+gold when the results frame counter reaches the gold gate (`results+0x4c`, frame
+400 for the race results object). The mod computes a *sequence frame* since that
+instant (`results+0x10 − results+0x4c`), so the whole reveal plays off gold:
 
 - **55 frames after gold** — the golden weasel starts turning white
 - **150 frames after gold** — it is fully white (saturating multiplier 4.0)
@@ -96,7 +101,7 @@ The white-fade drives the game's native color-multiplier
 sprite blows out to pure white. Applied only around the weasel draw and cleared
 immediately after, so no other on-screen draw is tinted.
 
-**Golden-weasel suction vortex**
+**Golden-weasel suction vortex** (first earn only)
 
 While the weasel is turning white it is surrounded by a **suction vortex**:
 small white **thin rectangles** fade in at random angles and radii around the
@@ -125,10 +130,11 @@ The white trophy then **holds for another 55 frames** with no particles, before
 ## The reveal at gold + 240
 
 At **240 frames after the gold medal is awarded** the golden weasel **stops
-rendering entirely** and the **diamond trophy replaces it in that same frame**,
-firing the reveal effects (medal pop + star ring) on the first frame of the swap.
-This is the *only* diamond reveal — the old gold-gap 5th-medal reveal is
-disabled; the swap *is* the reveal, moved to land exactly at gold + 240.
+rendering entirely** and the **diamond trophy replaces it in that same frame**
+(every time the diamond time is met — including replays). On the first earn the
+swap fires the reveal effects (medal pop + star ring), and it is preceded by the
+white-out + vortex buildup. On an already-earned replay the diamond swaps in
+plainly (no white-out, no vortex, no pop) so the player can skip past it.
 
 After the first unlock the PNGs persist on disk so they render normally on
 subsequent visits.
