@@ -1,8 +1,10 @@
-# Custom Entities Mod v55n_80
+# Custom Entities Mod v55n_81
 
 A mknp_custom_entities.dll proxy mod for Hamsterball that spawns custom objects from MESHWORLD level files.
 
 ## Config (`mknp_custom_entities.txt`)
+
+The mod **auto-generates** `mknp_custom_entities.txt` next to the DLL if it doesn't exist (v55n_81), so you always have a fresh template to edit.
 
 - `grid_speed = 3.0` — seconds between GRID switches.
 - `enable_speedcylinder = 1` — **v55n_80 A/B test.** Set to `0` to disable all SpeedCylinder spawning (isolates the race-restart crash). Default `1` = ON.
