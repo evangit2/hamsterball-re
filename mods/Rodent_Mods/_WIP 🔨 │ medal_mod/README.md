@@ -125,6 +125,14 @@ from ~frame 165 to frame 240.
 After the first unlock the PNGs persist on disk so they render normally on
 subsequent visits.
 
+**Click/keypress skip is blocked while the diamond reveal is pending.** Normally
+clicking or pressing a key on the results screen fast-forwards through the medal
+awards. To make sure you don't accidentally miss the diamond, the mod stops the
+skip from engaging while the diamond time was met for the current race and the
+reveal (frame 240) hasn't played yet — the reveal plays out at normal speed. The
+skip behaves exactly as normal when the diamond was **not** achieved, and it is
+re-enabled after the reveal so you aren't stuck watching the white hold.
+
 **You do not need to provide any diamond icon files.**
 
 ## Required icons

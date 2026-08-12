@@ -210,6 +210,8 @@ static void load_real_bass(void) {
 #define WEASEL_DRAW_HOOK   0x44E139   /* call 0x42c7c0 (golden weasel draw) */
 #define WEASEL_RET         0x44E13E   /* next instr after 0x44E139 */
 #define TT_WEASEL_APPEND   0x42F927   /* call 0x44abf0 (TT menu golden weasel) */
+#define SKIP_LATCH_HOOK    0x44CBAA   /* movb $1,0x25(esi)  (skip latch set) */
+#define SKIP_LATCH_RET     0x44CBB1   /* next instr after the 5 patched bytes */
 #define SPRITE_DRAW        0x42C7C0
 #define ABF0_APPEND        0x44ABF0   /* medal list append (__stdcall, ret 8) */
 #define STR_FMT_D          0x4D03F8   /* "%d" */
@@ -396,6 +398,7 @@ static unsigned char *g_iconCave = NULL;
 static unsigned char *g_dispCave = NULL;
 static unsigned char *g_ttCave = NULL;
 static unsigned char *g_weaselCave = NULL;
+static unsigned char *g_skipCave = NULL;
 
 /* ================================================================
  * Logging + path helpers
@@ -653,6 +656,37 @@ static int get_player_time_cs(DWORD app) {
  * ================================================================ */
 __attribute__((used)) void diamond_load_icon_impl(DWORD app);
 __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app);
+
+/* BLOCK the results-screen click/keypress skip when the diamond time was
+ * achieved for the current race. The skip latch (results+0x25) drives the
+ * frame counter forward at 10x/frame (multiplier computed at 0x44cbcf),
+ * which would blast past the diamond's frame-240 reveal before the player
+ * can see it. Returning 1 forces the multiplier to 0 (normal speed) so the
+ * reveal plays out; returning 0 leaves skip fully functional (diamond NOT
+ * achieved this race -> skip exactly as before). Only blocks while the
+ * reveal could still be missed: after the reveal frame (240) the skip is
+ * allowed again so the player isn't stuck watching the white hold.
+ */
+__attribute__((used)) int diamond_block_skip(DWORD results) {
+    int frame, race, cs, thr;
+    DWORD app;
+    if (!results) return 0;
+    if (IsBadReadPtr((void*)(results + 0x10), 4)) return 0;   /* RESULT_FRAME */
+    frame = *(int*)(results + 0x10);
+    /* After the reveal (frame 240) the skip is safe — allow it. */
+    if (frame >= WEASEL_WHITE_TOTAL) return 0;
+    /* Only relevant while the results screen is awarding medals. */
+    if (IsBadReadPtr((void*)(results + 0x0C), 4)) return 0;   /* RESULT_APP */
+    app = *(DWORD*)(results + 0x0C);
+    if (!app || !g_configLoaded) return 0;
+    race = get_race_index();
+    if (race < 0 || race > 14) return 0;
+    if (!g_hasSecret[race]) return 0;
+    cs = get_player_time_cs(app);
+    thr = g_secret_cs[race];
+    /* Block skip iff the diamond time was met (and the reveal hasn't passed). */
+    return (cs > 0 && cs <= thr) ? 1 : 0;
+}
 
 /* Spawn the native medal-award effects (pop sound + star ring) for the
  * diamond, mirroring FUN_0044df70's first-earn block (0x44daf8-0x44dc10).
@@ -1349,6 +1383,53 @@ static void install_icon_cave(void) {
     diag_log("[diamond] icon cave installed at 0x42A304");
 }
 
+/* Cave E: block the results-screen click/keypress skip when the diamond was
+ * achieved (so the player sees the frame-240 reveal). We stop the SKIP LATCH
+ * from being set rather than hacking the multiplier — the latch (results+0x25)
+ * is the single source of truth for skip; if it never gets set, the frame
+ * counter simply advances at 1x/frame and the reveal plays out.
+ *
+ * Hook at 0x44CBAA: `movb $1,0x25(%esi)` (set latch, 4 bytes) + the first
+ * byte of the next instruction (`cmp %bl,0x24(%esi)` = 38 5e 24) = 5 bytes,
+ * ret 0x44CBB1. The cave:
+ *   push esi; call diamond_block_skip; add esp,4; test eax,eax
+ *   jnz block_skip          ; block == achieved -> do NOT set the latch
+ *   movb $1,0x25(esi)       ; re-emit original latch-set (not achieved)
+ * block_skip:
+ *   cmp %bl,0x24(esi)       ; re-emit the borrowed cmp byte
+ *   jmp 0x44CBB1
+ * esi = results object is preserved (helper is callee-saved for esi/edi/ebx).
+ */
+static void install_skip_cave(void) {
+    DWORD patchAddr = EXE_BASE + (SKIP_LATCH_HOOK - EXE_BASE);
+    DWORD retAddr   = EXE_BASE + (SKIP_LATCH_RET - EXE_BASE);
+    g_skipCave = (unsigned char*)VirtualAlloc(NULL, 48, MEM_COMMIT|MEM_RESERVE,
+                                              PAGE_EXECUTE_READWRITE);
+    if (!g_skipCave) return;
+    unsigned char *p = g_skipCave;
+    /* push esi (arg: results) */
+    p[0]=0x56; p+=1;
+    /* call diamond_block_skip (cdecl) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_block_skip-(DWORD)(p+5); p+=5;
+    /* add esp,4 (cdecl caller cleans) */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;
+    /* test eax,eax */
+    p[0]=0x85; p[1]=0xC0; p+=2;
+    /* jnz block_skip (rel=4: skip the 4-byte movb) */
+    p[0]=0x75; p[1]=0x04; p+=2;
+    /* movb $1,0x25(esi) — original latch-set (only when NOT blocked) */
+    p[0]=0xC6; p[1]=0x46; p[2]=0x25; p[3]=0x01; p+=4;
+    /* block_skip: cmp %bl,0x24(esi) — re-emit the borrowed byte's instr */
+    p[0]=0x38; p[1]=0x5E; p[2]=0x24; p+=3;
+    /* jmp back */
+    write_jmp(p, retAddr); p+=5;
+    unsigned char patch[5];
+    memset(patch, 0x90, 5);
+    write_jmp(patch, (DWORD)g_skipCave);
+    patch_bytes((void*)patchAddr, patch, 5);
+    diag_log("[diamond] skip-latch cave installed at 0x44CBAA");
+}
+
 /* Cave B: results-screen DIAMOND draw as a genuine 5th medal block, one
  * medal-gap AFTER gold. Hook at 0x44EFD2 (the gold `call 0x42c7c0`, 5 bytes).
  *   cave:     call 0x42c7c0            ; re-emit gold draw (existing stack args)
@@ -1522,6 +1603,7 @@ static void install_hooks(void) {
      * too early at ~frame 165 AND again at 240. */
     install_tt_cave();
     install_weasel_cave();
+    install_skip_cave();
     diag_log("[diamond] hooks installed");
 }
 
