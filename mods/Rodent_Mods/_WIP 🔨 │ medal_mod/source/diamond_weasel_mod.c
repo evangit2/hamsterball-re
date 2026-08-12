@@ -861,9 +861,9 @@ static void vortex_update_streak(Diamond_VortexP *p, int frame) {
 static void vortex_draw(DWORD gfx) {
     int i, n = 0;
     DWORD device, vt;
-    Diamond_TLVertex verts[VORTEX_MAX * 3];  /* 1 streak = 1 tri (3 verts) */
+    Diamond_TLVertex verts[VORTEX_MAX * 6];  /* 1 streak = 1 quad = 2 tris (6 verts) */
     Diamond_TLVertex *v;
-    float cx, cy, s, ex, ey, rr;
+    float cx, cy, s, rr;
     float ang, cang, sang;
     BYTE a;
     /* resolve device */
@@ -874,27 +874,43 @@ static void vortex_draw(DWORD gfx) {
     vt = *(DWORD*)device;
     if (!vt || IsBadReadPtr((void*)(vt + D3D_DEV_DRAWPRIMITIVEUP), 4)) return;
     cx = g_vortexCx; cy = g_vortexCy;
-    /* build a small white triangle "streak" per active particle */
+    /* build a thin long RECTANGLE per active particle (two triangles).
+     * The rectangle is oriented along the inward direction: it runs from the
+     * outer radius rr inward to rr - VORTEX_STRETCH, with thickness s on the
+     * perpendicular axis. Corners (inward axis = +cang/+sang):
+     *   A = outer-left, B = outer-right   (base, at radius rr)
+     *   C = inner-right, D = inner-left   (top, at radius rr - VORTEX_STRETCH)
+     * Quad A-B-C-D drawn as triangle A-B-C and A-C-D. */
     for (i = 0; i < VORTEX_MAX && n < VORTEX_MAX; i++) {
         Diamond_VortexP *p = &g_vortex[i];
         if (!p->active || p->alpha == 0) continue;
         ang = p->ax + p->ay * p->born;
         cang = (float)cos(ang); sang = (float)sin(ang);
-        rr   = p->r;
-        s    = 2.0f;                    /* streak thickness (px) */
-        ex   = cx + cang * (rr - VORTEX_STRETCH);   /* tip (inner) */
-        ey   = cy + sang * (rr - VORTEX_STRETCH);
-        a    = p->alpha;
-        v = &verts[n*3];
-        /* thin triangle: base at radius rr, tip slightly inward = "streak" */
-        v[0].x = cx + cang*rr - sang*s;  v[0].y = cy + sang*rr + cang*s;
-        v[1].x = cx + cang*rr + sang*s;  v[1].y = cy + sang*rr - cang*s;
-        v[2].x = ex;                     v[2].y = ey;
-        v[0].z = v[1].z = v[2].z = 0.0f;
-        v[0].rhw = v[1].rhw = v[2].rhw = 1.0f;
-        v[0].color = v[1].color = v[2].color =
-            (DWORD)(a << 24) | 0x00FFFFFF;   /* white, alpha */
-        n++;
+        rr = p->r;
+        s  = 2.0f;                    /* rectangle half-thickness (px) */
+        a  = p->alpha;
+        v = &verts[n*6];
+        /* perpendicular unit vector (px,py) */
+        float px_ = -sang, py_ = cang;
+        /* outer ring (base) endpoints */
+        float Ax = cx + cang*rr + px_*s;   float Ay = cy + sang*rr + py_*s;
+        float Bx = cx + cang*rr - px_*s;   float By = cy + sang*rr - py_*s;
+        /* inner top endpoints (one streak-length inward) */
+        float inr = rr - VORTEX_STRETCH;
+        float Cx = cx + cang*inr - px_*s;  float Cy = cy + sang*inr - py_*s;
+        float Dx = cx + cang*inr + px_*s;  float Dy = cy + sang*inr + py_*s;
+        v[0].x = Ax; v[0].y = Ay;   /* A */
+        v[1].x = Bx; v[1].y = By;   /* B */
+        v[2].x = Cx; v[2].y = Cy;   /* C */
+        v[3].x = Ax; v[3].y = Ay;   /* A */
+        v[4].x = Cx; v[4].y = Cy;   /* C */
+        v[5].x = Dx; v[5].y = Dy;   /* D */
+        for (int k = 0; k < 6; k++) {
+            v[k].z = 0.0f;
+            v[k].rhw = 1.0f;
+            v[k].color = (DWORD)(a << 24) | 0x00FFFFFF;  /* white, alpha */
+        }
+        n += 2;   /* each streak adds 2 triangles */
     }
     if (n == 0) return;
     /* --- render setup (see d3d8-screen-rect-overlay recipe) ---

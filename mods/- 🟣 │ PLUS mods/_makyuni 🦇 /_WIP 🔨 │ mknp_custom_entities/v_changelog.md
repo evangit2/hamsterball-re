@@ -1,44 +1,45 @@
-v55n_74 - Fix crash: SpeedCylinder render hooks used wrong matrix path
+v55n_75 - Apply proven renderLevel+0x4 Y-rotation to SpeedCylinder cylinder (cEnt_002), trigger box passthrough
 ------------------------------------------------------------
-USER REPORT (v55n_72):
- - "game froze for a second after entering the level, then crashed with no
-   error message." Log showed the hooks installed fine:
-   `SC cyl render hook installed (col=0x0C7AD340 orig=0x00465650)`
-   `SC trigger render hook installed (trig=0x0C7AA028 orig=0x0045E0E0)`
-   then crash once the level (with cEnt_001 SpeedCylinder) started rendering.
+CONTEXT (v55n_72/73/74 chain):
+ - v55n_72: applied chomper DEVICE-SetTransform rotation to BOTH the cylinder
+   render Level and the trigger box -> crashed at level load.
+ - v55n_73: branched (device for trigger box, renderLevel+0x4 for cylinder)
+   -> crashed INSIDE d3d8.dll during Draw. Root cause: at render time the
+   device deref chain *(0x005341E0)=the SCENE (log: g_Scene=...), not App,
+   so the trigger-box device path resolved a GARBAGE device -> Get/SetTransform
+   faulted in d3d8. The log's MODULE: d3d8.dll confirmed it.
+ - v55n_74: full passthrough revert (kept rad/deg trigger fix) -> STABLE, no
+   crash. User confirmed "now it works" but no rotation and cEnt_001 still
+   doesn't fire.
 
-ROOT CAUSE:
- - v55n_72 used the CHOMPER device-SetTransform technique for BOTH the
-   cylinder's render Level AND the trigger box. That is wrong for the
-   cylinder: its render Level is a CollisionLevel whose vtable[18] is
-   0x465650 — the CATAPULT family, which reads its world matrix from
-   *(this_+0x434)+0x4 (passed to Graphics_BeginFrame), NOT from the D3D
-   device. Calling device Get/SetTransform and swapping the world matrix on
-   this family corrupts the render state -> crash at level render.
- - The hbtestd crash test only reaches the TITLE SCREEN (no SpeedCylinder is
-   spawned there), so it never exercised the hook -> passed despite the bug.
+GOAL (v55n_75):
+ - Apply rotation from the cEnt_002 REF point ONLY to cEnt_002 (as it should
+   be). Focus on cEnt_002; leave cEnt_001 aside for now.
 
-FIX:
- - cEnt_speedcyl_render now BRANCHES on which object renders:
-   * TRIGGER BOX (PopCylinder, orig 0x45E0E0 = chomper family): device
-     Get/SetTransform with Y-rotation composed about the cylinder center.
-   * CYLINDER RENDER LEVEL (CollisionLevel, orig 0x465650 = catapult family):
-     rotate *(this_+0x434)+0x4 (renderLevel+0x4) around Y, save/restore. Never
-     touches the device.
- - This mirrors the two PROVEN patterns (chomper + catapult) used elsewhere.
+CHANGE:
+ - cEnt_speedcyl_render cylinder branch now uses the PROVEN renderLevel+0x4
+   technique (timebutton/catapult/waterwheel family): world matrix lives at
+   `renderLevel+0x4` where `renderLevel = this_+0x434`. Rotate ONLY around Y
+   (yaw, deg->rad) about the cylinder's own center:
+       M = T(-cx,-cy,-cz) * RY(ang) * T(+cx,+cy,+cz)
+   RY row-major = { c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1 }.
+   Save matrix -> compose -> call orig -> restore. NO device access.
+ - Instances with yaw==0 (cEnt_001) get identity = no visual change.
+ - Trigger box branch stays SAFE PASSTHROUGH (device path was the v55n_73
+   crasher). Trigger-box visual rotation intentionally deferred.
+ - rad/deg conversion kept in the trigger test (pure physics-zone correctness).
 
-LESSON:
- - vtable[18] orig address tells you the render family:
-   0x45E0E0 / 0x465650 (catapult-verify before assuming) = Stands/CollisionLevel
-   renders read *(this+0x434)+0x4. PopCylinder renders = same addr for box but
-   must confirm. Treat 0x465650 as renderLevel+0x4 path; PopCylinder-as-box
-   uses the discovered device path. Only apply device SetTransform to
-   objects whose render actually honours the device world matrix.
+UNRESOLVED:
+ - cEnt_001 trigger still doesn't fire = geometry (yaw=0 box Z[-997.8,-937.2]
+   vs ball path z~-927..-933; needs a level-file overlap, not code).
+ - Deferred items: visual rotation of the trigger box; whether the cylinder
+   0x465650 original render is the correct fallback (unproven by real run).
 
 VERIFICATION:
- - Build clean (EXIT=0, embedded v55n_74). Crash-test OK (11.68s, hbtestd).
- - NOTE: hbtestd cannot reach level load, so REAL crash verification still
-   needs MAKYUNI's Windows run. Ask for log + a crash-free run of the level.
+ - Build clean (EXIT=0, embedded v55n_75). Crash-test OK (11.52s, hbtestd).
+ - hbtestd only reaches title screen -> REAL verification needs MAKYUNI's run:
+   cEnt_002 should now render visually rotated by 90° about Y, no crash.
+
 
 v55n_72 - SpeedCylinder visual Y-rotation + rad/deg fix
 ------------------------------------------------------------
