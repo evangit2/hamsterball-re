@@ -1,3 +1,53 @@
+v55n_79 - Fix restart crash: REMOVE the SpeedCylinder world-matrix write entirely
+------------------------------------------------------------
+USER REPORT (v55n_78 STILL crashed):
+ - Same crash on race restart, EVEN THOUGH v55n_78 removed the vtable[18]
+   hook and only baked the Y-rotation ONCE at spawn:
+   CRASH_ADDRESS 0001:000526A0 (=0x4526A0, byte 1 of `push 0x3F400000`,
+   MID-INSTRUCTION EIP = return-address corruption) during Draw.
+ - This DEFINITIVELY rules out the "stale hooked vtable[18] on a freed
+   object" theory from v55n_77: there is no hook in v55n_78, yet it still
+   crashes identically.
+
+ROOT CAUSE (the common thread across ALL crashing versions):
+ - Every version that crashes (v55n_75/76/77/78) WRITES the cylinder's
+   world matrix at renderLevel+0x4 (obj+0x434+4 = obj+0x438):
+     * v55n_75/76/77: per-frame inside the hooked vtable[18] render
+     * v55n_78:       once at spawn from the background entity_thread
+ - v55n_74 (pure passthrough, NO matrix write) was crash-free.
+ - Writing that matrix — from the background thread at spawn (v55n_78) OR
+   from the hooked render — races the Draw-phase renderer which reads
+   obj+0x438 via Graphics_BeginFrame/SetTransform. The matrix gets torn /
+   corrupted while being read -> the render Level's transform is garbage ->
+   ESP/return-address corruption -> EIP lands mid-instruction in the board
+   Draw fn (crash 0x4526A0).
+ - The catapult/waterwheel write the SAME matrix but are stable because they
+   do it synchronously on the MAIN thread during Draw inside the render call
+   (save -> rotate -> render -> restore). The speedcyl bake ran on the
+   background thread and left the matrix permanently modified.
+
+FIX (v55n_79):
+ - REMOVE all world-matrix writes for the SpeedCylinder, both cylinder and
+   trigger box. No render hook, no spawn-time bake. The fixed per-cylinder
+   yaw (from the cEnt ref point) is now used ONLY for the trigger-zone math
+   in cEnt_speedcyl_present_check (rotates the ball by -yaw into the
+   cylinder's local frame before the AABB test) — so the trigger still fires
+   on the correctly-rotated zone.
+ - VISUAL rotation of the cylinder/trigger is temporarily DISABLED
+   (they render in their unrotated mesh orientation). To rotate the visual
+   safely, the mesh must be rotated in the level file itself, OR the matrix
+   write must be moved onto the main thread inside a Draw-phase render call
+   (the catapult pattern). That is a follow-up once the restart crash is
+   confirmed gone.
+ - The v55n_77 teardown-restore block is a harmless no-op now.
+
+VERIFICATION:
+ - Build clean (EXIT=0, embedded v55n_79). Crash-test OK (15.59s, hbtestd).
+ - hbtestd only reaches title screen -> real restart still needs MAKYUNI's
+   run: play a race with cEnt_001/002, then RESTART — must no longer crash.
+   If confirmed, we re-add visual rotation via the main-thread catapult
+   pattern.
+
 v55n_78 - Fix restart crash for REAL: remove the SpeedCylinder vtable[18] hook
 ------------------------------------------------------------
 USER REPORT (v55n_77 STILL crashed):
