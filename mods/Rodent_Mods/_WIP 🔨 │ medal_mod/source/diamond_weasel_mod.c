@@ -224,6 +224,10 @@ static void load_real_bass(void) {
 #define WEASEL_WHITE_START   55
 #define WEASEL_WHITE_END     150
 #define WEASEL_WHITE_MULT    4.0f      /* saturating color multiplier for pure white */
+#define WEASEL_WHITE_HOLD    55        /* frames the white trophy holds with no particles */
+/* Total result-frame at which the white hold ends and the trophy reverts to
+ * normal gold: (white start) + (active spawns) + (fade tail) + (hold). */
+#define WEASEL_WHITE_TOTAL   (WEASEL_WHITE_START + (int)VORTEX_FRAMES + (int)VORTEX_TAIL + WEASEL_WHITE_HOLD)
 #define APP_GFX             0x174      /* App+0x174 = gfx ptr */
 #define SPRITE_GFX          0x04       /* sprite+4 = gfx ptr (Sprite_DrawRect uses) */
 #define SPRITE_WEAEL_APP    0x37C      /* App+0x37C = goldenweasel.png sprite */
@@ -720,6 +724,7 @@ __attribute__((used)) void diamond_weasel_mult(DWORD results) {
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
     frame = *(int*)(results + RESULT_FRAME);
     if (frame <= WEASEL_WHITE_START) return;      /* not fading yet */
+    if (frame >= WEASEL_WHITE_TOTAL) return;      /* white hold over -> normal gold */
     if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
     app = *(DWORD*)(results + RESULT_APP);
     if (!app || IsBadReadPtr((void*)(app + SPRITE_WEAEL_APP), 4)) return;
