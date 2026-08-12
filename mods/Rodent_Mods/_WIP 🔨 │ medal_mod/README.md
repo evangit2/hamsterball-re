@@ -100,6 +100,10 @@ is the trophy's true center (sprite top-left + half of its width/height), and
 center tracking replicates the game's own `Gfx_TransformX/Y` world→screen math
 so it stays anchored at any resolution.
 
+After the ~100-frame active cycle, a ~30-frame tail plays: no new streaks spawn,
+the weasel stays white, and any remaining streaks drift inward and fade to
+nothing.
+
 After the first unlock the PNGs persist on disk so they render normally on
 subsequent visits.
 
