@@ -1,6 +1,37 @@
-v55n_70 - Multiple SpeedCylinders: per-cylinder fixed world orientation (ROT_Y)
+v55n_71 - Per-cylinder fixed orientation: READ from the cEnt ref point itself
 ------------------------------------------------------------
-USER REQUEST:
+USER CORRECTION:
+ - Reported v55n_70 "seems like nothing changed" — log showed `yaw=0.000`
+   for both cylinders.
+ - "I didn't ask you to read its rotation from ROT_Y. In the case of cEnt
+   Speedcylinders, it should be read directly from their cEnt REF point."
+
+ROOT CAUSE:
+ - v55n_70 read a `ROT_Y` tag out of the ref point's <DAT> block. The user's
+   cEnt ref points carry NO such tag, so `ent_rot_y` was always 0.0 and every
+   cylinder yawed 0 -> two axis-aligned boxes, nothing changed.
+ - The rotation the user wants lives IN the ref point's own S1 struct. Parsing
+   the uploaded Level1.MESHWORLD confirmed it:
+     [24] cEnt_001 pos(950,-166.2,-997.5) rot=(0,0,0)
+     [25] cEnt_002 pos(1045,-166.2,-427.5) rot=(0,90,0)   <-- 90 deg Y
+
+FIX:
+ - This is a user-exported file using (x,y,z) ordering (position second float
+   = game Y, verified vs ball riding y~-156). So the ref point's rotation
+   floats are engine-ordered: +0x10 rot.x, +0x14 rot.y, +0x18 rot.z.
+ - Read the engine-Y rotation (the cylinder's world-yaw) straight from the
+   ref point struct at obj_ptr+0x14, instead of parsing any tag. cEnt_002 now
+   gets yaw=90.0, cEnt_001 yaw=0.0 -> two distinct fixed world orientations.
+ - present_check already rotates the ball into each cylinder's local frame by
+   -yaw before the AABB test, so each fires on its own rotated zone.
+
+VERIFICATION:
+ - Build clean, crash-test OK (11.51s, hbtestd) - v55n_71.
+ - Log prints `yaw=` per cylinder from the ref point's own rotation.
+
+v55n_70 (SUPERSEDED) - per-cylinder fixed orientation via ROT_Y tag — WRONG
+------------------------------------------------------------
+USER REQUEST (now handled correctly in v55n_71):
  - "I want you to allow multiple entities of the same kind. In this case, two
    Speedcylinders. Each speedcylinder should have its own rotation values (read
    from the ref point of the level MESHWORLD), and such values should be applied
@@ -8,21 +39,14 @@ USER REQUEST:
    as separate entities."
  - "I want you to make each cylinder+trigger get a distinct fixed world orientation."
 
-WHAT CHANGED:
- - SpeedCylState gains a per-cylinder `yaw` field = ROT_Y parsed from the ref
-   point's <DAT> block (default 0.0).
- - The ref-point loop now reads ROT_Y via cEnt_extract_dat_prop and passes it
-   into cEnt_Spawn_cEntity_at (was hardcoded 0.0,1.0,0.0).
- - present_check rotates the ball into the cylinder's LOCAL frame by -yaw
-   before the axis-aligned box test, so each cylinder only fires on its own
-   rotated trigger zone. Multiple cylinders are fully independent (g_speedcyls
-   already tracked 16; the per-frame driver already looped all).
- - Box stays axis-aligned for now (test aid); visual-box/cylinder mesh rotation
-   is a separate follow-up (option B).
-
-VERIFICATION:
- - Build clean, crash-test OK (11.53s, hbtestd).
- - Log now prints `yaw=...` per cylinder so orientation is verifiable on Windows.
+WHAT CHANGED (v55n_70):
+ - SpeedCylState gained a per-cylinder `yaw` field.
+ - v55n_70 parsed `ROT_Y` from the ref point's <DAT> block (default 0.0) and
+   rotated the ball into the cylinder's local frame by -yaw before the AABB
+   test.
+ - This was the WRONG approach: the ref points have no ROT_Y tag, so yaw
+   stayed 0 and nothing changed. Superseded by v55n_71, which reads the
+   rotation from the ref point struct itself.
 
 v55n_69 - Trigger box visible now: make it NON-solid (pass-through)
 ------------------------------------------------------------
