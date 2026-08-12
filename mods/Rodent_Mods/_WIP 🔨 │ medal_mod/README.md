@@ -91,14 +91,14 @@ draw is tinted.
 **Golden-weasel suction vortex**
 
 While the weasel is turning white it is surrounded by a **suction vortex**:
-small white streaks fade in at random angles and radii around the trophy, then
-pull straight inward toward its center (no swirl), disappear behind it, and the
-cycle repeats for ~100 result-frames. It is drawn with the game's D3D8 device
-directly (`DrawPrimitiveUP`, screen-space `D3DFVF_TLVERTEX` quads) **before** the
-trophy sprite draw, so the streaks render behind the golden weasel. Its center
-is the trophy's true center (sprite top-left + half of its width/height), and
-center tracking replicates the game's own `Gfx_TransformX/Y` world→screen math
-so it stays anchored at any resolution.
+small white **thin rectangles** fade in at random angles and radii around the
+trophy, then pull straight inward toward its center (no swirl), disappear behind
+it, and the cycle repeats for ~100 result-frames. It is drawn with the game's
+D3D8 device directly (`DrawPrimitiveUP`, screen-space `D3DFVF_TLVERTEX` quads)
+**before** the trophy sprite draw, so the streaks render behind the golden
+weasel. Its center is the trophy's true center (sprite top-left + half of its
+width/height), and center tracking replicates the game's own `Gfx_TransformX/Y`
+world→screen math so it stays anchored at any resolution.
 
 After the ~100-frame active cycle, a ~30-frame tail plays: no new streaks spawn,
 the weasel stays white, and any remaining streaks drift inward and fade to
