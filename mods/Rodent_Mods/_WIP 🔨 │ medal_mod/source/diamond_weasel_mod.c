@@ -834,8 +834,8 @@ static void vortex_update_streak(Diamond_VortexP *p, int frame) {
     /* gradual inward pull */
     p->r -= p->vr;
     if (p->r < VORTEX_MINR || p->r > 4000.0f) { p->active = 0; return; }
-    /* fade in over first 8 frames, out over last 12 of the cycle */
-    if (p->born < 8)    p->alpha = (BYTE)(p->born * 32);
+    /* fade in smoothly over first ~15 frames (EASE IN, no pop), out over last 12 */
+    if (p->born < 15)   p->alpha = (BYTE)((p->born * 17) & 0xFF); /* 0,17,..238,255-ish */
     else if (frame > VORTEX_FRAMES - 12) p->alpha = (BYTE)((VORTEX_FRAMES - frame) * 21);
     else p->alpha = 255;
     p->born++;
