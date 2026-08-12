@@ -1,3 +1,45 @@
+v55n_73 - Fix crash: SpeedCylinder render hooks used wrong matrix path
+------------------------------------------------------------
+USER REPORT (v55n_72):
+ - "game froze for a second after entering the level, then crashed with no
+   error message." Log showed the hooks installed fine:
+   `SC cyl render hook installed (col=0x0C7AD340 orig=0x00465650)`
+   `SC trigger render hook installed (trig=0x0C7AA028 orig=0x0045E0E0)`
+   then crash once the level (with cEnt_001 SpeedCylinder) started rendering.
+
+ROOT CAUSE:
+ - v55n_72 used the CHOMPER device-SetTransform technique for BOTH the
+   cylinder's render Level AND the trigger box. That is wrong for the
+   cylinder: its render Level is a CollisionLevel whose vtable[18] is
+   0x465650 — the CATAPULT family, which reads its world matrix from
+   *(this_+0x434)+0x4 (passed to Graphics_BeginFrame), NOT from the D3D
+   device. Calling device Get/SetTransform and swapping the world matrix on
+   this family corrupts the render state -> crash at level render.
+ - The hbtestd crash test only reaches the TITLE SCREEN (no SpeedCylinder is
+   spawned there), so it never exercised the hook -> passed despite the bug.
+
+FIX:
+ - cEnt_speedcyl_render now BRANCHES on which object renders:
+   * TRIGGER BOX (PopCylinder, orig 0x45E0E0 = chomper family): device
+     Get/SetTransform with Y-rotation composed about the cylinder center.
+   * CYLINDER RENDER LEVEL (CollisionLevel, orig 0x465650 = catapult family):
+     rotate *(this_+0x434)+0x4 (renderLevel+0x4) around Y, save/restore. Never
+     touches the device.
+ - This mirrors the two PROVEN patterns (chomper + catapult) used elsewhere.
+
+LESSON:
+ - vtable[18] orig address tells you the render family:
+   0x45E0E0 / 0x465650 (catapult-verify before assuming) = Stands/CollisionLevel
+   renders read *(this+0x434)+0x4. PopCylinder renders = same addr for box but
+   must confirm. Treat 0x465650 as renderLevel+0x4 path; PopCylinder-as-box
+   uses the discovered device path. Only apply device SetTransform to
+   objects whose render actually honours the device world matrix.
+
+VERIFICATION:
+ - Build clean (EXIT=0, embedded v55n_73). Crash-test OK (11.68s, hbtestd).
+ - NOTE: hbtestd cannot reach level load, so REAL crash verification still
+   needs MAKYUNI's Windows run. Ask for log + a crash-free run of the level.
+
 v55n_72 - SpeedCylinder visual Y-rotation + rad/deg fix
 ------------------------------------------------------------
 USER REPORT (v55n_71):

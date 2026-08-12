@@ -56,1196 +56,1196 @@ mknp_custom_entities.c:1129:2: warning: "/*" within comment [-Wcomment]
  1129 |  /* v55m_27: Custom vtable[18] for Chomper — applies jaw rotation via direct D3D SetTransform.
       |   
 mknp_custom_entities.c: In function ‘cEnt_catapult_render’:
-mknp_custom_entities.c:1353:61: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 1353 |                     fprintf(df, "CATAPULT RENDER: this=0x%08X renderLevel=0x%08X arm_angle=%.2f draw=%d\n",
+mknp_custom_entities.c:1400:61: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 1400 |                     fprintf(df, "CATAPULT RENDER: this=0x%08X renderLevel=0x%08X arm_angle=%.2f draw=%d\n",
       |                                                          ~~~^
       |                                                             |
       |                                                             unsigned int
       |                                                          %08lX
- 1354 |                         this_, renderLevel, cs->arm_angle, g_in_draw_phase);
+ 1401 |                         this_, renderLevel, cs->arm_angle, g_in_draw_phase);
       |                         ~~~~~                                
       |                         |
       |                         DWORD {aka long unsigned int}
-mknp_custom_entities.c:1353:80: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 1353 |                     fprintf(df, "CATAPULT RENDER: this=0x%08X renderLevel=0x%08X arm_angle=%.2f draw=%d\n",
+mknp_custom_entities.c:1400:80: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 1400 |                     fprintf(df, "CATAPULT RENDER: this=0x%08X renderLevel=0x%08X arm_angle=%.2f draw=%d\n",
       |                                                                             ~~~^
       |                                                                                |
       |                                                                                unsigned int
       |                                                                             %08lX
- 1354 |                         this_, renderLevel, cs->arm_angle, g_in_draw_phase);
+ 1401 |                         this_, renderLevel, cs->arm_angle, g_in_draw_phase);
       |                                ~~~~~~~~~~~                                      
       |                                |
       |                                DWORD {aka long unsigned int}
 mknp_custom_entities.c: In function ‘cEnt_neutralize_collision_tree’:
-mknp_custom_entities.c:1623:68: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 1623 |         if (logf) fprintf(logf, "  WATERWHEEL: collision node 0x%08X render-neutralized (total %d)\n", node, count);
+mknp_custom_entities.c:1670:68: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 1670 |         if (logf) fprintf(logf, "  WATERWHEEL: collision node 0x%08X render-neutralized (total %d)\n", node, count);
       |                                                                 ~~~^                                   ~~~~
       |                                                                    |                                   |
       |                                                                    unsigned int                        DWORD {aka long unsigned int}
       |                                                                 %08lX
 mknp_custom_entities.c: In function ‘cEnt_neutralize_waterwheel_collision’:
-mknp_custom_entities.c:1646:69: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 1646 |         if (logf) fprintf(logf, "  WATERWHEEL: collision level 0x%08X render-neutralized (root)\n", col);
+mknp_custom_entities.c:1693:69: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 1693 |         if (logf) fprintf(logf, "  WATERWHEEL: collision level 0x%08X render-neutralized (root)\n", col);
       |                                                                  ~~~^                               ~~~
       |                                                                     |                               |
       |                                                                     unsigned int                    DWORD {aka long unsigned int}
       |                                                                  %08lX
-mknp_custom_entities.c:1699:90: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 1699 |                         if (logf) fprintf(logf, "  WATERWHEEL: board collision node 0x%08X render-neutralized (total %d)\n", node, total);
+mknp_custom_entities.c:1746:90: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 1746 |                         if (logf) fprintf(logf, "  WATERWHEEL: board collision node 0x%08X render-neutralized (total %d)\n", node, total);
       |                                                                                       ~~~^                                   ~~~~
       |                                                                                          |                                   |
       |                                                                                          unsigned int                        DWORD {aka long unsigned int}
       |                                                                                       %08lX
 mknp_custom_entities.c: In function ‘hook_DispatchCollisionEvents’:
-mknp_custom_entities.c:2137:75: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long unsigned int’ [-Wformat=]
- 2137 |             fprintf(cdf, "E:CATAPULT collides with player ball (ball=0x%08X, hit_obj=0x%08X, event='%s')\n",
+mknp_custom_entities.c:2184:75: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long unsigned int’ [-Wformat=]
+ 2184 |             fprintf(cdf, "E:CATAPULT collides with player ball (ball=0x%08X, hit_obj=0x%08X, event='%s')\n",
       |                                                                        ~~~^
       |                                                                           |
       |                                                                           unsigned int
       |                                                                        %08lX
- 2138 |                 (DWORD)ball, hit_obj, event_name);
+ 2185 |                 (DWORD)ball, hit_obj, event_name);
       |                 ~~~~~~~~~~~                                                
       |                 |
       |                 long unsigned int
-mknp_custom_entities.c:2137:91: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2137 |             fprintf(cdf, "E:CATAPULT collides with player ball (ball=0x%08X, hit_obj=0x%08X, event='%s')\n",
+mknp_custom_entities.c:2184:91: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2184 |             fprintf(cdf, "E:CATAPULT collides with player ball (ball=0x%08X, hit_obj=0x%08X, event='%s')\n",
       |                                                                                        ~~~^
       |                                                                                           |
       |                                                                                           unsigned int
       |                                                                                        %08lX
- 2138 |                 (DWORD)ball, hit_obj, event_name);
+ 2185 |                 (DWORD)ball, hit_obj, event_name);
       |                              ~~~~~~~                                                       
       |                              |
       |                              DWORD {aka long unsigned int}
-mknp_custom_entities.c:2151:93: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2151 |                             fprintf(cdf, "E:CATAPULT is triggering its event (catapult=0x%08X) -> Catapult_Launch\n",
+mknp_custom_entities.c:2198:93: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2198 |                             fprintf(cdf, "E:CATAPULT is triggering its event (catapult=0x%08X) -> Catapult_Launch\n",
       |                                                                                          ~~~^
       |                                                                                             |
       |                                                                                             unsigned int
       |                                                                                          %08lX
- 2152 |                                 g_catapults[i].obj);
+ 2199 |                                 g_catapults[i].obj);
       |                                 ~~~~~~~~~~~~~~~~~~                                           
       |                                               |
       |                                               DWORD {aka long unsigned int}
-mknp_custom_entities.c:2177:104: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2177 |                     fprintf(cdf, "COLLISION_EVENT: E:CATAPULTBOTTOM fallback closest catapult obj=0x%08X -> Catapult_Launch\n",
+mknp_custom_entities.c:2224:104: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2224 |                     fprintf(cdf, "COLLISION_EVENT: E:CATAPULTBOTTOM fallback closest catapult obj=0x%08X -> Catapult_Launch\n",
       |                                                                                                     ~~~^
       |                                                                                                        |
       |                                                                                                        unsigned int
       |                                                                                                     %08lX
- 2178 |                         g_catapults[best].obj);
+ 2225 |                         g_catapults[best].obj);
       |                         ~~~~~~~~~~~~~~~~~~~~~                                                           
       |                                          |
       |                                          DWORD {aka long unsigned int}
-mknp_custom_entities.c:2289:82: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2289 |                         fprintf(plf, "  cENTITY: TimeButton pressed (entity=0x%08X)\n", tb_entity);
+mknp_custom_entities.c:2336:82: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2336 |                         fprintf(plf, "  cENTITY: TimeButton pressed (entity=0x%08X)\n", tb_entity);
       |                                                                               ~~~^      ~~~~~~~~~
       |                                                                                  |      |
       |                                                                                  |      DWORD {aka long unsigned int}
       |                                                                                  unsigned int
       |                                                                               %08lX
 mknp_custom_entities.c: In function ‘cEnt_find_grid_points’:
-mknp_custom_entities.c:2460:82: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2460 |         if (logf) fprintf(logf, "  GRID: can't read S1 list count (sceneobj=0x%08X)\n", sceneobj);
+mknp_custom_entities.c:2507:82: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2507 |         if (logf) fprintf(logf, "  GRID: can't read S1 list count (sceneobj=0x%08X)\n", sceneobj);
       |                                                                               ~~~^      ~~~~~~~~
       |                                                                                  |      |
       |                                                                                  |      DWORD {aka long unsigned int}
       |                                                                                  unsigned int
       |                                                                               %08lX
-mknp_custom_entities.c:2464:52: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2464 |     if (logf) fprintf(logf, "  GRID: sceneobj=0x%08X, S1 count=%d\n", sceneobj, s1_count);
+mknp_custom_entities.c:2511:52: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2511 |     if (logf) fprintf(logf, "  GRID: sceneobj=0x%08X, S1 count=%d\n", sceneobj, s1_count);
       |                                                 ~~~^                  ~~~~~~~~
       |                                                    |                  |
       |                                                    unsigned int       DWORD {aka long unsigned int}
       |                                                 %08lX
-mknp_custom_entities.c:2476:68: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long unsigned int’ [-Wformat=]
- 2476 |         if (logf) fprintf(logf, "  GRID: S1 data ptr invalid (0x%08X)\n", (DWORD)s1_data);
+mknp_custom_entities.c:2523:68: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long unsigned int’ [-Wformat=]
+ 2523 |         if (logf) fprintf(logf, "  GRID: S1 data ptr invalid (0x%08X)\n", (DWORD)s1_data);
       |                                                                 ~~~^      ~~~~~~~~~~~~~~
       |                                                                    |      |
       |                                                                    |      long unsigned int
       |                                                                    unsigned int
       |                                                                 %08lX
-mknp_custom_entities.c:2505:58: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2505 |                 fprintf(logf, "  GRID: S1[%d] entry=0x%08X (bad nameptr=0x%08X) raw: %02X%02X%02X%02X\n",
+mknp_custom_entities.c:2552:58: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2552 |                 fprintf(logf, "  GRID: S1[%d] entry=0x%08X (bad nameptr=0x%08X) raw: %02X%02X%02X%02X\n",
       |                                                       ~~~^
       |                                                          |
       |                                                          unsigned int
       |                                                       %08lX
- 2506 |                     i, entry, (DWORD)name,
+ 2553 |                     i, entry, (DWORD)name,
       |                        ~~~~~                              
       |                        |
       |                        DWORD {aka long unsigned int}
-mknp_custom_entities.c:2505:78: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘long unsigned int’ [-Wformat=]
- 2505 |                 fprintf(logf, "  GRID: S1[%d] entry=0x%08X (bad nameptr=0x%08X) raw: %02X%02X%02X%02X\n",
+mknp_custom_entities.c:2552:78: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘long unsigned int’ [-Wformat=]
+ 2552 |                 fprintf(logf, "  GRID: S1[%d] entry=0x%08X (bad nameptr=0x%08X) raw: %02X%02X%02X%02X\n",
       |                                                                           ~~~^
       |                                                                              |
       |                                                                              unsigned int
       |                                                                           %08lX
- 2506 |                     i, entry, (DWORD)name,
+ 2553 |                     i, entry, (DWORD)name,
       |                               ~~~~~~~~~~~                                     
       |                               |
       |                               long unsigned int
 mknp_custom_entities.c: In function ‘cEnt_process_custom_tags’:
-mknp_custom_entities.c:2660:76: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2660 |         fprintf(logf, "  TAGS: cEnt_process_custom_tags called (board=0x%08X)\n", board);
+mknp_custom_entities.c:2707:76: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2707 |         fprintf(logf, "  TAGS: cEnt_process_custom_tags called (board=0x%08X)\n", board);
       |                                                                         ~~~^      ~~~~~
       |                                                                            |      |
       |                                                                            |      DWORD {aka long unsigned int}
       |                                                                            unsigned int
       |                                                                         %08lX
-mknp_custom_entities.c:2667:65: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long unsigned int’ [-Wformat=]
- 2667 |         if (logf) fprintf(logf, "  TAGS: bad_balls_list at 0x%08X is bad read\n", (DWORD)bad_balls_list);
+mknp_custom_entities.c:2714:65: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long unsigned int’ [-Wformat=]
+ 2714 |         if (logf) fprintf(logf, "  TAGS: bad_balls_list at 0x%08X is bad read\n", (DWORD)bad_balls_list);
       |                                                              ~~~^                 ~~~~~~~~~~~~~~~~~~~~~
       |                                                                 |                 |
       |                                                                 unsigned int      long unsigned int
       |                                                              %08lX
-mknp_custom_entities.c:2774:72: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2774 |                             if (logf) fprintf(logf, "  TAGS: ball 0x%08X → mesh slot %d (mesh=0x%08X from App+0x%X)\n",
+mknp_custom_entities.c:2821:72: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2821 |                             if (logf) fprintf(logf, "  TAGS: ball 0x%08X → mesh slot %d (mesh=0x%08X from App+0x%X)\n",
       |                                                                     ~~~^
       |                                                                        |
       |                                                                        unsigned int
       |                                                                     %08lX
- 2775 |                                     ball, target_slot, src_mesh,
+ 2822 |                                     ball, target_slot, src_mesh,
       |                                     ~~~~                                
       |                                     |
       |                                     DWORD {aka long unsigned int}
-mknp_custom_entities.c:2774:100: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2774 |                             if (logf) fprintf(logf, "  TAGS: ball 0x%08X → mesh slot %d (mesh=0x%08X from App+0x%X)\n",
+mknp_custom_entities.c:2821:100: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2821 |                             if (logf) fprintf(logf, "  TAGS: ball 0x%08X → mesh slot %d (mesh=0x%08X from App+0x%X)\n",
       |                                                                                                 ~~~^
       |                                                                                                    |
       |                                                                                                    unsigned int
       |                                                                                                 %08lX
- 2775 |                                     ball, target_slot, src_mesh,
+ 2822 |                                     ball, target_slot, src_mesh,
       |                                                        ~~~~~~~~                                     
       |                                                        |
       |                                                        DWORD {aka long unsigned int}
-mknp_custom_entities.c:2779:62: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2779 |                             fprintf(logf, "  TAGS: ball 0x%08X → mesh src invalid (App+0x%X=0x%08X)\n",
+mknp_custom_entities.c:2826:62: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2826 |                             fprintf(logf, "  TAGS: ball 0x%08X → mesh src invalid (App+0x%X=0x%08X)\n",
       |                                                           ~~~^
       |                                                              |
       |                                                              unsigned int
       |                                                           %08lX
- 2780 |                                     ball, cEnt_ci_strstr(mesh_value, "funball") ? APP_MESH_FUNBALL : APP_MESH_8BALL, src_mesh);
+ 2827 |                                     ball, cEnt_ci_strstr(mesh_value, "funball") ? APP_MESH_FUNBALL : APP_MESH_8BALL, src_mesh);
       |                                     ~~~~                      
       |                                     |
       |                                     DWORD {aka long unsigned int}
-mknp_custom_entities.c:2779:98: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2779 |                             fprintf(logf, "  TAGS: ball 0x%08X → mesh src invalid (App+0x%X=0x%08X)\n",
+mknp_custom_entities.c:2826:98: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2826 |                             fprintf(logf, "  TAGS: ball 0x%08X → mesh src invalid (App+0x%X=0x%08X)\n",
       |                                                                                               ~~~^
       |                                                                                                  |
       |                                                                                                  unsigned int
       |                                                                                               %08lX
- 2780 |                                     ball, cEnt_ci_strstr(mesh_value, "funball") ? APP_MESH_FUNBALL : APP_MESH_8BALL, src_mesh);
+ 2827 |                                     ball, cEnt_ci_strstr(mesh_value, "funball") ? APP_MESH_FUNBALL : APP_MESH_8BALL, src_mesh);
       |                                                                                                                      ~~~~~~~~
       |                                                                                                                      |
       |                                                                                                                      DWORD {aka long unsigned int}
-mknp_custom_entities.c:2783:58: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2783 |                         fprintf(logf, "  TAGS: ball 0x%08X → App ptr invalid (0x%08X)\n", ball, app);
+mknp_custom_entities.c:2830:58: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2830 |                         fprintf(logf, "  TAGS: ball 0x%08X → App ptr invalid (0x%08X)\n", ball, app);
       |                                                       ~~~^                                ~~~~
       |                                                          |                                |
       |                                                          unsigned int                     DWORD {aka long unsigned int}
       |                                                       %08lX
-mknp_custom_entities.c:2783:84: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2783 |                         fprintf(logf, "  TAGS: ball 0x%08X → App ptr invalid (0x%08X)\n", ball, app);
+mknp_custom_entities.c:2830:84: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2830 |                         fprintf(logf, "  TAGS: ball 0x%08X → App ptr invalid (0x%08X)\n", ball, app);
       |                                                                                 ~~~^            ~~~
       |                                                                                    |            |
       |                                                                                    unsigned int DWORD {aka long unsigned int}
       |                                                                                 %08lX
-mknp_custom_entities.c:2793:68: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2793 |                         if (logf) fprintf(logf, "  TAGS: ball 0x%08X → max_speed %.1f × %.1f = %.1f\n",
+mknp_custom_entities.c:2840:68: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2840 |                         if (logf) fprintf(logf, "  TAGS: ball 0x%08X → max_speed %.1f × %.1f = %.1f\n",
       |                                                                 ~~~^
       |                                                                    |
       |                                                                    unsigned int
       |                                                                 %08lX
- 2794 |                                 ball, cur_speed, mult, cur_speed * mult);
+ 2841 |                                 ball, cur_speed, mult, cur_speed * mult);
       |                                 ~~~~                                
       |                                 |
       |                                 DWORD {aka long unsigned int}
-mknp_custom_entities.c:2797:58: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2797 |                         fprintf(logf, "  TAGS: ball 0x%08X → SPEEDMULT %.1f ignored (out of range 0.01-100.0)\n",
+mknp_custom_entities.c:2844:58: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2844 |                         fprintf(logf, "  TAGS: ball 0x%08X → SPEEDMULT %.1f ignored (out of range 0.01-100.0)\n",
       |                                                       ~~~^
       |                                                          |
       |                                                          unsigned int
       |                                                       %08lX
- 2798 |                                 ball, mult);
+ 2845 |                                 ball, mult);
       |                                 ~~~~                      
       |                                 |
       |                                 DWORD {aka long unsigned int}
 mknp_custom_entities.c: In function ‘cEnt_spawn_testcube_at’:
-mknp_custom_entities.c:2889:88: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 7 has type ‘long unsigned int’ [-Wformat=]
- 2889 |         fprintf(logf, "  GRID: spawned testcube(GRID%02d) at (%.1f,%.1f,%.1f) obj=0x%08X\n",
+mknp_custom_entities.c:2936:88: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 7 has type ‘long unsigned int’ [-Wformat=]
+ 2936 |         fprintf(logf, "  GRID: spawned testcube(GRID%02d) at (%.1f,%.1f,%.1f) obj=0x%08X\n",
       |                                                                                     ~~~^
       |                                                                                        |
       |                                                                                        unsigned int
       |                                                                                     %08lX
- 2890 |                 grid_num, px, py, pz, (DWORD)obj);
+ 2937 |                 grid_num, px, py, pz, (DWORD)obj);
       |                                       ~~~~~~~~~~                                        
       |                                       |
       |                                       long unsigned int
 mknp_custom_entities.c: In function ‘cEnt_despawn_object’:
-mknp_custom_entities.c:2917:59: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2917 |     if (logf) fprintf(logf, "  DESPAWN: removing obj=0x%08X\n", obj);
+mknp_custom_entities.c:2964:59: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 2964 |     if (logf) fprintf(logf, "  DESPAWN: removing obj=0x%08X\n", obj);
       |                                                        ~~~^     ~~~
       |                                                           |     |
       |                                                           |     DWORD {aka long unsigned int}
       |                                                           unsigned int
       |                                                        %08lX
-mknp_custom_entities.c:2967:44: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2967 |         fprintf(logf, "  DESPAWN: obj=0x%08X removed from all lists\n", obj);
+mknp_custom_entities.c:3014:44: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3014 |         fprintf(logf, "  DESPAWN: obj=0x%08X removed from all lists\n", obj);
       |                                         ~~~^                            ~~~
       |                                            |                            |
       |                                            unsigned int                 DWORD {aka long unsigned int}
       |                                         %08lX
-mknp_custom_entities.c:2916:11: warning: unused variable ‘name’ [-Wunused-variable]
- 2916 |     char* name = "(unknown)";
+mknp_custom_entities.c:2963:11: warning: unused variable ‘name’ [-Wunused-variable]
+ 2963 |     char* name = "(unknown)";
       |           ^~~~
 mknp_custom_entities.c: In function ‘cEnt_despawn_by_name’:
-mknp_custom_entities.c:2976:82: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 2976 |             if (logf) fprintf(logf, "  DESPAWN: found '%s' at index %d, obj=0x%08X\n",
+mknp_custom_entities.c:3023:82: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3023 |             if (logf) fprintf(logf, "  DESPAWN: found '%s' at index %d, obj=0x%08X\n",
       |                                                                               ~~~^
       |                                                                                  |
       |                                                                                  unsigned int
       |                                                                               %08lX
- 2977 |                     g_spawned_names[i], i, g_spawned_objs[i]);
+ 3024 |                     g_spawned_names[i], i, g_spawned_objs[i]);
       |                                            ~~~~~~~~~~~~~~~~~                      
       |                                                          |
       |                                                          DWORD {aka long unsigned int}
 mknp_custom_entities.c: In function ‘cEnt_load_mesh_file’:
-mknp_custom_entities.c:3066:71: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long unsigned int’ [-Wformat=]
- 3066 |         if (logf) fprintf(logf, "  LOAD_MESH: .MESH OK: MeshNode=0x%08X MeshWorld=0x%08X '%s'\n",
+mknp_custom_entities.c:3113:71: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long unsigned int’ [-Wformat=]
+ 3113 |         if (logf) fprintf(logf, "  LOAD_MESH: .MESH OK: MeshNode=0x%08X MeshWorld=0x%08X '%s'\n",
       |                                                                    ~~~^
       |                                                                       |
       |                                                                       unsigned int
       |                                                                    %08lX
- 3067 |                 (DWORD)mesh_node, (DWORD)mesh_world, path);
+ 3114 |                 (DWORD)mesh_node, (DWORD)mesh_world, path);
       |                 ~~~~~~~~~~~~~~~~                                       
       |                 |
       |                 long unsigned int
-mknp_custom_entities.c:3066:88: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘long unsigned int’ [-Wformat=]
- 3066 |         if (logf) fprintf(logf, "  LOAD_MESH: .MESH OK: MeshNode=0x%08X MeshWorld=0x%08X '%s'\n",
+mknp_custom_entities.c:3113:88: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘long unsigned int’ [-Wformat=]
+ 3113 |         if (logf) fprintf(logf, "  LOAD_MESH: .MESH OK: MeshNode=0x%08X MeshWorld=0x%08X '%s'\n",
       |                                                                                     ~~~^
       |                                                                                        |
       |                                                                                        unsigned int
       |                                                                                     %08lX
- 3067 |                 (DWORD)mesh_node, (DWORD)mesh_world, path);
+ 3114 |                 (DWORD)mesh_node, (DWORD)mesh_world, path);
       |                                   ~~~~~~~~~~~~~~~~~                                     
       |                                   |
       |                                   long unsigned int
 mknp_custom_entities.c: In function ‘cEnt_Spawn_cEntity_at’:
-mknp_custom_entities.c:3237:98: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3237 |                         if (logf) fprintf(logf, "  WATERWHEEL: mesh vtable[18] hooked (orig=0x%08X -> 0x%08X)\n",
+mknp_custom_entities.c:3284:98: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3284 |                         if (logf) fprintf(logf, "  WATERWHEEL: mesh vtable[18] hooked (orig=0x%08X -> 0x%08X)\n",
       |                                                                                               ~~~^
       |                                                                                                  |
       |                                                                                                  unsigned int
       |                                                                                               %08lX
- 3238 |                                           ww->orig_vtable18, (DWORD)&cEnt_waterwheel_render);
+ 3285 |                                           ww->orig_vtable18, (DWORD)&cEnt_waterwheel_render);
       |                                           ~~~~~~~~~~~~~~~~~                                       
       |                                             |
       |                                             DWORD {aka long unsigned int}
-mknp_custom_entities.c:3237:108: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘long unsigned int’ [-Wformat=]
- 3237 |                         if (logf) fprintf(logf, "  WATERWHEEL: mesh vtable[18] hooked (orig=0x%08X -> 0x%08X)\n",
+mknp_custom_entities.c:3284:108: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘long unsigned int’ [-Wformat=]
+ 3284 |                         if (logf) fprintf(logf, "  WATERWHEEL: mesh vtable[18] hooked (orig=0x%08X -> 0x%08X)\n",
       |                                                                                                         ~~~^
       |                                                                                                            |
       |                                                                                                            unsigned int
       |                                                                                                         %08lX
- 3238 |                                           ww->orig_vtable18, (DWORD)&cEnt_waterwheel_render);
+ 3285 |                                           ww->orig_vtable18, (DWORD)&cEnt_waterwheel_render);
       |                                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                 
       |                                                              |
       |                                                              long unsigned int
-mknp_custom_entities.c:3275:73: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3275 |                         fprintf(logf, "  WATERWHEEL: creak channel=0x%08X (app=0x%08X)\n",
+mknp_custom_entities.c:3322:73: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3322 |                         fprintf(logf, "  WATERWHEEL: creak channel=0x%08X (app=0x%08X)\n",
       |                                                                      ~~~^
       |                                                                         |
       |                                                                         unsigned int
       |                                                                      %08lX
- 3276 |                                 ww->creak_channel, app2);
+ 3323 |                                 ww->creak_channel, app2);
       |                                 ~~~~~~~~~~~~~~~~~                        
       |                                   |
       |                                   DWORD {aka long unsigned int}
-mknp_custom_entities.c:3275:85: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3275 |                         fprintf(logf, "  WATERWHEEL: creak channel=0x%08X (app=0x%08X)\n",
+mknp_custom_entities.c:3322:85: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3322 |                         fprintf(logf, "  WATERWHEEL: creak channel=0x%08X (app=0x%08X)\n",
       |                                                                                  ~~~^
       |                                                                                     |
       |                                                                                     unsigned int
       |                                                                                  %08lX
- 3276 |                                 ww->creak_channel, app2);
+ 3323 |                                 ww->creak_channel, app2);
       |                                                    ~~~~                              
       |                                                    |
       |                                                    DWORD {aka long unsigned int}
-mknp_custom_entities.c:3284:70: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3284 |             if (logf) fprintf(logf, "  WATERWHEEL: spawned mesh=0x%08X at (%.1f,%.1f,%.1f) path='%s'\n",
+mknp_custom_entities.c:3331:70: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3331 |             if (logf) fprintf(logf, "  WATERWHEEL: spawned mesh=0x%08X at (%.1f,%.1f,%.1f) path='%s'\n",
       |                                                                   ~~~^
       |                                                                      |
       |                                                                      unsigned int
       |                                                                   %08lX
- 3285 |                     mesh, px, py, pz, ww_path);
+ 3332 |                     mesh, px, py, pz, ww_path);
       |                     ~~~~                                              
       |                     |
       |                     DWORD {aka long unsigned int}
-mknp_custom_entities.c:3425:89: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘long unsigned int’ [-Wformat=]
- 3425 |             fprintf(logf, "  cENTITY: spawned (.MESH swap) at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s' MW=0x%08X\n",
+mknp_custom_entities.c:3472:89: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘long unsigned int’ [-Wformat=]
+ 3472 |             fprintf(logf, "  cENTITY: spawned (.MESH swap) at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s' MW=0x%08X\n",
       |                                                                                      ~~~^
       |                                                                                         |
       |                                                                                         unsigned int
       |                                                                                      %08lX
- 3426 |                     px, py, pz, (DWORD)obj, path, mesh_world_from_node);
+ 3473 |                     px, py, pz, (DWORD)obj, path, mesh_world_from_node);
       |                                 ~~~~~~~~~~                                               
       |                                 |
       |                                 long unsigned int
-mknp_custom_entities.c:3425:109: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 8 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3425 |             fprintf(logf, "  cENTITY: spawned (.MESH swap) at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s' MW=0x%08X\n",
+mknp_custom_entities.c:3472:109: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 8 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3472 |             fprintf(logf, "  cENTITY: spawned (.MESH swap) at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s' MW=0x%08X\n",
       |                                                                                                          ~~~^
       |                                                                                                             |
       |                                                                                                             unsigned int
       |                                                                                                          %08lX
- 3426 |                     px, py, pz, (DWORD)obj, path, mesh_world_from_node);
+ 3473 |                     px, py, pz, (DWORD)obj, path, mesh_world_from_node);
       |                                                   ~~~~~~~~~~~~~~~~~~~~                                       
       |                                                   |
       |                                                   DWORD {aka long unsigned int}
-mknp_custom_entities.c:3730:91: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3730 |                         if (logf) fprintf(logf, "  cENTITY: Catapult collision Level 0x%08X added to lists\n", cat_col_obj);
+mknp_custom_entities.c:3777:91: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3777 |                         if (logf) fprintf(logf, "  cENTITY: Catapult collision Level 0x%08X added to lists\n", cat_col_obj);
       |                                                                                        ~~~^                    ~~~~~~~~~~~
       |                                                                                           |                    |
       |                                                                                           unsigned int         DWORD {aka long unsigned int}
       |                                                                                        %08lX
-mknp_custom_entities.c:3781:110: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3781 |                                 if (logf) fprintf(logf, "  cENTITY: Catapult vtable[18] hook installed (0x%08X -> 0x%08X, full 0x400B copy)\n",
+mknp_custom_entities.c:3828:110: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3828 |                                 if (logf) fprintf(logf, "  cENTITY: Catapult vtable[18] hook installed (0x%08X -> 0x%08X, full 0x400B copy)\n",
       |                                                                                                           ~~~^
       |                                                                                                              |
       |                                                                                                              unsigned int
       |                                                                                                           %08lX
- 3782 |                                     cs->orig_vtable18, new_vt[18]);
+ 3829 |                                     cs->orig_vtable18, new_vt[18]);
       |                                     ~~~~~~~~~~~~~~~~~                                                         
       |                                       |
       |                                       DWORD {aka long unsigned int}
-mknp_custom_entities.c:3781:120: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3781 |                                 if (logf) fprintf(logf, "  cENTITY: Catapult vtable[18] hook installed (0x%08X -> 0x%08X, full 0x400B copy)\n",
+mknp_custom_entities.c:3828:120: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3828 |                                 if (logf) fprintf(logf, "  cENTITY: Catapult vtable[18] hook installed (0x%08X -> 0x%08X, full 0x400B copy)\n",
       |                                                                                                                     ~~~^
       |                                                                                                                        |
       |                                                                                                                        unsigned int
       |                                                                                                                     %08lX
- 3782 |                                     cs->orig_vtable18, new_vt[18]);
+ 3829 |                                     cs->orig_vtable18, new_vt[18]);
       |                                                        ~~~~~~~~~~                                                       
       |                                                              |
       |                                                              DWORD {aka long unsigned int}
-mknp_custom_entities.c:3800:120: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3800 |                                     if (logf) fprintf(logf, "  cENTITY: Catapult Level vtable[18] hook installed (0x%08X -> 0x%08X)\n",
+mknp_custom_entities.c:3847:120: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3847 |                                     if (logf) fprintf(logf, "  cENTITY: Catapult Level vtable[18] hook installed (0x%08X -> 0x%08X)\n",
       |                                                                                                                     ~~~^
       |                                                                                                                        |
       |                                                                                                                        unsigned int
       |                                                                                                                     %08lX
- 3801 |                                         cs->arm_orig_vtable18, new_level_vt[18]);
+ 3848 |                                         cs->arm_orig_vtable18, new_level_vt[18]);
       |                                         ~~~~~~~~~~~~~~~~~~~~~                                                           
       |                                           |
       |                                           DWORD {aka long unsigned int}
-mknp_custom_entities.c:3800:130: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3800 |                                     if (logf) fprintf(logf, "  cENTITY: Catapult Level vtable[18] hook installed (0x%08X -> 0x%08X)\n",
+mknp_custom_entities.c:3847:130: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3847 |                                     if (logf) fprintf(logf, "  cENTITY: Catapult Level vtable[18] hook installed (0x%08X -> 0x%08X)\n",
       |                                                                                                                               ~~~^
       |                                                                                                                                  |
       |                                                                                                                                  unsigned int
       |                                                                                                                               %08lX
- 3801 |                                         cs->arm_orig_vtable18, new_level_vt[18]);
+ 3848 |                                         cs->arm_orig_vtable18, new_level_vt[18]);
       |                                                                ~~~~~~~~~~~~~~~~                                                   
       |                                                                            |
       |                                                                            DWORD {aka long unsigned int}
-mknp_custom_entities.c:3809:96: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3809 |                                         if (logf) fprintf(logf, "  cENTITY: DUMP colLevel=0x%08X mw=0x%08X sceneObj=0x%08X so+440=0x%08X so+43C=%d\n",
+mknp_custom_entities.c:3856:96: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3856 |                                         if (logf) fprintf(logf, "  cENTITY: DUMP colLevel=0x%08X mw=0x%08X sceneObj=0x%08X so+440=0x%08X so+43C=%d\n",
       |                                                                                             ~~~^
       |                                                                                                |
       |                                                                                                unsigned int
       |                                                                                             %08lX
- 3810 |                                             cat_level, lvl_mw, lvl_so, so_v440, so_v43c);
+ 3857 |                                             cat_level, lvl_mw, lvl_so, so_v440, so_v43c);
       |                                             ~~~~~~~~~                                           
       |                                             |
       |                                             DWORD {aka long unsigned int}
-mknp_custom_entities.c:3809:106: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3809 |                                         if (logf) fprintf(logf, "  cENTITY: DUMP colLevel=0x%08X mw=0x%08X sceneObj=0x%08X so+440=0x%08X so+43C=%d\n",
+mknp_custom_entities.c:3856:106: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3856 |                                         if (logf) fprintf(logf, "  cENTITY: DUMP colLevel=0x%08X mw=0x%08X sceneObj=0x%08X so+440=0x%08X so+43C=%d\n",
       |                                                                                                       ~~~^
       |                                                                                                          |
       |                                                                                                          unsigned int
       |                                                                                                       %08lX
- 3810 |                                             cat_level, lvl_mw, lvl_so, so_v440, so_v43c);
+ 3857 |                                             cat_level, lvl_mw, lvl_so, so_v440, so_v43c);
       |                                                        ~~~~~~                                             
       |                                                        |
       |                                                        DWORD {aka long unsigned int}
-mknp_custom_entities.c:3809:122: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3809 |                                         if (logf) fprintf(logf, "  cENTITY: DUMP colLevel=0x%08X mw=0x%08X sceneObj=0x%08X so+440=0x%08X so+43C=%d\n",
+mknp_custom_entities.c:3856:122: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3856 |                                         if (logf) fprintf(logf, "  cENTITY: DUMP colLevel=0x%08X mw=0x%08X sceneObj=0x%08X so+440=0x%08X so+43C=%d\n",
       |                                                                                                                       ~~~^
       |                                                                                                                          |
       |                                                                                                                          unsigned int
       |                                                                                                                       %08lX
- 3810 |                                             cat_level, lvl_mw, lvl_so, so_v440, so_v43c);
+ 3857 |                                             cat_level, lvl_mw, lvl_so, so_v440, so_v43c);
       |                                                                ~~~~~~                                                     
       |                                                                |
       |                                                                DWORD {aka long unsigned int}
-mknp_custom_entities.c:3809:136: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3809 |                                         if (logf) fprintf(logf, "  cENTITY: DUMP colLevel=0x%08X mw=0x%08X sceneObj=0x%08X so+440=0x%08X so+43C=%d\n",
+mknp_custom_entities.c:3856:136: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3856 |                                         if (logf) fprintf(logf, "  cENTITY: DUMP colLevel=0x%08X mw=0x%08X sceneObj=0x%08X so+440=0x%08X so+43C=%d\n",
       |                                                                                                                                     ~~~^
       |                                                                                                                                        |
       |                                                                                                                                        unsigned int
       |                                                                                                                                     %08lX
- 3810 |                                             cat_level, lvl_mw, lvl_so, so_v440, so_v43c);
+ 3857 |                                             cat_level, lvl_mw, lvl_so, so_v440, so_v43c);
       |                                                                        ~~~~~~~                                                          
       |                                                                        |
       |                                                                        DWORD {aka long unsigned int}
-mknp_custom_entities.c:3809:146: warning: format ‘%d’ expects argument of type ‘int’, but argument 7 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3809 |                                         if (logf) fprintf(logf, "  cENTITY: DUMP colLevel=0x%08X mw=0x%08X sceneObj=0x%08X so+440=0x%08X so+43C=%d\n",
+mknp_custom_entities.c:3856:146: warning: format ‘%d’ expects argument of type ‘int’, but argument 7 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3856 |                                         if (logf) fprintf(logf, "  cENTITY: DUMP colLevel=0x%08X mw=0x%08X sceneObj=0x%08X so+440=0x%08X so+43C=%d\n",
       |                                                                                                                                                 ~^
       |                                                                                                                                                  |
       |                                                                                                                                                  int
       |                                                                                                                                                 %ld
- 3810 |                                             cat_level, lvl_mw, lvl_so, so_v440, so_v43c);
+ 3857 |                                             cat_level, lvl_mw, lvl_so, so_v440, so_v43c);
       |                                                                                 ~~~~~~~                                                           
       |                                                                                 |
       |                                                                                 DWORD {aka long unsigned int}
-mknp_custom_entities.c:3815:112: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘long unsigned int’ [-Wformat=]
- 3815 |                                             if (logf) fprintf(logf, "  cENTITY: DUMP mw+2C count=%d items=0x%08X\n", mwcount, (DWORD)mwitems);
+mknp_custom_entities.c:3862:112: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘long unsigned int’ [-Wformat=]
+ 3862 |                                             if (logf) fprintf(logf, "  cENTITY: DUMP mw+2C count=%d items=0x%08X\n", mwcount, (DWORD)mwitems);
       |                                                                                                             ~~~^              ~~~~~~~~~~~~~~
       |                                                                                                                |              |
       |                                                                                                                unsigned int   long unsigned int
       |                                                                                                             %08lX
-mknp_custom_entities.c:3856:105: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3856 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
+mknp_custom_entities.c:3903:105: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3903 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
       |                                                                                                      ~~~^
       |                                                                                                         |
       |                                                                                                         unsigned int
       |                                                                                                      %08lX
- 3857 |                                                         mb, mb_vt, mb_v4, mb_v8, mb_vc, mb_v10, mb_v14);
+ 3904 |                                                         mb, mb_vt, mb_v4, mb_v8, mb_vc, mb_v10, mb_v14);
       |                                                         ~~                                               
       |                                                         |
       |                                                         DWORD {aka long unsigned int}
-mknp_custom_entities.c:3856:115: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3856 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
+mknp_custom_entities.c:3903:115: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3903 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
       |                                                                                                                ~~~^
       |                                                                                                                   |
       |                                                                                                                   unsigned int
       |                                                                                                                %08lX
- 3857 |                                                         mb, mb_vt, mb_v4, mb_v8, mb_vc, mb_v10, mb_v14);
+ 3904 |                                                         mb, mb_vt, mb_v4, mb_v8, mb_vc, mb_v10, mb_v14);
       |                                                             ~~~~~                                                  
       |                                                             |
       |                                                             DWORD {aka long unsigned int}
-mknp_custom_entities.c:3856:121: warning: format ‘%d’ expects argument of type ‘int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3856 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
+mknp_custom_entities.c:3903:121: warning: format ‘%d’ expects argument of type ‘int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3903 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
       |                                                                                                                        ~^
       |                                                                                                                         |
       |                                                                                                                         int
       |                                                                                                                        %ld
- 3857 |                                                         mb, mb_vt, mb_v4, mb_v8, mb_vc, mb_v10, mb_v14);
+ 3904 |                                                         mb, mb_vt, mb_v4, mb_v8, mb_vc, mb_v10, mb_v14);
       |                                                                    ~~~~~                                                 
       |                                                                    |
       |                                                                    DWORD {aka long unsigned int}
-mknp_custom_entities.c:3856:131: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3856 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
+mknp_custom_entities.c:3903:131: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3903 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
       |                                                                                                                                ~~~^
       |                                                                                                                                   |
       |                                                                                                                                   unsigned int
       |                                                                                                                                %08lX
- 3857 |                                                         mb, mb_vt, mb_v4, mb_v8, mb_vc, mb_v10, mb_v14);
+ 3904 |                                                         mb, mb_vt, mb_v4, mb_v8, mb_vc, mb_v10, mb_v14);
       |                                                                           ~~~~~                                                    
       |                                                                           |
       |                                                                           DWORD {aka long unsigned int}
-mknp_custom_entities.c:3856:137: warning: format ‘%d’ expects argument of type ‘int’, but argument 7 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3856 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
+mknp_custom_entities.c:3903:137: warning: format ‘%d’ expects argument of type ‘int’, but argument 7 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3903 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
       |                                                                                                                                        ~^
       |                                                                                                                                         |
       |                                                                                                                                         int
       |                                                                                                                                        %ld
- 3857 |                                                         mb, mb_vt, mb_v4, mb_v8, mb_vc, mb_v10, mb_v14);
+ 3904 |                                                         mb, mb_vt, mb_v4, mb_v8, mb_vc, mb_v10, mb_v14);
       |                                                                                  ~~~~~                                                   
       |                                                                                  |
       |                                                                                  DWORD {aka long unsigned int}
-mknp_custom_entities.c:3856:144: warning: format ‘%d’ expects argument of type ‘int’, but argument 8 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3856 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
+mknp_custom_entities.c:3903:144: warning: format ‘%d’ expects argument of type ‘int’, but argument 8 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3903 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
       |                                                                                                                                               ~^
       |                                                                                                                                                |
       |                                                                                                                                                int
       |                                                                                                                                               %ld
- 3857 |                                                         mb, mb_vt, mb_v4, mb_v8, mb_vc, mb_v10, mb_v14);
+ 3904 |                                                         mb, mb_vt, mb_v4, mb_v8, mb_vc, mb_v10, mb_v14);
       |                                                                                         ~~~~~~                                                  
       |                                                                                         |
       |                                                                                         DWORD {aka long unsigned int}
-mknp_custom_entities.c:3856:151: warning: format ‘%d’ expects argument of type ‘int’, but argument 9 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3856 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
+mknp_custom_entities.c:3903:151: warning: format ‘%d’ expects argument of type ‘int’, but argument 9 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3903 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0]=0x%08X vt=0x%08X +4=%d +8=0x%08X +C=%d +10=%d +14=%d\n",
       |                                                                                                                                                      ~^
       |                                                                                                                                                       |
       |                                                                                                                                                       int
       |                                                                                                                                                      %ld
- 3857 |                                                         mb, mb_vt, mb_v4, mb_v8, mb_vc, mb_v10, mb_v14);
+ 3904 |                                                         mb, mb_vt, mb_v4, mb_v8, mb_vc, mb_v10, mb_v14);
       |                                                                                                 ~~~~~~                                                 
       |                                                                                                 |
       |                                                                                                 DWORD {aka long unsigned int}
-mknp_custom_entities.c:3858:110: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3858 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
+mknp_custom_entities.c:3905:110: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3905 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
       |                                                                                                           ~~~^
       |                                                                                                              |
       |                                                                                                              unsigned int
       |                                                                                                           %08lX
- 3859 |                                                         mb_v418, mb_v438, mb_v43c, mb_v85d, mb_v860, mb_v864, mb_v868);
+ 3906 |                                                         mb_v418, mb_v438, mb_v43c, mb_v85d, mb_v860, mb_v864, mb_v868);
       |                                                         ~~~~~~~                                               
       |                                                         |
       |                                                         DWORD {aka long unsigned int}
-mknp_custom_entities.c:3858:122: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3858 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
+mknp_custom_entities.c:3905:122: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3905 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
       |                                                                                                                       ~~~^
       |                                                                                                                          |
       |                                                                                                                          unsigned int
       |                                                                                                                       %08lX
- 3859 |                                                         mb_v418, mb_v438, mb_v43c, mb_v85d, mb_v860, mb_v864, mb_v868);
+ 3906 |                                                         mb_v418, mb_v438, mb_v43c, mb_v85d, mb_v860, mb_v864, mb_v868);
       |                                                                  ~~~~~~~                                                  
       |                                                                  |
       |                                                                  DWORD {aka long unsigned int}
-mknp_custom_entities.c:3858:130: warning: format ‘%d’ expects argument of type ‘int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3858 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
+mknp_custom_entities.c:3905:130: warning: format ‘%d’ expects argument of type ‘int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3905 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
       |                                                                                                                                 ~^
       |                                                                                                                                  |
       |                                                                                                                                  int
       |                                                                                                                                 %ld
- 3859 |                                                         mb_v418, mb_v438, mb_v43c, mb_v85d, mb_v860, mb_v864, mb_v868);
+ 3906 |                                                         mb_v418, mb_v438, mb_v43c, mb_v85d, mb_v860, mb_v864, mb_v868);
       |                                                                           ~~~~~~~                                                 
       |                                                                           |
       |                                                                           DWORD {aka long unsigned int}
-mknp_custom_entities.c:3858:138: warning: format ‘%d’ expects argument of type ‘int’, but argument 6 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3858 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
+mknp_custom_entities.c:3905:138: warning: format ‘%d’ expects argument of type ‘int’, but argument 6 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3905 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
       |                                                                                                                                         ~^
       |                                                                                                                                          |
       |                                                                                                                                          int
       |                                                                                                                                         %ld
- 3859 |                                                         mb_v418, mb_v438, mb_v43c, mb_v85d, mb_v860, mb_v864, mb_v868);
+ 3906 |                                                         mb_v418, mb_v438, mb_v43c, mb_v85d, mb_v860, mb_v864, mb_v868);
       |                                                                                    ~~~~~~~                                                
       |                                                                                    |
       |                                                                                    DWORD {aka long unsigned int}
-mknp_custom_entities.c:3858:150: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 7 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3858 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
+mknp_custom_entities.c:3905:150: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 7 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3905 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
       |                                                                                                                                                   ~~~^
       |                                                                                                                                                      |
       |                                                                                                                                                      unsigned int
       |                                                                                                                                                   %08lX
- 3859 |                                                         mb_v418, mb_v438, mb_v43c, mb_v85d, mb_v860, mb_v864, mb_v868);
+ 3906 |                                                         mb_v418, mb_v438, mb_v43c, mb_v85d, mb_v860, mb_v864, mb_v868);
       |                                                                                             ~~~~~~~                                                   
       |                                                                                             |
       |                                                                                             DWORD {aka long unsigned int}
-mknp_custom_entities.c:3858:162: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 8 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3858 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
+mknp_custom_entities.c:3905:162: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 8 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3905 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
       |                                                                                                                                                               ~~~^
       |                                                                                                                                                                  |
       |                                                                                                                                                                  unsigned int
       |                                                                                                                                                               %08lX
- 3859 |                                                         mb_v418, mb_v438, mb_v43c, mb_v85d, mb_v860, mb_v864, mb_v868);
+ 3906 |                                                         mb_v418, mb_v438, mb_v43c, mb_v85d, mb_v860, mb_v864, mb_v868);
       |                                                                                                      ~~~~~~~                                                      
       |                                                                                                      |
       |                                                                                                      DWORD {aka long unsigned int}
-mknp_custom_entities.c:3858:174: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 9 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3858 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
+mknp_custom_entities.c:3905:174: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 9 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3905 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +418=0x%08X +438=0x%08X +43C=%d +85D=%d +860=0x%08X +864=0x%08X +868=0x%08X\n",
       |                                                                                                                                                                           ~~~^
       |                                                                                                                                                                              |
       |                                                                                                                                                                              unsigned int
       |                                                                                                                                                                           %08lX
- 3859 |                                                         mb_v418, mb_v438, mb_v43c, mb_v85d, mb_v860, mb_v864, mb_v868);
+ 3906 |                                                         mb_v418, mb_v438, mb_v43c, mb_v85d, mb_v860, mb_v864, mb_v868);
       |                                                                                                               ~~~~~~~                                                         
       |                                                                                                               |
       |                                                                                                               DWORD {aka long unsigned int}
-mknp_custom_entities.c:3860:124: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘long unsigned int’ [-Wformat=]
- 3860 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +424 list=%d items=0x%08X; sub[0]=0x%08X sub+448=0x%08X sub+444=%d sub+8=0x%08X\n",
+mknp_custom_entities.c:3907:124: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘long unsigned int’ [-Wformat=]
+ 3907 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +424 list=%d items=0x%08X; sub[0]=0x%08X sub+448=0x%08X sub+444=%d sub+8=0x%08X\n",
       |                                                                                                                         ~~~^
       |                                                                                                                            |
       |                                                                                                                            unsigned int
       |                                                                                                                         %08lX
- 3861 |                                                         mb_subcount, (DWORD)mb_subitems, sub0, sub0_448, sub0_444, sub0_8);
+ 3908 |                                                         mb_subcount, (DWORD)mb_subitems, sub0, sub0_448, sub0_444, sub0_8);
       |                                                                      ~~~~~~~~~~~~~~~~~~                                     
       |                                                                      |
       |                                                                      long unsigned int
-mknp_custom_entities.c:3860:139: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3860 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +424 list=%d items=0x%08X; sub[0]=0x%08X sub+448=0x%08X sub+444=%d sub+8=0x%08X\n",
+mknp_custom_entities.c:3907:139: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3907 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +424 list=%d items=0x%08X; sub[0]=0x%08X sub+448=0x%08X sub+444=%d sub+8=0x%08X\n",
       |                                                                                                                                        ~~~^
       |                                                                                                                                           |
       |                                                                                                                                           unsigned int
       |                                                                                                                                        %08lX
- 3861 |                                                         mb_subcount, (DWORD)mb_subitems, sub0, sub0_448, sub0_444, sub0_8);
+ 3908 |                                                         mb_subcount, (DWORD)mb_subitems, sub0, sub0_448, sub0_444, sub0_8);
       |                                                                                          ~~~~                                              
       |                                                                                          |
       |                                                                                          DWORD {aka long unsigned int}
-mknp_custom_entities.c:3860:154: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3860 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +424 list=%d items=0x%08X; sub[0]=0x%08X sub+448=0x%08X sub+444=%d sub+8=0x%08X\n",
+mknp_custom_entities.c:3907:154: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3907 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +424 list=%d items=0x%08X; sub[0]=0x%08X sub+448=0x%08X sub+444=%d sub+8=0x%08X\n",
       |                                                                                                                                                       ~~~^
       |                                                                                                                                                          |
       |                                                                                                                                                          unsigned int
       |                                                                                                                                                       %08lX
- 3861 |                                                         mb_subcount, (DWORD)mb_subitems, sub0, sub0_448, sub0_444, sub0_8);
+ 3908 |                                                         mb_subcount, (DWORD)mb_subitems, sub0, sub0_448, sub0_444, sub0_8);
       |                                                                                                ~~~~~~~~                                                   
       |                                                                                                |
       |                                                                                                DWORD {aka long unsigned int}
-mknp_custom_entities.c:3860:165: warning: format ‘%d’ expects argument of type ‘int’, but argument 7 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3860 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +424 list=%d items=0x%08X; sub[0]=0x%08X sub+448=0x%08X sub+444=%d sub+8=0x%08X\n",
+mknp_custom_entities.c:3907:165: warning: format ‘%d’ expects argument of type ‘int’, but argument 7 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3907 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +424 list=%d items=0x%08X; sub[0]=0x%08X sub+448=0x%08X sub+444=%d sub+8=0x%08X\n",
       |                                                                                                                                                                    ~^
       |                                                                                                                                                                     |
       |                                                                                                                                                                     int
       |                                                                                                                                                                    %ld
- 3861 |                                                         mb_subcount, (DWORD)mb_subitems, sub0, sub0_448, sub0_444, sub0_8);
+ 3908 |                                                         mb_subcount, (DWORD)mb_subitems, sub0, sub0_448, sub0_444, sub0_8);
       |                                                                                                          ~~~~~~~~                                                    
       |                                                                                                          |
       |                                                                                                          DWORD {aka long unsigned int}
-mknp_custom_entities.c:3860:178: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 8 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3860 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +424 list=%d items=0x%08X; sub[0]=0x%08X sub+448=0x%08X sub+444=%d sub+8=0x%08X\n",
+mknp_custom_entities.c:3907:178: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 8 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3907 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[0] +424 list=%d items=0x%08X; sub[0]=0x%08X sub+448=0x%08X sub+444=%d sub+8=0x%08X\n",
       |                                                                                                                                                                               ~~~^
       |                                                                                                                                                                                  |
       |                                                                                                                                                                                  unsigned int
       |                                                                                                                                                                               %08lX
- 3861 |                                                         mb_subcount, (DWORD)mb_subitems, sub0, sub0_448, sub0_444, sub0_8);
+ 3908 |                                                         mb_subcount, (DWORD)mb_subitems, sub0, sub0_448, sub0_444, sub0_8);
       |                                                                                                                    ~~~~~~                                                         
       |                                                                                                                    |
       |                                                                                                                    DWORD {aka long unsigned int}
-mknp_custom_entities.c:3862:106: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3862 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mw+448=0x%08X +44C=0x%08X +434=0x%08X +45C=0x%08X\n",
+mknp_custom_entities.c:3909:106: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3909 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mw+448=0x%08X +44C=0x%08X +434=0x%08X +45C=0x%08X\n",
       |                                                                                                       ~~~^
       |                                                                                                          |
       |                                                                                                          unsigned int
       |                                                                                                       %08lX
- 3863 |                                                         mw_448, mw_44c, mw_434, mw_45c);
+ 3910 |                                                         mw_448, mw_44c, mw_434, mw_45c);
       |                                                         ~~~~~~                                            
       |                                                         |
       |                                                         DWORD {aka long unsigned int}
-mknp_custom_entities.c:3862:118: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3862 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mw+448=0x%08X +44C=0x%08X +434=0x%08X +45C=0x%08X\n",
+mknp_custom_entities.c:3909:118: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3909 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mw+448=0x%08X +44C=0x%08X +434=0x%08X +45C=0x%08X\n",
       |                                                                                                                   ~~~^
       |                                                                                                                      |
       |                                                                                                                      unsigned int
       |                                                                                                                   %08lX
- 3863 |                                                         mw_448, mw_44c, mw_434, mw_45c);
+ 3910 |                                                         mw_448, mw_44c, mw_434, mw_45c);
       |                                                                 ~~~~~~                                                
       |                                                                 |
       |                                                                 DWORD {aka long unsigned int}
-mknp_custom_entities.c:3862:130: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3862 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mw+448=0x%08X +44C=0x%08X +434=0x%08X +45C=0x%08X\n",
+mknp_custom_entities.c:3909:130: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3909 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mw+448=0x%08X +44C=0x%08X +434=0x%08X +45C=0x%08X\n",
       |                                                                                                                               ~~~^
       |                                                                                                                                  |
       |                                                                                                                                  unsigned int
       |                                                                                                                               %08lX
- 3863 |                                                         mw_448, mw_44c, mw_434, mw_45c);
+ 3910 |                                                         mw_448, mw_44c, mw_434, mw_45c);
       |                                                                         ~~~~~~                                                    
       |                                                                         |
       |                                                                         DWORD {aka long unsigned int}
-mknp_custom_entities.c:3862:142: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3862 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mw+448=0x%08X +44C=0x%08X +434=0x%08X +45C=0x%08X\n",
+mknp_custom_entities.c:3909:142: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3909 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mw+448=0x%08X +44C=0x%08X +434=0x%08X +45C=0x%08X\n",
       |                                                                                                                                           ~~~^
       |                                                                                                                                              |
       |                                                                                                                                              unsigned int
       |                                                                                                                                           %08lX
- 3863 |                                                         mw_448, mw_44c, mw_434, mw_45c);
+ 3910 |                                                         mw_448, mw_44c, mw_434, mw_45c);
       |                                                                                 ~~~~~~                                                        
       |                                                                                 |
       |                                                                                 DWORD {aka long unsigned int}
-mknp_custom_entities.c:3864:105: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3864 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[1]=0x%08X\n", mb2);
+mknp_custom_entities.c:3911:105: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 3911 |                                                     if (logf) fprintf(logf, "  cENTITY: DUMP mb[1]=0x%08X\n", mb2);
       |                                                                                                      ~~~^     ~~~
       |                                                                                                         |     |
       |                                                                                                         |     DWORD {aka long unsigned int}
       |                                                                                                         unsigned int
       |                                                                                                      %08lX
-mknp_custom_entities.c:3929:106: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long unsigned int’ [-Wformat=]
- 3929 |                                         if (logf) fprintf(logf, "  cENTITY: TipperVisual created at 0x%08X, attached to Tipper 0x%08X\n",
+mknp_custom_entities.c:3976:106: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long unsigned int’ [-Wformat=]
+ 3976 |                                         if (logf) fprintf(logf, "  cENTITY: TipperVisual created at 0x%08X, attached to Tipper 0x%08X\n",
       |                                                                                                       ~~~^
       |                                                                                                          |
       |                                                                                                          unsigned int
       |                                                                                                       %08lX
- 3930 |                                                 (DWORD)visual, (DWORD)obj);
+ 3977 |                                                 (DWORD)visual, (DWORD)obj);
       |                                                 ~~~~~~~~~~~~~                                             
       |                                                 |
       |                                                 long unsigned int
-mknp_custom_entities.c:3929:133: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘long unsigned int’ [-Wformat=]
- 3929 |                                         if (logf) fprintf(logf, "  cENTITY: TipperVisual created at 0x%08X, attached to Tipper 0x%08X\n",
+mknp_custom_entities.c:3976:133: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘long unsigned int’ [-Wformat=]
+ 3976 |                                         if (logf) fprintf(logf, "  cENTITY: TipperVisual created at 0x%08X, attached to Tipper 0x%08X\n",
       |                                                                                                                                  ~~~^
       |                                                                                                                                     |
       |                                                                                                                                     unsigned int
       |                                                                                                                                  %08lX
- 3930 |                                                 (DWORD)visual, (DWORD)obj);
+ 3977 |                                                 (DWORD)visual, (DWORD)obj);
       |                                                                ~~~~~~~~~~                                                            
       |                                                                |
       |                                                                long unsigned int
-mknp_custom_entities.c:3994:91: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 3994 |                         if (logf) fprintf(logf, "  cENTITY: SpeedCyl collision Level 0x%08X registered\n", sc_col);
+mknp_custom_entities.c:4041:91: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 4041 |                         if (logf) fprintf(logf, "  cENTITY: SpeedCyl collision Level 0x%08X registered\n", sc_col);
       |                                                                                        ~~~^                ~~~~~~
       |                                                                                           |                |
       |                                                                                           unsigned int     DWORD {aka long unsigned int}
       |                                                                                        %08lX
-mknp_custom_entities.c:4030:112: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 4030 |                                     if (logf) fprintf(logf, "  cENTITY: SC cyl render hook installed (col=0x%08X orig=0x%08X)\\n",
+mknp_custom_entities.c:4077:112: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 4077 |                                     if (logf) fprintf(logf, "  cENTITY: SC cyl render hook installed (col=0x%08X orig=0x%08X)\\n",
       |                                                                                                             ~~~^
       |                                                                                                                |
       |                                                                                                                unsigned int
       |                                                                                                             %08lX
- 4031 |                                         col_lvl, g_speedcyls[sc_idx].cyl_orig_vt18);
+ 4078 |                                         col_lvl, g_speedcyls[sc_idx].cyl_orig_vt18);
       |                                         ~~~~~~~                                                                 
       |                                         |
       |                                         DWORD {aka long unsigned int}
-mknp_custom_entities.c:4030:124: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 4030 |                                     if (logf) fprintf(logf, "  cENTITY: SC cyl render hook installed (col=0x%08X orig=0x%08X)\\n",
+mknp_custom_entities.c:4077:124: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 4077 |                                     if (logf) fprintf(logf, "  cENTITY: SC cyl render hook installed (col=0x%08X orig=0x%08X)\\n",
       |                                                                                                                         ~~~^
       |                                                                                                                            |
       |                                                                                                                            unsigned int
       |                                                                                                                         %08lX
- 4031 |                                         col_lvl, g_speedcyls[sc_idx].cyl_orig_vt18);
+ 4078 |                                         col_lvl, g_speedcyls[sc_idx].cyl_orig_vt18);
       |                                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                                          
       |                                                                     |
       |                                                                     DWORD {aka long unsigned int}
-mknp_custom_entities.c:4091:125: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long unsigned int’ [-Wformat=]
- 4091 |                                             if (logf) fprintf(logf, "  cENTITY: SC trigger render hook installed (trig=0x%08X orig=0x%08X)\\n",
+mknp_custom_entities.c:4138:125: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long unsigned int’ [-Wformat=]
+ 4138 |                                             if (logf) fprintf(logf, "  cENTITY: SC trigger render hook installed (trig=0x%08X orig=0x%08X)\\n",
       |                                                                                                                          ~~~^
       |                                                                                                                             |
       |                                                                                                                             unsigned int
       |                                                                                                                          %08lX
- 4092 |                                                 (DWORD)trig_obj, g_speedcyls[sc_idx].trig_orig_vt18);
+ 4139 |                                                 (DWORD)trig_obj, g_speedcyls[sc_idx].trig_orig_vt18);
       |                                                 ~~~~~~~~~~~~~~~                                                              
       |                                                 |
       |                                                 long unsigned int
-mknp_custom_entities.c:4091:137: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 4091 |                                             if (logf) fprintf(logf, "  cENTITY: SC trigger render hook installed (trig=0x%08X orig=0x%08X)\\n",
+mknp_custom_entities.c:4138:137: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 4138 |                                             if (logf) fprintf(logf, "  cENTITY: SC trigger render hook installed (trig=0x%08X orig=0x%08X)\\n",
       |                                                                                                                                      ~~~^
       |                                                                                                                                         |
       |                                                                                                                                         unsigned int
       |                                                                                                                                      %08lX
- 4092 |                                                 (DWORD)trig_obj, g_speedcyls[sc_idx].trig_orig_vt18);
+ 4139 |                                                 (DWORD)trig_obj, g_speedcyls[sc_idx].trig_orig_vt18);
       |                                                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                                      
       |                                                                                     |
       |                                                                                     DWORD {aka long unsigned int}
-mknp_custom_entities.c:4115:117: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘long unsigned int’ [-Wformat=]
- 4115 |                                 if (logf) fprintf(logf, "  cENTITY: SC trigger VISIBLE at (%.1f,%.1f,%.1f) obj=0x%08X mesh=0x%08X%s\n",
+mknp_custom_entities.c:4162:117: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘long unsigned int’ [-Wformat=]
+ 4162 |                                 if (logf) fprintf(logf, "  cENTITY: SC trigger VISIBLE at (%.1f,%.1f,%.1f) obj=0x%08X mesh=0x%08X%s\n",
       |                                                                                                                  ~~~^
       |                                                                                                                     |
       |                                                                                                                     unsigned int
       |                                                                                                                  %08lX
- 4116 |                                                   px, py, pz, (DWORD)trig_obj, (DWORD)trig_mesh,
+ 4163 |                                                   px, py, pz, (DWORD)trig_obj, (DWORD)trig_mesh,
       |                                                               ~~~~~~~~~~~~~~~                                        
       |                                                               |
       |                                                               long unsigned int
-mknp_custom_entities.c:4115:129: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 7 has type ‘long unsigned int’ [-Wformat=]
- 4115 |                                 if (logf) fprintf(logf, "  cENTITY: SC trigger VISIBLE at (%.1f,%.1f,%.1f) obj=0x%08X mesh=0x%08X%s\n",
+mknp_custom_entities.c:4162:129: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 7 has type ‘long unsigned int’ [-Wformat=]
+ 4162 |                                 if (logf) fprintf(logf, "  cENTITY: SC trigger VISIBLE at (%.1f,%.1f,%.1f) obj=0x%08X mesh=0x%08X%s\n",
       |                                                                                                                              ~~~^
       |                                                                                                                                 |
       |                                                                                                                                 unsigned int
       |                                                                                                                              %08lX
- 4116 |                                                   px, py, pz, (DWORD)trig_obj, (DWORD)trig_mesh,
+ 4163 |                                                   px, py, pz, (DWORD)trig_obj, (DWORD)trig_mesh,
       |                                                                                ~~~~~~~~~~~~~~~~                                  
       |                                                                                |
       |                                                                                long unsigned int
-mknp_custom_entities.c:4207:104: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 4207 |                         if (logf) fprintf(logf, "  cENTITY: TimeButton(SpeedCyl shape) coll Level 0x%08X registered (board+0x10EC + scene tree)\n", tb_col);
+mknp_custom_entities.c:4254:104: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 4254 |                         if (logf) fprintf(logf, "  cENTITY: TimeButton(SpeedCyl shape) coll Level 0x%08X registered (board+0x10EC + scene tree)\n", tb_col);
       |                                                                                                     ~~~^                                            ~~~~~~
       |                                                                                                        |                                            |
       |                                                                                                        unsigned int                                 DWORD {aka long unsigned int}
       |                                                                                                     %08lX
-mknp_custom_entities.c:4376:26: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
- 4376 |                         *(int*)&px, *(int*)&py, *(int*)&pz, 0, 0, 0);
+mknp_custom_entities.c:4423:26: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
+ 4423 |                         *(int*)&px, *(int*)&py, *(int*)&pz, 0, 0, 0);
       |                          ^~~~~~~~~
-mknp_custom_entities.c:4376:38: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
- 4376 |                         *(int*)&px, *(int*)&py, *(int*)&pz, 0, 0, 0);
+mknp_custom_entities.c:4423:38: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
+ 4423 |                         *(int*)&px, *(int*)&py, *(int*)&pz, 0, 0, 0);
       |                                      ^~~~~~~~~
-mknp_custom_entities.c:4376:50: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
- 4376 |                         *(int*)&px, *(int*)&py, *(int*)&pz, 0, 0, 0);
+mknp_custom_entities.c:4423:50: warning: dereferencing type-punned pointer will break strict-aliasing rules [-Wstrict-aliasing]
+ 4423 |                         *(int*)&px, *(int*)&py, *(int*)&pz, 0, 0, 0);
       |                                                  ^~~~~~~~~
-mknp_custom_entities.c:4434:96: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 4434 |                             if (logf) fprintf(logf, "  cENTITY: 8ball mesh set (App+0x248=0x%08X, ball+0x754=1)\n", mesh_8ball);
+mknp_custom_entities.c:4481:96: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 4481 |                             if (logf) fprintf(logf, "  cENTITY: 8ball mesh set (App+0x248=0x%08X, ball+0x754=1)\n", mesh_8ball);
       |                                                                                             ~~~^                    ~~~~~~~~~~
       |                                                                                                |                    |
       |                                                                                                unsigned int         DWORD {aka long unsigned int}
       |                                                                                             %08lX
-mknp_custom_entities.c:4501:109: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘long unsigned int’ [-Wformat=]
- 4501 |                         if (logf) fprintf(logf, "  cENTITY: Bridgeslam spawned at (%.1f,%.1f,%.1f) obj=0x%08X render=0x%08X mesh=0x%08X\n",
+mknp_custom_entities.c:4548:109: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘long unsigned int’ [-Wformat=]
+ 4548 |                         if (logf) fprintf(logf, "  cENTITY: Bridgeslam spawned at (%.1f,%.1f,%.1f) obj=0x%08X render=0x%08X mesh=0x%08X\n",
       |                                                                                                          ~~~^
       |                                                                                                             |
       |                                                                                                             unsigned int
       |                                                                                                          %08lX
- 4502 |                                 px, py, pz, (DWORD)obj, (DWORD)render_obj, (DWORD)mesh);
+ 4549 |                                 px, py, pz, (DWORD)obj, (DWORD)render_obj, (DWORD)mesh);
       |                                             ~~~~~~~~~~                                                       
       |                                             |
       |                                             long unsigned int
-mknp_custom_entities.c:4501:123: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 7 has type ‘long unsigned int’ [-Wformat=]
- 4501 |                         if (logf) fprintf(logf, "  cENTITY: Bridgeslam spawned at (%.1f,%.1f,%.1f) obj=0x%08X render=0x%08X mesh=0x%08X\n",
+mknp_custom_entities.c:4548:123: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 7 has type ‘long unsigned int’ [-Wformat=]
+ 4548 |                         if (logf) fprintf(logf, "  cENTITY: Bridgeslam spawned at (%.1f,%.1f,%.1f) obj=0x%08X render=0x%08X mesh=0x%08X\n",
       |                                                                                                                        ~~~^
       |                                                                                                                           |
       |                                                                                                                           unsigned int
       |                                                                                                                        %08lX
- 4502 |                                 px, py, pz, (DWORD)obj, (DWORD)render_obj, (DWORD)mesh);
+ 4549 |                                 px, py, pz, (DWORD)obj, (DWORD)render_obj, (DWORD)mesh);
       |                                                         ~~~~~~~~~~~~~~~~~                                                  
       |                                                         |
       |                                                         long unsigned int
-mknp_custom_entities.c:4501:135: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 8 has type ‘long unsigned int’ [-Wformat=]
- 4501 |                         if (logf) fprintf(logf, "  cENTITY: Bridgeslam spawned at (%.1f,%.1f,%.1f) obj=0x%08X render=0x%08X mesh=0x%08X\n",
+mknp_custom_entities.c:4548:135: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 8 has type ‘long unsigned int’ [-Wformat=]
+ 4548 |                         if (logf) fprintf(logf, "  cENTITY: Bridgeslam spawned at (%.1f,%.1f,%.1f) obj=0x%08X render=0x%08X mesh=0x%08X\n",
       |                                                                                                                                    ~~~^
       |                                                                                                                                       |
       |                                                                                                                                       unsigned int
       |                                                                                                                                    %08lX
- 4502 |                                 px, py, pz, (DWORD)obj, (DWORD)render_obj, (DWORD)mesh);
+ 4549 |                                 px, py, pz, (DWORD)obj, (DWORD)render_obj, (DWORD)mesh);
       |                                                                            ~~~~~~~~~~~                                                 
       |                                                                            |
       |                                                                            long unsigned int
-mknp_custom_entities.c:4530:75: warning: format ‘%d’ expects argument of type ‘int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 4530 |         if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc (%d bytes)\n", alloc_sz); return; }
+mknp_custom_entities.c:4577:75: warning: format ‘%d’ expects argument of type ‘int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 4577 |         if (!obj) { if (logf) fprintf(logf, "  cENTITY: failed to alloc (%d bytes)\n", alloc_sz); return; }
       |                                                                          ~^            ~~~~~~~~
       |                                                                           |            |
       |                                                                           int          DWORD {aka long unsigned int}
       |                                                                          %ld
-mknp_custom_entities.c:4604:72: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘long unsigned int’ [-Wformat=]
- 4604 |         fprintf(logf, "  cENTITY: spawned at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s' rot=(%.4f,%.4f,%.4f) oc=(%.1f,%.1f,%.1f)\n",
+mknp_custom_entities.c:4651:72: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘long unsigned int’ [-Wformat=]
+ 4651 |         fprintf(logf, "  cENTITY: spawned at (%.1f,%.1f,%.1f) obj=0x%08X mesh='%s' rot=(%.4f,%.4f,%.4f) oc=(%.1f,%.1f,%.1f)\n",
       |                                                                     ~~~^
       |                                                                        |
       |                                                                        unsigned int
       |                                                                     %08lX
- 4605 |                 px, py, pz, (DWORD)obj, path, rot_x, rot_y, rot_z,
+ 4652 |                 px, py, pz, (DWORD)obj, path, rot_x, rot_y, rot_z,
       |                             ~~~~~~~~~~                                  
       |                             |
       |                             long unsigned int
-mknp_custom_entities.c:4615:20: warning: comparison between pointer and integer
- 4615 |     if (obj && obj >= 0x10000 && !IsBadReadPtr((void*)obj, 0x10F0)) {
+mknp_custom_entities.c:4662:20: warning: comparison between pointer and integer
+ 4662 |     if (obj && obj >= 0x10000 && !IsBadReadPtr((void*)obj, 0x10F0)) {
       |                    ^~
-mknp_custom_entities.c:4683:69: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘long unsigned int’ [-Wformat=]
- 4683 |         if (logf) fprintf(logf, "  CHOMPER[%d]: registered obj=0x%08X pos=(%.1f,%.1f,%.1f) jaw=0.25\n",
+mknp_custom_entities.c:4730:69: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘long unsigned int’ [-Wformat=]
+ 4730 |         if (logf) fprintf(logf, "  CHOMPER[%d]: registered obj=0x%08X pos=(%.1f,%.1f,%.1f) jaw=0.25\n",
       |                                                                  ~~~^
       |                                                                     |
       |                                                                     unsigned int
       |                                                                  %08lX
- 4684 |                 g_chomper_count, (DWORD)obj, cs->x, cs->y, cs->z);
+ 4731 |                 g_chomper_count, (DWORD)obj, cs->x, cs->y, cs->z);
       |                                  ~~~~~~~~~~                          
       |                                  |
       |                                  long unsigned int
-mknp_custom_entities.c:4685:61: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 4685 |         if (logf) fprintf(logf, "  CHOMPER[%d]: vtable=0x%08X meshworld=0x%08X (obj+0x08)\n",
+mknp_custom_entities.c:4732:61: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 4732 |         if (logf) fprintf(logf, "  CHOMPER[%d]: vtable=0x%08X meshworld=0x%08X (obj+0x08)\n",
       |                                                          ~~~^
       |                                                             |
       |                                                             unsigned int
       |                                                          %08lX
- 4686 |                 g_chomper_count, obj_vtable, meshworld);
+ 4733 |                 g_chomper_count, obj_vtable, meshworld);
       |                                  ~~~~~~~~~~                  
       |                                  |
       |                                  DWORD {aka long unsigned int}
-mknp_custom_entities.c:4685:78: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 4685 |         if (logf) fprintf(logf, "  CHOMPER[%d]: vtable=0x%08X meshworld=0x%08X (obj+0x08)\n",
+mknp_custom_entities.c:4732:78: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 4732 |         if (logf) fprintf(logf, "  CHOMPER[%d]: vtable=0x%08X meshworld=0x%08X (obj+0x08)\n",
       |                                                                           ~~~^
       |                                                                              |
       |                                                                              unsigned int
       |                                                                           %08lX
- 4686 |                 g_chomper_count, obj_vtable, meshworld);
+ 4733 |                 g_chomper_count, obj_vtable, meshworld);
       |                                              ~~~~~~~~~                        
       |                                              |
       |                                              DWORD {aka long unsigned int}
-mknp_custom_entities.c:4687:78: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 4687 |         if (logf) fprintf(logf, "  CHOMPER[%d]: vtable[18] hooked: orig=0x%08X new=0x%08X\n",
+mknp_custom_entities.c:4734:78: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 4734 |         if (logf) fprintf(logf, "  CHOMPER[%d]: vtable[18] hooked: orig=0x%08X new=0x%08X\n",
       |                                                                           ~~~^
       |                                                                              |
       |                                                                              unsigned int
       |                                                                           %08lX
- 4688 |                 g_chomper_count, cs->orig_vtable2, (DWORD)&cEnt_chomper_render);
+ 4735 |                 g_chomper_count, cs->orig_vtable2, (DWORD)&cEnt_chomper_render);
       |                                  ~~~~~~~~~~~~~~~~                             
       |                                    |
       |                                    DWORD {aka long unsigned int}
-mknp_custom_entities.c:4687:89: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘long unsigned int’ [-Wformat=]
- 4687 |         if (logf) fprintf(logf, "  CHOMPER[%d]: vtable[18] hooked: orig=0x%08X new=0x%08X\n",
+mknp_custom_entities.c:4734:89: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘long unsigned int’ [-Wformat=]
+ 4734 |         if (logf) fprintf(logf, "  CHOMPER[%d]: vtable[18] hooked: orig=0x%08X new=0x%08X\n",
       |                                                                                      ~~~^
       |                                                                                         |
       |                                                                                         unsigned int
       |                                                                                      %08lX
- 4688 |                 g_chomper_count, cs->orig_vtable2, (DWORD)&cEnt_chomper_render);
+ 4735 |                 g_chomper_count, cs->orig_vtable2, (DWORD)&cEnt_chomper_render);
       |                                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~           
       |                                                    |
       |                                                    long unsigned int
 mknp_custom_entities.c: In function ‘cEnt_Despawn_All_cEntities’:
-mknp_custom_entities.c:4729:70: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 4729 |                 if (logf) fprintf(logf, "  cENTITY: removed obj=0x%08X\n", obj);
+mknp_custom_entities.c:4776:70: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 4776 |                 if (logf) fprintf(logf, "  cENTITY: removed obj=0x%08X\n", obj);
       |                                                                   ~~~^     ~~~
       |                                                                      |     |
       |                                                                      |     DWORD {aka long unsigned int}
       |                                                                      unsigned int
       |                                                                   %08lX
-mknp_custom_entities.c:4765:83: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 4765 |                 if (logf) fprintf(logf, "  cENTITY: despawned TimeButton obj=0x%08X\\n", tobj);
+mknp_custom_entities.c:4812:83: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 4812 |                 if (logf) fprintf(logf, "  cENTITY: despawned TimeButton obj=0x%08X\\n", tobj);
       |                                                                                ~~~^      ~~~~
       |                                                                                   |      |
       |                                                                                   |      DWORD {aka long unsigned int}
       |                                                                                   unsigned int
       |                                                                                %08lX
 mknp_custom_entities.c: In function ‘cEnt_Apply_S1_cEntity_Tags’:
-mknp_custom_entities.c:5195:64: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 5195 |                     fprintf(logf, "  cENTITY(S1-tag): obj=0x%08X at (%.1f,%.1f,%.1f) ROT_Y=%.4f ROS_Y=%.1f applied\n",
+mknp_custom_entities.c:5242:64: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 5242 |                     fprintf(logf, "  cENTITY(S1-tag): obj=0x%08X at (%.1f,%.1f,%.1f) ROT_Y=%.4f ROS_Y=%.1f applied\n",
       |                                                             ~~~^
       |                                                                |
       |                                                                unsigned int
       |                                                             %08lX
- 5196 |                             obj, px, py, pz, rot_y, ros_y);
+ 5243 |                             obj, px, py, pz, rot_y, ros_y);
       |                             ~~~                                 
       |                             |
       |                             DWORD {aka long unsigned int}
 mknp_custom_entities.c: In function ‘hide_entity_meshbuffers’:
-mknp_custom_entities.c:5260:79: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 5260 |             if (logf) fprintf(logf, "  HIDE: meshbuffer '%s' (idx=%d, mb=0x%08X) render context zeroed\n", name, i, mb);
+mknp_custom_entities.c:5307:79: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 5307 |             if (logf) fprintf(logf, "  HIDE: meshbuffer '%s' (idx=%d, mb=0x%08X) render context zeroed\n", name, i, mb);
       |                                                                            ~~~^                                     ~~
       |                                                                               |                                     |
       |                                                                               unsigned int                          DWORD {aka long unsigned int}
       |                                                                            %08lX
 mknp_custom_entities.c: In function ‘exec_update_cmds’:
-mknp_custom_entities.c:5543:15: warning: unused variable ‘dir’ [-Wunused-variable]
- 5543 |         float dir = *(float*)(obj + 0x10EC);
+mknp_custom_entities.c:5590:15: warning: unused variable ‘dir’ [-Wunused-variable]
+ 5590 |         float dir = *(float*)(obj + 0x10EC);
       |               ^~~
 mknp_custom_entities.c: In function ‘cEnt_timebutton_present_press’:
-mknp_custom_entities.c:5718:49: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 5718 |         if (df) { fprintf(df, "TB: %d ball=0x%08X (no ball)\n", tb_heartbeat, ball); fclose(df); }
+mknp_custom_entities.c:5765:49: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 5765 |         if (df) { fprintf(df, "TB: %d ball=0x%08X (no ball)\n", tb_heartbeat, ball); fclose(df); }
       |                                              ~~~^                             ~~~~
       |                                                 |                             |
       |                                                 unsigned int                  DWORD {aka long unsigned int}
       |                                              %08lX
-mknp_custom_entities.c:5722:50: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 5722 |         if (df) { fprintf(df, "TB: %d board=0x%08X (bad board)\n", tb_heartbeat, board); fclose(df); }
+mknp_custom_entities.c:5769:50: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 5769 |         if (df) { fprintf(df, "TB: %d board=0x%08X (bad board)\n", tb_heartbeat, board); fclose(df); }
       |                                               ~~~^                               ~~~~~
       |                                                  |                               |
       |                                                  unsigned int                    DWORD {aka long unsigned int}
       |                                               %08lX
-mknp_custom_entities.c:5743:62: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘long unsigned int’ [-Wformat=]
- 5743 |             if (df) fprintf(df, "TB:   [%d] bad tb (obj=0x%08X)\n", i, tb ? tb->obj : 0);
+mknp_custom_entities.c:5790:62: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘long unsigned int’ [-Wformat=]
+ 5790 |             if (df) fprintf(df, "TB:   [%d] bad tb (obj=0x%08X)\n", i, tb ? tb->obj : 0);
       |                                                           ~~~^         ~~~~~~~~~~~~~~~~
       |                                                              |                      |
       |                                                              unsigned int           long unsigned int
       |                                                           %08lX
-mknp_custom_entities.c:5747:53: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 5747 |             if (df) fprintf(df, "TB:   [%d] tb=0x%08X WRONG BOARD (tb_board=0x%08X board=0x%08X)\n", i, tb->obj, tb->board, board);
+mknp_custom_entities.c:5794:53: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 5794 |             if (df) fprintf(df, "TB:   [%d] tb=0x%08X WRONG BOARD (tb_board=0x%08X board=0x%08X)\n", i, tb->obj, tb->board, board);
       |                                                  ~~~^                                                   ~~~~~~~
       |                                                     |                                                     |
       |                                                     unsigned int                                          DWORD {aka long unsigned int}
       |                                                  %08lX
-mknp_custom_entities.c:5747:82: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 5747 |             if (df) fprintf(df, "TB:   [%d] tb=0x%08X WRONG BOARD (tb_board=0x%08X board=0x%08X)\n", i, tb->obj, tb->board, board);
+mknp_custom_entities.c:5794:82: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 5794 |             if (df) fprintf(df, "TB:   [%d] tb=0x%08X WRONG BOARD (tb_board=0x%08X board=0x%08X)\n", i, tb->obj, tb->board, board);
       |                                                                               ~~~^                               ~~~~~~~~~
       |                                                                                  |                                 |
       |                                                                                  unsigned int                      DWORD {aka long unsigned int}
       |                                                                               %08lX
-mknp_custom_entities.c:5747:95: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 5747 |             if (df) fprintf(df, "TB:   [%d] tb=0x%08X WRONG BOARD (tb_board=0x%08X board=0x%08X)\n", i, tb->obj, tb->board, board);
+mknp_custom_entities.c:5794:95: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 5794 |             if (df) fprintf(df, "TB:   [%d] tb=0x%08X WRONG BOARD (tb_board=0x%08X board=0x%08X)\n", i, tb->obj, tb->board, board);
       |                                                                                            ~~~^                             ~~~~~
       |                                                                                               |                             |
       |                                                                                               unsigned int                  DWORD {aka long unsigned int}
       |                                                                                            %08lX
-mknp_custom_entities.c:5751:53: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 5751 |             if (df) fprintf(df, "TB:   [%d] tb=0x%08X bad read\n", i, tb->obj);
+mknp_custom_entities.c:5798:53: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 5798 |             if (df) fprintf(df, "TB:   [%d] tb=0x%08X bad read\n", i, tb->obj);
       |                                                  ~~~^                 ~~~~~~~
       |                                                     |                   |
       |                                                     unsigned int        DWORD {aka long unsigned int}
       |                                                  %08lX
-mknp_custom_entities.c:5761:49: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 5761 |         if (df) fprintf(df, "TB:   [%d] tb=0x%08X pos=(%.1f,%.1f,%.1f) pressed=%d latch=%d dx=%.1f dy=%.1f dz=%.1f horiz=%.1f (r=%d)\n",
+mknp_custom_entities.c:5808:49: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 5808 |         if (df) fprintf(df, "TB:   [%d] tb=0x%08X pos=(%.1f,%.1f,%.1f) pressed=%d latch=%d dx=%.1f dy=%.1f dz=%.1f horiz=%.1f (r=%d)\n",
       |                                              ~~~^
       |                                                 |
       |                                                 unsigned int
       |                                              %08lX
- 5762 |             i, tb->obj, tb->x, tb->y, tb->z, tb->pressed, latched, dx, dy, dz, (float)_hypot(dx, dz), TIMEBUTTON_PRESS_RADIUS_SQ);
+ 5809 |             i, tb->obj, tb->x, tb->y, tb->z, tb->pressed, latched, dx, dy, dz, (float)_hypot(dx, dz), TIMEBUTTON_PRESS_RADIUS_SQ);
       |                ~~~~~~~                           
       |                  |
       |                  DWORD {aka long unsigned int}
-mknp_custom_entities.c:5761:131: warning: format ‘%d’ expects argument of type ‘int’, but argument 14 has type ‘double’ [-Wformat=]
- 5761 |         if (df) fprintf(df, "TB:   [%d] tb=0x%08X pos=(%.1f,%.1f,%.1f) pressed=%d latch=%d dx=%.1f dy=%.1f dz=%.1f horiz=%.1f (r=%d)\n",
+mknp_custom_entities.c:5808:131: warning: format ‘%d’ expects argument of type ‘int’, but argument 14 has type ‘double’ [-Wformat=]
+ 5808 |         if (df) fprintf(df, "TB:   [%d] tb=0x%08X pos=(%.1f,%.1f,%.1f) pressed=%d latch=%d dx=%.1f dy=%.1f dz=%.1f horiz=%.1f (r=%d)\n",
       |                                                                                                                                  ~^
       |                                                                                                                                   |
       |                                                                                                                                   int
       |                                                                                                                                  %f
-mknp_custom_entities.c:5809:66: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 5809 |             if (plf) { fprintf(plf, "PRESSED v55n_38 entity=0x%08X count=%d heart=%d latch=1 sink+pose set\n", tb->obj, g_timebutton_count, tb_heartbeat); fclose(plf); }
+mknp_custom_entities.c:5856:66: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 5856 |             if (plf) { fprintf(plf, "PRESSED v55n_38 entity=0x%08X count=%d heart=%d latch=1 sink+pose set\n", tb->obj, g_timebutton_count, tb_heartbeat); fclose(plf); }
       |                                                               ~~~^                                             ~~~~~~~
       |                                                                  |                                               |
       |                                                                  unsigned int                                    DWORD {aka long unsigned int}
       |                                                               %08lX
-mknp_custom_entities.c:5890:93: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 5890 |                         fprintf(plf, "REWARD +500 granted to player %d (countdown_slot=0x%08X old=%d new=%d popup=EXTRA TIME:)\n",
+mknp_custom_entities.c:5937:93: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 5937 |                         fprintf(plf, "REWARD +500 granted to player %d (countdown_slot=0x%08X old=%d new=%d popup=EXTRA TIME:)\n",
       |                                                                                          ~~~^
       |                                                                                             |
       |                                                                                             unsigned int
       |                                                                                          %08lX
- 5891 |                             player_idx, countdown_slot, cur, cur + 500);
+ 5938 |                             player_idx, countdown_slot, cur, cur + 500);
       |                                         ~~~~~~~~~~~~~~                                       
       |                                         |
       |                                         DWORD {aka long unsigned int}
 mknp_custom_entities.c: In function ‘cEnt_catapult_rotate_collision_verts’:
-mknp_custom_entities.c:5921:12: warning: unused variable ‘r’ [-Wunused-variable]
- 5921 |     int b, r;  /* v55m_43h rev9: loop vars for save/rotate passes */
+mknp_custom_entities.c:5968:12: warning: unused variable ‘r’ [-Wunused-variable]
+ 5968 |     int b, r;  /* v55m_43h rev9: loop vars for save/rotate passes */
       |            ^
-mknp_custom_entities.c:5921:9: warning: unused variable ‘b’ [-Wunused-variable]
- 5921 |     int b, r;  /* v55m_43h rev9: loop vars for save/rotate passes */
+mknp_custom_entities.c:5968:9: warning: unused variable ‘b’ [-Wunused-variable]
+ 5968 |     int b, r;  /* v55m_43h rev9: loop vars for save/rotate passes */
       |         ^
 mknp_custom_entities.c: In function ‘cEnt_catapult_present_check’:
-mknp_custom_entities.c:6195:63: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 6195 |                 fprintf(df, "CATAPULT: heartbeat=%d ball=0x%08X count=%d (no ball)\n",
+mknp_custom_entities.c:6242:63: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 6242 |                 fprintf(df, "CATAPULT: heartbeat=%d ball=0x%08X count=%d (no ball)\n",
       |                                                            ~~~^
       |                                                               |
       |                                                               unsigned int
       |                                                            %08lX
- 6196 |                     g_catapult_heartbeat, ball, g_catapult_count);
+ 6243 |                     g_catapult_heartbeat, ball, g_catapult_count);
       |                                           ~~~~                 
       |                                           |
       |                                           DWORD {aka long unsigned int}
-mknp_custom_entities.c:6228:65: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 6228 |                     fprintf(df, "CATAPULT: PAUSEGATE board=0x%08X (bad read — gate disabled)\n", board);
+mknp_custom_entities.c:6275:65: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 6275 |                     fprintf(df, "CATAPULT: PAUSEGATE board=0x%08X (bad read — gate disabled)\n", board);
       |                                                              ~~~^                                ~~~~~
       |                                                                 |                                |
       |                                                                 unsigned int                     DWORD {aka long unsigned int}
       |                                                              %08lX
 mknp_custom_entities.c: In function ‘cEnt_speedcyl_present_check’:
-mknp_custom_entities.c:6461:70: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 6461 |                     fprintf(slf, "  cENTITY: SC collision! ball=0x%08X -> tracked (entity=0x%08X)\n", ball, sc->obj);
+mknp_custom_entities.c:6508:70: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 6508 |                     fprintf(slf, "  cENTITY: SC collision! ball=0x%08X -> tracked (entity=0x%08X)\n", ball, sc->obj);
       |                                                                   ~~~^                                ~~~~
       |                                                                      |                                |
       |                                                                      unsigned int                     DWORD {aka long unsigned int}
       |                                                                   %08lX
-mknp_custom_entities.c:6461:96: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 6461 |                     fprintf(slf, "  cENTITY: SC collision! ball=0x%08X -> tracked (entity=0x%08X)\n", ball, sc->obj);
+mknp_custom_entities.c:6508:96: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 6508 |                     fprintf(slf, "  cENTITY: SC collision! ball=0x%08X -> tracked (entity=0x%08X)\n", ball, sc->obj);
       |                                                                                             ~~~^            ~~~~~~~
       |                                                                                                |              |
       |                                                                                                unsigned int   DWORD {aka long unsigned int}
       |                                                                                             %08lX
 mknp_custom_entities.c: In function ‘cEnt_dbg_format_dword’:
-mknp_custom_entities.c:7076:36: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 7076 |         snprintf(out, outsz, "0x%08X", v);
+mknp_custom_entities.c:7123:36: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 7123 |         snprintf(out, outsz, "0x%08X", v);
       |                                 ~~~^   ~
       |                                    |   |
       |                                    |   DWORD {aka long unsigned int}
       |                                    unsigned int
       |                                 %08lX
 mknp_custom_entities.c: In function ‘cEnt_tarbubble_update_decoration’:
-mknp_custom_entities.c:8443:107: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 8443 |                         fprintf(tlf, "  TARBUBBLE: spawned decorative bubble at (%.1f,%.1f,%.1f) obj=0x%08X\n",
+mknp_custom_entities.c:8490:107: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 6 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 8490 |                         fprintf(tlf, "  TARBUBBLE: spawned decorative bubble at (%.1f,%.1f,%.1f) obj=0x%08X\n",
       |                                                                                                        ~~~^
       |                                                                                                           |
       |                                                                                                           unsigned int
       |                                                                                                        %08lX
- 8444 |                             bp->x, bp->y, bp->z, bp->obj);
+ 8491 |                             bp->x, bp->y, bp->z, bp->obj);
       |                                                  ~~~~~~~                                                   
       |                                                    |
       |                                                    DWORD {aka long unsigned int}
 mknp_custom_entities.c: In function ‘cEnt_waterwheel_update’:
-mknp_custom_entities.c:8542:23: warning: unused variable ‘water_mode’ [-Wunused-variable]
- 8542 |                 DWORD water_mode = *(DWORD*)(ball + 0x808);
+mknp_custom_entities.c:8589:23: warning: unused variable ‘water_mode’ [-Wunused-variable]
+ 8589 |                 DWORD water_mode = *(DWORD*)(ball + 0x808);
       |                       ^~~~~~~~~~
 mknp_custom_entities.c: In function ‘cEnt_chomper_update’:
-mknp_custom_entities.c:8609:77: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 8609 |             if (chomp_log) fprintf(chomp_log, "  CHOMPER[%d]: SKIP obj=0x%08X is bad read ptr\n", i, cs->obj);
+mknp_custom_entities.c:8656:77: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 8656 |             if (chomp_log) fprintf(chomp_log, "  CHOMPER[%d]: SKIP obj=0x%08X is bad read ptr\n", i, cs->obj);
       |                                                                          ~~~^                        ~~~~~~~
       |                                                                             |                          |
       |                                                                             unsigned int               DWORD {aka long unsigned int}
       |                                                                          %08lX
-mknp_custom_entities.c:8686:57: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 8686 |             fprintf(chomp_log, "  CHOMPER[%d]: obj=0x%08X state=%d(%s)->%d(%s) jaw=%.3f phase=%.1f countdown=%d anim=%.1f bite=%d\n",
+mknp_custom_entities.c:8733:57: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 8733 |             fprintf(chomp_log, "  CHOMPER[%d]: obj=0x%08X state=%d(%s)->%d(%s) jaw=%.3f phase=%.1f countdown=%d anim=%.1f bite=%d\n",
       |                                                      ~~~^
       |                                                         |
       |                                                         unsigned int
       |                                                      %08lX
- 8687 |                     i, cs->obj,
+ 8734 |                     i, cs->obj,
       |                        ~~~~~~~                           
       |                          |
       |                          DWORD {aka long unsigned int}
 mknp_custom_entities.c: In function ‘cEnt_Treesearch_cEntities’:
-mknp_custom_entities.c:8734:64: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 8734 |     if (logf) fprintf(logf, "  S3: obj_count=%d (sceneobj=0x%08X)\n", obj_count, sceneobj);
+mknp_custom_entities.c:8781:64: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 8781 |     if (logf) fprintf(logf, "  S3: obj_count=%d (sceneobj=0x%08X)\n", obj_count, sceneobj);
       |                                                             ~~~^                 ~~~~~~~~
       |                                                                |                 |
       |                                                                unsigned int      DWORD {aka long unsigned int}
       |                                                             %08lX
-mknp_custom_entities.c:8743:64: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long unsigned int’ [-Wformat=]
- 8743 |         if (logf) fprintf(logf, "  S3: obj_array_ptr bad (0x%08X)\n", (DWORD)obj_array_ptr);
+mknp_custom_entities.c:8790:64: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long unsigned int’ [-Wformat=]
+ 8790 |         if (logf) fprintf(logf, "  S3: obj_array_ptr bad (0x%08X)\n", (DWORD)obj_array_ptr);
       |                                                             ~~~^      ~~~~~~~~~~~~~~~~~~~~
       |                                                                |      |
       |                                                                |      long unsigned int
       |                                                                unsigned int
       |                                                             %08lX
-mknp_custom_entities.c:8746:50: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long unsigned int’ [-Wformat=]
- 8746 |     if (logf) fprintf(logf, "  S3: array at 0x%08X, scanning %d entries...\n", (DWORD)obj_array_ptr, obj_count);
+mknp_custom_entities.c:8793:50: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘long unsigned int’ [-Wformat=]
+ 8793 |     if (logf) fprintf(logf, "  S3: array at 0x%08X, scanning %d entries...\n", (DWORD)obj_array_ptr, obj_count);
       |                                               ~~~^                             ~~~~~~~~~~~~~~~~~~~~
       |                                                  |                             |
       |                                                  unsigned int                  long unsigned int
       |                                               %08lX
-mknp_custom_entities.c:8751:62: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 8751 |             if (logf) fprintf(logf, "    [%d] skip: ptr=0x%08X\n", i, obj_ptr);
+mknp_custom_entities.c:8798:62: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 8798 |             if (logf) fprintf(logf, "    [%d] skip: ptr=0x%08X\n", i, obj_ptr);
       |                                                           ~~~^        ~~~~~~~
       |                                                              |        |
       |                                                              |        DWORD {aka long unsigned int}
       |                                                              unsigned int
       |                                                           %08lX
-mknp_custom_entities.c:8755:71: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 8755 |             if (logf) fprintf(logf, "    [%d] skip: bad read ptr 0x%08X\n", i, obj_ptr);
+mknp_custom_entities.c:8802:71: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 8802 |             if (logf) fprintf(logf, "    [%d] skip: bad read ptr 0x%08X\n", i, obj_ptr);
       |                                                                    ~~~^        ~~~~~~~
       |                                                                       |        |
       |                                                                       |        DWORD {aka long unsigned int}
       |                                                                       unsigned int
       |                                                                    %08lX
-mknp_custom_entities.c:8762:72: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘long unsigned int’ [-Wformat=]
- 8762 |             if (logf) fprintf(logf, "    [%d] skip: name ptr bad (0x%08X)\n", i, (DWORD)name);
+mknp_custom_entities.c:8809:72: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘long unsigned int’ [-Wformat=]
+ 8809 |             if (logf) fprintf(logf, "    [%d] skip: name ptr bad (0x%08X)\n", i, (DWORD)name);
       |                                                                     ~~~^         ~~~~~~~~~~~
       |                                                                        |         |
       |                                                                        |         long unsigned int
       |                                                                        unsigned int
       |                                                                     %08lX
-mknp_custom_entities.c:8770:62: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 8770 |         if (logf) fprintf(logf, "    [%d] name='%s' ptr=0x%08X pos=(%.1f, %.1f, %.1f)\n",
+mknp_custom_entities.c:8817:62: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 8817 |         if (logf) fprintf(logf, "    [%d] name='%s' ptr=0x%08X pos=(%.1f, %.1f, %.1f)\n",
       |                                                           ~~~^
       |                                                              |
       |                                                              unsigned int
       |                                                           %08lX
- 8771 |                 i, debug_name, obj_ptr,
+ 8818 |                 i, debug_name, obj_ptr,
       |                                ~~~~~~~                        
       |                                |
       |                                DWORD {aka long unsigned int}
 mknp_custom_entities.c: In function ‘entity_thread’:
-mknp_custom_entities.c:9155:75: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 9155 |                     fprintf(df, "  DEBUG[%d]: get_board()=0 (g_Scene=0x%08X, app=0x%08X)\n", debug_count, scene, app);
+mknp_custom_entities.c:9202:75: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 9202 |                     fprintf(df, "  DEBUG[%d]: get_board()=0 (g_Scene=0x%08X, app=0x%08X)\n", debug_count, scene, app);
       |                                                                        ~~~^                               ~~~~~
       |                                                                           |                               |
       |                                                                           unsigned int                    DWORD {aka long unsigned int}
       |                                                                        %08lX
-mknp_custom_entities.c:9155:87: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 9155 |                     fprintf(df, "  DEBUG[%d]: get_board()=0 (g_Scene=0x%08X, app=0x%08X)\n", debug_count, scene, app);
+mknp_custom_entities.c:9202:87: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 5 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 9202 |                     fprintf(df, "  DEBUG[%d]: get_board()=0 (g_Scene=0x%08X, app=0x%08X)\n", debug_count, scene, app);
       |                                                                                    ~~~^                          ~~~
       |                                                                                       |                          |
       |                                                                                       unsigned int               DWORD {aka long unsigned int}
       |                                                                                    %08lX
-mknp_custom_entities.c:9158:55: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 9158 |                         fprintf(df, "    profile=0x%08X\n", profile);
+mknp_custom_entities.c:9205:55: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 9205 |                         fprintf(df, "    profile=0x%08X\n", profile);
       |                                                    ~~~^     ~~~~~~~
       |                                                       |     |
       |                                                       |     DWORD {aka long unsigned int}
       |                                                       unsigned int
       |                                                    %08lX
-mknp_custom_entities.c:9217:59: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 9217 |             fprintf(logf, "\n--- Level loaded (board=0x%08X, level=0x%08X) ---\n", board, level);
+mknp_custom_entities.c:9264:59: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 3 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 9264 |             fprintf(logf, "\n--- Level loaded (board=0x%08X, level=0x%08X) ---\n", board, level);
       |                                                        ~~~^                        ~~~~~
       |                                                           |                        |
       |                                                           unsigned int             DWORD {aka long unsigned int}
       |                                                        %08lX
-mknp_custom_entities.c:9217:73: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
- 9217 |             fprintf(logf, "\n--- Level loaded (board=0x%08X, level=0x%08X) ---\n", board, level);
+mknp_custom_entities.c:9264:73: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 4 has type ‘DWORD’ {aka ‘long unsigned int’} [-Wformat=]
+ 9264 |             fprintf(logf, "\n--- Level loaded (board=0x%08X, level=0x%08X) ---\n", board, level);
       |                                                                      ~~~^                 ~~~~~
       |                                                                         |                 |
       |                                                                         unsigned int      DWORD {aka long unsigned int}
       |                                                                      %08lX
 mknp_custom_entities.c: At top level:
-mknp_custom_entities.c:7174:12: warning: ‘cEnt_draw_label_value’ defined but not used [-Wunused-function]
- 7174 | static int cEnt_draw_label_value(void* font, const char* label, const char* value,
+mknp_custom_entities.c:7221:12: warning: ‘cEnt_draw_label_value’ defined but not used [-Wunused-function]
+ 7221 | static int cEnt_draw_label_value(void* font, const char* label, const char* value,
       |            ^~~~~~~~~~~~~~~~~~~~~
-mknp_custom_entities.c:5912:12: warning: ‘g_catapult_debug_count’ defined but not used [-Wunused-variable]
- 5912 | static int g_catapult_debug_count = 0;
+mknp_custom_entities.c:5959:12: warning: ‘g_catapult_debug_count’ defined but not used [-Wunused-variable]
+ 5959 | static int g_catapult_debug_count = 0;
       |            ^~~~~~~~~~~~~~~~~~~~~~
-mknp_custom_entities.c:5462:13: warning: ‘exec_create_cmds’ defined but not used [-Wunused-function]
- 5462 | static void exec_create_cmds(DWORD obj, DWORD board, float px, float py, float pz,
+mknp_custom_entities.c:5509:13: warning: ‘exec_create_cmds’ defined but not used [-Wunused-function]
+ 5509 | static void exec_create_cmds(DWORD obj, DWORD board, float px, float py, float pz,
       |             ^~~~~~~~~~~~~~~~
-mknp_custom_entities.c:5318:12: warning: ‘load_entity_def’ defined but not used [-Wunused-function]
- 5318 | static int load_entity_def(const char* txt_path, entity_def_t* def, FILE* logf) {
+mknp_custom_entities.c:5365:12: warning: ‘load_entity_def’ defined but not used [-Wunused-function]
+ 5365 | static int load_entity_def(const char* txt_path, entity_def_t* def, FILE* logf) {
       |            ^~~~~~~~~~~~~~~
-mknp_custom_entities.c:2972:13: warning: ‘cEnt_despawn_by_name’ defined but not used [-Wunused-function]
- 2972 | static void cEnt_despawn_by_name(const char* target_name, DWORD board, FILE* logf) {
+mknp_custom_entities.c:3019:13: warning: ‘cEnt_despawn_by_name’ defined but not used [-Wunused-function]
+ 3019 | static void cEnt_despawn_by_name(const char* target_name, DWORD board, FILE* logf) {
       |             ^~~~~~~~~~~~~~~~~~~~
-mknp_custom_entities.c:2299:13: warning: ‘install_bonk_collision_hook’ defined but not used [-Wunused-function]
- 2299 | static void install_bonk_collision_hook(void) {
+mknp_custom_entities.c:2346:13: warning: ‘install_bonk_collision_hook’ defined but not used [-Wunused-function]
+ 2346 | static void install_bonk_collision_hook(void) {
       |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~
-mknp_custom_entities.c:2026:14: warning: ‘g_cEntity_board’ defined but not used [-Wunused-variable]
- 2026 | static DWORD g_cEntity_board = 0;
+mknp_custom_entities.c:2073:14: warning: ‘g_cEntity_board’ defined but not used [-Wunused-variable]
+ 2073 | static DWORD g_cEntity_board = 0;
       |              ^~~~~~~~~~~~~~~
-mknp_custom_entities.c:1642:12: warning: ‘cEnt_neutralize_waterwheel_collision’ defined but not used [-Wunused-function]
- 1642 | static int cEnt_neutralize_waterwheel_collision(DWORD pc_obj, FILE* logf) {
+mknp_custom_entities.c:1689:12: warning: ‘cEnt_neutralize_waterwheel_collision’ defined but not used [-Wunused-function]
+ 1689 | static int cEnt_neutralize_waterwheel_collision(DWORD pc_obj, FILE* logf) {
       |            ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-mknp_custom_entities.c:1434:20: warning: ‘pfn_Vec3_Copy_Bridge’ defined but not used [-Wunused-variable]
- 1434 | static Vec3_Copy_t pfn_Vec3_Copy_Bridge = (Vec3_Copy_t)0x00402BF0;
+mknp_custom_entities.c:1481:20: warning: ‘pfn_Vec3_Copy_Bridge’ defined but not used [-Wunused-variable]
+ 1481 | static Vec3_Copy_t pfn_Vec3_Copy_Bridge = (Vec3_Copy_t)0x00402BF0;
       |                    ^~~~~~~~~~~~~~~~~~~~
 mknp_custom_entities.c:1124:20: warning: ‘pfn_Gfx_Scale’ defined but not used [-Wunused-variable]
  1124 | static Gfx_Scale_t pfn_Gfx_Scale = (Gfx_Scale_t)0x00457B80;
@@ -1339,6 +1339,6 @@ bass_proxy.h:244:13: warning: ‘patch_float’ defined but not used [-Wunused-f
   244 | static void patch_float(DWORD addr, float val) {
       |             ^~~~~~~~~~~
 mknp_custom_entities.c: In function ‘init_game_dir’:
-mknp_custom_entities.c:8978:5: warning: ‘strncpy’ output may be truncated copying 259 bytes from a string of length 259 [-Wstringop-truncation]
- 8978 |     strncpy(g_game_dir, dll_path, MAX_PATH - 1);
+mknp_custom_entities.c:9025:5: warning: ‘strncpy’ output may be truncated copying 259 bytes from a string of length 259 [-Wstringop-truncation]
+ 9025 |     strncpy(g_game_dir, dll_path, MAX_PATH - 1);
       |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
