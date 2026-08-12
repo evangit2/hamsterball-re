@@ -1,3 +1,41 @@
+v55n_72 - SpeedCylinder visual Y-rotation + rad/deg fix
+------------------------------------------------------------
+USER REPORT (v55n_71):
+ - "cENT 002 trigger works. cENT 001 trigger doesn't. Both speedcylinders
+   still look the same, so rotation didn't work. Though cEnt 002 played a
+   weird rotation animation on the X? axis at the beginning."
+ - User authorised visual rotation of the rendered cylinder + trigger box.
+
+ROOT CAUSE (v55n_71):
+ - The fixed yaw was FEED into cosf/sinf as RADIANS, but the ref point stores
+   DEGREES. So yaw=90 (deg) was treated as 90 RAD ~= 5156 deg -> the "weird
+   X-axis spin" the user saw on cEnt_002 was a ~5156-deg-per-frame fast spin
+   (caught mid-rotation), not a clean 90-deg turn. cEnt_002 still fired by
+   luck (the wrong radian rotation happened to land the ball inside its box);
+   both boxes LOOKED unrotated because rotation was never applied to the
+   rendered mesh, only to the zone test.
+ - cEnt_001 doesn't fire = GEOMETRY, not rotation: its (yaw=0) trigger box is
+   Z[-997.8,-937.2], but the ball's path through that zone ran z -927..-933
+   (south of the box), so it never entered the zone. The box in
+   Speedcylinder_trigger.MESHWORLD simply doesn't overlap the rollout.
+
+FIX:
+ - present_check: convert yaw degrees->radians before cosf/sinf so the zone
+   test matches the actual ref-point rotation (removes the fast-spin artifact).
+ - NEW cEnt_speedcyl_render hook: applies the fixed Y-rotation (m2 around Y,
+   composed onto the live D3D world matrix via Get/SetTransform, rotated about
+   each cylinder's own center) to BOTH the cylinder's render Level (col_level)
+   AND the render-only trigger box (trig_obj). Installed via private 0x400B
+   vtable[18] copies (same pattern as chomper/catapult). What the user SEES
+   now matches what FIRES.
+ - Trigger zone behavior UNCHANGED (still AABB in each cyl's local frame).
+
+VERIFICATION:
+ - Build clean (EXIT=0, embedded v55n_72). Crash-test OK (11.56s, hbtestd).
+ - Note: cEnt_001 still won't fire until its trigger geometry overlaps the
+   ball's path - that is a level-file (Speedcylinder_trigger.MESHWORLD) edit,
+   separate from this code fix.
+
 v55n_71 - Per-cylinder fixed orientation: READ from the cEnt ref point itself
 ------------------------------------------------------------
 USER CORRECTION:

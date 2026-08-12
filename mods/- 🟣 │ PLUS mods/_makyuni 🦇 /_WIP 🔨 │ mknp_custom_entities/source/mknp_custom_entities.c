@@ -1,5 +1,5 @@
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_71
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_72
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -394,13 +394,20 @@ typedef struct {
     DWORD mesh_world; /* the loaded mesh (for MeshBuffer+0x47C fix) */
     int   was_in_zone; /* v55n_48: edge-detect for collision->track handoff */
     int   in_list;     /* v55n_48: 1 = ball already appended to +0x10F0 */
-    float yaw;         /* v55n_71: fixed world orientation (ROT_Y) from ref point.
+    float yaw;         /* v55n_72: fixed world orientation (ROT_Y) from ref point.
                         * Rotates the trigger zone + launch facing for this
                         * cylinder independently of any other cylinder. */
     /* v55n_54: 8-vertex 3D box (X × Y × Z ranges). Cylinder lies along +X
      * (spawn .. spawn+145); ball orbits its round Y-Z cross-section, so Z/Y
      * cover the full orbit. box_*1/2 = min/max on each axis. */
     float box_x1, box_x2, box_z1, box_z2, box_y1, box_y2;
+    /* v55n_72: render-only trigger box PopCylinder (from
+     * "Speedcylinder_trigger.MESHWORLD") + original vtable[18] saved before
+     * the visual Y-rotation hook was installed on it and on the cylinder's
+     * collision/render Level (col_level). */
+    DWORD trig_obj;        /* render-only trigger box object */
+    DWORD cyl_orig_vt18;   /* original vtable[18] of col_level (Level render) */
+    DWORD trig_orig_vt18;  /* original vtable[18] of trig_obj (PopCylinder render) */
 } SpeedCylState;
 static SpeedCylState g_speedcyls[MAX_SPEEDCYLINDERS];
 static int g_speedcyl_count = 0;
@@ -1199,6 +1206,100 @@ static Gfx_Scale_t pfn_Gfx_Scale = (Gfx_Scale_t)0x00457B80;
 /* v55m_27: Waterwheel vtable[18] hook — stub that calls the real impl
  * (defined after WaterWheelState struct). */
 static void cEnt_waterwheel_render_impl(DWORD this_, char param_1, int param_2);
+
+/* v55n_72: SpeedCylinder visual Y-rotation render hook.
+ * When a SpeedCylinder's collision/render Level (col_level) or its render-only
+ * trigger box (trig_obj) draws, rotate the mesh around the cylinder's fixed
+ * Y-axis (yaw) about its own center so what the user SEES matches the rotated
+ * trigger zone. Uses the proven catapult/waterwheel world-matrix rotate-around-
+ * center pattern, but the rotation is around Y (not X), with the fixed yaw read
+ * from the cEnt ref point (deg→rad). g_in_draw_phase guards the D3D read so it
+ * only touches the matrix during the Draw pass.
+ * The hook is only installed on objects we own — untracked objects fall through
+ * to the original render immediately. */
+static void __thiscall cEnt_speedcyl_render(DWORD this_, char param_1, int param_2) {
+    DWORD was_col = 0;
+    DWORD orig_vt18 = 0;
+    float cy = 0.0f, cx = 0.0f, cz = 0.0f, yaw = 0.0f;
+    int i;
+    for (i = 0; i < g_speedcyl_count; i++) {
+        SpeedCylState* sc = &g_speedcyls[i];
+        if (sc->col_level == this_) {
+            was_col = 1; cx = sc->x; cy = sc->y; cz = sc->z; yaw = sc->yaw;
+            orig_vt18 = sc->cyl_orig_vt18;
+            break;
+        }
+        if (sc->trig_obj == this_) {
+            was_col = 0; cx = sc->x; cy = sc->y; cz = sc->z; yaw = sc->yaw;
+            orig_vt18 = sc->trig_orig_vt18;
+            break;
+        }
+    }
+    if (!orig_vt18) {
+        typedef void (__thiscall *render_t)(DWORD, char, int);
+        ((render_t)0x0045E0E0)(this_, param_1, param_2);
+        return;
+    }
+    (void)was_col;
+    /* Rotate around the object's own center by composing the fixed Y-rotation
+     * onto the CURRENT device world matrix (Get/SetTransform — the chomper-
+     * proven approach that works for both PopCylinder trigger boxes and the
+     * cylinder's render Level). Get the live world matrix, concatenate
+     * T(-c)·R_Y(yaw)·T(c), set it, render, restore. */
+    {
+        DWORD app = *(DWORD*)0x005341E0;
+        DWORD device = 0;
+        if (app && !IsBadReadPtr((void*)((char*)app + 0x174), 4)) {
+            DWORD gfx = *(DWORD*)((char*)app + 0x174);
+            if (gfx && !IsBadReadPtr((void*)((char*)gfx + 0x154), 4)) {
+                device = *(DWORD*)((char*)gfx + 0x154);
+            }
+        }
+        if (!device || IsBadReadPtr((void*)device, 4)) {
+            typedef void (__thiscall *render_t)(DWORD, char, int);
+            ((render_t)orig_vt18)(this_, param_1, param_2);
+            return;
+        }
+        DWORD* dev_vtable = *(DWORD**)device;
+        if (!dev_vtable || IsBadReadPtr(dev_vtable, 0x98)) {
+            typedef void (__thiscall *render_t)(DWORD, char, int);
+            ((render_t)orig_vt18)(this_, param_1, param_2);
+            return;
+        }
+        typedef void (__stdcall *trans_t)(DWORD device, DWORD state, void* pMatrix);
+        trans_t pfn_GT = (trans_t)dev_vtable[36];
+        trans_t pfn_ST = (trans_t)dev_vtable[37];
+        float world[16];
+        pfn_GT(device, 256, world);   /* current D3DTS_WORLD */
+        float ang = yaw * 3.14159265f / 180.0f;
+        float c = cosf(ang), s = sinf(ang);
+        float m1[16] = { 1,0,0,0,  0,1,0,0,  0,0,1,0,  -cx,-cy,-cz,1 };
+        float m2[16] = { c,0,s,0,  0,1,0,0,  -s,0,c,0,  0,0,0,1 };  /* Y-rotation */
+        float m3[16] = { 1,0,0,0,  0,1,0,0,  0,0,1,0,   cx,cy,cz,1 };
+        float A[16], B[16], finalM[16];
+        int row, col, kk;
+        for (row = 0; row < 4; row++)
+            for (col = 0; col < 4; col++) {
+                A[row*4+col] = 0;
+                for (kk = 0; kk < 4; kk++) A[row*4+col] += world[row*4+kk]*m1[kk*4+col];
+            }
+        for (row = 0; row < 4; row++)
+            for (col = 0; col < 4; col++) {
+                B[row*4+col] = 0;
+                for (kk = 0; kk < 4; kk++) B[row*4+col] += A[row*4+kk]*m2[kk*4+col];
+            }
+        for (row = 0; row < 4; row++)
+            for (col = 0; col < 4; col++) {
+                finalM[row*4+col] = 0;
+                for (kk = 0; kk < 4; kk++) finalM[row*4+col] += B[row*4+kk]*m3[kk*4+col];
+            }
+        pfn_ST(device, 256, finalM);
+        typedef void (__thiscall *render_t)(DWORD, char, int);
+        ((render_t)orig_vt18)(this_, param_1, param_2);
+        pfn_ST(device, 256, world);   /* restore */
+        return;
+    }
+}
 static void __thiscall cEnt_waterwheel_render(DWORD this_, char param_1, int param_2) {
     cEnt_waterwheel_render_impl(this_, param_1, param_2);
 }
@@ -3897,17 +3998,41 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                 }
                 /* 4. Track for per-frame slot 11 driver */
                 if (g_speedcyl_count < MAX_SPEEDCYLINDERS) {
-                    g_speedcyls[g_speedcyl_count].obj = (DWORD)obj;
-                    g_speedcyls[g_speedcyl_count].board = board;
-                    g_speedcyls[g_speedcyl_count].x = px;
-                    g_speedcyls[g_speedcyl_count].y = py;
-                    g_speedcyls[g_speedcyl_count].z = pz;
-                    g_speedcyls[g_speedcyl_count].col_level = *(DWORD*)((char*)obj + 0x10E0);
-                    g_speedcyls[g_speedcyl_count].mesh_world = mesh ? (DWORD)mesh : 0;
-                    g_speedcyls[g_speedcyl_count].was_in_zone = 0; /* v55n_48 */
-                    g_speedcyls[g_speedcyl_count].in_list = 0;     /* v55n_48 */
-                    /* v55n_71: per-cylinder fixed world orientation (ROT_Y). */
-                    g_speedcyls[g_speedcyl_count].yaw = rot_y;
+                    int sc_idx = g_speedcyl_count;
+                    g_speedcyls[sc_idx].obj = (DWORD)obj;
+                    g_speedcyls[sc_idx].board = board;
+                    g_speedcyls[sc_idx].x = px;
+                    g_speedcyls[sc_idx].y = py;
+                    g_speedcyls[sc_idx].z = pz;
+                    g_speedcyls[sc_idx].col_level = *(DWORD*)((char*)obj + 0x10E0);
+                    g_speedcyls[sc_idx].mesh_world = mesh ? (DWORD)mesh : 0;
+                    g_speedcyls[sc_idx].was_in_zone = 0; /* v55n_48 */
+                    g_speedcyls[sc_idx].in_list = 0;     /* v55n_48 */
+                    /* v55n_72: per-cylinder fixed world orientation (ROT_Y). */
+                    g_speedcyls[sc_idx].yaw = rot_y;
+                    /* v55n_72: Install the visual Y-rotation hook on the cylinder's
+                     * collision/render Level (obj+0x10E0). Private full vtable copy
+                     * (0x400 bytes — slot 18 must be reachable; same as catapult). */
+                    g_speedcyls[sc_idx].trig_obj = 0;
+                    g_speedcyls[sc_idx].cyl_orig_vt18 = 0;
+                    g_speedcyls[sc_idx].trig_orig_vt18 = 0;
+                    {
+                        DWORD col_lvl = *(DWORD*)((char*)obj + 0x10E0);
+                        if (col_lvl && !IsBadReadPtr((void*)col_lvl, 4)) {
+                            DWORD* col_vt = *(DWORD**)col_lvl;
+                            if (col_vt && !IsBadReadPtr(col_vt, 0x400)) {
+                                DWORD* new_col_vt = (DWORD*)pfn_operator_new(0x400);
+                                if (new_col_vt) {
+                                    memcpy(new_col_vt, col_vt, 0x400);
+                                    g_speedcyls[sc_idx].cyl_orig_vt18 = new_col_vt[18];
+                                    new_col_vt[18] = (DWORD)cEnt_speedcyl_render;
+                                    *(DWORD**)col_lvl = new_col_vt;
+                                    if (logf) fprintf(logf, "  cENTITY: SC cyl render hook installed (col=0x%08X orig=0x%08X)\\n",
+                                        col_lvl, g_speedcyls[sc_idx].cyl_orig_vt18);
+                                }
+                            }
+                        }
+                    }
                     /* v55n_58: Read the trigger box from the separate
                      * "Speedcylinder_trigger.MESHWORLD" file (S5 vertex AABB).
                      * Speedcylinder.MESHWORLD is now the visible cylinder only.
@@ -3948,7 +4073,28 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                             void* tr = pfn_PopCylinder_ctor(trig_obj, (void*)board,
                                                            px, py, pz, trig_mesh);
                             if (tr) {
-                                /* Visible, NON-solid registration (v55n_71):
+                                /* v55n_72: store the trigger box in this cylinder's
+                                 * state + install the visual Y-rotation hook on it.
+                                 * PopCylinder (vtable 0x4D58F0, 0x400B full copy) —
+                                 * same private-vtable pattern as chomper/catapult. */
+                                if (g_speedcyl_count > 0) {
+                                    int sc_idx = g_speedcyl_count - 1; /* just-tracked cylinder */
+                                    g_speedcyls[sc_idx].trig_obj = (DWORD)trig_obj;
+                                    DWORD* tg_vt = *(DWORD**)trig_obj;
+                                    if (tg_vt && !IsBadReadPtr(tg_vt, 0x400)) {
+                                        DWORD* new_tg_vt = (DWORD*)pfn_operator_new(0x400);
+                                        if (new_tg_vt) {
+                                            memcpy(new_tg_vt, tg_vt, 0x400);
+                                            g_speedcyls[sc_idx].trig_orig_vt18 = new_tg_vt[18];
+                                            new_tg_vt[18] = (DWORD)cEnt_speedcyl_render;
+                                            *(DWORD**)trig_obj = new_tg_vt;
+                                            if (logf) fprintf(logf, "  cENTITY: SC trigger render hook installed (trig=0x%08X orig=0x%08X)\\n",
+                                                (DWORD)trig_obj, g_speedcyls[sc_idx].trig_orig_vt18);
+                                        }
+                                        g_speedcyls[sc_idx].trig_obj = (DWORD)trig_obj;
+                                    }
+                                }
+                                /* Visible, NON-solid registration (v55n_72):
                                  * update list (board+0x2578) + render list (board+0xCD4)
                                  * + scene tree (sceneobj+0x1C). NO collision obj — the
                                  * box must be pass-through. v68 made it solid by also
@@ -6276,7 +6422,7 @@ static void __cdecl cEnt_speedcyl_present_check(DWORD board) {
         /* v55n_53: 4-point X/Z box detection (replaces center+radius circle).
          * Ball must be inside [box_x1,box_x2] x [box_z1,box_z2] footprint
          * and within the vertical window [box_y1,box_y2].
-         * v55n_71: ROT_Y is a fixed yaw around the vertical (Y) axis that
+         * v55n_72: ROT_Y is a fixed yaw around the vertical (Y) axis that
          * orients the cylinder + trigger zone. We rotate the ball into the
          * cylinder's local frame first (-yaw) so the axis-aligned box test
          * correctly matches the cylinder's rotated footprint. */
@@ -6284,7 +6430,8 @@ static void __cdecl cEnt_speedcyl_present_check(DWORD board) {
         float bz = ball_z;
         float by = ball_y;
         if (sc->yaw != 0.0f) {
-            float c = cosf(sc->yaw), s = sinf(sc->yaw);
+            float yaw_rad = sc->yaw * 3.14159265f / 180.0f;  /* v55n_72: yaw is degrees (from file) */
+            float c = cosf(yaw_rad), s = sinf(yaw_rad);
             float lx = bx - sc->x, lz = bz - sc->z;   /* to cylinder origin */
             bx = sc->x + lx * c + lz * s;             /* rotate -yaw */
             bz = sc->z - lx * s + lz * c;
@@ -7259,7 +7406,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_71", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_72", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8653,7 +8800,7 @@ static void cEnt_Treesearch_cEntities(DWORD board, FILE* logf) {
         float py = *(float*)(obj_ptr + 0x08);
         float pz = *(float*)(obj_ptr + 0x0C);
 
-        /* v55n_71: Per-entity fixed world orientation. Read the Y-rotation
+        /* v55n_72: Per-entity fixed world orientation. Read the Y-rotation
          * directly from the cEnt ref point's OWN S1 struct. This is a
          * user-exported file using (x,y,z) ordering (verified: position
          * second float = game Y), so the rotation floats at
@@ -8796,7 +8943,7 @@ static void cEnt_Treesearch_cEntities(DWORD board, FILE* logf) {
         if (ai_type == 1) spawn_ros_y = 0.0f;  /* Rotator: constant rotation */
 
         cEnt_Spawn_cEntity_at(board, px, py, pz, ai_mesh,
-                         /* v55n_71: use the ref point's ROT_Y as the cylinder's
+                         /* v55n_72: use the ref point's ROT_Y as the cylinder's
                           * fixed world orientation (was hardcoded 0,1,0). */
                          0.0f, ent_rot_y, 0.0f,
                          2.0f, spawn_ros_y, 2.0f,
@@ -8886,7 +9033,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_71 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_72 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);
