@@ -1475,26 +1475,36 @@ static void patch_bytes(void *addr, const void *data, DWORD size) {
  *   And `mov ecx,[esi+0x22C]` must precede pushad so popad restores ecx=mgr for the
  *   continuation at 0x42A30D (which reads [ecx] again).
  */
+/* install_icon_cave is DISABLED (no-op).
+ *
+ * Root-cause finding for the real-Windows startup crash (Initialize(25),
+ * MODULE: @, far-out heap fault address):
+ *
+ *   The icon cave at 0x42A304 was the ONLY hook that fired during startup —
+ *   the other six (TT-menu 0x42F927, weasel-white 0x44E139, skip-latch
+ *   0x44CBAA, pause 0x4130C9/0x40B40F, medal-award) only run on the
+ *   results screen / TT menu / pause, none of which execute at Initialize(25).
+ *
+ *   The cave's job was to PRE-WARM the diamond icon at startup by calling the
+ *   game's sprite loader ([vt+0x58]) with "diamondweasel.png" — a file that
+ *   does NOT exist until the player first unlocks a diamond. It also fired
+ *   re-entrantly inside the game's own icon-load function during audio init,
+ *   which is an unsafe time to call back into the sprite system.
+ *
+ *   The pre-warm is REDUNDANT: the icon is loaded lazily, on demand, right
+ *   before it is drawn, from diamond_render_after() (line ~1298) and
+ *   diamond_trophy_swap() (line ~1344), both of which call
+ *   diamond_load_icon_impl() once the diamond assets actually exist (they are
+ *   provisioned by diamond_provision_unlock() before the first draw). So the
+ *   startup pre-warm adds no capability — only a startup crash vector.
+ *
+ *   Removing it keeps the icon cave ORIGINAL code intact (we patch nothing at
+ *   0x42A304), leaves the single 9-byte `call*0x58` + `mov ecx,[esi+0x22C]`
+ *   untouched, and offloads all icon loading to the on-demand path.
+ */
 static void install_icon_cave(void) {
-    DWORD patchAddr = EXE_BASE + (ICON_LOAD_HOOK - EXE_BASE);
-    DWORD retAddr = patchAddr + 9;
-    g_iconCave = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
-                                              PAGE_EXECUTE_READWRITE);
-    if (!g_iconCave) return;
-    unsigned char *p = g_iconCave;
-    p[0]=0xFF; p[1]=0x50; p[2]=0x58; p+=3;              /* call [eax+0x58] (ret $8, uses real args) */
-    p[0]=0x8B; p[1]=0x8E; p[2]=0x2C; p[3]=0x02; p[4]=0x00; p[5]=0x00; p+=6; /* mov ecx,[esi+0x22C] */
-    p[0]=0x60; p+=1;                                   /* pushad (now saves ecx=mgr, esi, all) */
-    p[0]=0x56; p+=1;                                   /* push esi */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_load_icon_impl-(DWORD)(p+5); p+=5; /* call */
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;              /* add esp,4 */
-    p[0]=0x61; p+=1;                                   /* popad (restores ecx=mgr) */
-    write_jmp(p, retAddr); p+=5;
-    unsigned char patch[9];
-    memset(patch, 0x90, 9);
-    write_jmp(patch, (DWORD)g_iconCave);
-    patch_bytes((void*)patchAddr, patch, 9);
-    diag_log("[diamond] icon cave installed at 0x42A304");
+    /* no-op: icon loads lazily on first draw. Do NOT patch 0x42A304. */
+    diag_log("[diamond] icon cave DISABLED (icon loads lazily on first draw)");
 }
 
 /* Cave E: block the results-screen click/keypress skip when the diamond was
