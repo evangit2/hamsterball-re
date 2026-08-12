@@ -289,6 +289,7 @@ typedef struct {
 #define VORTEX_GIFTSHOT_ANG  0.55f   /* random-in-circle start radius multiplier */
 #define VORTEX_MINR    6.0f          /* center kill radius (px, screen) */
 #define VORTEX_STRETCH 11.0f         /* streak length (px) */
+#define VORTEX_SEGS    8             /* subdivisions along the streak length (gradient) */
 
 typedef struct {
     float ax, ay;       /* angle + angular velocity */
@@ -861,7 +862,7 @@ static void vortex_update_streak(Diamond_VortexP *p, int frame) {
 static void vortex_draw(DWORD gfx) {
     int i, n = 0;
     DWORD device, vt;
-    Diamond_TLVertex verts[VORTEX_MAX * 6];  /* 1 streak = 1 quad = 2 tris (6 verts) */
+    Diamond_TLVertex verts[VORTEX_MAX * VORTEX_SEGS * 6];  /* 1 streak = SEGS quads * 2 tris */
     Diamond_TLVertex *v;
     float cx, cy, s, rr;
     float ang, cang, sang;
@@ -874,14 +875,11 @@ static void vortex_draw(DWORD gfx) {
     vt = *(DWORD*)device;
     if (!vt || IsBadReadPtr((void*)(vt + D3D_DEV_DRAWPRIMITIVEUP), 4)) return;
     cx = g_vortexCx; cy = g_vortexCy;
-    /* build a thin long RECTANGLE per active particle (two triangles).
-     * The rectangle is oriented along the inward direction: it runs from the
-     * outer radius rr inward to rr - VORTEX_STRETCH, with thickness s on the
-     * perpendicular axis. Corners (inward axis = +cang/+sang):
-     *   A = outer-left, B = outer-right   (base, at radius rr)
-     *   C = inner-right, D = inner-left   (top, at radius rr - VORTEX_STRETCH)
-     * Quad A-B-C-D drawn as triangle A-B-C and A-C-D. */
-    for (i = 0; i < VORTEX_MAX && n < VORTEX_MAX; i++) {
+    /* Build each streak as VORTEX_SEGS short rectangles stacked along the
+     * inward direction. Vertex alpha ramps 0 (outer tip) -> peak (middle) -> 0
+     * (inner tip): a triangular "tent" profile giving a soft gradient that
+     * fades to nothing at both ends of the streak. */
+    for (i = 0; i < VORTEX_MAX && n < VORTEX_MAX * VORTEX_SEGS; i++) {
         Diamond_VortexP *p = &g_vortex[i];
         if (!p->active || p->alpha == 0) continue;
         ang = p->ax + p->ay * p->born;
@@ -889,28 +887,42 @@ static void vortex_draw(DWORD gfx) {
         rr = p->r;
         s  = 1.0f;                    /* rectangle half-thickness (px) — thin */
         a  = p->alpha;
-        v = &verts[n*6];
-        /* perpendicular unit vector (px,py) */
-        float px_ = -sang, py_ = cang;
-        /* outer ring (base) endpoints */
-        float Ax = cx + cang*rr + px_*s;   float Ay = cy + sang*rr + py_*s;
-        float Bx = cx + cang*rr - px_*s;   float By = cy + sang*rr - py_*s;
-        /* inner top endpoints (one streak-length inward) */
-        float inr = rr - VORTEX_STRETCH;
-        float Cx = cx + cang*inr - px_*s;  float Cy = cy + sang*inr - py_*s;
-        float Dx = cx + cang*inr + px_*s;  float Dy = cy + sang*inr + py_*s;
-        v[0].x = Ax; v[0].y = Ay;   /* A */
-        v[1].x = Bx; v[1].y = By;   /* B */
-        v[2].x = Cx; v[2].y = Cy;   /* C */
-        v[3].x = Ax; v[3].y = Ay;   /* A */
-        v[4].x = Cx; v[4].y = Cy;   /* C */
-        v[5].x = Dx; v[5].y = Dy;   /* D */
-        for (int k = 0; k < 6; k++) {
-            v[k].z = 0.0f;
-            v[k].rhw = 1.0f;
-            v[k].color = (DWORD)(a << 24) | 0x00FFFFFF;  /* white, alpha */
+        {
+            float px_ = -sang, py_ = cang;              /* perpendicular */
+            float outer = rr;                            /* outer radius */
+            float inner = rr - VORTEX_STRETCH;           /* inner radius */
+            int seg;
+            for (seg = 0; seg < VORTEX_SEGS; seg++) {
+                /* positions along the length [0..1] for this segment's edges */
+                float t0 = (float)seg              / (float)VORTEX_SEGS;
+                float t1 = (float)(seg + 1)        / (float)VORTEX_SEGS;
+                /* axial position: outer edge t=0, inner edge t=1 */
+                float r0 = outer + (inner - outer) * t0;   /* this segment's outer radius */
+                float r1 = outer + (inner - outer) * t1;   /* this segment's inner radius */
+                /* tent alpha profile: peak at t=0.5, 0 at both ends (t=0, t=1).
+                 * a_tip alpha at outer(0) and inner(1) = 0; peak ~ a at 0.5. */
+                float mid = 0.5f;
+                float f0 = (t0 <= mid) ? (t0 / mid) : ((1.0f - t0) / (1.0f - mid));
+                float f1 = (t1 <= mid) ? (t1 / mid) : ((1.0f - t1) / (1.0f - mid));
+                int a0 = (int)(a * (f0 * f0));   /* smoother falloff (quadratic) */
+                int a1 = (int)(a * (f1 * f1));
+                /* corners of this quad (A outer-left, B outer-right, C inner-right, D inner-left) */
+                v = &verts[(n) * 6];
+                v[0].x = cx + cang*r0 + px_*s;  v[0].y = cy + sang*r0 + py_*s;  /* A */
+                v[1].x = cx + cang*r0 - px_*s;  v[1].y = cy + sang*r0 - py_*s;  /* B */
+                v[2].x = cx + cang*r1 - px_*s;  v[2].y = cy + sang*r1 - py_*s;  /* C */
+                v[3].x = cx + cang*r0 + px_*s;  v[3].y = cy + sang*r0 + py_*s;  /* A */
+                v[4].x = cx + cang*r1 - px_*s;  v[4].y = cy + sang*r1 - py_*s;  /* C */
+                v[5].x = cx + cang*r1 + px_*s;  v[5].y = cy + sang*r1 + py_*s;  /* D */
+                for (int k = 0; k < 6; k++) {
+                    int ka = (k == 0 || k == 3) ? a0 : a1;   /* outer pair -> a0, inner pair -> a1 */
+                    v[k].z = 0.0f;
+                    v[k].rhw = 1.0f;
+                    v[k].color = (DWORD)(ka << 24) | 0x00FFFFFF;  /* white, gradient alpha */
+                }
+                n += 2;   /* this segment = 2 triangles */
+            }
         }
-        n += 2;   /* each streak adds 2 triangles */
     }
     if (n == 0) return;
     /* --- render setup (see d3d8-screen-rect-overlay recipe) ---
