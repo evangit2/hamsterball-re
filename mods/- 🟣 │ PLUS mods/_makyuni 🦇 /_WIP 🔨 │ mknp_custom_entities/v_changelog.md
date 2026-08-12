@@ -1,44 +1,35 @@
-v55n_75 - Apply proven renderLevel+0x4 Y-rotation to SpeedCylinder cylinder (cEnt_002), trigger box passthrough
+v55n_76 - Fix crash on RACE RESTART: reset per-level cEnt tracking counters
 ------------------------------------------------------------
-CONTEXT (v55n_72/73/74 chain):
- - v55n_72: applied chomper DEVICE-SetTransform rotation to BOTH the cylinder
-   render Level and the trigger box -> crashed at level load.
- - v55n_73: branched (device for trigger box, renderLevel+0x4 for cylinder)
-   -> crashed INSIDE d3d8.dll during Draw. Root cause: at render time the
-   device deref chain *(0x005341E0)=the SCENE (log: g_Scene=...), not App,
-   so the trigger-box device path resolved a GARBAGE device -> Get/SetTransform
-   faulted in d3d8. The log's MODULE: d3d8.dll confirmed it.
- - v55n_74: full passthrough revert (kept rad/deg trigger fix) -> STABLE, no
-   crash. User confirmed "now it works" but no rotation and cEnt_001 still
-   doesn't fire.
+USER REPORT (v55n_75):
+ - Rotation now WORKS, BOTH triggers work, no crash during play. But when
+   restarting the race, the game crashes:
+   `MODULE: D:\...\Hamsterball.exe CRASH_ADDRESS: 0001:000526A0`
+   `CURRENTOBJECT: Board (Warm-Up) / CURRENTOPERATION: Draw / FinishLoad(OK)`
+   Runtime ~00:00:25.
 
-GOAL (v55n_75):
- - Apply rotation from the cEnt_002 REF point ONLY to cEnt_002 (as it should
-   be). Focus on cEnt_002; leave cEnt_001 aside for now.
+ROOT CAUSE:
+ - CRASH_ADDRESS 0001:000526A0 = 0x400000 + 0x526A0 = 0x4526A0 =
+   AthenaList_GetCount. It happens during Draw AFTER a race restart.
+ - The per-level cEnt tracking balances (g_speedcyl_count and the others)
+   are `static` and were NEVER reset between levels. On a restart the old
+   level's spawned objects are freed, but the render hooks / per-frame
+   drivers keep iterating the stale g_speedcyls[] entries (which now point at
+   freed memory) -> deref of a freed list -> AthenaList_GetCount AV.
+ - The rotation hook itself was fine; this is purely a lifecycle/cleanup bug.
 
 CHANGE:
- - cEnt_speedcyl_render cylinder branch now uses the PROVEN renderLevel+0x4
-   technique (timebutton/catapult/waterwheel family): world matrix lives at
-   `renderLevel+0x4` where `renderLevel = this_+0x434`. Rotate ONLY around Y
-   (yaw, deg->rad) about the cylinder's own center:
-       M = T(-cx,-cy,-cz) * RY(ang) * T(+cx,+cy,+cz)
-   RY row-major = { c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1 }.
-   Save matrix -> compose -> call orig -> restore. NO device access.
- - Instances with yaw==0 (cEnt_001) get identity = no visual change.
- - Trigger box branch stays SAFE PASSTHROUGH (device path was the v55n_73
-   crasher). Trigger-box visual rotation intentionally deferred.
- - rad/deg conversion kept in the trigger test (pure physics-zone correctness).
-
-UNRESOLVED:
- - cEnt_001 trigger still doesn't fire = geometry (yaw=0 box Z[-997.8,-937.2]
-   vs ball path z~-927..-933; needs a level-file overlap, not code).
- - Deferred items: visual rotation of the trigger box; whether the cylinder
-   0x465650 original render is the correct fallback (unproven by real run).
+ - Reset ALL per-level cEnt tracking counters to 0 at the entry of
+   cEnt_Treesearch_cEntities (runs once per level load):
+   g_catapult_count, g_speedcyl_count, g_timebutton_count, g_chomper_count,
+   g_bridgeslam_count, g_tarbubble_count, g_waterwheel_count,
+   g_wheel_node_count, g_bonk_count, g_tracked_count.
+ - Resetting at level-load start means the old freed pointers are dropped
+   and every level spawns into a clean slate (index 0 +).
 
 VERIFICATION:
- - Build clean (EXIT=0, embedded v55n_75). Crash-test OK (11.52s, hbtestd).
- - hbtestd only reaches title screen -> REAL verification needs MAKYUNI's run:
-   cEnt_002 should now render visually rotated by 90° about Y, no crash.
+ - Build clean (EXIT=0, embedded v55n_76). Crash-test OK (11.62s, hbtestd).
+ - hbtestd only reaches title screen -> real restart needs MAKYUNI's run:
+   play a race with cEnt_001/002, then RESTART — must no longer crash.
 
 
 v55n_72 - SpeedCylinder visual Y-rotation + rad/deg fix
