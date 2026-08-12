@@ -1,3 +1,20 @@
+v55n_81 - Auto-generate mknp_custom_entities.txt if missing
+------------------------------------------------------------
+USER REQUEST: the game/mod should create the config file next to the
+DLL if it doesn't exist, so there's always an editable template.
+ - load_config() now: if mknp_custom_entities.txt is absent, WRITE it
+   next to the DLL (g_game_dir, resolved via VirtualQuery) with the
+   defaults pre-filled (grid_speed=3.0, enable_speedcylinder=1) and
+   return (defaults already active).
+ - Logs "  CONFIG: created mknp_custom_entities.txt with defaults"
+   to mknp_custom_entities.log.
+ - NOTE: the log path is built inline from g_game_dir (g_log_path isn't
+   set yet when load_config runs in entity_thread).
+ - v55n_81 build clean, hbtestd crash-test OK (18.5s, title screen).
+
+Previous behavior: config file was optional; if missing, only built-in
+defaults applied and no template was produced.
+
 v55n_80 - Fix restart crash: trigger box registered in ONE list (scene tree only)
 ------------------------------------------------------------
 CORRECTION of the v55n_79 diagnosis. USER (v55n_79 STILL crashed):

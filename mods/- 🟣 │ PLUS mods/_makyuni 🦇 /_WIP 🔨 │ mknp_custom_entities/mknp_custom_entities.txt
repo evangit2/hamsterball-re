@@ -1,12 +1,9 @@
-# mknp_custom_entities config
-# Plain values. Comments start with '#'.
+# Custom Entities Mod configuration
+# Create or edit this file to change settings.
 
-# Seconds between GRID switches
+# How long each GRID point stays visible before cycling (seconds)
 grid_speed = 3.0
 
-# v55n_80 A/B isolation test for the race-restart crash.
-#   1 = SpeedCylinder spawning ENABLED (default)
-#   0 = SpeedCylinder spawning DISABLED (skip cEnt Speedcylinders entirely)
-# TEST: if the restart crash still happens with this set to 0, the
-#       SpeedCylinder path is NOT the cause. If it goes away, it is.
+# Set to 0 to disable SpeedCylinder spawning entirely.
+# Used to isolate the restart-crash (A/B test).
 enable_speedcylinder = 1
