@@ -1,3 +1,50 @@
+v55n_80 - Fix restart crash: trigger box registered in ONE list (scene tree only)
+------------------------------------------------------------
+CORRECTION of the v55n_79 diagnosis. USER (v55n_79 STILL crashed):
+ - CRASH_ADDRESS moved across two identical v55n_79 runs:
+     run A: 0001:000526A0 (Draw, mid-instruction EIP / return-addr corruption)
+     run B: 0001:00078EDD (=0x478EDD, a `rep movsl`/`rep movsb` memcpy
+            inside MeshArchive_ctor DURING THE NEXT level load)
+ - v55n_79 had NO render hook and NO world-matrix write, yet STILL
+   crashed. This DEFINITIVELY RULES OUT the v55n_79 "matrix write / hook
+   race" theory: removing exactly what I blamed changed nothing but the
+   crash site. Prior "crash-free" hbtestd checks were FALSE NEGATIVES:
+   hbtestd only reaches the title screen and never exercises a race
+   restart, so it can never catch this.
+
+REAL ROOT CAUSE (heap double/triple-free, present in ALL crashing builds):
+ - A moving crash site (Draw, then MeshArchive_ctor memcpy during the
+   next load) is the signature of heap corruption surfacing at whatever
+   allocation the restart needs next — NOT a stable fault.
+ - The SpeedCylinder TRIGGER BOX is the ONLY object that is (a) appended
+   to THREE game-owned lists (board+0x2578 update + board+0xCD4 render +
+   sceneobj+0x1C scene tree) AND (b) never despawned. The board teardown
+   walks each game-owned list independently and frees the objects it
+   finds -> the SAME PopCylinder is freed 3x on restart -> heap
+   double/triple-free -> corruption.
+ - Why never despawned: on this board the entity_thread takes the
+   "No GRID points found" branch (line ~9296, v53g-5) which DELIBERATELY
+   does NOT call cEnt_Despawn_All_cEntities(). Nothing else removes or
+   frees the trigger box, so the game's teardown does the multi-free.
+ - Native renderable objects live in ONE list; the catapult (also stable)
+   registers only into collision lists (board+0x10EC + scene_col+0x18).
+
+CHANGE:
+ - Register the visible trigger box into sceneobj+0x1C (scene tree) ONLY.
+   v67 proved the box draws ONLY when in the scene tree (render/update
+   list alone was insufficient). Dropping the redundant board+0x2578 +
+   board+0xCD4 entries means the PopCylinder is owned by exactly one
+   list -> freed exactly once on teardown -> no heap corruption.
+ - Keep the trigger box NON-solid (no collision registration).
+ - No world-matrix write, no vtable[18] hook (already removed in v79).
+
+VERIFICATION:
+ - Build clean (EXIT=0, embedded v55n_80). Crash-test OK (18.61s,
+   hbtestd — title screen only, cannot exercise restart).
+ - REAL verification needs MAKYUNI's run: play a race with both
+   Speedcylinders (cEnt_001/002 + visible trigger boxes), then RESTART.
+   This removes the heap-corruption source at the root.
+
 v55n_79 - Fix restart crash: REMOVE the SpeedCylinder world-matrix write entirely
 ------------------------------------------------------------
 USER REPORT (v55n_78 STILL crashed):
