@@ -177,14 +177,16 @@ game actually uses.)
 ## How it works (for the curious)
 
 The mod is a BASS proxy DLL (forwards all `BASS_*` calls to `bass_real.dll`).
-It hooks three things:
+It hooks:
 
-1. **Results-screen gold draw (0x44EFD2)** — this runs a genuine **5th medal
-   block**, mirroring exactly how the game draws each medal. After the gold
-   medal is drawn, it waits 165 frames (3× the game's own bronze→silver→gold
-   gap of 55), then if the player's time beats the secret threshold for the
-   current race, the diamond sprite is drawn at the golden weasel's location
-   (0x208, 0x63), directly over it.
+1. **Golden-weasel draw (0x44E139)** — this cave (a) draws the **suction vortex**
+   behind the trophy (raw `DrawPrimitiveUP` screen-space streaks), (b) drives the
+   golden weasel's white-fade via the game's color-multiplier, and (c) at
+   **frame 240** swaps the trophy: the golden weasel stops rendering and the
+   **diamond** is drawn in its place at (0x208, 0x63), firing the reveal effects
+   (medal pop + star ring) on the first swap frame. Before frame 55 the gold
+   draws normally; after 240 the white-hold ends and it reverts to gold unless
+   the diamond earned a swap.
 2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
    for a race, appends a diamond mini-icon entry to the standings medal list
    right after the golden weasel, so it lays out to the right of it.

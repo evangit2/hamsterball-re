@@ -91,13 +91,15 @@ __declspec(dllexport) int __stdcall BASS_SetConfig(DWORD a, DWORD b) {
 }
 typedef int (__stdcall *BASS_Start_t)(void);
 static BASS_Start_t real_BASS_Start = NULL;
-__declspec(dllexport) void __stdcall BASS_Start(void) {
-    if (real_BASS_Start) real_BASS_Start();
+__declspec(dllexport) int __stdcall BASS_Start(void) {
+    if (real_BASS_Start) return real_BASS_Start();
+    return 1;
 }
 typedef int (__stdcall *BASS_Stop_t)(void);
 static BASS_Stop_t real_BASS_Stop = NULL;
-__declspec(dllexport) void __stdcall BASS_Stop(void) {
-    if (real_BASS_Stop) real_BASS_Stop();
+__declspec(dllexport) int __stdcall BASS_Stop(void) {
+    if (real_BASS_Stop) return real_BASS_Stop();
+    return 1;
 }
 typedef int (__stdcall *BASS_ErrorGetCode_t)(void);
 static BASS_ErrorGetCode_t real_BASS_ErrorGetCode = NULL;
@@ -302,7 +304,13 @@ typedef struct {
 #define VORTEX_MINR    6.0f          /* center kill radius (px, screen) */
 #define VORTEX_STRETCH 22.0f         /* streak length (px) */
 #define VORTEX_SEGS    8             /* subdivisions along the streak length (gradient) */
-#define VORTEX_CENTER_FADE 12.0f     /* fade-to-0 as the streak's inner tip nears center */
+/* Triangles per streak = SEGS segments * 2 tris (one quad per segment). The
+ * DrawPrimitiveUP call is in triangle-units, but the vertex array is sized in
+ * VERTICES (6 per triangle). Keep the two quantities explicit and independent
+ * so editing VORTEX_SEGS/MAX can never silently index past the array. */
+#define VORTEX_TRIS_MAX  (VORTEX_MAX * VORTEX_SEGS * 2)      /* 320 */
+#define VORTEX_VERTS_MAX (VORTEX_TRIS_MAX * 6)               /* 1920 */
+#define VORTEX_CENTER_FADE 12.0f   /* fade-to-0 as the streak's inner tip nears center */
 
 typedef struct {
     float ax, ay;       /* angle + angular velocity */
@@ -316,6 +324,10 @@ static Diamond_VortexP g_vortex[VORTEX_MAX];
 static int g_vortexActive = 0;       /* 1 while the cycle runs */
 static int g_vortexFrame = 0;        /* cycle time 0..VORTEX_FRAMES */
 static int g_vortexSeeded = 0;
+static DWORD g_vortexResults = 0;    /* results obj of the CURRENT vortex session.
+                                        Detecting a change lets us reset state + stop
+                                        the whoosh when a results screen is exited
+                                        mid-cycle (frame never reaches the tail). */
 
 /* ================================================================
  * Mod globals
@@ -482,16 +494,23 @@ static int save_unlocks_reg(void);   /* defined below (registry save) */
 
 static int diamond_provision_unlock(int race) {
     int ok_pngs, ok_reg;
-    /* Tentatively set the in-memory flag so the registry save captures it. */
-    g_won[race] = 1;
-    /* 1. Persist the flag to the registry (DiamondMedals). */
-    ok_reg = save_unlocks_reg();
-    /* 2. Materialize the PNG assets into Textures\ (write-on-first-unlock). */
+    /* 1. Materialize the PNG assets FIRST. If this fails, nothing has touched
+     *    the registry yet — the unlock stays fully uncommitted (no partial
+     *    state: no flag persisted without its icon). */
     ok_pngs = diamond_materialize_pngs();
-    if (!ok_reg || !ok_pngs) {
-        g_won[race] = 0;   /* roll back — unlock is all-or-nothing */
-        diag_logf("[diamond] provision FAILED for race %d (reg=%d pngs=%d) — unlock rolled back",
-                  race, ok_reg, ok_pngs);
+    if (!ok_pngs) {
+        /* g_won[race] is still 0 here — never set it, never touch reg. */
+        diag_logf("[diamond] provision FAILED for race %d (pngs=%d) — unlock not committed",
+                  race, ok_pngs);
+        return 0;
+    }
+    /* 2. Only now set the in-memory flag and persist it to the registry. */
+    g_won[race] = 1;
+    ok_reg = save_unlocks_reg();
+    if (!ok_reg) {
+        g_won[race] = 0;   /* roll back — flag would exist in memory but not on disk */
+        diag_logf("[diamond] provision FAILED for race %d (reg=%d) — unlock rolled back",
+                  race, ok_reg);
         return 0;
     }
     diag_logf("[diamond] provision OK for race %d", race);
@@ -892,9 +911,10 @@ static void vortex_update_streak(Diamond_VortexP *p, int frame) {
  * quads (2 triangles each). Runs on the main thread inside the weasel cave
  * (PUSHAD/POPAD), so D3D calls are safe. gfx is the graphics object. */
 static void vortex_draw(DWORD gfx) {
-    int i, n = 0;
+    int i, n = 0;                    /* triangles emitted */
+    int vc = 0;                      /* vertices filled (independent cursor) */
     DWORD device, vt;
-    Diamond_TLVertex verts[VORTEX_MAX * VORTEX_SEGS * 6];  /* 1 streak = SEGS quads * 2 tris */
+    Diamond_TLVertex verts[VORTEX_VERTS_MAX];
     Diamond_TLVertex *v;
     float cx, cy, s, rr;
     float ang, cang, sang;
@@ -911,7 +931,7 @@ static void vortex_draw(DWORD gfx) {
      * inward direction. Vertex alpha ramps 0 (outer tip) -> peak (middle) -> 0
      * (inner tip): a triangular "tent" profile giving a soft gradient that
      * fades to nothing at both ends of the streak. */
-    for (i = 0; i < VORTEX_MAX && n < VORTEX_MAX * VORTEX_SEGS; i++) {
+    for (i = 0; i < VORTEX_MAX && n < VORTEX_TRIS_MAX; i++) {
         Diamond_VortexP *p = &g_vortex[i];
         if (!p->active || p->alpha == 0) continue;
         ang = p->ax + p->ay * p->born;
@@ -938,8 +958,9 @@ static void vortex_draw(DWORD gfx) {
                 float f1 = (t1 <= mid) ? (t1 / mid) : ((1.0f - t1) / (1.0f - mid));
                 int a0 = (int)(a * (f0 * f0));   /* smoother falloff (quadratic) */
                 int a1 = (int)(a * (f1 * f1));
+                if (vc + 6 > VORTEX_VERTS_MAX) break;   /* hard guard, independent of n */
                 /* corners of this quad (A outer-left, B outer-right, C inner-right, D inner-left) */
-                v = &verts[(n) * 6];
+                v = &verts[vc];
                 v[0].x = cx + cang*r0 + px_*s;  v[0].y = cy + sang*r0 + py_*s;  /* A */
                 v[1].x = cx + cang*r0 - px_*s;  v[1].y = cy + sang*r0 - py_*s;  /* B */
                 v[2].x = cx + cang*r1 - px_*s;  v[2].y = cy + sang*r1 - py_*s;  /* C */
@@ -952,6 +973,7 @@ static void vortex_draw(DWORD gfx) {
                     v[k].rhw = 1.0f;
                     v[k].color = (DWORD)(ka << 24) | 0x00FFFFFF;  /* white, gradient alpha */
                 }
+                vc += 6;
                 n += 2;   /* this segment = 2 triangles */
             }
         }
@@ -1025,6 +1047,16 @@ __attribute__((used)) void diamond_vortex_tick(DWORD results) {
     DWORD app, sprite, gfx;
     if (!results) return;
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
+    /* Fresh results session (pointer changed) -> any leftover cycle from a
+     * previous results screen that was exited mid-cycle is torn down now:
+     * stop the whoosh and reset the active flag so the new session starts
+     * clean. (Without this, exiting the results screen before frame ~185
+     * leaves the whoosh handle live and marks the cycle active, so the next
+     * results screen would never restart it.) */
+    if (results != g_vortexResults) {
+        if (g_vortexActive) { g_vortexActive = 0; vortex_sound_stop(); }
+        g_vortexResults = results;
+    }
     frame = *(int*)(results + RESULT_FRAME);
     /* start the cycle a touch after the white-fade begins; active spawn
      * window is [START, START+VORTEX_FRAMES); the tail extends to
