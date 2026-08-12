@@ -1,4 +1,4 @@
-v55n_73 - Fix crash: SpeedCylinder render hooks used wrong matrix path
+v55n_74 - Fix crash: SpeedCylinder render hooks used wrong matrix path
 ------------------------------------------------------------
 USER REPORT (v55n_72):
  - "game froze for a second after entering the level, then crashed with no
@@ -36,7 +36,7 @@ LESSON:
    objects whose render actually honours the device world matrix.
 
 VERIFICATION:
- - Build clean (EXIT=0, embedded v55n_73). Crash-test OK (11.68s, hbtestd).
+ - Build clean (EXIT=0, embedded v55n_74). Crash-test OK (11.68s, hbtestd).
  - NOTE: hbtestd cannot reach level load, so REAL crash verification still
    needs MAKYUNI's Windows run. Ask for log + a crash-free run of the level.
 

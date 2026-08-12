@@ -284,7 +284,8 @@ typedef struct {
  * DrawPrimitiveUP so it renders BEHIND the trophy icon. Screen-space math.
  */
 #define VORTEX_MAX     40            /* streaks at a time */
-#define VORTEX_FRAMES  100           /* ~100-frame cycle */
+#define VORTEX_FRAMES  100           /* ~100-frame active cycle */
+#define VORTEX_TAIL    30            /* +30-frame tail: no new spawns, streaks fade */
 #define VORTEX_GIFTSHOT_ANG  0.55f   /* random-in-circle start radius multiplier */
 #define VORTEX_MINR    6.0f          /* center kill radius (px, screen) */
 #define VORTEX_STRETCH 8.0f          /* streak length (px) */
@@ -825,19 +826,31 @@ static void vortex_start_cycle(DWORD gfx, DWORD sprite) {
 }
 
 /* Advance one vortex streak (spiral-in + fade). Called every frame the
- * cycle is active, for every streak slot. */
+ * cycle is active, for every streak slot.
+ * Alpha timeline (by the streak's own age p->born):
+ *   born 0..15           -> ease in (0..255)
+ *   active window        -> 255 (sustain)
+ *   tail (frame>=VORTEX_FRAMES) -> fade to nothing across VORTEX_TAIL frames */
 static void vortex_update_streak(Diamond_VortexP *p, int frame) {
     float a;
     if (!p->active) return;
-    /* angle advances (curl) */
+    /* angle (curl) */
     a = p->ax + p->ay * p->born;
     /* gradual inward pull */
     p->r -= p->vr;
     if (p->r < VORTEX_MINR || p->r > 4000.0f) { p->active = 0; return; }
-    /* fade in smoothly over first ~15 frames (EASE IN, no pop), out over last 12 */
-    if (p->born < 15)   p->alpha = (BYTE)((p->born * 17) & 0xFF); /* 0,17,..238,255-ish */
-    else if (frame > VORTEX_FRAMES - 12) p->alpha = (BYTE)((VORTEX_FRAMES - frame) * 21);
-    else p->alpha = 255;
+    /* ease-in over first 15 frames of this streak's life */
+    if (p->born < 15) {
+        p->alpha = (BYTE)((p->born * 17) & 0xFF);
+    } else if (frame >= (int)VORTEX_FRAMES) {
+        /* tail: fade to nothing across the VORTEX_TAIL frames */
+        int tail_elapsed = frame - (int)VORTEX_FRAMES;
+        int rem = (int)VORTEX_TAIL - tail_elapsed;
+        if (rem <= 0) p->alpha = 0;
+        else p->alpha = (BYTE)((rem * 255) / (int)VORTEX_TAIL);
+    } else {
+        p->alpha = 255;
+    }
     p->born++;
     (void)a;
 }
@@ -926,8 +939,11 @@ __attribute__((used)) void diamond_vortex_tick(DWORD results) {
     if (!results) return;
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
     frame = *(int*)(results + RESULT_FRAME);
-    /* start the cycle a touch after the white-fade begins */
-    if (frame >= WEASEL_WHITE_START && frame < WEASEL_WHITE_START + (int)VORTEX_FRAMES) {
+    /* start the cycle a touch after the white-fade begins; active spawn
+     * window is [START, START+VORTEX_FRAMES); the tail extends to
+     * [START+VORTEX_FRAMES, START+VORTEX_FRAMES+VORTEX_TAIL) during which no
+     * new streaks spawn but existing ones keep moving + fade away. */
+    if (frame >= WEASEL_WHITE_START && frame < WEASEL_WHITE_START + (int)(VORTEX_FRAMES + VORTEX_TAIL)) {
         if (!g_vortexActive) {
             /* find gfx the same way the white-fade does */
             if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
@@ -945,10 +961,11 @@ __attribute__((used)) void diamond_vortex_tick(DWORD results) {
         return;
     }
     g_vortexFrame = frame - WEASEL_WHITE_START;
-    /* (re-)spawn and update streaks */
+    /* --- spawn streak (active window only; suppress during the tail) --- */
     for (i = 0; i < VORTEX_MAX; i++) {
         Diamond_VortexP *p = &g_vortex[i];
         if (!p->active) {
+            if (g_vortexFrame >= (int)VORTEX_FRAMES) { continue; }  /* tail: no new spawn */
             /* random delay before a slot's first spawn (fade-in at random) */
             int wait = (int)(vortex_frand() * 24.0f);
             if (g_vortexFrame >= wait) {
