@@ -107,6 +107,8 @@ __declspec(dllexport) int __stdcall BASS_ErrorGetCode(void) {
 }
 typedef int (__stdcall *BASS_ChannelStop_t)(DWORD);
 static BASS_ChannelStop_t real_BASS_ChannelStop = NULL;
+typedef int (__stdcall *BASS_ChannelPlay_t)(DWORD, BOOL);
+static BASS_ChannelPlay_t real_BASS_ChannelPlay = NULL;
 __declspec(dllexport) int __stdcall BASS_ChannelStop(DWORD a) {
     if (real_BASS_ChannelStop) return real_BASS_ChannelStop(a);
     return 1;
@@ -131,7 +133,10 @@ __declspec(dllexport) int __stdcall BASS_SetDevice(DWORD a) { (void)a; return 1;
 __declspec(dllexport) void __stdcall BASS_GetInfo(void *a) { (void)a; }
 __declspec(dllexport) int __stdcall BASS_Update(DWORD a) { (void)a; return 0; }
 __declspec(dllexport) DWORD __stdcall BASS_SampleLoad(int a, void *b, DWORD c, DWORD d, DWORD e) { (void)a;(void)b;(void)c;(void)d;(void)e; return 0; }
-__declspec(dllexport) int __stdcall BASS_ChannelPlay(DWORD a, BOOL b) { (void)a;(void)b; return 1; }
+__declspec(dllexport) int __stdcall BASS_ChannelPlay(DWORD a, BOOL b) {
+    if (real_BASS_ChannelPlay) return real_BASS_ChannelPlay(a, b);
+    return 1;
+}
 __declspec(dllexport) int __stdcall BASS_ChannelSetAttribute(DWORD a, DWORD b, float c) { (void)a;(void)b;(void)c; return 1; }
 __declspec(dllexport) int __stdcall BASS_ChannelGetAttribute(DWORD a, DWORD b, float *c) { (void)a;(void)b;(void)c; return 1; }
 __declspec(dllexport) DWORD __stdcall BASS_ChannelGetLevel(DWORD a) { (void)a; return 0; }
@@ -169,6 +174,9 @@ static void load_real_bass(void) {
         real_BASS_Stop = (BASS_Stop_t)GetProcAddress(g_hRealBass, "BASS_Stop");
         real_BASS_ErrorGetCode = (BASS_ErrorGetCode_t)GetProcAddress(g_hRealBass, "BASS_ErrorGetCode");
         real_BASS_ChannelStop = (BASS_ChannelStop_t)GetProcAddress(g_hRealBass, "BASS_ChannelStop");
+        real_BASS_ChannelPlay = (BASS_ChannelPlay_t)GetProcAddress(g_hRealBass, "BASS_ChannelPlay");
+        if (!real_BASS_ChannelPlay)
+            real_BASS_ChannelPlay = (BASS_ChannelPlay_t)GetProcAddress(g_hRealBass, "_BASS_ChannelPlay@8");
         real_BASS_ChannelSetAttributes = (BASS_ChannelSetAttributes_t)GetProcAddress(g_hRealBass, "BASS_ChannelSetAttributes");
         if (!real_BASS_ChannelSetAttributes)
             real_BASS_ChannelSetAttributes = (BASS_ChannelSetAttributes_t)GetProcAddress(g_hRealBass, "BASS_ChannelSetAttribute");
@@ -812,6 +820,8 @@ static void vortex_compute_center(DWORD gfx, DWORD sprite) {
 }
 
 /* Reset the vortex cycle. Called by the weasel cave at WEASEL_WHITE_START. */
+static void vortex_sound_start(void);
+static void vortex_sound_stop(void);
 static void vortex_start_cycle(DWORD gfx, DWORD sprite) {
     int i;
     if (!gfx) return;
@@ -825,6 +835,7 @@ static void vortex_start_cycle(DWORD gfx, DWORD sprite) {
         g_vortex[i].r = 0.0f;
         g_vortex[i].born = 0;
     }
+    vortex_sound_start();   /* start looping whoosh for the vortex window */
 }
 
 /* Advance one vortex streak (spiral-in + fade). Called every frame the
@@ -972,6 +983,33 @@ static void vortex_draw(DWORD gfx) {
     }
 }
 
+/*
+ * Vortex whoosh sound — a looping BASS stream of the game's Whoosh.ogg that
+ * plays for as long as the vortex cycle runs (frame 55 -> ~frame 185, = the
+ * 100-frame active window + 30-frame tail). Uses the mod's already-loaded
+ * real BASS.dll so it needs no new DirectSound/heap plumbing and shares the
+ * game's music output safely (BASS plays the .mod music + this stream
+ * simultaneously). Falls back silently if bass_real.dll/a pointer is absent.
+ */
+#define VORTEX_SND_STREAM  0
+static HSTREAM g_vortex_snd = VORTEX_SND_STREAM;
+#define WHOOSH_SND_PATH   "sounds\\whoosh.ogg"
+#define BASS_SAMPLE_LOOP  0x00000004   /* BASS_SAMPLE_LOOP */
+
+static void vortex_sound_start(void) {
+    if (g_vortex_snd != VORTEX_SND_STREAM) return;   /* already looping */
+    if (!real_BASS_StreamCreateFile || !real_BASS_ChannelPlay) return;
+    /* StreamCreateFile(mem=FALSE, file, off=0, len=0, flags=LOOP) */
+    g_vortex_snd = real_BASS_StreamCreateFile(FALSE, WHOOSH_SND_PATH, 0, 0, BASS_SAMPLE_LOOP);
+    if (g_vortex_snd != VORTEX_SND_STREAM) real_BASS_ChannelPlay(g_vortex_snd, TRUE);
+}
+static void vortex_sound_stop(void) {
+    if (g_vortex_snd == VORTEX_SND_STREAM) return;
+    if (real_BASS_ChannelStop) real_BASS_ChannelStop(g_vortex_snd);
+    if (real_BASS_StreamFree) real_BASS_StreamFree(g_vortex_snd);
+    g_vortex_snd = VORTEX_SND_STREAM;
+}
+
 /* Main vortex tick: called from the weasel cave each frame the weasel is
  * drawn. Starts the cycle at WEASEL_WHITE_START, advances streaks, and
  * draws them behind the trophy. Clears at WEASEL_WHITE_END. results = the
@@ -1001,7 +1039,7 @@ __attribute__((used)) void diamond_vortex_tick(DWORD results) {
         }
     } else {
         /* outside the window -> cycle ended */
-        if (g_vortexActive) { g_vortexActive = 0; }
+        if (g_vortexActive) { g_vortexActive = 0; vortex_sound_stop(); }
         return;
     }
     g_vortexFrame = frame - WEASEL_WHITE_START;

@@ -107,7 +107,9 @@ its width/height), and center tracking replicates the game's own
 
 After the ~100-frame active cycle, a ~30-frame tail plays: no new streaks spawn,
 the weasel stays white, and any remaining streaks drift inward and fade to
-nothing.
+nothing. A looping **whoosh** (`sounds\\whoosh`, via the mod's real-BASS layer)
+plays through the whole vortex window — from the 55-frame mark to the moment the
+streaks stop — and stops cleanly when the cycle ends.
 
 After the first unlock the PNGs persist on disk so they render normally on
 subsequent visits.
