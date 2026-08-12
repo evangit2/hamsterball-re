@@ -79,14 +79,22 @@ objects arcing out from the diamond's spot, exactly like a medal reveal. These
 fire only on the genuine first-earn for a race (gated by the atomic unlock), so
 re-visiting an already-earned diamond playback does not repeat them.
 
-**Golden-weasel white-fade**
+**Golden-weasel white-fade** (rebased to the gold medal award)
 
-The golden weasel asset fades to white over the results screen: it starts
-turning white at ~55 result-frames and is fully white by ~150 frames. It drives
-the game's native color-multiplier (`Graphics_SetColorMultiplier` + gfx+0x7A8)
-up to a saturating 4.0, so the sprite blows out to pure white. Applied only
-around the weasel draw and cleared immediately after, so no other on-screen
-draw is tinted.
+The unlock sequence is **timed relative to the moment the gold medal is
+awarded** — not from the moment you touch the goal. The game awards gold when
+the results frame counter reaches the gold gate (`results+0x4c`, frame 400 for
+the race results object). The mod computes a *sequence frame* since that instant
+(`results+0x10 − results+0x4c`), so the whole reveal plays off gold:
+
+- **55 frames after gold** — the golden weasel starts turning white
+- **150 frames after gold** — it is fully white (saturating multiplier 4.0)
+- **240 frames after gold** — the diamond trophy reveal
+
+The white-fade drives the game's native color-multiplier
+(`Graphics_SetColorMultiplier` + gfx+0x7A8) up to a saturating 4.0, so the
+sprite blows out to pure white. Applied only around the weasel draw and cleared
+immediately after, so no other on-screen draw is tinted.
 
 **Golden-weasel suction vortex**
 
@@ -114,13 +122,13 @@ looped — and the stream is freed when the cycle ends.
 The white trophy then **holds for another 55 frames** with no particles, before
 **reverting to its normal golden color.**
 
-## The reveal at frame 240
+## The reveal at gold + 240
 
-At frame 240 the golden weasel **stops rendering entirely** and the **diamond
-trophy replaces it in that same frame**, firing the reveal effects (medal pop +
-star ring) on the first frame of the swap. This is the *only* diamond reveal —
-the old gold-gap 5th-medal reveal is disabled; the swap *is* the reveal, moved
-from ~frame 165 to frame 240.
+At **240 frames after the gold medal is awarded** the golden weasel **stops
+rendering entirely** and the **diamond trophy replaces it in that same frame**,
+firing the reveal effects (medal pop + star ring) on the first frame of the swap.
+This is the *only* diamond reveal — the old gold-gap 5th-medal reveal is
+disabled; the swap *is* the reveal, moved to land exactly at gold + 240.
 
 After the first unlock the PNGs persist on disk so they render normally on
 subsequent visits.
@@ -129,7 +137,7 @@ subsequent visits.
 clicking or pressing a key on the results screen fast-forwards through the medal
 awards. To make sure you don't accidentally miss the diamond, the mod stops the
 skip from engaging while the diamond time was met for the current race and the
-reveal (frame 240) hasn't played yet — the reveal plays out at normal speed. The
+reveal (gold + 240) hasn't played yet — the reveal plays out at normal speed. The
 skip behaves exactly as normal when the diamond was **not** achieved, and it is
 re-enabled after the reveal so you aren't stuck watching the white hold.
 
@@ -198,11 +206,12 @@ It hooks:
 1. **Golden-weasel draw (0x44E139)** — this cave (a) draws the **suction vortex**
    behind the trophy (raw `DrawPrimitiveUP` screen-space streaks), (b) drives the
    golden weasel's white-fade via the game's color-multiplier, and (c) at
-   **frame 240** swaps the trophy: the golden weasel stops rendering and the
+   **gold + 240** swaps the trophy: the golden weasel stops rendering and the
    **diamond** is drawn in its place at (0x208, 0x63), firing the reveal effects
-   (medal pop + star ring) on the first swap frame. Before frame 55 the gold
-   draws normally; after 240 the white-hold ends and it reverts to gold unless
-   the diamond earned a swap.
+   (medal pop + star ring) on the first swap frame. All timing is offset from the
+   gold-medal award frame (`results+0x4c`): before gold+55 the gold draws
+   normally; after gold+240 the white-hold ends and it reverts to gold unless the
+   diamond earned a swap.
 2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
    for a race, appends a diamond mini-icon entry to the standings medal list
    right after the golden weasel, so it lays out to the right of it.
