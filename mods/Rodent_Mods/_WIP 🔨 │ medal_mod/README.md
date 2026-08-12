@@ -107,9 +107,9 @@ its width/height), and center tracking replicates the game's own
 
 After the ~100-frame active cycle, a ~30-frame tail plays: no new streaks spawn,
 the weasel stays white, and any remaining streaks drift inward and fade to
-nothing. A looping **whoosh** (`sounds\\whoosh`, via the mod's real-BASS layer)
-plays through the whole vortex window — from the 55-frame mark to the moment the
-streaks stop — and stops cleanly when the cycle ends.
+nothing. A single one-shot **whoosh** (`sounds\\whoosh`, via the mod's real-BASS
+layer) plays once when the vortex begins at the 55-frame mark — it is not
+looped — and the stream is freed when the cycle ends.
 
 The white trophy then **holds for another 55 frames** with no particles, before
 **reverting to its normal golden color.**

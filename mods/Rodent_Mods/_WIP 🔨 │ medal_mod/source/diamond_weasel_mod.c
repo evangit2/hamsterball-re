@@ -999,13 +999,13 @@ static void vortex_draw(DWORD gfx) {
 #define VORTEX_SND_STREAM  0
 static HSTREAM g_vortex_snd = VORTEX_SND_STREAM;
 #define WHOOSH_SND_PATH   "sounds\\whoosh.ogg"
-#define BASS_SAMPLE_LOOP  0x00000004   /* BASS_SAMPLE_LOOP */
 
 static void vortex_sound_start(void) {
-    if (g_vortex_snd != VORTEX_SND_STREAM) return;   /* already looping */
+    if (g_vortex_snd != VORTEX_SND_STREAM) return;   /* already playing */
     if (!real_BASS_StreamCreateFile || !real_BASS_ChannelPlay) return;
-    /* StreamCreateFile(mem=FALSE, file, off=0, len=0, flags=LOOP) */
-    g_vortex_snd = real_BASS_StreamCreateFile(FALSE, WHOOSH_SND_PATH, 0, 0, BASS_SAMPLE_LOOP);
+    /* StreamCreateFile(mem=FALSE, file, off=0, len=0, flags=0) — NO loop flag:
+     * the whoosh is a single one-shot sound played once. */
+    g_vortex_snd = real_BASS_StreamCreateFile(FALSE, WHOOSH_SND_PATH, 0, 0, 0);
     if (g_vortex_snd != VORTEX_SND_STREAM) real_BASS_ChannelPlay(g_vortex_snd, TRUE);
 }
 static void vortex_sound_stop(void) {
