@@ -1464,8 +1464,16 @@ static void patch_bytes(void *addr, const void *data, DWORD size) {
 
 /* Cave A: icon load at 0x42A304 (covers 9 bytes through 0x42A30C).
  *   original: call [eax+0x58] ; mov ecx,[esi+0x22C]
- *   cave: pushad; call [eax+0x58]; mov ecx,[esi+0x22C]; push esi;
+ *   cave: call [eax+0x58]; mov ecx,[esi+0x22C]; pushad; push esi;
  *         call diamond_load_icon_impl; add esp,4; popad; jmp 0x42A30D
+ *   CRITICAL ordering: the re-emitted `call [eax+0x58]` and `mov ecx,[esi+0x22C]`
+ *   MUST run BEFORE `pushad`. The loader is __stdcall `ret $8` and reads the game's
+ *   two args (&slot, str) off the stack at this depth — if it runs after pushad,
+ *   those args are buried under 32 bytes of saved registers, so it reads the pushed
+ *   register values as args (garbage) and ret $8 pops the pushad saves -> stack &
+ *   register corruption -> crash at startup icon load (Initialize(25), MODULE: @).
+ *   And `mov ecx,[esi+0x22C]` must precede pushad so popad restores ecx=mgr for the
+ *   continuation at 0x42A30D (which reads [ecx] again).
  */
 static void install_icon_cave(void) {
     DWORD patchAddr = EXE_BASE + (ICON_LOAD_HOOK - EXE_BASE);
@@ -1474,13 +1482,13 @@ static void install_icon_cave(void) {
                                               PAGE_EXECUTE_READWRITE);
     if (!g_iconCave) return;
     unsigned char *p = g_iconCave;
-    p[0]=0x60; p+=1;                                   /* pushad */
-    p[0]=0xFF; p[1]=0x50; p[2]=0x58; p+=3;              /* call [eax+0x58] */
+    p[0]=0xFF; p[1]=0x50; p[2]=0x58; p+=3;              /* call [eax+0x58] (ret $8, uses real args) */
     p[0]=0x8B; p[1]=0x8E; p[2]=0x2C; p[3]=0x02; p[4]=0x00; p[5]=0x00; p+=6; /* mov ecx,[esi+0x22C] */
+    p[0]=0x60; p+=1;                                   /* pushad (now saves ecx=mgr, esi, all) */
     p[0]=0x56; p+=1;                                   /* push esi */
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_load_icon_impl-(DWORD)(p+5); p+=5; /* call */
     p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;              /* add esp,4 */
-    p[0]=0x61; p+=1;                                   /* popad */
+    p[0]=0x61; p+=1;                                   /* popad (restores ecx=mgr) */
     write_jmp(p, retAddr); p+=5;
     unsigned char patch[9];
     memset(patch, 0x90, 9);
