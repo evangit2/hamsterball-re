@@ -1,3 +1,49 @@
+v55n_78 - Fix restart crash for REAL: remove the SpeedCylinder vtable[18] hook
+------------------------------------------------------------
+USER REPORT (v55n_77 STILL crashed):
+ - Same crash on race restart: CRASH_ADDRESS 0001:000526A0 (=0x4526A0,
+   byte 1 of `push 0x3F400000`, MID-INSTRUCTION EIP = return-address
+   corruption) during Draw. v55n_77's teardown-restore had NO effect.
+ - The log PROVES why: this board had "No GRID points found", so the
+   entity_thread took the `else` branch, which deliberately does NOT call
+   cEnt_Despawn_All_cEntities (v53g-5). So the private vtable[18] restore
+   block NEVER RAN before the game freed the objects.
+ - Therefore the stale-hook-on-freed-object theory from v55n_77 was the
+   right CRASH MECHANISM but the teardown-restore was the WRONG FIX: it
+   depended on a despawn path that doesn't fire on every level load.
+
+ROOT CAUSE:
+ - Each SpeedCylinder installed a 0x400-byte PRIVATE vtable[18] =
+   cEnt_speedcyl_render on BOTH its collision/render Level (obj+0x10E0)
+   and its render-only trigger box (PopCylinder). On race restart the
+   engine frees those objects; if the mod didn't restore the vtable slot
+   first (which it often can't, because the despawn hook is not reached),
+   the engine later calls the hooked vtable[18] on FREED memory -> hook
+   reads freed this_+0x434 / iterates freed g_speedcyls state -> return
+   address corrupted -> EIP lands mid-instruction in Matrix_Scale4x4
+   (crash 0x4526A0).
+
+FIX (real):
+ - REMOVE the per-frame vtable[18] render hook entirely. The fixed Y-rotation
+   is now baked ONCE into each object's STATIC world matrix at spawn time
+   (cEnt_speedcyl_bake_world_rotation), which the renderer reads every frame
+   via Graphics_BeginFrame and never resets. Degrees->radians conversion
+   applied. cEnt_002 (yaw=90) and cEnt_001 (yaw=0, identity) get distinct
+   orientations exactly as before.
+ - No private vtable copy, no hooked slot, nothing to restore on teardown.
+   The game's native teardown calls the real vtable[18] on still-valid
+   objects -> no stale hook on freed memory -> restart crash gone.
+ - The v55n_77 teardown-restore block is now a harmless no-op (all orig
+   slot-18 fields are 0).
+ - Trigger zone math (rotating the ball by -yaw into the cylinder's local
+   frame before the AABB test in cEnt_speedcyl_present_check) is UNCHANGED
+   and still matches the visual.
+
+VERIFICATION:
+ - Build clean (EXIT=0, embedded v55n_78). Crash-test OK (15.58s, hbtestd).
+ - hbtestd only reaches title screen -> real restart needs MAKYUNI's run:
+   play a race with cEnt_001/002, then RESTART — must no longer crash.
+
 v55n_77 - Fix crash on RACE RESTART: restore SpeedCylinder private vtable[18]
 ------------------------------------------------------------
 USER REPORT (v55n_75/76):
