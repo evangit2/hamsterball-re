@@ -1,33 +1,40 @@
-v55n_76 - Fix crash on RACE RESTART: reset per-level cEnt tracking counters
+v55n_77 - Fix crash on RACE RESTART: restore SpeedCylinder private vtable[18]
 ------------------------------------------------------------
-USER REPORT (v55n_75):
+USER REPORT (v55n_75/76):
  - Rotation now WORKS, BOTH triggers work, no crash during play. But when
    restarting the race, the game crashes:
    `MODULE: D:\...\Hamsterball.exe CRASH_ADDRESS: 0001:000526A0`
    `CURRENTOBJECT: Board (Warm-Up) / CURRENTOPERATION: Draw / FinishLoad(OK)`
-   Runtime ~00:00:25.
+   0x4526A0 = byte 1 of `push $0x3f400000` at 0x45269F -> MID-INSTRUCTION
+   EIP / return-address corruption (NOT AthenaList_GetCount).
+ - v55n_76 (reset per-level counters to 0 at level load) had ZERO effect —
+   identical crash, same address. So the counter lifecycle was NOT the cause
+   (and g_speedcyl_count was already reset in the teardown handler anyway).
 
-ROOT CAUSE:
- - CRASH_ADDRESS 0001:000526A0 = 0x400000 + 0x526A0 = 0x4526A0 =
-   AthenaList_GetCount. It happens during Draw AFTER a race restart.
- - The per-level cEnt tracking balances (g_speedcyl_count and the others)
-   are `static` and were NEVER reset between levels. On a restart the old
-   level's spawned objects are freed, but the render hooks / per-frame
-   drivers keep iterating the stale g_speedcyls[] entries (which now point at
-   freed memory) -> deref of a freed list -> AthenaList_GetCount AV.
- - The rotation hook itself was fine; this is purely a lifecycle/cleanup bug.
+ROOT CAUSE (corrected):
+ - The restart crash was introduced by the v55n_75 render hook itself:
+   each SpeedCylinder's collision/render Level (obj+0x10E0) AND its render-only
+   trigger box get a 0x400-byte PRIVATE vtable copy with slot 18 set to
+   cEnt_speedcyl_render. On level teardown, the game frees those objects, but
+   the private vtable copies are NEVER restored to the original slot 18.
+ - On the NEXT restart the engine (or a stale board list) eventually calls
+   the hooked vtable[18] on the FREED object -> cEnt_speedcyl_render reads
+   freed this_+0x434 / iterates freed g_speedcyls state -> return-address
+   corruption -> EIP lands mid-instruction in an unrelated Draw fn (Matrix_
+   Scale4x4 path at 0x45269F) -> crash 0x4526A0.
+ - v55n_74 (pure passthrough render hook) did NOT crash, confirming the
+   leaked-hook-on-freed-object is the trigger (v55n_75/76 both crash).
 
 CHANGE:
- - Reset ALL per-level cEnt tracking counters to 0 at the entry of
-   cEnt_Treesearch_cEntities (runs once per level load):
-   g_catapult_count, g_speedcyl_count, g_timebutton_count, g_chomper_count,
-   g_bridgeslam_count, g_tarbubble_count, g_waterwheel_count,
-   g_wheel_node_count, g_bonk_count, g_tracked_count.
- - Resetting at level-load start means the old freed pointers are dropped
-   and every level spawns into a clean slate (index 0 +).
+ - Mirror the proven waterwheel (v55m_44o) / timebutton teardown pattern in the
+   level-unload handler: for each tracked SpeedCylinder, restore the private
+   vtable's slot 18 back to the ORIGINAL render for BOTH the cyl collision
+   Level and the trigger box, BEFORE the engine frees the objects. Then the
+   engine teardown uses the real untouched vtable -> no stale hook on freed mem.
+ - Keeps the v55n_76 counter reset (harmless belt-and-suspenders).
 
 VERIFICATION:
- - Build clean (EXIT=0, embedded v55n_76). Crash-test OK (11.62s, hbtestd).
+ - Build clean (EXIT=0, embedded v55n_77). Crash-test OK (11.55s, hbtestd).
  - hbtestd only reaches title screen -> real restart needs MAKYUNI's run:
    play a race with cEnt_001/002, then RESTART — must no longer crash.
 
