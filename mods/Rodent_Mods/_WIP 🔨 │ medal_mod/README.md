@@ -133,6 +133,14 @@ reveal (frame 240) hasn't played yet — the reveal plays out at normal speed. T
 skip behaves exactly as normal when the diamond was **not** achieved, and it is
 re-enabled after the reveal so you aren't stuck watching the white hold.
 
+**Pausing is also blocked from the moment you touch the goal until the reveal
+finishes.** The game's own ESC-pause path is already suppressed at goal (it sets
+an internal latch), but the two other pause entry points — right-clicking, and
+the Win32 ESC key handler — would still open the pause menu and interrupt the
+reveal. The mod intercepts both of those for the same window (diamond achieved
++ reveal not yet played), so you cannot pause away the diamond. Pause works
+normally during gameplay and after the reveal.
+
 **You do not need to provide any diamond icon files.**
 
 ## Required icons

@@ -212,6 +212,10 @@ static void load_real_bass(void) {
 #define TT_WEASEL_APPEND   0x42F927   /* call 0x44abf0 (TT menu golden weasel) */
 #define SKIP_LATCH_HOOK    0x44CBAA   /* movb $1,0x25(esi)  (skip latch set) */
 #define SKIP_LATCH_RET     0x44CBB1   /* next instr after the 5 patched bytes */
+#define PAUSE_RCLICK_HOOK  0x4130C9   /* right-click: call 0x40a920 (5B) */
+#define PAUSE_RCLICK_RET   0x4130CE   /* next instr after the 5 patched bytes */
+#define PAUSE_ESCMSG_HOOK  0x40B40F   /* Win32 ESC: jmp 0x40a920 (5B) */
+#define PAUSE_ESCMSG_RET   0x40B414   /* next instr after the 5 patched bytes */
 #define SPRITE_DRAW        0x42C7C0
 #define ABF0_APPEND        0x44ABF0   /* medal list append (__stdcall, ret 8) */
 #define STR_FMT_D          0x4D03F8   /* "%d" */
@@ -399,6 +403,7 @@ static unsigned char *g_dispCave = NULL;
 static unsigned char *g_ttCave = NULL;
 static unsigned char *g_weaselCave = NULL;
 static unsigned char *g_skipCave = NULL;
+static unsigned char *g_pauseCave = NULL;
 
 /* ================================================================
  * Logging + path helpers
@@ -685,6 +690,56 @@ __attribute__((used)) int diamond_block_skip(DWORD results) {
     cs = get_player_time_cs(app);
     thr = g_secret_cs[race];
     /* Block skip iff the diamond time was met (and the reveal hasn't passed). */
+    return (cs > 0 && cs <= thr) ? 1 : 0;
+}
+
+/* BLOCK the PAUSE menu while the diamond reveal is pending, mirroring the
+ * skip-latch blocker above. The player must not be able to pause and interrupt
+ * the diamond reveal (goal touch -> frame 240). Returning 1 suppresses the
+ * pause menu entirely; returning 0 lets it open normally.
+ *
+ * Called from the pause call-site caves with the SCENE object (ecx/esi). The
+ * results object is created at goal-touch and lives in the scene's results
+ * list at scene+0x8B8 (AthenaList: count +4, items +0x40C). We locate it,
+ * confirm it's a genuine results object (vtable 0x4d6cfc), and block pause
+ * only while its frame counter is before the reveal (WEASEL_WHITE_TOTAL=240)
+ * AND the diamond was actually earned for the current race. If anything is
+ * unreadable or the scene isn't holding a results screen, we allow pause
+ * (return 0) so normal gameplay pause is never affected.
+ */
+#define SCENE_RESULTS_LIST   0x8B8   /* scene+0x8B8 = results AthenaList */
+#define SCENE_LIST_COUNT     0x04    /* AthenaList count */
+#define SCENE_LIST_ITEMS     0x40C   /* AthenaList items ptr */
+#define RESULTS_VTABLE       0x4D6CFC
+__attribute__((used)) int diamond_pause_blocked(DWORD scene) {
+    DWORD list, items, results, app, vt;
+    int count, frame, race, cs, thr;
+    if (!scene) return 0;
+    if (IsBadReadPtr((void*)(scene + SCENE_RESULTS_LIST), 4)) return 0;
+    list = scene + SCENE_RESULTS_LIST;
+    if (IsBadReadPtr((void*)(list + SCENE_LIST_COUNT), 4)) return 0;
+    count = *(int*)(list + SCENE_LIST_COUNT);
+    if (count <= 0) return 0;                       /* no results screen -> allow */
+    if (IsBadReadPtr((void*)(list + SCENE_LIST_ITEMS), 4)) return 0;
+    items = *(DWORD*)(list + SCENE_LIST_ITEMS);
+    if (!items || IsBadReadPtr((void*)items, 4)) return 0;
+    results = *(DWORD*)items;                        /* first item = results object */
+    if (!results || IsBadReadPtr((void*)(results + 0x10), 4)) return 0;   /* RESULT_FRAME */
+    /* Confirm it's really a results object (vtable matches the ctor-set one). */
+    if (IsBadReadPtr((void*)results, 4)) return 0;
+    vt = *(DWORD*)results;
+    if (vt != RESULTS_VTABLE && vt != 0x4D6C00) return 0;
+    frame = *(int*)(results + 0x10);                 /* RESULT_FRAME */
+    if (frame < 0 || frame >= WEASEL_WHITE_TOTAL) return 0;   /* reveal done -> allow */
+    /* Only block when the diamond was actually earned for this race. */
+    if (IsBadReadPtr((void*)(results + 0x0C), 4)) return 0;   /* RESULT_APP */
+    app = *(DWORD*)(results + 0x0C);
+    if (!app || !g_configLoaded) return 0;
+    race = get_race_index();
+    if (race < 0 || race > 14) return 0;
+    if (!g_hasSecret[race]) return 0;
+    cs = get_player_time_cs(app);
+    thr = g_secret_cs[race];
     return (cs > 0 && cs <= thr) ? 1 : 0;
 }
 
@@ -1430,6 +1485,81 @@ static void install_skip_cave(void) {
     diag_log("[diamond] skip-latch cave installed at 0x44CBAA");
 }
 
+/* Cave F: block the PAUSE menu while the diamond reveal is pending (goal
+ * touch -> frame-240 trophy swap). The game's OWN DirectInput-ESC pause path
+ * (Scene_Update, Path 1) is already suppressed at goal because the game sets
+ * scene+0x880=1 there; that check runs at 0x419d50 and skips the pause call.
+ * But the OTHER two pause entry points do NOT consult scene+0x880, so they
+ * can still open the pause menu mid-reveal and interrupt it:
+ *
+ *   Path 2 (right-click): 0x4130c9 `call 0x40a920` (5B) — vtable[5] thunk.
+ *   Path 3 (Win32 ESC):   0x40b40f `jmp  0x40a920` (5B) — vtable[8] thunk.
+ *
+ * Both funnel into Scene_CreateGameOverMenu (0x40a920, which has an SEH
+ * prologue, so we patch the CALL SITES, not the function entry). Each cave
+ * calls diamond_pause_blocked(scene) and, when it returns nonzero (diamond
+ * earned + reveal not yet passed + results object present), skips the pause
+ * while keeping the stack balanced for the surrounding thunk.
+ *
+ * ecx = scene object at both call sites (preserved to esi, callee-saved).
+ * Path 2 cave ends with `add esp,4; jmp ret` (the pushed $1 arg to the
+ * skipped pause call is manually popped; the thunk's own ret $0xC rebalances
+ * the rest). Path 3 cave ends with `jmp 0x40b414` whose `ret $4` pops both
+ * the return address and the handler's arg (identical to the non-ESC path).
+ */
+static void install_pause_caves(void) {
+    DWORD rcAddr = EXE_BASE + (PAUSE_RCLICK_HOOK - EXE_BASE);
+    DWORD rcRet  = EXE_BASE + (PAUSE_RCLICK_RET  - EXE_BASE);
+    DWORD esAddr = EXE_BASE + (PAUSE_ESCMSG_HOOK - EXE_BASE);
+    DWORD esRet  = EXE_BASE + (PAUSE_ESCMSG_RET  - EXE_BASE);
+    DWORD menu   = EXE_BASE + (0x40A920 - EXE_BASE);
+    unsigned char *p;
+    unsigned char patch[5];
+
+    /* -- Path 2 (right-click) cave -- */
+    g_pauseCave = (unsigned char*)VirtualAlloc(NULL, 160, MEM_COMMIT|MEM_RESERVE,
+                                               PAGE_EXECUTE_READWRITE);
+    if (g_pauseCave) {
+        p = g_pauseCave;
+        p[0]=0x8B; p[1]=0xF1; p+=2;                 /* mov esi,ecx (save scene) */
+        p[0]=0x56; p+=1;                            /* push esi (arg: scene) */
+        p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_pause_blocked-(DWORD)(p+5); p+=5;
+        p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;      /* add esp,4 (pop arg) */
+        p[0]=0x85; p[1]=0xC0; p+=2;                 /* test eax,eax */
+        p[0]=0x8B; p[1]=0xCE; p+=2;                 /* mov ecx,esi (restore scene) */
+        p[0]=0x75; p[1]=0x0A; p+=2;                 /* jnz blocked (rel=10) */
+        p[0]=0xE8; *(DWORD*)(p+1)=menu-(DWORD)(p+5); p+=5;   /* call 0x40a920 */
+        p[0]=0xE9; *(DWORD*)(p+1)=rcRet-(DWORD)(p+5); p+=5;  /* jmp 0x4130ce */
+        /* blocked: */
+        p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;      /* add esp,4 (pop $1 arg) */
+        p[0]=0xE9; *(DWORD*)(p+1)=rcRet-(DWORD)(p+5); p+=5;  /* jmp 0x4130ce */
+        memset(patch, 0x90, 5);
+        write_jmp(patch, (DWORD)g_pauseCave);
+        patch_bytes((void*)rcAddr, patch, 5);
+        diag_log("[diamond] pause-block cave installed at 0x4130C9 (right-click)");
+    }
+
+    /* -- Path 3 (Win32 ESC message) cave -- (single 160B buf holds both) */
+    {
+        unsigned char *c2 = g_pauseCave + 80;       /* second half of the buffer */
+        p = c2;
+        p[0]=0x8B; p[1]=0xF1; p+=2;                 /* mov esi,ecx */
+        p[0]=0x56; p+=1;                            /* push esi */
+        p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_pause_blocked-(DWORD)(p+5); p+=5;
+        p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;      /* add esp,4 */
+        p[0]=0x85; p[1]=0xC0; p+=2;                 /* test eax,eax */
+        p[0]=0x8B; p[1]=0xCE; p+=2;                 /* mov ecx,esi */
+        p[0]=0x75; p[1]=0x05; p+=2;                 /* jnz blocked (rel=5) */
+        p[0]=0xE9; *(DWORD*)(p+1)=menu-(DWORD)(p+5); p+=5;  /* jmp 0x40a920 */
+        /* blocked: */
+        p[0]=0xE9; *(DWORD*)(p+1)=esRet-(DWORD)(p+5); p+=5;  /* jmp 0x40b414 (ret $4) */
+        memset(patch, 0x90, 5);
+        write_jmp(patch, (DWORD)c2);
+        patch_bytes((void*)esAddr, patch, 5);
+        diag_log("[diamond] pause-block cave installed at 0x40B40F (Win32 ESC)");
+    }
+}
+
 /* Cave B: results-screen DIAMOND draw as a genuine 5th medal block, one
  * medal-gap AFTER gold. Hook at 0x44EFD2 (the gold `call 0x42c7c0`, 5 bytes).
  *   cave:     call 0x42c7c0            ; re-emit gold draw (existing stack args)
@@ -1604,6 +1734,7 @@ static void install_hooks(void) {
     install_tt_cave();
     install_weasel_cave();
     install_skip_cave();
+    install_pause_caves();
     diag_log("[diamond] hooks installed");
 }
 
