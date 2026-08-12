@@ -901,7 +901,7 @@ static void vortex_draw(DWORD gfx) {
         ang = p->ax + p->ay * p->born;
         cang = (float)cos(ang); sang = (float)sin(ang);
         rr = p->r;
-        s  = 1.0f;                    /* rectangle half-thickness (px) — thin */
+        s  = 0.5f;                    /* rectangle half-thickness (px) — thin */
         a  = p->alpha;
         {
             float px_ = -sang, py_ = cang;              /* perpendicular */
