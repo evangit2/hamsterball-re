@@ -232,6 +232,15 @@ It hooks:
    and diamond draw over it at present time (layering: native gold → white
    weasel 55..240 → diamond 240+). All timing is offset from the gold-medal
    award frame (`results+0x4c`).
+   
+   The present hook fires **every frame**, including while the title screen
+   loads its animated menu background (`Levels\Level4-Trapdoor2`), when the
+   board/results pointers are half-built. To keep it safe the present tick is
+   **gated on an arm flag** that is set only from the results screen's own
+   per-frame update (both results vtables, `0x44CB90` + `0x44B860`) — the tick
+   early-returns before touching *any* game state until a results screen has
+   genuinely appeared. The hook itself is installed ~2s after launch from a
+   background thread (so it is not live during boot), mirroring the warp mod.
 2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
    for a race, appends a diamond mini-icon entry to the standings medal list
    right after the golden weasel, so it lays out to the right of it.

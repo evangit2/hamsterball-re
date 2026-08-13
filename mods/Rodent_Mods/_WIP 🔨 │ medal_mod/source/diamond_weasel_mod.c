@@ -212,6 +212,10 @@ static void load_real_bass(void) {
 #define TT_WEASEL_APPEND   0x42F927   /* call 0x44abf0 (TT menu golden weasel) */
 #define SKIP_LATCH_HOOK    0x44CBAA   /* movb $1,0x25(esi)  (skip latch set) */
 #define SKIP_LATCH_RET     0x44CBB1   /* next instr after the 5 patched bytes */
+#define RESULT_UPDATE_1    0x44CB90   /* results update (vtable 0x4D6CFC slot 1): push ebx;push esi;mov esi,ecx;mov eax,[esi+0x1c] */
+#define RESULT_UPDATE_1_RET 0x44CB97  /* next instr after the 7 patched bytes */
+#define RESULT_UPDATE_2    0x44B860   /* results update (vtable 0x4D6C00 slot 1): mov eax,[ecx+0x10];mov edx,[ecx+0x14] */
+#define RESULT_UPDATE_2_RET 0x44B866  /* next instr after the 6 patched bytes */
 #define PAUSE_RCLICK_HOOK  0x4130C9   /* right-click: call 0x40a920 (5B) */
 #define PAUSE_RCLICK_RET   0x4130CE   /* next instr after the 5 patched bytes */
 #define PAUSE_ESCMSG_HOOK  0x40B40F   /* Win32 ESC: jmp 0x40a920 (5B) */
@@ -347,6 +351,11 @@ static DWORD g_vortexResults = 0;    /* results obj of the CURRENT vortex sessio
                                         Detecting a change lets us reset state + stop
                                         the whoosh when a results screen is exited
                                         mid-cycle (frame never reaches the tail). */
+static int g_revealArmed = 0;        /* 1 once a results screen has GENUINELY
+                                        appeared (armed by the skip-latch cave).
+                                        Gates diamond_present_tick so it NEVER
+                                        reads game state during a loading screen
+                                        (warp's g_whiteAlpha early-return pattern). */
 
 /* ================================================================
  * Mod globals
@@ -419,6 +428,7 @@ static unsigned char *g_weaselCave = NULL;
 static unsigned char *g_skipCave = NULL;
 static unsigned char *g_pauseCave = NULL;
 static unsigned char *g_presentCave = NULL;
+static unsigned char *g_armCave = NULL;
 
 /* ================================================================
  * Logging + path helpers
@@ -679,6 +689,16 @@ static int get_player_time_cs(DWORD app) {
  * ================================================================ */
 __attribute__((used)) void diamond_load_icon_impl(DWORD app);
 __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app);
+
+/* Arming signal for the present hook: set g_revealArmed=1. Called from a
+ * cave at the results screen's per-frame update (vtable slot 1, 0x44CB90),
+ * which runs EVERY FRAME the results screen is live — and never during a
+ * loading screen. The present tick refuses to read game state until this
+ * flag is set, so a half-built board (title screen's Level4-Trapdoor2
+ * background load) can never be dereferenced. */
+__attribute__((used)) void diamond_arm_reveal(void) {
+    g_revealArmed = 1;
+}
 
 static int diamond_seq_frame(DWORD results);   /* frames since gold award */
 
@@ -1565,9 +1585,19 @@ static void whiteout_tick(DWORD results) {
  * itself (app -> scene -> results), so it takes no arguments. */
 __attribute__((used)) void diamond_present_tick(void) {
     DWORD results;
+    /* EARLY-EXIT GATE (warp's g_whiteAlpha pattern): this hook fires EVERY
+     * frame, including during the title screen's Level4-Trapdoor2 background
+     * load where app+0x178 (board) / scene+0x8B8 (results list) point at a
+     * half-built board. IsBadReadPtr is NOT enough protection against those
+     * live-but-half-built objects (the pointer is valid but its vtable is
+     * garbage), so refuse to read ANY game state until a results screen has
+     * genuinely armed us via the skip-latch cave. */
+    if (!g_revealArmed) return;
     results = find_results_object();
     if (!results) {
-        /* no results screen -> tear down any leftover vortex cycle */
+        /* results screen gone -> disarm so the NEXT loading screen is safe,
+         * and tear down any leftover vortex cycle */
+        g_revealArmed = 0;
         if (g_vortexActive) { g_vortexActive = 0; vortex_sound_stop(); }
         return;
     }
@@ -1681,6 +1711,59 @@ static void install_skip_cave(void) {
     write_jmp(patch, (DWORD)g_skipCave);
     patch_bytes((void*)patchAddr, patch, 5);
     diag_log("[diamond] skip-latch cave installed at 0x44CBAA");
+}
+
+/* Cave G: ARM the reveal from the results screen's per-frame update (vtable
+ * slot 1). Both results objects — base "Click to continue" (vtable 0x4D6CFC,
+ * update 0x44CB90) and final medal screen (vtable 0x4D6C00, update 0x44B860)
+ * — run a per-frame update; arming from BOTH ensures the reveal arms whichever
+ * phase is live. This is the ONLY thing that lets diamond_present_tick read
+ * game state: without it the tick early-returns, so a half-built board (the
+ * title screen's Level4-Trapdoor2 preview load) can never be dereferenced
+ * (crash 5, CRASH_ADDRESS 0000:001AEED8 at 2s). These update fns only run
+ * while a results screen is genuinely live, never during a loading screen, so
+ * the caves are installed synchronously (no deferral needed). */
+static void install_arm_cave(void) {
+    unsigned char *c1, *c2;
+    g_armCave = (unsigned char*)VirtualAlloc(NULL, 64, MEM_COMMIT|MEM_RESERVE,
+                                              PAGE_EXECUTE_READWRITE);
+    if (!g_armCave) return;
+    c1 = g_armCave;        /* first cave (0x44CB90) */
+    c2 = g_armCave + 32;   /* second cave (0x44B860) */
+
+    /* cave 1: 0x44CB90 — push ebx;push esi;mov esi,ecx;mov eax,[esi+0x1c] (7B) */
+    {
+        unsigned char *p = c1;
+        p[0]=0x51; p+=1;                                   /* push ecx (this) */
+        p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_arm_reveal-(DWORD)(p+5); p+=5;
+        p[0]=0x59; p+=1;                                   /* pop ecx */
+        p[0]=0x53; p+=1;                                   /* push ebx (re-emit) */
+        p[0]=0x56; p+=1;                                   /* push esi (re-emit) */
+        p[0]=0x8B; p[1]=0xF1; p+=2;                        /* mov esi,ecx */
+        p[0]=0x8B; p[1]=0x46; p[2]=0x1C; p+=3;             /* mov eax,[esi+0x1c] */
+        write_jmp(p, EXE_BASE + (RESULT_UPDATE_1_RET - EXE_BASE)); p+=5;
+        unsigned char patch[7];
+        memset(patch, 0x90, 7);
+        write_jmp(patch, (DWORD)c1);
+        patch_bytes((void*)(EXE_BASE + (RESULT_UPDATE_1 - EXE_BASE)), patch, 7);
+    }
+
+    /* cave 2: 0x44B860 — mov eax,[ecx+0x10];mov edx,[ecx+0x14] (6B) */
+    {
+        unsigned char *p = c2;
+        p[0]=0x51; p+=1;                                   /* push ecx (this) */
+        p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_arm_reveal-(DWORD)(p+5); p+=5;
+        p[0]=0x59; p+=1;                                   /* pop ecx */
+        p[0]=0x8B; p[1]=0x41; p[2]=0x10; p+=3;             /* mov eax,[ecx+0x10] */
+        p[0]=0x8B; p[1]=0x51; p[2]=0x14; p+=3;             /* mov edx,[ecx+0x14] */
+        write_jmp(p, EXE_BASE + (RESULT_UPDATE_2_RET - EXE_BASE)); p+=5;
+        unsigned char patch[6];
+        memset(patch, 0x90, 6);
+        write_jmp(patch, (DWORD)c2);
+        patch_bytes((void*)(EXE_BASE + (RESULT_UPDATE_2 - EXE_BASE)), patch, 6);
+    }
+
+    diag_log("[diamond] reveal-arm cave installed (results update, both vtables)");
 }
 
 /* Cave F: block the PAUSE menu while the diamond reveal is pending (goal
@@ -1938,6 +2021,7 @@ static void install_hooks(void) {
      * an uninitialized board -> crash on real Windows (Initialize(26)). The
      * warp mod installs its present hook the same way (2s-late thread). */
     install_skip_cave();
+    install_arm_cave();      /* arm the present reveal from the results update */
     install_pause_caves();
     diag_log("[diamond] hooks installed");
 }
