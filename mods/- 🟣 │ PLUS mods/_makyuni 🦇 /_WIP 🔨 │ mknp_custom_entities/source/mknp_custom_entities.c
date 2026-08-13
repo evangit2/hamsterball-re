@@ -1,5 +1,5 @@
 /*
- * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_82
+ * mknp_custom_entities.c — Hamsterball Custom Entities Mod v55n_83
  *
  * bass.dll proxy mod. Spawns custom entities from MESHWORLD S1 ref points.
  */
@@ -394,14 +394,14 @@ typedef struct {
     DWORD mesh_world; /* the loaded mesh (for MeshBuffer+0x47C fix) */
     int   was_in_zone; /* v55n_48: edge-detect for collision->track handoff */
     int   in_list;     /* v55n_48: 1 = ball already appended to +0x10F0 */
-    float yaw;         /* v55n_82: fixed world orientation (ROT_Y) from ref point.
+    float yaw;         /* v55n_83: fixed world orientation (ROT_Y) from ref point.
                         * Rotates the trigger zone + launch facing for this
                         * cylinder independently of any other cylinder. */
     /* v55n_54: 8-vertex 3D box (X × Y × Z ranges). Cylinder lies along +X
      * (spawn .. spawn+145); ball orbits its round Y-Z cross-section, so Z/Y
      * cover the full orbit. box_*1/2 = min/max on each axis. */
     float box_x1, box_x2, box_z1, box_z2, box_y1, box_y2;
-    /* v55n_82: render-only trigger box PopCylinder (from
+    /* v55n_83: render-only trigger box PopCylinder (from
      * "Speedcylinder_trigger.MESHWORLD") + original vtable[18] saved before
      * the visual Y-rotation hook was installed on it and on the cylinder's
      * collision/render Level (col_level). */
@@ -1207,7 +1207,7 @@ static Gfx_Scale_t pfn_Gfx_Scale = (Gfx_Scale_t)0x00457B80;
  * (defined after WaterWheelState struct). */
 static void cEnt_waterwheel_render_impl(DWORD this_, char param_1, int param_2);
 
-/* v55n_82: SpeedCylinder visual Y-rotation render hook.
+/* v55n_83: SpeedCylinder visual Y-rotation render hook.
  * When a SpeedCylinder's collision/render Level (col_level) or its render-only
  * trigger box (trig_obj) draws, rotate the mesh around the cylinder's fixed
  * Y-axis (yaw) about its own center so what the user SEES matches the rotated
@@ -1217,10 +1217,10 @@ static void cEnt_waterwheel_render_impl(DWORD this_, char param_1, int param_2);
  * only touches the matrix during the Draw pass.
  * The hook is only installed on objects we own — untracked objects fall through
  * to the original render immediately. */
-/* v55n_82: The SpeedCylinder render-hook AND the spawn-time world-matrix bake
- * are REMOVED. v55n_82 still crashed on race restart at 0x4526A0 even with no
+/* v55n_83: The SpeedCylinder render-hook AND the spawn-time world-matrix bake
+ * are REMOVED. v55n_83 still crashed on race restart at 0x4526A0 even with no
  * hook, so the crash is caused by writing the cylinder's renderLevel+0x4
- * (obj+0x438) world matrix — from the background entity_thread at spawn (v55n_82
+ * (obj+0x438) world matrix — from the background entity_thread at spawn (v55n_83
  * bake) or from the hooked render (v55n_75/76/77), it races the Draw-phase
  * renderer and corrupts the matrix being read -> ESP/return-address corruption
  * -> crash 0x4526A0. v55n_74 (no matrix write) was crash-free. The fixed yaw is
@@ -1782,27 +1782,6 @@ static void cEnt_waterwheel_present_render(struct WaterWheelState* ww) {
          * the [ebp+0x41c] write), so passing 0 is safe and standard. */
         typedef void (__thiscall *render_t)(DWORD, int);
         ((render_t)ww->orig_vtable18)(mesh, 0);
-    }
-    memcpy((float*)(mesh + 0x4), saveMatrix, sizeof(saveMatrix));
-}
-
-/* v55n_82: Manual trigger-box render (mirror the PROVEN waterwheel pattern:
- * NO game list, NO PopCylinder → no CollisionLevel → no restart crash). The
- * trigger mesh's vertices are LOCAL (centered at origin), so translate the
- * world matrix (mesh+0x4) to the spawn point before drawing via the mesh's
- * own SceneObject render (vtable[18] = 0x470150). */
-static void cEnt_speedcyl_trigger_render(SpeedCylState* sc) {
-    if (!sc || !sc->trig_obj) return;
-    DWORD mesh = sc->trig_obj;
-    if (IsBadReadPtr((void*)(mesh + 0x4), 64)) return;
-    if (game_is_quitting()) return;
-    float saveMatrix[16];
-    memcpy(saveMatrix, (float*)(mesh + 0x4), sizeof(saveMatrix));
-    float tm[16] = { 1,0,0,0,  0,1,0,0,  0,0,1,0,  sc->x, sc->y, sc->z, 1 };
-    memcpy((float*)(mesh + 0x4), tm, sizeof(tm));
-    {
-        typedef void (__thiscall *render_t)(DWORD, int);
-        ((render_t)0x470150)(mesh, 0);
     }
     memcpy((float*)(mesh + 0x4), saveMatrix, sizeof(saveMatrix));
 }
@@ -2369,7 +2348,7 @@ static DWORD g_spawned_level = 0;  /* v55n_38: also track level so a REUSED boar
 
 /* Config: seconds between GRID switches */
 static float g_grid_speed = 3.0f;
-static int g_enable_speedcylinder = 1;  /* v55n_82: config A/B toggle for restart-crash isolation */
+static int g_enable_speedcylinder = 1;  /* v55n_83: config A/B toggle for restart-crash isolation */
 
 /* Mesh path string — we copy testcube.MESHWORLD to levels\ at startup */
 static char g_mesh_path[] = "levels\\testcube";
@@ -3052,7 +3031,7 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                               FILE* logf) {
     if (!board) return;
 
-    /* v55n_82: Config A/B toggle to isolate the restart crash. When
+    /* v55n_83: Config A/B toggle to isolate the restart crash. When
      * enable_speedcylinder=0, SKIP all SpeedCylinder (ai_type 39) spawning.
      * This lets MAKYUNI test whether the SpeedCylinder path is the crash
      * source at all: if the restart crash disappears with them disabled,
@@ -3968,11 +3947,11 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                     g_speedcyls[sc_idx].mesh_world = mesh ? (DWORD)mesh : 0;
                     g_speedcyls[sc_idx].was_in_zone = 0; /* v55n_48 */
                     g_speedcyls[sc_idx].in_list = 0;     /* v55n_48 */
-                    /* v55n_82: per-cylinder fixed world orientation (ROT_Y). */
+                    /* v55n_83: per-cylinder fixed world orientation (ROT_Y). */
                     g_speedcyls[sc_idx].yaw = rot_y;
-                    /* v55n_82: NO world-matrix write here. Writing the cylinder's
+                    /* v55n_83: NO world-matrix write here. Writing the cylinder's
                      * renderLevel+0x4 (obj+0x438) world matrix — whether per-frame
-                     * (v55n_75/76/77 hook) or once at spawn (v55n_82 bake) — causes
+                     * (v55n_75/76/77 hook) or once at spawn (v55n_83 bake) — causes
                      * the restart crash 0x4526A0. v55n_74 (no matrix write) was
                      * crash-free. The yaw is used ONLY for the trigger-zone math
                      * (cEnt_speedcyl_present_check rotates the ball by -yaw). To
@@ -4000,34 +3979,14 @@ static void cEnt_Spawn_cEntity_at(DWORD board, float px, float py, float pz,
                     }
                     g_speedcyl_count++;
                 }
-                /* v55n_66: Make the trigger box VISIBLE for testing. We load
-                 * Speedcylinder_trigger.MESHWORLD as a raw MeshWorld (NOT a
-                 * PopCylinder) and draw it manually every frame from the
-                 * Present hook — the PROVEN waterwheel pattern.
-                 * v55n_82 ROOT-CAUSE FIX: the A/B test (enable_speedcylinder
-                 * 1=crash / 0=clean) proved case 39 is the crash. Registering
-                 * the trigger box PopCylinder in sceneobj+0x1C (v55n_82) — or
-                 * any game list — makes the game's FinishLoad build a
-                 * CollisionLevel for its component meshbuffers, which faults
-                 * on the NEXT level load at MeshArchive_ctor 0x478EDD (the
-                 * documented collision-list corruption signature). Mirror the
-                 * waterwheel: NO game list, NO PopCylinder, render the raw
-                 * mesh manually → no CollisionLevel → no restart crash. */
-                {
-                    int is_trig_node = 0;
-                    void* trig_mesh = cEnt_load_mesh_file(gfx_device,
-                                        "levels\\Speedcylinder_trigger", &is_trig_node, logf);
-                    if (trig_mesh) {
-                        if (g_speedcyl_count > 0) {
-                            int sc_idx = g_speedcyl_count - 1; /* just-tracked cylinder */
-                            g_speedcyls[sc_idx].trig_obj = (DWORD)trig_mesh;
-                            g_speedcyls[sc_idx].trig_orig_vt18 = 0;
-                        }
-                        if (logf) fprintf(logf, "  cENTITY: SC trigger VISIBLE (manual render) at (%.1f,%.1f,%.1f) mesh=0x%08X%s\n",
-                                                  px, py, pz, (DWORD)trig_mesh,
-                                                  is_trig_node ? " (.MESH node)" : "");
-                    } else if (logf) fprintf(logf, "  cENTITY: SC trigger mesh 'levels\\Speedcylinder_trigger' load FAILED\n");
-                }
+                /* v55n_66: trigger box zone is read DIRECTLY from
+                 * Speedcylinder_trigger.MESHWORLD via cEnt_speedcyl_read_trigger_box
+                 * (S5 vertex AABB, above) — no game object needed.
+                 * v55n_83: REMOVED the trigger-box visual entirely. Every attempt
+                 * to render it crashed: PopCylinder+scene tree (v55n_81 restart
+                 * crash 0x478EDD), manual raw-mesh render (v55n_83 first-load
+                 * crash 0x46EBB3). The zone behavior (the part that matters) has
+                 * zero game-object footprint and is crash-free. */
                 break;
             case 45: /* v55n_3: TimeButton_ctor — 5 params (this, board, x, y, z, mesh).
                       * Native Up race TimeButton (0x436C10, 0x10E8 bytes, vtable 0x4D5830):
@@ -4642,7 +4601,7 @@ static void cEnt_Despawn_All_cEntities(DWORD board, FILE* logf) {
     g_cEntity_count = 0;
     g_gluebie_count = 0;  /* v55c: reset Gluebie tracking on level unload */
     g_tarpit_count = 0;   /* v55k_1: reset Tarpit tracking on level unload */
-    /* v55n_82: SpeedCylinder cleanup — restore the private vtable[18] copies.
+    /* v55n_83: SpeedCylinder cleanup — restore the private vtable[18] copies.
      * The cylinder's collision/render Level (obj+0x10E0) and the render-only
      * trigger box each got a 0x400-byte private vtable copy with slot 18 set to
      * cEnt_speedcyl_render. If we DON'T restore slot 18 back to the original
@@ -6367,7 +6326,7 @@ static void __cdecl cEnt_speedcyl_present_check(DWORD board) {
         /* v55n_53: 4-point X/Z box detection (replaces center+radius circle).
          * Ball must be inside [box_x1,box_x2] x [box_z1,box_z2] footprint
          * and within the vertical window [box_y1,box_y2].
-         * v55n_82: ROT_Y is a fixed yaw around the vertical (Y) axis that
+         * v55n_83: ROT_Y is a fixed yaw around the vertical (Y) axis that
          * orients the cylinder + trigger zone. We rotate the ball into the
          * cylinder's local frame first (-yaw) so the axis-aligned box test
          * correctly matches the cylinder's rotated footprint. */
@@ -6375,7 +6334,7 @@ static void __cdecl cEnt_speedcyl_present_check(DWORD board) {
         float bz = ball_z;
         float by = ball_y;
         if (sc->yaw != 0.0f) {
-            float yaw_rad = sc->yaw * 3.14159265f / 180.0f;  /* v55n_82: yaw is degrees (from file) */
+            float yaw_rad = sc->yaw * 3.14159265f / 180.0f;  /* v55n_83: yaw is degrees (from file) */
             float c = cosf(yaw_rad), s = sinf(yaw_rad);
             float lx = bx - sc->x, lz = bz - sc->z;   /* to cylinder origin */
             bx = sc->x + lx * c + lz * s;             /* rotate -yaw */
@@ -6575,17 +6534,6 @@ static void __cdecl gluebie_present_helper(void) {
             struct WaterWheelState* ww = &g_waterwheels[wi];
             if (ww->active && ww->pc_obj) {
                 cEnt_waterwheel_present_render(ww);
-            }
-        }
-    }
-    /* v55n_82: Manual SpeedCylinder trigger-box render (raw mesh, no list).
-     * Draws the debug box every frame via its SceneObject render, translated
-     * to the spawn point. Same proven pattern as the waterwheel above. */
-    if (board && g_speedcyl_count > 0) {
-        int si2;
-        for (si2 = 0; si2 < g_speedcyl_count; si2++) {
-            if (g_speedcyls[si2].trig_obj) {
-                cEnt_speedcyl_trigger_render(&g_speedcyls[si2]);
             }
         }
     }
@@ -7362,7 +7310,7 @@ static void __cdecl cEnt_draw_text_helper(void) {
      * Gated on g_table_visible (T key): 0 hides the whole table. */
     if (!get_board()) {
         if (g_table_visible) {
-            cEnt_draw_text_double(font, "Custom Entities Mod v55n_82", 20, 12,
+            cEnt_draw_text_double(font, "Custom Entities Mod v55n_83", 20, 12,
                                   1.0f, 1.0f, 1.0f, 0.9f);
         }
         return;
@@ -8670,7 +8618,7 @@ static int g_tracked_count = 0;
 static void cEnt_Treesearch_cEntities(DWORD board, FILE* logf) {
     if (!board) return;
 
-    /* v55n_82: Reset ALL per-level cEnt tracking counters at the start of a
+    /* v55n_83: Reset ALL per-level cEnt tracking counters at the start of a
      * new level load. These balances hold pointers to spawned objects; on a
      * race RESTART the old level's objects are freed but the counters were
      * never reset, so the render hooks / per-frame drivers looped over stale
@@ -8774,7 +8722,7 @@ static void cEnt_Treesearch_cEntities(DWORD board, FILE* logf) {
         float py = *(float*)(obj_ptr + 0x08);
         float pz = *(float*)(obj_ptr + 0x0C);
 
-        /* v55n_82: Per-entity fixed world orientation. Read the Y-rotation
+        /* v55n_83: Per-entity fixed world orientation. Read the Y-rotation
          * directly from the cEnt ref point's OWN S1 struct. This is a
          * user-exported file using (x,y,z) ordering (verified: position
          * second float = game Y), so the rotation floats at
@@ -8917,7 +8865,7 @@ static void cEnt_Treesearch_cEntities(DWORD board, FILE* logf) {
         if (ai_type == 1) spawn_ros_y = 0.0f;  /* Rotator: constant rotation */
 
         cEnt_Spawn_cEntity_at(board, px, py, pz, ai_mesh,
-                         /* v55n_82: use the ref point's ROT_Y as the cylinder's
+                         /* v55n_83: use the ref point's ROT_Y as the cylinder's
                           * fixed world orientation (was hardcoded 0,1,0). */
                          0.0f, ent_rot_y, 0.0f,
                          2.0f, spawn_ros_y, 2.0f,
@@ -8972,7 +8920,7 @@ static void load_config(void) {
     char config_path[MAX_PATH];
     snprintf(config_path, MAX_PATH, "%s\\mknp_custom_entities.txt", g_game_dir);
 
-    /* v55n_82: Auto-generate the config file next to the DLL if it doesn't
+    /* v55n_83: Auto-generate the config file next to the DLL if it doesn't
      * exist, so the user always has a template to edit (defaults pre-filled).
      * If we just created it, apply defaults and return (the file now holds
      * the same values). */
@@ -9024,7 +8972,7 @@ static void load_config(void) {
                 if (val > 0.0f) g_grid_speed = val;
             }
         }
-        /* v55n_82: Parse enable_speedcylinder (A/B isolation toggle) */
+        /* v55n_83: Parse enable_speedcylinder (A/B isolation toggle) */
         if (strncmp(p, "enable_speedcylinder", 20) == 0) {
             char* eq = strchr(p, '=');
             if (eq) {
@@ -9049,7 +8997,7 @@ static DWORD WINAPI entity_thread(LPVOID param) {
     FILE* logf = NULL;
     fopen_s(&logf, g_log_path, "a");
     if (logf) {
-        fprintf(logf, "=== Custom Entities Mod v55n_82 Started ===\n");
+        fprintf(logf, "=== Custom Entities Mod v55n_83 Started ===\n");
         fprintf(logf, "Game dir: %s\n", g_game_dir);
         fprintf(logf, "Mesh path: %s\n", g_mesh_path);
         fprintf(logf, "Grid speed: %.1f seconds\n", g_grid_speed);

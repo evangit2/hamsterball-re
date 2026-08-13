@@ -1,3 +1,24 @@
+v55n_83 - Remove trigger-box VISUAL (was the crash); keep zone math
+------------------------------------------------------------
+USER: v55n_82 crashed on LEVEL START at 0x46EBB3 (NEW address, first
+load) — my manual raw-mesh render change was a REGRESSION (worse: it
+was restart-only before). The manual render called 0x470150 which is
+the mesh vtable SLOT 6 (SceneObject render), not slot 18 (0x45E0E0,
+the actual MeshWorld render) — wrong function.
+
+DECISION: remove the trigger-box VISUAL entirely. Every attempt to
+render it crashed:
+  - PopCylinder + sceneobj+0x1C (v55n_81) → restart crash 0x478EDD
+  - manual raw-mesh render (v55n_82)      → first-load crash 0x46EBB3
+The zone BEHAVIOR (what matters: ball entry → Pendulum_PlayCollisionSound
+→ 175-frame hold → launch) reads its AABB directly from the file via
+cEnt_speedcyl_read_trigger_box (S5 vertex AABB, no game object) and is
+structurally crash-free. It stays.
+
+Net effect: SpeedCylinder is now a solid, spinning, hold-and-launch
+entity with a working trigger zone, minus the debug box visual. Build
+clean, hbtestd crash-test OK (18.5s title screen).
+
 v55n_82 - A/B test proved case 39 = crash; fix trigger-box registration
 ------------------------------------------------------------
 USER A/B TEST (decisive): enable_speedcylinder=1 crashes on race
