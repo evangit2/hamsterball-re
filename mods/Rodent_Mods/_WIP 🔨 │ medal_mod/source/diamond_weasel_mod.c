@@ -1496,6 +1496,10 @@ __attribute__((used)) void diamond_tt_append(DWORD standings, int race) {
 static DWORD find_results_object(void) {
     DWORD app, scene, list, items, results, vt;
     int count;
+    /* State-change tracker so vtable-mismatch diagnostics log once per distinct
+     * (count, vtable) rather than spamming every present frame. */
+    static int last_count = -1;
+    static DWORD last_vt = 0;
     app = get_app();
     if (!app) return 0;
     if (IsBadReadPtr((void*)(app + APP_BOARD), 4)) return 0;
@@ -1512,6 +1516,16 @@ static DWORD find_results_object(void) {
     results = *(DWORD*)items;
     if (!results || IsBadReadPtr((void*)results, 4)) return 0;
     vt = *(DWORD*)results;
+    /* Report ANY live scene+0x8B8 object, not just ones we accept, so a
+     * real-Windows run reveals the ACTUAL runtime vtable of the award screen.
+     * Logged once per distinct (count, vtable) to avoid per-frame spam. */
+    if (vt != last_vt || count != last_count) {
+        last_vt = vt; last_count = count;
+        if (vt != RESULTS_VTABLE && vt != 0x4D6C00)
+            diag_logf("[diamond] find_results: count=%d items=%08X first=%08X vt=%08X (UNEXPECTED vtable, ignoring)", count, items, results, vt);
+        else
+            diag_logf("[diamond] find_results: count=%d first=%08X vt=%08X (OK)", count, results, vt);
+    }
     if (vt != RESULTS_VTABLE && vt != 0x4D6C00) return 0;
     return results;
 }
