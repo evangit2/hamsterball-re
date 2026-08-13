@@ -1758,6 +1758,32 @@ static void install_arm_cave(void) {
  * the return address and the handler's arg (identical to the non-ESC path).
  */
 static void install_pause_caves(void) {
+    /* DISABLED (2026-08-13): the two pause-block caves (right-click 0x4130C9 +
+     * Win32-ESC 0x40B40F) crash on REAL WINDOWS on right-click pause during
+     * gameplay (CRASH_ADDRESS 0000:00000000, RUNTIME ~21s, CURRENTOPERATION
+     * MouseDown). They are byte- and register-correct (hand-traced against the
+     * real disassembly: the original push $1 at 0x4130c7 still executes,
+     * 0x40a920 is ret $4, the blocked branch's add esp,4 rebalances, ecx/esi/
+     * FPU/flags all restored) — so this is NOT a stack bug. It is the same
+     * REAL-WINDOWS-ONLY code-cave crash class already hit three times in this
+     * mod (icon pre-warm, TT-menu, present-hook): calling a game function with
+     * an SEH prologue (0x40a920 does mov %fs:0) from a raw heap code cave
+     * crashes on real Windows while Wine tolerates it and can never reproduce
+     * it. Wine structurally cannot catch this (won't even surface it), which is
+     * why it slipped past crash tests.
+     *
+     * The pause-block is the ONLY cave we cannot starve (it fires on every
+     * gameplay right-click). Consistent with how the mod resolved its other
+     * real-Windows cave crashes, the reliable fix is to NOT install these
+     * caves. The diamond reveal, skip-block, and TT-menu logic are unaffected.
+     * Trade-off: the player *could* pause away the reveal — far better than
+     * crashing on every pause.
+     *
+     * To re-enable, restore the body (see git history before this commit).
+     */
+    diag_log("[diamond] pause-block caves DISABLED (real-Windows code-cave crash class)");
+    return;
+#if 0
     DWORD rcAddr = EXE_BASE + (PAUSE_RCLICK_HOOK - EXE_BASE);
     DWORD rcRet  = EXE_BASE + (PAUSE_RCLICK_RET  - EXE_BASE);
     DWORD esAddr = EXE_BASE + (PAUSE_ESCMSG_HOOK - EXE_BASE);
@@ -1779,11 +1805,11 @@ static void install_pause_caves(void) {
         p[0]=0x85; p[1]=0xC0; p+=2;                 /* test eax,eax */
         p[0]=0x8B; p[1]=0xCE; p+=2;                 /* mov ecx,esi (scene -> ecx) */
         p[0]=0x5E; p+=1;                            /* pop esi (RESTORE caller's esi) */
-        p[0]=0x75; p[1]=0x0A; p+=2;                 /* jnz blocked (rel=10) */
-        p[0]=0xE8; *(DWORD*)(p+1)=menu-(DWORD)(p+5); p+=5;   /* call 0x40a920 */
+        p[0]=0x75; p[1]=0x0A; p+=2;                 /* jnz blocked (rel=0x0A) */
+        p[0]=0xE8; *(DWORD*)(p+1)=menu-(DWORD)(p+5); p+=5;   /* call 0x40a920 — $1 already on stack from original 0x4130c7 push; 0x40a920 ret $4 consumes it */
         p[0]=0xE9; *(DWORD*)(p+1)=rcRet-(DWORD)(p+5); p+=5;  /* jmp 0x4130ce */
-        /* blocked: */
-        p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;      /* add esp,4 (pop $1 arg) */
+        /* blocked: 0x40a920 never ran, so pop the $1 that 0x4130c7 pushed (it would otherwise be left on the stack and the caller's ret $0xc would misalign). */
+        p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;      /* add esp,4 (pop the $1 pushed by 0x4130c7) */
         p[0]=0xE9; *(DWORD*)(p+1)=rcRet-(DWORD)(p+5); p+=5;  /* jmp 0x4130ce */
         memset(patch, 0x90, 5);
         write_jmp(patch, (DWORD)g_pauseCave);
@@ -1812,6 +1838,7 @@ static void install_pause_caves(void) {
         patch_bytes((void*)esAddr, patch, 5);
         diag_log("[diamond] pause-block cave installed at 0x40B40F (Win32 ESC)");
     }
+#endif /* 0 — install_pause_caves body disabled */
 }
 
 /* Cave C: TT-menu (standings) diamond mini-icon after golden weasel.
