@@ -1,3 +1,35 @@
+v55n_82 - A/B test proved case 39 = crash; fix trigger-box registration
+------------------------------------------------------------
+USER A/B TEST (decisive): enable_speedcylinder=1 crashes on race
+restart; =0 does NOT. This isolates the crash to the SpeedCylinder
+(case 39) spawn path for the first time with hard evidence.
+
+ROOT CAUSE (v55n_82): the trigger box was spawned as a PopCylinder
+and registered in sceneobj+0x1C (v55n_81). Registering a mod-loaded
+mesh in a game list makes the game's FinishLoad build a CollisionLevel
+for its component meshbuffers, which faults on the NEXT level load at
+MeshArchive_ctor 0x478EDD (the documented collision-list corruption
+signature — same class as the waterwheel FinishLoad crash 0x465777/
+0x465789). The "No GRID points" branch never despawns it, so the
+stale registration corrupts the next load.
+
+FIX (v55n_82): mirror the PROVEN waterwheel pattern (v55m_44o).
+- Load Speedcylinder_trigger.MESHWORLD as a RAW MeshWorld (NO
+  PopCylinder_ctor, NO CollisionLevel).
+- Store the mesh in g_speedcyls[].trig_obj; register it in NO game
+  list.
+- Draw it manually every frame from the Present hook via
+  cEnt_speedcyl_trigger_render(): translate world matrix (mesh+0x4)
+  to spawn point, call the mesh's own SceneObject render
+  (vtable[18] = 0x470150, __thiscall(mesh, 0)), restore matrix.
+- No CollisionLevel is ever created → the restart crash is
+  structurally impossible.
+- Removed: PopCylinder alloc/ctor + sceneobj+0x1C append for the box.
+
+Trigger-zone math (cEnt_speedcyl_present_check) unchanged. Build
+clean, hbtestd crash-test OK (18.5s, title screen — the real verdict
+is MAKYUNI's restart test).
+
 v55n_81 - Auto-generate mknp_custom_entities.txt if missing
 ------------------------------------------------------------
 USER REQUEST: the game/mod should create the config file next to the
