@@ -1827,12 +1827,14 @@ static void install_pause_caves(void) {
                                                PAGE_EXECUTE_READWRITE);
     if (g_pauseCave) {
         p = g_pauseCave;
-        p[0]=0x8B; p[1]=0xF1; p+=2;                 /* mov esi,ecx (save scene) */
+        p[0]=0x56; p+=1;                            /* push esi (SAVE caller's esi) */
+        p[0]=0x8B; p[1]=0xF1; p+=2;                 /* mov esi,ecx (scene) */
         p[0]=0x56; p+=1;                            /* push esi (arg: scene) */
         p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_pause_blocked-(DWORD)(p+5); p+=5;
         p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;      /* add esp,4 (pop arg) */
         p[0]=0x85; p[1]=0xC0; p+=2;                 /* test eax,eax */
-        p[0]=0x8B; p[1]=0xCE; p+=2;                 /* mov ecx,esi (restore scene) */
+        p[0]=0x8B; p[1]=0xCE; p+=2;                 /* mov ecx,esi (scene -> ecx) */
+        p[0]=0x5E; p+=1;                            /* pop esi (RESTORE caller's esi) */
         p[0]=0x75; p[1]=0x0A; p+=2;                 /* jnz blocked (rel=10) */
         p[0]=0xE8; *(DWORD*)(p+1)=menu-(DWORD)(p+5); p+=5;   /* call 0x40a920 */
         p[0]=0xE9; *(DWORD*)(p+1)=rcRet-(DWORD)(p+5); p+=5;  /* jmp 0x4130ce */
@@ -1849,12 +1851,14 @@ static void install_pause_caves(void) {
     {
         unsigned char *c2 = g_pauseCave + 80;       /* second half of the buffer */
         p = c2;
-        p[0]=0x8B; p[1]=0xF1; p+=2;                 /* mov esi,ecx */
-        p[0]=0x56; p+=1;                            /* push esi */
+        p[0]=0x56; p+=1;                            /* push esi (SAVE caller's esi) */
+        p[0]=0x8B; p[1]=0xF1; p+=2;                 /* mov esi,ecx (scene) */
+        p[0]=0x56; p+=1;                            /* push esi (arg: scene) */
         p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_pause_blocked-(DWORD)(p+5); p+=5;
         p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;      /* add esp,4 */
         p[0]=0x85; p[1]=0xC0; p+=2;                 /* test eax,eax */
-        p[0]=0x8B; p[1]=0xCE; p+=2;                 /* mov ecx,esi */
+        p[0]=0x8B; p[1]=0xCE; p+=2;                 /* mov ecx,esi (scene -> ecx) */
+        p[0]=0x5E; p+=1;                            /* pop esi (RESTORE caller's esi) */
         p[0]=0x75; p[1]=0x05; p+=2;                 /* jnz blocked (rel=5) */
         p[0]=0xE9; *(DWORD*)(p+1)=menu-(DWORD)(p+5); p+=5;  /* jmp 0x40a920 */
         /* blocked: */
