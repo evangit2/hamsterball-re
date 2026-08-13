@@ -209,8 +209,8 @@ static void load_real_bass(void) {
 #define TT_WEASEL_APPEND   0x42F927   /* call 0x44abf0 (TT menu golden weasel) */
 #define SKIP_LATCH_HOOK    0x44CBAA   /* movb $1,0x25(esi)  (skip latch set) */
 #define SKIP_LATCH_RET     0x44CBB1   /* next instr after the 5 patched bytes */
-#define RESULT_UPDATE_1    0x44CB90   /* results update (vtable 0x4D6CFC slot 1): push ebx;push esi;mov esi,ecx;mov eax,[esi+0x1c] */
-#define RESULT_UPDATE_1_RET 0x44CB97  /* next instr after the 7 patched bytes */
+#define RESULT_UPDATE_1    0x44C7D0   /* results/medal screen update (vtable 0x4D6CB8 slot 1): push ebx;push esi;mov esi,ecx;mov eax,[esi+0x1c] — the REAL dispatched update (byte-identical prologue to old 0x44CB90) */
+#define RESULT_UPDATE_1_RET 0x44C7D7  /* next instr after the 7 patched bytes */
 #define RESULT_UPDATE_2    0x44B860   /* results update (vtable 0x4D6C00 slot 1): mov eax,[ecx+0x10];mov edx,[ecx+0x14] */
 #define RESULT_UPDATE_2_RET 0x44B866  /* next instr after the 6 patched bytes */
 #define PAUSE_RCLICK_HOOK  0x4130C9   /* right-click: call 0x40a920 (5B) */
@@ -768,7 +768,9 @@ __attribute__((used)) int diamond_block_skip(DWORD results) {
 #define SCENE_RESULTS_LIST   0x8B8   /* scene+0x8B8 = results AthenaList */
 #define SCENE_LIST_COUNT     0x04    /* AthenaList count */
 #define SCENE_LIST_ITEMS     0x40C   /* AthenaList items ptr */
-#define RESULTS_VTABLE       0x4D6CFC
+#define RESULTS_VTABLE       0x4D6CB8
+#define RESULTS_VTABLE_OLD_1 0x4D6CFC
+#define RESULTS_VTABLE_OLD_2 0x4D6C00
 __attribute__((used)) int diamond_pause_blocked(DWORD scene) {
     DWORD list, items, results, app, vt;
     int count, frame, race, cs, thr;
@@ -786,7 +788,7 @@ __attribute__((used)) int diamond_pause_blocked(DWORD scene) {
     /* Confirm it's really a results object (vtable matches the ctor-set one). */
     if (IsBadReadPtr((void*)results, 4)) return 0;
     vt = *(DWORD*)results;
-    if (vt != RESULTS_VTABLE && vt != 0x4D6C00) return 0;
+    if (vt != RESULTS_VTABLE && vt != RESULTS_VTABLE_OLD_1 && vt != RESULTS_VTABLE_OLD_2) return 0;
     frame = diamond_seq_frame(results);          /* frames since gold award */
     if (frame < 0 || frame >= WEASEL_WHITE_TOTAL) return 0;   /* reveal done -> allow */
     /* Only block when the diamond was actually earned for this race. */
@@ -1521,12 +1523,12 @@ static DWORD find_results_object(void) {
      * Logged once per distinct (count, vtable) to avoid per-frame spam. */
     if (vt != last_vt || count != last_count) {
         last_vt = vt; last_count = count;
-        if (vt != RESULTS_VTABLE && vt != 0x4D6C00)
+        if (vt != RESULTS_VTABLE && vt != RESULTS_VTABLE_OLD_1 && vt != RESULTS_VTABLE_OLD_2)
             diag_logf("[diamond] find_results: count=%d items=%08X first=%08X vt=%08X (UNEXPECTED vtable, ignoring)", count, items, results, vt);
         else
             diag_logf("[diamond] find_results: count=%d first=%08X vt=%08X (OK)", count, results, vt);
     }
-    if (vt != RESULTS_VTABLE && vt != 0x4D6C00) return 0;
+    if (vt != RESULTS_VTABLE && vt != RESULTS_VTABLE_OLD_1 && vt != RESULTS_VTABLE_OLD_2) return 0;
     return results;
 }
 
@@ -1722,7 +1724,9 @@ static void install_arm_cave(void) {
     c1 = g_armCave;        /* first cave (0x44CB90) */
     c2 = g_armCave + 32;   /* second cave (0x44B860) */
 
-    /* cave 1: 0x44CB90 — push ebx;push esi;mov esi,ecx;mov eax,[esi+0x1c] (7B) */
+    /* cave 1: 0x44C7D0 — push ebx;push esi;mov esi,ecx;mov eax,[esi+0x1c] (7B).
+     * This is the REAL results/medal screen update (vtable 0x4D6CB8 slot 1),
+     * byte-identical prologue to the old (dead) 0x44CB90. */
     {
         unsigned char *p = c1;
         p[0]=0x51; p+=1;                                   /* push ecx (this) */
