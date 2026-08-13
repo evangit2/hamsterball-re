@@ -2026,17 +2026,68 @@ static void install_hooks(void) {
     install_skip_cave();
     install_arm_cave();      /* arm the present reveal from the results update */
     install_pause_caves();
-    /* install_present_cave() runs SYNCHRONOUSLY here, BEFORE the game's main
-     * loop starts. It is NOT deferred to a background thread: the earlier
-     * deferral (Sleep(2000) + CreateThread) wrote the 7-byte patch at
-     * 0x455A90 WHILE the main thread was executing that hot per-frame
-     * function, tearing the instruction mid-execution -> the crash-5/6
-     * signature (fixed CRASH_ADDRESS 0000:001AEED8 at exactly 2s, a different
-     * level/object each run). The arm gate (g_revealArmed) already keeps
-     * diamond_present_tick from reading game state during boot, so the hook
-     * no longer needs to be late-installed at all. */
-    install_present_cave();
+    /* install_present_cave() is DEFERRED to present_install_thread (2s late
+     * from a background thread), so the per-frame hook is NOT live during the
+     * boot loading screen (Initialize(26)). Installing it synchronously here
+     * in DllMain made it fire at frame 0 against the half-built loading
+     * screen -> CRASH_ADDRESS 0006:00000000, RUNTIME 00:00:00, CURRENTOBJECT
+     * "LoadingScreen Gadget" on real Windows. See present_install_thread for
+     * the atomic-patch detail (SuspendThread around the 7-byte write). */
     diag_log("[diamond] hooks installed");
+}
+
+/* ================================================================
+ * Deferred present-hook install
+ * ================================================================
+ * Graphics_PresentOrEnd (0x455A90) fires EVERY FRAME, including the boot
+ * loading screen (CURRENTOBJECT "LoadingScreen Gadget", Initialize(26)).
+ * Installing it synchronously in DllMain made the very first call fire at
+ * frame 0 against the half-built loading screen -> crash on real Windows
+ * (CRASH_ADDRESS 0006:00000000, RUNTIME 00:00:00). The proven warp mod
+ * installs its per-frame hook 2s late from a background thread.
+ *
+ * The 7-byte JMP patch itself is written atomically: we SuspendThread the
+ * main thread, confirm its EIP is OUTSIDE the 7-byte prologue window (if it
+ * is mid-instruction inside 0x455A90..0x455A97 we resume and retry, since
+ * patching those bytes while the thread sits in them would tear the
+ * instruction), then write the patch and resume. */
+static HANDLE g_hMainThread = NULL;
+#define PRESENT_WINDOW_LO  (EXE_BASE + (PRESENT_HOOK - EXE_BASE))
+#define PRESENT_WINDOW_HI  (EXE_BASE + (PRESENT_RET  - EXE_BASE))
+
+static DWORD WINAPI present_install_thread(LPVOID param) {
+    (void)param;
+    Sleep(2000);                 /* let the loading screen + boot finish */
+    if (g_hMainThread) {
+        int tries;
+        for (tries = 0; tries < 16; tries++) {
+            CONTEXT ctx;
+            DWORD prev = SuspendThread(g_hMainThread);
+            if (prev == (DWORD)-1) { install_present_cave(); return 0; }
+            ctx.ContextFlags = CONTEXT_CONTROL;
+            if (GetThreadContext(g_hMainThread, &ctx)) {
+                DWORD eip = ctx.Eip;
+                if (eip < PRESENT_WINDOW_LO || eip >= PRESENT_WINDOW_HI) {
+                    install_present_cave();   /* main thread clear of the window */
+                    ResumeThread(g_hMainThread);
+                    return 0;
+                }
+            }
+            /* main thread sits inside the 7-byte prologue: resume, wait a tick,
+             * retry so the patch is written only while it is clear. */
+            ResumeThread(g_hMainThread);
+            Sleep(1);
+        }
+        /* give up on a perfectly clean window; install anyway (tiny window) */
+        {
+            DWORD prev = SuspendThread(g_hMainThread);
+            install_present_cave();
+            if (prev != (DWORD)-1) ResumeThread(g_hMainThread);
+        }
+    } else {
+        install_present_cave();
+    }
+    return 0;
 }
 
 /* ================================================================
@@ -2052,6 +2103,14 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
         init_thresholds();
         load_unlocks();
         install_hooks();
+        /* Defer the per-frame present hook so it is NOT live during the boot
+         * loading screen (Initialize(26)); see present_install_thread. Capture
+         * the main thread handle first so that thread can SuspendThread it
+         * around the 7-byte patch for an atomic install. */
+        DuplicateHandle(GetCurrentProcess(), GetCurrentThread(),
+                        GetCurrentProcess(), &g_hMainThread,
+                        0, FALSE, DUPLICATE_SAME_ACCESS);
+        CreateThread(NULL, 0, present_install_thread, NULL, 0, NULL);
     }
     return TRUE;
 }
