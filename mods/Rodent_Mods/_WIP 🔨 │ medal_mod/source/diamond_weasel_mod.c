@@ -711,6 +711,9 @@ __attribute__((used)) void diamond_arm_reveal(void) {
     if (!g_presentInstalled) {
         g_presentInstalled = 1;
         install_present_cave();   /* main-thread, race-free (cold 0x455A90) */
+        diag_log("[diamond] reveal ARMED + present hook installed (results update fired)");
+    } else {
+        diag_log("[diamond] reveal ARMED (present hook already installed)");
     }
 }
 
@@ -1353,6 +1356,11 @@ __attribute__((used)) int diamond_trophy_swap(DWORD results) {
     if (!g_hasSecret[race]) return 0;
     cs = get_player_time_cs(app);
     thr = g_secret_cs[race];
+    /* One-shot diagnostic: report the decision each time we reach the threshold
+     * gate (fast time + reveal passed 240). Logs cs/thr/race so a real-Windows
+     * run shows exactly why the diamond did/didn't appear. Spams once per frame
+     * while the gate holds, but only during the short results window. */
+    diag_logf("[diamond] SWAP-GATE race=%d time=%d threshold=%d (won=%d)", race, cs, thr, g_won[race]);
     if (!(cs > 0 && cs <= thr)) return 0;
     /* Atomic unlock commit on first reveal. */
     if (!g_won[race]) {
