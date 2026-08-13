@@ -357,6 +357,10 @@ static int g_revealArmed = 0;        /* 1 once a results screen has GENUINELY
                                         Gates diamond_present_tick so it NEVER
                                         reads game state during a loading screen
                                         (warp's g_whiteAlpha early-return pattern). */
+static int g_presentInstalled = 0;   /* 1 once the present hook has been installed
+                                        (race-free, on the main thread, from the
+                                        arm cave when the results screen first
+                                        appears). */
 
 /* ================================================================
  * Mod globals
@@ -690,15 +694,27 @@ static int get_player_time_cs(DWORD app) {
  * ================================================================ */
 __attribute__((used)) void diamond_load_icon_impl(DWORD app);
 __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app);
+static void install_present_cave(void);   /* defined below (patch helpers) */
 
-/* Arming signal for the present hook: set g_revealArmed=1. Called from a
- * cave at the results screen's per-frame update (vtable slot 1, 0x44CB90),
- * which runs EVERY FRAME the results screen is live — and never during a
- * loading screen. The present tick refuses to read game state until this
- * flag is set, so a half-built board (title screen's Level4-Trapdoor2
- * background load) can never be dereferenced. */
+/* Arming signal for the present hook: set g_revealArmed=1 and install the
+ * present hook. Called from a cave at the results screen's per-frame update
+ * (vtable slot 1, 0x44CB90 / 0x44B860), which runs EVERY FRAME the results
+ * screen is live — and never during a loading screen.
+ *
+ * This is ALSO the only race-free point to install the present hook: we are
+ * executing the results-update function here, NOT 0x455A90, so patching
+ * 0x455A90 cannot tear an in-flight instruction. Installing it from a
+ * background thread (Sleep(2s) + 7-byte patch) raced with the loading
+ * screen's per-frame draw of 0x455A90 and crashed at exactly 2s with
+ * non-deterministic heap addresses. The present tick refuses to read game
+ * state until g_revealArmed is set, so a half-built board (title screen's
+ * Level4-Trapdoor2 background load) can never be dereferenced. */
 __attribute__((used)) void diamond_arm_reveal(void) {
     g_revealArmed = 1;
+    if (!g_presentInstalled) {
+        g_presentInstalled = 1;
+        install_present_cave();   /* main-thread, race-free (cold 0x455A90) */
+    }
 }
 
 static int diamond_seq_frame(DWORD results);   /* frames since gold award */
@@ -2024,40 +2040,36 @@ static void install_hooks(void) {
     install_tt_cave();
     install_weasel_cave();   /* no-op — reveal moved to present hook */
     install_skip_cave();
-    install_arm_cave();      /* arm the present reveal from the results update */
+    install_arm_cave();      /* arms the present reveal AND installs the present
+                              * hook race-free on the main thread (see
+                              * diamond_arm_reveal / install_present_cave) */
     install_pause_caves();
-    /* install_present_cave() is DEFERRED to present_install_thread (2s late
-     * from a background thread), so the per-frame hook is NOT live during the
-     * boot loading screen (Initialize(26)). Installing it synchronously here
-     * in DllMain made it fire at frame 0 against the half-built loading
-     * screen -> CRASH_ADDRESS 0006:00000000, RUNTIME 00:00:00, CURRENTOBJECT
-     * "LoadingScreen Gadget" on real Windows. See present_install_thread. */
+    /* install_present_cave() is NOT called here. It is invoked lazily by
+     * diamond_arm_reveal the first time a results-screen update runs, so the
+     * 7-byte patch is never written while 0x455A90 is hot (the boot loading
+     * screen draws through Graphics_PresentOrEnd every frame). */
     diag_log("[diamond] hooks installed");
 }
 
 /* ================================================================
- * Deferred present-hook install
+ * Present-hook install timing (see install_present_cave above)
  * ================================================================
  * Graphics_PresentOrEnd (0x455A90) fires EVERY FRAME, including the boot
- * loading screen (CURRENTOBJECT "LoadingScreen Gadget", Initialize(26)).
- * Installing it synchronously in DllMain made the very first call fire at
- * frame 0 against the half-built loading screen -> crash on real Windows
- * (CRASH_ADDRESS 0006:00000000, RUNTIME 00:00:00). The proven warp mod
- * installs its per-frame hook 2s late from a background thread.
+ * loading screen (CURRENTOBJECT "LoadingScreen Gadget", Initialize(26)) —
+ * it draws the loading bar itself (textures\hammy3.png, silver-icon.png,
+ * Levels\Secret are still mid-load at ~2s). It is therefore a HOT address
+ * during the loading screen, so it cannot be patched from a background
+ * thread: both the plain Sleep(2s)+patch (warp pattern) and a prior
+ * SuspendThread/GetThreadContext "atomic" install raced with the main
+ * thread's in-flight execution of 0x455A90 and crashed at exactly 2s with
+ * non-deterministic heap addresses (MODULE:K / 1AF368:0BD02D70 etc.).
  *
- * NOTE (2026-08-13): a prior "atomic" install used SuspendThread +
- * GetThreadContext + ResumeThread to guard the 7-byte write. That approach
- * crashed on real Windows at ~2s (non-deterministic addresses: MODULE:K /
- * 1AF368:0BD02D70, 0000:001AEED8) — suspending the main thread mid-D3D
- * load corrupted its execution. The tick is already gated by g_revealArmed
- * (only a live results screen arms it) and by find_results_object's vtable
- * check, so the plain Sleep(2000)+patch pattern that warp ships is safe. */
-static DWORD WINAPI present_install_thread(LPVOID param) {
-    (void)param;
-    Sleep(2000);                 /* let the loading screen + boot finish */
-    install_present_cave();      /* plain patch — matches the warp mod exactly */
-    return 0;
-}
+ * The race-free solution is to install the present hook lazily ON THE MAIN
+ * THREAD from the arm cave (diamond_arm_reveal, at the results screen's
+ * per-frame update 0x44CB90 / 0x44B860). At that instant the main thread is
+ * inside the results-update function, not 0x455A90, so the 7-byte write
+ * cannot tear an in-flight instruction. No background thread, no sleep, no
+ * suspension. */
 
 /* ================================================================
  * DllMain
@@ -2072,9 +2084,8 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
         init_thresholds();
         load_unlocks();
         install_hooks();
-        /* Defer the per-frame present hook so it is NOT live during the boot
-         * loading screen (Initialize(26)); see present_install_thread. */
-        CreateThread(NULL, 0, present_install_thread, NULL, 0, NULL);
+        /* No background thread needed: the present hook installs lazily on
+         * the main thread from the arm cave (race-free). */
     }
     return TRUE;
 }
