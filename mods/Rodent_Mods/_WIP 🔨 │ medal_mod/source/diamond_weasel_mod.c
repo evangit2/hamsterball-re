@@ -206,9 +206,6 @@ static void load_real_bass(void) {
 #include "diamond_png_data.h"
 
 #define ICON_LOAD_HOOK     0x42A304
-#define GOLD_DRAW_HOOK     0x44EFD2   /* call 0x42c7c0 (gold draw) */
-#define WEASEL_DRAW_HOOK   0x44E139   /* call 0x42c7c0 (golden weasel draw) */
-#define WEASEL_RET         0x44E13E   /* next instr after 0x44E139 */
 #define TT_WEASEL_APPEND   0x42F927   /* call 0x44abf0 (TT menu golden weasel) */
 #define SKIP_LATCH_HOOK    0x44CBAA   /* movb $1,0x25(esi)  (skip latch set) */
 #define SKIP_LATCH_RET     0x44CBB1   /* next instr after the 5 patched bytes */
@@ -255,13 +252,15 @@ static void load_real_bass(void) {
 #define GFX_MULT_R          0x7B0      /* gfx+0x7B0..0x7BC = RGBA scale */
 
 
-/* Native medal-award effects (verified 0x44daf8-0x44dc10 in FUN_0044df70):
- * when a medal is FIRST earned the game (1) plays the medal pop sound via
- * Sound_PlayChannel(0x4597b0) on the channel at App+0x50C, and (2) spawns a
- * ring of ArenaScoreParticle objects (ctor 0x44ad50, alloc 0x28) appended to
- * the results-screen particle list ([results+0x94]). The ring is 18 particles
- * spaced 20deg (=0x14) around center (429,317) at radius 30, positions =
- * fcos(angle*PI)*30+429 / fsin(angle*PI)*30+317. */
+/* Native medal-award effects. Each medal has its own frame-gated award block
+ * in FUN_0044df70 that (1) plays the medal pop via Sound_PlayChannel(0x4597b0)
+ * on the channel at App+0x50C and (2) spawns a ring of ArenaScoreParticle
+ * objects (ctor 0x44ad50, alloc 0x28) appended to the results-screen particle
+ * list ([results+0x94]). The diamond REPLACES the golden weasel, whose native
+ * ring (block at 0x44d9a0, gated by frame == [esi+0x4C]) is 18 particles
+ * spaced 20deg (=0x14) around center (227,648) at radius 74 — constants at
+ * 0x4d6d8c/0x4d6d88/0x4d6d90. (The bronze/silver/gold rings use radius 30 at
+ * centers (429,317)/(465,338)/(501,363) — the diamond must NOT use those.) */
 #define Sound_PlayChannel  0x4597B0
 #define SND_CHANNEL_MEDAL  0x50C      /* App+0x50C = medal pop channel */
 #define RESULT_PARTICLES   0x94       /* results+0x94 = particle AthenaList */
@@ -271,9 +270,9 @@ static void load_real_bass(void) {
 #define ARENA_SCORE_LIST   0x4F7188   /* wave-const struct (+4 = PI), arg to Wave_Cos/Sin */
 #define WAVE_COS           0x457DC0   /* Wave_Cos(0x4F7188, angle) */
 #define WAVE_SIN           0x457DA0   /* Wave_Sin(0x4F7188, angle) */
-#define PART_ANGLE_MULT    0x4CF528   /* *30.0f radius */
-#define PART_CENTER_X      0x4D6D84   /* +429.0f */
-#define PART_CENTER_Y      0x4D6D80   /* +317.0f */
+#define PART_ANGLE_MULT    0x4D6D90   /* *74.0f radius (golden-weasel ring) */
+#define PART_CENTER_X      0x4D6D8C   /* +227.0f (golden-weasel ring) */
+#define PART_CENTER_Y      0x4D6D88   /* +648.0f (golden-weasel ring) */
 #define PART_ANGLE_INC     0x14       /* +20 degrees per particle */
 #define PART_ANGLES_END    0x168      /* 360 degrees total -> 18 particles */
 #define operator_new_      0x4BA57B
@@ -377,9 +376,6 @@ static int   g_iconLoaded    = 0;
 static int   g_miniIconLoaded = 0;
 static int   g_configLoaded  = 0;
 static char  g_fmtDiamond[]  = "%dD";
-static int   g_diamondDelay  = 165;  /* frames after the gold medal appears that the
-                                        diamond appears (3x the game's bronze->
-                                        silver (55) and silver->gold (55) gaps) */
 
 /* Hardcoded DIAMOND fallback times (seconds), by tournament slot index 0-14.
  * These are baked into the DLL and used ONLY when racedata.xml has no <DIAMOND>
@@ -427,9 +423,7 @@ static char  g_logPath[MAX_PATH] = {0};
 static FILE *g_log = NULL;
 
 static unsigned char *g_iconCave = NULL;
-static unsigned char *g_dispCave = NULL;
 static unsigned char *g_ttCave = NULL;
-static unsigned char *g_weaselCave = NULL;
 static unsigned char *g_skipCave = NULL;
 static unsigned char *g_pauseCave = NULL;
 static unsigned char *g_presentCave = NULL;
@@ -544,7 +538,6 @@ static int diamond_provision_unlock(int race) {
     }
     /* 2. Only now set the in-memory flag and persist it to the registry. */
     g_won[race] = 1;
-    g_anyDiamond = 1;   /* a diamond now exists -> TT-menu cave eligible next launch */
     ok_reg = save_unlocks_reg();
     if (!ok_reg) {
         g_won[race] = 0;   /* roll back — flag would exist in memory but not on disk */
@@ -552,6 +545,10 @@ static int diamond_provision_unlock(int race) {
                   race, ok_reg);
         return 0;
     }
+    /* 3. Only after the registry commit succeeds: a diamond now exists ->
+     *    TT-menu cave eligible next launch. (Set AFTER g_won, so a failed reg
+     *    write rolls back cleanly with no lingering g_anyDiamond.) */
+    g_anyDiamond = 1;
     diag_logf("[diamond] provision OK for race %d", race);
     return 1;
 }
@@ -855,14 +852,17 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
         *(DWORD*)part = PARTICLE_VTABLE;
         /* Native layout (verified): part+0x08..0x10 = POSITION vec3,
          * part+0x14..0x1C = VELOCITY/trajectory vec3 (UNIT radial dir, NO
-         * ×30 — the native code applies the 30.0 radius factor only to
+         * radius factor — the native code applies the radius factor only to
          * position; the velocity block is a bare unit vector).
-         *   pos.x = cos(a)*r + 429   pos.y = sin(a)*r + 317
-         *   vel.x = cos(a)           vel.y = sin(a)        */
+         *   pos.x = cos(a)*r + cx   pos.y = sin(a)*r + cy
+         *   vel.x = cos(a)          vel.y = sin(a)
+         * The diamond REPLACES the golden weasel, so the ring uses the
+         * WEASEL's native center/radius (227,648) r=74, NOT the bronze ring's
+         * (429,317) r=30. */
         {
             float rad = (float)angle * 3.14159265f / 180.0f;
             float c = cosf(rad), s = sinf(rad);
-            float cx = 429.0f, cy = 317.0f, r = 30.0f;
+            float cx = 227.0f, cy = 648.0f, r = 74.0f;
             *(float*)(part + 0x08) = c * r + cx;
             *(float*)(part + 0x0C) = s * r + cy;
             *(float*)(part + 0x10) = 0.0f;
@@ -1330,61 +1330,6 @@ __attribute__((used)) void diamond_vortex_tick(DWORD results) {
 
 
 
-/* Genuine 5th-medal block: draws the diamond icon one "medal gap" AFTER gold.
- * Mirrors the native gold block exactly (frame gate -> threshold check ->
- * sprite draw), except the gate is (gold_gate + delay) and the threshold is
- * the mod's per-race SECRET. Called from the code cave right after the gold
- * draw re-emit. standalone -> no dependence on the current draw frame.
- */
-__attribute__((used)) void diamond_render_after(DWORD results) {
-    int frame, gold_gate, race, cs, thr;
-    DWORD app;
-    if (!results) return;
-    if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
-    app = *(DWORD*)(results + RESULT_APP);
-    if (!app || !g_configLoaded) return;
-    /* frame gate: only after gold + delay (mirrors native frame gate) */
-    if (IsBadReadPtr((void*)(results + RESULT_GOLD), 4)) return;
-    gold_gate = *(int*)(results + RESULT_GOLD);
-    if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
-    frame = *(int*)(results + RESULT_FRAME);
-    if (frame <= gold_gate + g_diamondDelay) return;
-    /* threshold check */
-    race = get_race_index();
-    if (race < 0 || race > 14) return;
-    if (!g_hasSecret[race]) return;
-    cs = get_player_time_cs(app);
-    thr = g_secret_cs[race];
-    if (!(cs > 0 && cs <= thr)) return;
-    /* ATOMIC UNLOCK COMMIT: if this race hasn't been won yet, provision ALL
-     * required writes (registry flag + PNG assets + future effects). If ANY
-     * write fails, treat the diamond as never earned — no draw, no effects,
-     * no persistence — so no partial state can exist. */
-    if (!g_won[race]) {
-        if (!diamond_provision_unlock(race)) {
-            diag_logf("[diamond] unlock aborted for race %d (could not write everything)", race);
-            return;   /* as if the diamond time was not met at all */
-        }
-        /* g_won[race] committed (to 1) inside diamond_provision_unlock on success.
-         * First earn: play the native medal pop + spawn the star ring, exactly
-         * like the game does for the other medals on their first award. */
-        diamond_spawn_medal_effects(results, app);
-    }
-    /* Now that the diamond is genuinely unlocked (and its assets exist),
-     * load + draw it. Load lazily (retries if a provision path raced). */
-    if (!g_iconLoaded) diamond_load_icon_impl(app);
-    if (!g_diamondSprite) return;   /* not loadable -> nothing to draw */
-    /* draw the diamond over the golden weasel spot (0x208, 0x63) */
-    __asm__ volatile(
-        "movl %2, %%ecx\n\t"          /* ecx = g_diamondSprite */
-        "pushl $0x63\n\t"             /* y */
-        "pushl $0x208\n\t"            /* x */
-        "call *%1\n\t"                /* 0x42C7C0(sprite,x,y) -- ret $8 */
-        : : "r"(0), "r"(SPRITE_DRAW), "r"(g_diamondSprite)
-        : "eax", "ecx", "edx", "memory"
-    );
-}
-
 /* Trophy swap at the end of the white hold: at frame >= WEASEL_WHITE_TOTAL
  * (= 240), the golden weasel stops rendering and the diamond trophy appears in
  * its place at the trophy spot (0x208, 0x63), firing the reveal effects on the
@@ -1409,7 +1354,7 @@ __attribute__((used)) int diamond_trophy_swap(DWORD results) {
     cs = get_player_time_cs(app);
     thr = g_secret_cs[race];
     if (!(cs > 0 && cs <= thr)) return 0;
-    /* Atomic unlock commit on first reveal (mirrors diamond_render_after). */
+    /* Atomic unlock commit on first reveal. */
     if (!g_won[race]) {
         if (!diamond_provision_unlock(race)) {
             diag_logf("[diamond] trophy swap unlock aborted for race %d", race);
@@ -1676,8 +1621,7 @@ static void patch_bytes(void *addr, const void *data, DWORD size) {
  *   which is an unsafe time to call back into the sprite system.
  *
  *   The pre-warm is REDUNDANT: the icon is loaded lazily, on demand, right
- *   before it is drawn, from diamond_render_after() (line ~1298) and
- *   diamond_trophy_swap() (line ~1344), both of which call
+ *   before it is drawn, from diamond_trophy_swap() (line ~1290), which calls
  *   diamond_load_icon_impl() once the diamond assets actually exist (they are
  *   provisioned by diamond_provision_unlock() before the first draw). So the
  *   startup pre-warm adds no capability — only a startup crash vector.
@@ -1870,52 +1814,6 @@ static void install_pause_caves(void) {
     }
 }
 
-/* Cave B: results-screen DIAMOND draw as a genuine 5th medal block, one
- * medal-gap AFTER gold. Hook at 0x44EFD2 (the gold `call 0x42c7c0`, 5 bytes).
- *   cave:     call 0x42c7c0            ; re-emit gold draw (existing stack args)
- *             pushad
- *             push esi                 ; results object (diamond_render_after arg1)
- *             call diamond_render_after ; full 5th-medal block (frame gate +
- *                                       ;  secret check + draw, its own delay)
- *             add esp,4
- *             popad
- *             jmp 0x44EFD7
- * The diamond appears (gold_gate + g_diamondDelay) frames after gold, i.e.
- * one medal gap later, at the golden weasel's spot (0x208, 0x63).
- */
-/* Cave B (DISABLED 2026-08-12): the diamond reveal now fires at the frame-240
- * trophy swap (install_weasel_cave -> diamond_trophy_swap). This cave used to
- * draw the diamond as a 5th medal one gold-gap after gold; kept only for
- * reference/re-support. Not installed (see install_hooks). */
-static void install_disp_cave(void) __attribute__((unused));
-static void install_disp_cave(void) {
-    DWORD patchAddr = EXE_BASE + (GOLD_DRAW_HOOK - EXE_BASE);
-    DWORD retAddr = patchAddr + 5;   /* 0x44EFD7 */
-    g_dispCave = (unsigned char*)VirtualAlloc(NULL, 160, MEM_COMMIT|MEM_RESERVE,
-                                              PAGE_EXECUTE_READWRITE);
-    if (!g_dispCave) return;
-    unsigned char *p = g_dispCave;
-    /* call 0x42c7c0 (re-emit gold draw) — E8 rel32 */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(SPRITE_DRAW)-(DWORD)(p+5); p+=5;
-    /* pushad */
-    p[0]=0x60; p+=1;
-    /* push esi (results object) — 56 */
-    p[0]=0x56; p+=1;
-    /* call diamond_render_after */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_render_after-(DWORD)(p+5); p+=5;
-    /* add esp,4 */
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;
-    /* popad */
-    p[0]=0x61; p+=1;
-    /* jmp retAddr */
-    write_jmp(p, retAddr); p+=5;
-    unsigned char patch[5];
-    memset(patch, 0x90, 5);
-    write_jmp(patch, (DWORD)g_dispCave);
-    patch_bytes((void*)patchAddr, patch, 5);
-    diag_log("[diamond] diamond 5th-medal cave installed at 0x44EFD2");
-}
-
 /* Cave C: TT-menu (standings) diamond mini-icon after golden weasel.
  * Hook at 0x42F927 (call 0x44abf0, the golden-weasel append, 5 bytes).
  *   cave:     mov ecx,esi          ; re-emit weasel append (stack has name+sprite)
@@ -1980,23 +1878,6 @@ static void install_tt_cave(void) {
     diag_log("[diamond] TT-menu cave installed (diamond(s) earned)");
 }
 
-/* Cave D (DISABLED 2026-08-12): the golden-weasel white-fade + suction vortex
- * USED to run from an inline cave at 0x44E139 (the game's own weasel draw call
- * site), re-emitting `call 0x42c7c0` and re-entering the sprite loader from
- * inside the game's Draw loop. That re-entrancy crashed on real Windows with
- * CRASH_ADDRESS 0000:00000000 (CURRENTOPERATION: Draw) — the third crash of
- * this class (startup icon cave, TT-menu cave, now this). Wine tolerates it,
- * which is why hbtestd never reproduced it.
- *
- * The white-out + vortex + diamond trophy-swap now runs from the
- * Graphics_PresentOrEnd hook (install_present_cave -> diamond_present_tick),
- * which fires once per frame at a safe boundary. 0x44E139 is left 100%
- * original (the game draws the gold weasel natively; our white-out weasel and
- * diamond draw OVER it at present time). */
-static void install_weasel_cave(void) {
-    diag_log("[diamond] weasel white-fade cave DISABLED (reveal moved to present hook)");
-}
-
 /* Present-hook cave: Graphics_PresentOrEnd (0x455A90), __thiscall(ecx=gfx).
  * Original prologue (7 bytes): 8A 44 24 04  MOV AL,[ESP+4]
  *                              83 EC 20     SUB ESP,0x20
@@ -2037,12 +1918,7 @@ static void install_present_cave(void) {
  * ================================================================ */
 static void install_hooks(void) {
     install_icon_cave();
-    /* install_disp_cave() DISABLED: the diamond reveal now happens at the
-     * frame-240 trophy swap (diamond_present_tick via the present hook),
-     * replacing the old gold-gap 5th-medal reveal. Keeping Cave B would
-     * draw+pop the diamond too early at ~frame 165 AND again at 240. */
     install_tt_cave();
-    install_weasel_cave();   /* no-op — reveal moved to present hook */
     install_skip_cave();
     install_arm_cave();      /* arms the present reveal AND installs the present
                               * hook race-free on the main thread (see

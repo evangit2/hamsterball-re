@@ -13,8 +13,8 @@ When you finish a race faster than the secret threshold for that race:
 - **Diamond weasel** — the 5th secret medal, drawn **directly over the golden weasel** (same spot, top-right) when you beat the secret time
 
 When you beat a race's secret time, the **golden weasel stays** and the
-**diamond weasel** appears a moment later (3 medal-gaps after the **gold**
-medal — around 165 frames, ~5.5s, 3× the game's standard gap) **directly over
+**diamond weasel** appears a moment later (240 frames after the **gold** medal
+is awarded — ~8s, per the reveal timeline below) **directly over
 the golden weasel** at the same location.
 
 ### Time-Trial menu (standings screen)
