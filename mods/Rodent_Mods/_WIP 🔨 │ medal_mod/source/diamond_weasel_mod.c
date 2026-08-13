@@ -2014,33 +2014,20 @@ static void install_hooks(void) {
      * draw+pop the diamond too early at ~frame 165 AND again at 240. */
     install_tt_cave();
     install_weasel_cave();   /* no-op — reveal moved to present hook */
-    /* install_present_cave() is DEFERRED to a background thread (see
-     * present_install_thread) that installs it once the game is past the
-     * loading screen. Installing it here (synchronously, in DllMain) made it
-     * live during the boot loading screen, where diamond_present_tick ran on
-     * an uninitialized board -> crash on real Windows (Initialize(26)). The
-     * warp mod installs its present hook the same way (2s-late thread). */
     install_skip_cave();
     install_arm_cave();      /* arm the present reveal from the results update */
     install_pause_caves();
+    /* install_present_cave() runs SYNCHRONOUSLY here, BEFORE the game's main
+     * loop starts. It is NOT deferred to a background thread: the earlier
+     * deferral (Sleep(2000) + CreateThread) wrote the 7-byte patch at
+     * 0x455A90 WHILE the main thread was executing that hot per-frame
+     * function, tearing the instruction mid-execution -> the crash-5/6
+     * signature (fixed CRASH_ADDRESS 0000:001AEED8 at exactly 2s, a different
+     * level/object each run). The arm gate (g_revealArmed) already keeps
+     * diamond_present_tick from reading game state during boot, so the hook
+     * no longer needs to be late-installed at all. */
+    install_present_cave();
     diag_log("[diamond] hooks installed");
-}
-
-/* ================================================================
- * Deferred present-hook install
- * ================================================================
- * The Graphics_PresentOrEnd hook (0x455A90) fires EVERY FRAME, including
- * during the boot loading screen (CURRENTOBJECT "LoadingScreen Gadget",
- * Initialize(26)). Installing it synchronously in DllMain made it live
- * during that screen, where diamond_present_tick ran against a half-built
- * board and crashed on real Windows (CRASH_ADDRESS 0006:00000000). The
- * proven-working warp mod installs the SAME hook 2 seconds late from a
- * background thread — after the loading screen is done. We do the same. */
-static DWORD WINAPI present_install_thread(LPVOID param) {
-    (void)param;
-    Sleep(2000);                 /* let the loading screen + boot finish */
-    install_present_cave();      /* hook live only once the game is past boot */
-    return 0;
 }
 
 /* ================================================================
@@ -2056,7 +2043,6 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
         init_thresholds();
         load_unlocks();
         install_hooks();
-        CreateThread(NULL, 0, present_install_thread, NULL, 0, NULL);
     }
     return TRUE;
 }
