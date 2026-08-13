@@ -2031,8 +2031,7 @@ static void install_hooks(void) {
      * boot loading screen (Initialize(26)). Installing it synchronously here
      * in DllMain made it fire at frame 0 against the half-built loading
      * screen -> CRASH_ADDRESS 0006:00000000, RUNTIME 00:00:00, CURRENTOBJECT
-     * "LoadingScreen Gadget" on real Windows. See present_install_thread for
-     * the atomic-patch detail (SuspendThread around the 7-byte write). */
+     * "LoadingScreen Gadget" on real Windows. See present_install_thread. */
     diag_log("[diamond] hooks installed");
 }
 
@@ -2046,47 +2045,17 @@ static void install_hooks(void) {
  * (CRASH_ADDRESS 0006:00000000, RUNTIME 00:00:00). The proven warp mod
  * installs its per-frame hook 2s late from a background thread.
  *
- * The 7-byte JMP patch itself is written atomically: we SuspendThread the
- * main thread, confirm its EIP is OUTSIDE the 7-byte prologue window (if it
- * is mid-instruction inside 0x455A90..0x455A97 we resume and retry, since
- * patching those bytes while the thread sits in them would tear the
- * instruction), then write the patch and resume. */
-static HANDLE g_hMainThread = NULL;
-#define PRESENT_WINDOW_LO  (EXE_BASE + (PRESENT_HOOK - EXE_BASE))
-#define PRESENT_WINDOW_HI  (EXE_BASE + (PRESENT_RET  - EXE_BASE))
-
+ * NOTE (2026-08-13): a prior "atomic" install used SuspendThread +
+ * GetThreadContext + ResumeThread to guard the 7-byte write. That approach
+ * crashed on real Windows at ~2s (non-deterministic addresses: MODULE:K /
+ * 1AF368:0BD02D70, 0000:001AEED8) — suspending the main thread mid-D3D
+ * load corrupted its execution. The tick is already gated by g_revealArmed
+ * (only a live results screen arms it) and by find_results_object's vtable
+ * check, so the plain Sleep(2000)+patch pattern that warp ships is safe. */
 static DWORD WINAPI present_install_thread(LPVOID param) {
     (void)param;
     Sleep(2000);                 /* let the loading screen + boot finish */
-    if (g_hMainThread) {
-        int tries;
-        for (tries = 0; tries < 16; tries++) {
-            CONTEXT ctx;
-            DWORD prev = SuspendThread(g_hMainThread);
-            if (prev == (DWORD)-1) { install_present_cave(); return 0; }
-            ctx.ContextFlags = CONTEXT_CONTROL;
-            if (GetThreadContext(g_hMainThread, &ctx)) {
-                DWORD eip = ctx.Eip;
-                if (eip < PRESENT_WINDOW_LO || eip >= PRESENT_WINDOW_HI) {
-                    install_present_cave();   /* main thread clear of the window */
-                    ResumeThread(g_hMainThread);
-                    return 0;
-                }
-            }
-            /* main thread sits inside the 7-byte prologue: resume, wait a tick,
-             * retry so the patch is written only while it is clear. */
-            ResumeThread(g_hMainThread);
-            Sleep(1);
-        }
-        /* give up on a perfectly clean window; install anyway (tiny window) */
-        {
-            DWORD prev = SuspendThread(g_hMainThread);
-            install_present_cave();
-            if (prev != (DWORD)-1) ResumeThread(g_hMainThread);
-        }
-    } else {
-        install_present_cave();
-    }
+    install_present_cave();      /* plain patch — matches the warp mod exactly */
     return 0;
 }
 
@@ -2104,12 +2073,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
         load_unlocks();
         install_hooks();
         /* Defer the per-frame present hook so it is NOT live during the boot
-         * loading screen (Initialize(26)); see present_install_thread. Capture
-         * the main thread handle first so that thread can SuspendThread it
-         * around the 7-byte patch for an atomic install. */
-        DuplicateHandle(GetCurrentProcess(), GetCurrentThread(),
-                        GetCurrentProcess(), &g_hMainThread,
-                        0, FALSE, DUPLICATE_SAME_ACCESS);
+         * loading screen (Initialize(26)); see present_install_thread. */
         CreateThread(NULL, 0, present_install_thread, NULL, 0, NULL);
     }
     return TRUE;
