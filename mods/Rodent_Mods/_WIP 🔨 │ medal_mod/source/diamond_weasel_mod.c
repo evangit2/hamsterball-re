@@ -1742,103 +1742,111 @@ static void install_arm_cave(void) {
  * But the OTHER two pause entry points do NOT consult scene+0x880, so they
  * can still open the pause menu mid-reveal and interrupt it:
  *
- *   Path 2 (right-click): 0x4130c9 `call 0x40a920` (5B) — vtable[5] thunk.
+ *   Path 2 (right-click): decision point 0x4130c3 (3 bytes before the call).
  *   Path 3 (Win32 ESC):   0x40b40f `jmp  0x40a920` (5B) — vtable[8] thunk.
  *
  * Both funnel into Scene_CreateGameOverMenu (0x40a920, which has an SEH
- * prologue, so we patch the CALL SITES, not the function entry). Each cave
- * calls diamond_pause_blocked(scene) and, when it returns nonzero (diamond
- * earned + reveal not yet passed + results object present), skips the pause
- * while keeping the stack balanced for the surrounding thunk.
+ * prologue, so we patch the CALL/DECISION sites, not the function entry).
+ * Each cave calls diamond_pause_blocked(scene) (plain C — no SEH, safe to
+ * call from a cave) and uses its return to inject ONE branch into the
+ * game's own native control flow:
+ *   - blocked (reveal pending): jump to the game's own pause-SKIP label
+ *     (0x4130ce / 0x40b414), so 0x40a920 never runs.
+ *   - not blocked: jump INTO the game's ORIGINAL unmodified `call`/
+ *     `jmp 0x40a920` so the game executes 0x40a920 in its own context and
+ *     returns to its own label naturally (identical to a normal pause).
+ * The cave NEVER issues its own call/jmp to 0x40a920 — that re-entrancy
+ * from heap memory is what crashed on real Windows (CRASH_ADDRESS 0,
+ * MouseDown) while Wine tolerated it. (REBUILT 2026-08-13.)
  *
- * ecx = scene object at both call sites (preserved to esi, callee-saved).
- * Path 2 cave ends with `add esp,4; jmp ret` (the pushed $1 arg to the
- * skipped pause call is manually popped; the thunk's own ret $0xC rebalances
- * the rest). Path 3 cave ends with `jmp 0x40b414` whose `ret $4` pops both
- * the return address and the handler's arg (identical to the non-ESC path).
+ * ecx = scene object at both call sites (preserved). Only eax is left as
+ * the branch test; ecx/edx/esi/edi/ebx and flags are restored/native.
  */
 static void install_pause_caves(void) {
-    /* DISABLED (2026-08-13): the two pause-block caves (right-click 0x4130C9 +
-     * Win32-ESC 0x40B40F) crash on REAL WINDOWS on right-click pause during
-     * gameplay (CRASH_ADDRESS 0000:00000000, RUNTIME ~21s, CURRENTOPERATION
-     * MouseDown). They are byte- and register-correct (hand-traced against the
-     * real disassembly: the original push $1 at 0x4130c7 still executes,
-     * 0x40a920 is ret $4, the blocked branch's add esp,4 rebalances, ecx/esi/
-     * FPU/flags all restored) — so this is NOT a stack bug. It is the same
-     * REAL-WINDOWS-ONLY code-cave crash class already hit three times in this
-     * mod (icon pre-warm, TT-menu, present-hook): calling a game function with
-     * an SEH prologue (0x40a920 does mov %fs:0) from a raw heap code cave
-     * crashes on real Windows while Wine tolerates it and can never reproduce
-     * it. Wine structurally cannot catch this (won't even surface it), which is
-     * why it slipped past crash tests.
+    /* Pause-block, REBUILT 2026-08-13 to never call 0x40a920 from the cave.
      *
-     * The pause-block is the ONLY cave we cannot starve (it fires on every
-     * gameplay right-click). Consistent with how the mod resolved its other
-     * real-Windows cave crashes, the reliable fix is to NOT install these
-     * caves. The diamond reveal, skip-block, and TT-menu logic are unaffected.
-     * Trade-off: the player *could* pause away the reveal — far better than
-     * crashing on every pause.
+     * Root cause of the real-Windows right-click crash (CRASH_ADDRESS 0000:00000000,
+     * MouseDown, ~21s in): the OLD caves re-emitted `call 0x40a920` from hand-rolled
+     * heap cave memory. 0x40a920 sets up its own SEH frame (mov %fs:0) and returns
+     * with ret $4; a `call` from a VirtualAlloc'd cave that then returns back into
+     * the cave was the crash vector on real Windows, while Wine tolerates it. The
+     * game's normal pause works fine because IT calls 0x40a920 natively in its own
+     * context.
      *
-     * To re-enable, restore the body (see git history before this commit).
+     * FIX: only patch the DECISION point before the game's own call, and JUMP INTO
+     * the game's unmodified `call 0x40a920` when not blocked (so 0x40a920 returns
+     * to the game's 0x4130ce naturally), or jump to the game's own skip branch
+     * (0x4130ce) when blocked. The cave NEVER issues a call/jmp to 0x40a920 — the
+     * game executes it in its own context. Same proven pattern as the other caves
+     * (call a plain-C helper, then let the original code run).
+     *
+     * Right-click thunk (vtable[5]) at 0x4130a0:
+     *   4130a0 cmpl $1,0xc(%esp)  ; 4130a5  jne 0x4130ce (skip)
+     *   4130a7 mov eax,[ecx+0x878]; 4130ad mov dl,[eax+0x238]; 4130b3 test; 4130b5 je skip
+     *   4130b7 mov eax,[eax+0x220]; 4130bd mov dl,[eax+0x95]
+     *   4130c3 test dl,dl         ; 4130c5  jne 0x4130ce; 4130c7 push $1
+     *   4130c9 call 0x40a920      ; 4130ce  ret $0xc
+     *   -> hook 6 bytes 0x4130c3..0x4130c8, jump into ORIGINAL 0x4130c9.
+     *
+     * Win32-ESC thunk (vtable[8]) at 0x40b40f:
+     *   40b400 cmpl $0x1b,0x4(%esp); 40b405 jne 0x40b414; 40b407 movl $1,0x4(%esp)
+     *   40b40f jmp 0x40a920        ; 40b414 ret $4
+     *   -> hook the 5-byte jmp at 0x40b40f; re-emit the native `jmp 0x40a920`
+     *      tail-call when not blocked (matches native), else jmp 0x40b414.
+     *
+     * diamond_pause_blocked() is plain C (no SEH, no %fs) so calling IT from the
+     * cave is safe; only the game's own SEH function is left to the game.
      */
-    diag_log("[diamond] pause-block caves DISABLED (real-Windows code-cave crash class)");
-    return;
-#if 0
-    DWORD rcAddr = EXE_BASE + (PAUSE_RCLICK_HOOK - EXE_BASE);
-    DWORD rcRet  = EXE_BASE + (PAUSE_RCLICK_RET  - EXE_BASE);
-    DWORD esAddr = EXE_BASE + (PAUSE_ESCMSG_HOOK - EXE_BASE);
-    DWORD esRet  = EXE_BASE + (PAUSE_ESCMSG_RET  - EXE_BASE);
+    DWORD rcHook = EXE_BASE + (0x4130C3 - EXE_BASE);   /* test dl,dl — decision pt (6 bytes through 0x4130c8) */
+    DWORD rcRet  = EXE_BASE + (0x4130CE - EXE_BASE);
+    DWORD rcCall = EXE_BASE + (0x4130C9 - EXE_BASE);   /* original call 0x40a920 (left unmodified) */
+    DWORD esHook = EXE_BASE + (0x40B40F - EXE_BASE);   /* jmp 0x40a920 (ESC), 5 bytes */
+    DWORD esRet  = EXE_BASE + (0x40B414 - EXE_BASE);   /* ret $4 */
     DWORD menu   = EXE_BASE + (0x40A920 - EXE_BASE);
     unsigned char *p;
-    unsigned char patch[5];
 
-    /* -- Path 2 (right-click) cave -- */
-    g_pauseCave = (unsigned char*)VirtualAlloc(NULL, 160, MEM_COMMIT|MEM_RESERVE,
+    g_pauseCave = (unsigned char*)VirtualAlloc(NULL, 192, MEM_COMMIT|MEM_RESERVE,
                                                PAGE_EXECUTE_READWRITE);
-    if (g_pauseCave) {
-        p = g_pauseCave;
-        p[0]=0x56; p+=1;                            /* push esi (SAVE caller's esi) */
-        p[0]=0x8B; p[1]=0xF1; p+=2;                 /* mov esi,ecx (scene) */
-        p[0]=0x56; p+=1;                            /* push esi (arg: scene) */
-        p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_pause_blocked-(DWORD)(p+5); p+=5;
-        p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;      /* add esp,4 (pop arg) */
-        p[0]=0x85; p[1]=0xC0; p+=2;                 /* test eax,eax */
-        p[0]=0x8B; p[1]=0xCE; p+=2;                 /* mov ecx,esi (scene -> ecx) */
-        p[0]=0x5E; p+=1;                            /* pop esi (RESTORE caller's esi) */
-        p[0]=0x75; p[1]=0x0A; p+=2;                 /* jnz blocked (rel=0x0A) */
-        p[0]=0xE8; *(DWORD*)(p+1)=menu-(DWORD)(p+5); p+=5;   /* call 0x40a920 — $1 already on stack from original 0x4130c7 push; 0x40a920 ret $4 consumes it */
-        p[0]=0xE9; *(DWORD*)(p+1)=rcRet-(DWORD)(p+5); p+=5;  /* jmp 0x4130ce */
-        /* blocked: 0x40a920 never ran, so pop the $1 that 0x4130c7 pushed (it would otherwise be left on the stack and the caller's ret $0xc would misalign). */
-        p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;      /* add esp,4 (pop the $1 pushed by 0x4130c7) */
-        p[0]=0xE9; *(DWORD*)(p+1)=rcRet-(DWORD)(p+5); p+=5;  /* jmp 0x4130ce */
-        memset(patch, 0x90, 5);
-        write_jmp(patch, (DWORD)g_pauseCave);
-        patch_bytes((void*)rcAddr, patch, 5);
-        diag_log("[diamond] pause-block cave installed at 0x4130C9 (right-click)");
-    }
+    if (!g_pauseCave) return;
 
-    /* -- Path 3 (Win32 ESC message) cave -- (single 160B buf holds both) */
-    {
-        unsigned char *c2 = g_pauseCave + 80;       /* second half of the buffer */
-        p = c2;
-        p[0]=0x56; p+=1;                            /* push esi (SAVE caller's esi) */
-        p[0]=0x8B; p[1]=0xF1; p+=2;                 /* mov esi,ecx (scene) */
-        p[0]=0x56; p+=1;                            /* push esi (arg: scene) */
-        p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_pause_blocked-(DWORD)(p+5); p+=5;
-        p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;      /* add esp,4 */
-        p[0]=0x85; p[1]=0xC0; p+=2;                 /* test eax,eax */
-        p[0]=0x8B; p[1]=0xCE; p+=2;                 /* mov ecx,esi (scene -> ecx) */
-        p[0]=0x5E; p+=1;                            /* pop esi (RESTORE caller's esi) */
-        p[0]=0x75; p[1]=0x05; p+=2;                 /* jnz blocked (rel=5) */
-        p[0]=0xE9; *(DWORD*)(p+1)=menu-(DWORD)(p+5); p+=5;  /* jmp 0x40a920 */
-        /* blocked: */
-        p[0]=0xE9; *(DWORD*)(p+1)=esRet-(DWORD)(p+5); p+=5;  /* jmp 0x40b414 (ret $4) */
-        memset(patch, 0x90, 5);
-        write_jmp(patch, (DWORD)c2);
-        patch_bytes((void*)esAddr, patch, 5);
-        diag_log("[diamond] pause-block cave installed at 0x40B40F (Win32 ESC)");
-    }
-#endif /* 0 — install_pause_caves body disabled */
+    /* ---- right-click cave (hook 0x4130c3) ---- */
+    p = g_pauseCave;
+    p[0]=0x51; p+=1;                      /* push ecx (save this) */
+    p[0]=0x52; p+=1;                      /* push edx (save dl) */
+    p[0]=0x51; p+=1;                      /* push ecx (arg: scene) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_pause_blocked-(DWORD)(p+5); p+=5; /* call block */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;/* add esp,4 (pop arg) */
+    p[0]=0x5A; p+=1;                      /* pop edx (restore dl) */
+    p[0]=0x59; p+=1;                      /* pop ecx (restore this) */
+    p[0]=0x85; p[1]=0xC0; p+=2;           /* test eax,eax */
+    p[0]=0x75; p[1]=0x0B; p+=2;           /* jnz skip_pause (rel=0x0B) */
+    p[0]=0x84; p[1]=0xD2; p+=2;           /* test dl,dl (re-emit original guard) */
+    p[0]=0x75; p[1]=0x07; p+=2;           /* jnz native skip (rel=7 -> 0x4130ce) */
+    p[0]=0x6A; p[1]=0x01; p+=2;           /* push $1 (native arg) */
+    p[0]=0xE9; *(DWORD*)(p+1)=rcCall-(DWORD)(p+5); p+=5; /* jmp 0x4130c9 -> run ORIGINAL call 0x40a920 */
+    /* skip_pause: */
+    p[0]=0xE9; *(DWORD*)(p+1)=rcRet-(DWORD)(p+5); p+=5;  /* jmp 0x4130ce (game's own skip) */
+    { unsigned char patch[6]; memset(patch,0x90,6); write_jmp(patch,(DWORD)g_pauseCave);
+      patch_bytes((void*)rcHook, patch, 6); }
+    diag_log("[diamond] pause-block cave REBUILT at 0x4130C3 (jump-to-native call)");
+
+    /* ---- ESC cave (hook 0x40b40f) ---- */
+    p = g_pauseCave + 96;
+    p[0]=0x51; p+=1;                      /* push ecx */
+    p[0]=0x52; p+=1;                      /* push edx */
+    p[0]=0x51; p+=1;                      /* push ecx (arg: scene) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_pause_blocked-(DWORD)(p+5); p+=5;
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;/* add esp,4 */
+    p[0]=0x5A; p+=1;
+    p[0]=0x59; p+=1;
+    p[0]=0x85; p[1]=0xC0; p+=2;           /* test eax,eax */
+    p[0]=0x75; p[1]=0x05; p+=2;           /* jnz skip_esc (rel=5) */
+    p[0]=0xE9; *(DWORD*)(p+1)=menu-(DWORD)(p+5); p+=5;   /* jmp 0x40a920 (re-emit native tail-call) */
+    /* skip_esc: */
+    p[0]=0xE9; *(DWORD*)(p+1)=esRet-(DWORD)(p+5); p+=5;  /* jmp 0x40b414 (ret $4) */
+    { unsigned char patch[5]; memset(patch,0x90,5); write_jmp(patch,(DWORD)(g_pauseCave+96));
+      patch_bytes((void*)esHook, patch, 5); }
+    diag_log("[diamond] pause-block ESC cave REBUILT at 0x40B40F (jump-to-native jmp)");
 }
 
 /* Cave C: TT-menu (standings) diamond mini-icon after golden weasel.
