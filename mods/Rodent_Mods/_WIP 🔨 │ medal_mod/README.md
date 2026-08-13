@@ -159,10 +159,21 @@ works normally (no lockout).
 The game's own ESC-pause path is already suppressed at goal (it sets
 an internal latch), but the two other pause entry points — right-clicking, and
 the Win32 ESC key handler — would still open the pause menu and interrupt the
-reveal. The mod intercepts both of those for the same window (diamond achieved
-+ not yet earned + reveal not yet played), so you cannot pause away the diamond.
-Pause works normally during gameplay, on already-earned replays, and after the
-reveal.
+reveal. 
+
+**NOTE (2026-08-13): pause-blocking is currently DISABLED.** The two pause-block
+caves (right-click `0x4130C9` + Win32 ESC `0x40B40F`) crashed **on real Windows**
+on right-click pause during gameplay (`CRASH_ADDRESS 0000:00000000`, ~21s in,
+`CURRENTOBJECT: Board`, `MouseDown`) — the same real-Windows-only code-cave
+crash class this mod already resolved for the startup icon, TT-menu, and
+present-hook hooks (Wine tolerates these and never reproduces them, which is how
+this slipped past crash tests). The caves were byte- and register-correct;
+the crash is inherent to calling a game SEH-prologue function from a raw heap
+cave on real Windows. The mod now leaves both pause call sites 100% original.
+**You can pause/right-click normally during gameplay and after the reveal — the
+only trade-off is that you can also pause *during* the brief gold→diamond
+reveal window (frame 240).** All reveal, skip-block, and TT-menu logic is
+unaffected.
 
 **You do not need to provide any diamond icon files.**
 
