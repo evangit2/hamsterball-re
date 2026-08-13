@@ -267,6 +267,7 @@ static void load_real_bass(void) {
 #define RESULT_PARTICLES   0x94       /* results+0x94 = particle AthenaList */
 #define PARTICLE_CTOR      0x44AD50
 #define PARTICLE_SIZE      0x28
+#define PARTICLE_VTABLE    0x4D6BF4   /* native override applied after the ctor */
 #define ARENA_SCORE_LIST   0x4F7188   /* wave-const struct (+4 = PI), arg to Wave_Cos/Sin */
 #define WAVE_COS           0x457DC0   /* Wave_Cos(0x4F7188, angle) */
 #define WAVE_SIN           0x457DA0   /* Wave_Sin(0x4F7188, angle) */
@@ -801,12 +802,15 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
     if (IsBadReadPtr((void*)(app + SND_CHANNEL_MEDAL), 4)) return;
     channel = *(DWORD*)(app + SND_CHANNEL_MEDAL);
     if (channel) {
-        /* Sound_PlayChannel is __fastcall(param_1=ecx) — the single real arg.
-         * (Native also pushes a stray 1.0, but the callee only reads ecx; we
-         * omit it to keep our own stack perfectly balanced.) */
+        /* Sound_PlayChannel is __fastcall(ecx=channel) AND takes one stack
+         * arg (volume, pushed as 1.0f). The function ends in `ret 4` (verified
+         * at 0x459804 / 0x4595B0) and EVERY native call site pushes 0x3F800000
+         * first — see 0x44DB03, 0x44D991, 0x403805. Omitting the push leaves
+         * the callee to pop 4 bytes off OUR frame (stack corruption on return). */
         __asm__ volatile(
+            "pushl $0x3F800000\n\t"   /* volume 1.0f (callee ret 4 pops it) */
             "movl %1, %%ecx\n\t"     /* channel (ecx = this) */
-            "call *%0\n\t"           /* Sound_PlayChannel(channel) */
+            "call *%0\n\t"           /* Sound_PlayChannel(channel, 1.0f) */
             : : "r"((void*)Sound_PlayChannel), "r"(channel)
             : "eax", "ecx", "edx", "memory");
     }
@@ -829,11 +833,16 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
             "call *%0\n\t"
             : : "r"((void*)PARTICLE_CTOR), "r"(app), "r"(part)
             : "eax", "ecx", "edx", "memory");
+        /* Native override: the medal ring sets the results-screen vtable
+         * (0x4D6BF4) over the ctor's generic vtable (0x4D6AEC). Without it the
+         * particles update/destroy through the wrong functions. */
+        *(DWORD*)part = PARTICLE_VTABLE;
         /* Native layout (verified): part+0x08..0x10 = POSITION vec3,
-         * part+0x14..0x1C = VELOCITY/trajectory vec3 (radial dir, no center
-         * offset), part+0x20 = 1.0 scale (set by ctor).
+         * part+0x14..0x1C = VELOCITY/trajectory vec3 (UNIT radial dir, NO
+         * ×30 — the native code applies the 30.0 radius factor only to
+         * position; the velocity block is a bare unit vector).
          *   pos.x = cos(a)*r + 429   pos.y = sin(a)*r + 317
-         *   vel.x = cos(a)*r         vel.y = sin(a)*r        */
+         *   vel.x = cos(a)           vel.y = sin(a)        */
         {
             float rad = (float)angle * 3.14159265f / 180.0f;
             float c = cosf(rad), s = sinf(rad);
@@ -841,8 +850,8 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
             *(float*)(part + 0x08) = c * r + cx;
             *(float*)(part + 0x0C) = s * r + cy;
             *(float*)(part + 0x10) = 0.0f;
-            *(float*)(part + 0x14) = c * r;
-            *(float*)(part + 0x18) = s * r;
+            *(float*)(part + 0x14) = c;
+            *(float*)(part + 0x18) = s;
             *(float*)(part + 0x1C) = 0.0f;
         }
         /* AthenaList_Append(&results.particles, part): __thiscall(ecx=list,
