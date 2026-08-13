@@ -1,3 +1,36 @@
+v55n_84 - Fix restart crash: gate SpeedCylinder slot-11 driver to CURRENT board
+------------------------------------------------------------
+USER (v55n_83 STILL crashed): the trigger-box visual removal did NOT fix
+the restart crash. The visual was a red herring — the crash survives with
+zero render objects, so it lives in the core SpeedCylinder path.
+
+ROOT CAUSE (native-disassembly-backed, not a theory):
+ - The per-frame slot-11 driver (0x43D8C0) in the Present hook was the ONLY
+   loop touching SpeedCylinder entities WITHOUT the `sc->board != board`
+   gate that every stable driver has (cEnt_speedcyl_present_check line
+   ~6316, cEnt_catapult_present_check, cEnt_timebutton_present_press all
+   gate on the current board).
+ - On race restart the game frees the OLD board and its collision Levels,
+   but g_speedcyls[] still holds the stale obj pointers (the counter reset
+   runs later, in the background spawn scan's cEnt_Treesearch_cEntities, and
+   the "No GRID points" branch never reaches cEnt_Despawn_All_cEntities).
+ - The slot-11 driver kept calling 0x43D8C0 on those freed objects every
+   frame -> writes to freed collision-Level/board memory (0x43D8C0 reads
+   entity+0x10F0 list, entity+0x10D0 board, and writes +0x10EC spin) ->
+   heap corruption surfacing nondeterministically as 0x4526A0 (Draw) or
+   0x478EDD (MeshArchive_ctor memcpy on the next load).
+
+CHANGE:
+ - Mirror the present_check guard in the slot-11 driver: skip any entity
+   whose scs->board != current board, and use the same 0x1510 read guard
+   (present_check already uses 0x1510; the old driver only checked 0x60,
+   too shallow to cover +0x10F0 the native fn reads).
+
+VERIFICATION:
+ - Build clean (EXIT=0, embedded v55n_84). hbtestd crash-test OK (23.57s,
+   title screen). Real restart needs MAKYUNI's run: play a race with both
+   Speedcylinders, then RESTART — must no longer crash.
+
 v55n_83 - Remove trigger-box VISUAL (was the crash); keep zone math
 ------------------------------------------------------------
 USER: v55n_82 crashed on LEVEL START at 0x46EBB3 (NEW address, first
