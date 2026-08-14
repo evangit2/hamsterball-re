@@ -738,15 +738,20 @@ static void remove_pause_patch(void);
  * state until g_revealArmed is set, so a half-built board (title screen's
  * Level4-Trapdoor2 background load) can never be dereferenced. */
 __attribute__((used)) void diamond_arm_reveal(void) {
+    diag_log("[diamond] ARM-ENTRY");
     g_revealArmed = 1;
-    apply_pause_patch();              /* pause-block active only while reveal is armed */
+    diag_log("[diamond] ARM: applying pause patch");
+    apply_pause_patch();
+    diag_log("[diamond] ARM: pause patch done");
     if (!g_presentInstalled) {
+        diag_log("[diamond] ARM: installing present hook");
         g_presentInstalled = 1;
         install_present_cave();   /* main-thread, race-free (cold 0x455A90) */
         diag_log("[diamond] reveal ARMED + present hook installed (results update fired)");
     } else {
         diag_log("[diamond] reveal ARMED (present hook already installed)");
     }
+    diag_log("[diamond] ARM-DONE");
 }
 
 static int diamond_seq_frame(DWORD results);   /* frames since gold award */
@@ -1634,9 +1639,18 @@ __attribute__((used)) void diamond_present_tick(void) {
         if (g_vortexActive) { g_vortexActive = 0; vortex_sound_stop(); }
         return;
     }
+    /* Granular phase logging to pinpoint a real-Windows crash in the reveal.
+     * Gated so we record the LAST successful phase once (not every frame —
+     * the award screen runs hundreds of frames). */
+    static int last_phase = 0;
+    static DWORD last_results = 0;
+    if (results != last_results || last_phase != 1) { diag_log("[diamond] PRESENT: vortex tick"); last_phase=1; last_results=results; }
     diamond_vortex_tick(results);   /* advances + draws vortex (raw D3D) */
+    if (last_phase != 2) { diag_log("[diamond] PRESENT: whiteout tick"); last_phase=2; }
     whiteout_tick(results);         /* scoped white-out weasel draw */
+    if (last_phase != 3) { diag_log("[diamond] PRESENT: trophy swap"); last_phase=3; }
     diamond_trophy_swap(results);   /* commit unlock + draw diamond at 240+ */
+    if (last_phase != 4) { diag_log("[diamond] PRESENT: done"); last_phase=4; }
 }
 
 /* ================================================================
@@ -2018,13 +2032,42 @@ static void install_hooks(void) {
 /* ================================================================
  * DllMain
  * ================================================================ */
+
+/* Real-Windows-only crashes in the reveal path lose the faulting EIP on the
+ * game's crash screen (it reports a system-DLL address). Register a vectored
+ * exception handler that logs the EXACT faulting address + what stage of the
+ * reveal was running, then returns EXCEPTION_CONTINUE_SEARCH so the game's
+ * normal crash handler still fires. This is what finally pinpoints a
+ * real-Windows reveal crash that Wine can't reproduce. */
+static LONG CALLBACK diamond_veh(PEXCEPTION_POINTERS ep) {
+    diag_logf("[diamond] VEH FAULT: EIP=%08X ERRC=%08X stage-arm=%d armed=%d presInst=%d vortexAct=%d",
+        ep->ExceptionRecord->ExceptionAddress,
+        ep->ExceptionRecord->ExceptionCode,
+        g_revealArmed, g_revealArmed, g_presentInstalled, g_vortexActive);
+    /* also log a small stack trace (top few return addrs) */
+    {
+        DWORD *sp = (DWORD*)ep->ContextRecord->Esp;
+        int i;
+        for (i = 0; i < 6; i++) {
+            if (!IsBadReadPtr(sp + i, 4)) {
+                DWORD ra = sp[i];
+                /* only log plausible code addrs (module .text range) */
+                if (ra >= 0x401000 && ra < 0x4f7000)
+                    diag_logf("[diamond] VEH stack[%d]=%08X", i, ra);
+            }
+        }
+    }
+    return EXCEPTION_CONTINUE_SEARCH;
+}
+
 BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hinst);
         load_real_bass();
         get_own_dir(g_logPath, sizeof(g_logPath));
-        snprintf(g_logPath,    sizeof(g_logPath), "%s\\diamond_weasel_mod.log", g_logPath);
+        snprintf(g_logPath,    sizeof(g_logPath), "%s\\\\diamond_weasel_mod.log", g_logPath);
         diag_log("=== DIAMOND WEASEL MOD LOADED ===");
+        AddVectoredExceptionHandler(1, diamond_veh);
         init_thresholds();
         load_unlocks();
         install_hooks();
