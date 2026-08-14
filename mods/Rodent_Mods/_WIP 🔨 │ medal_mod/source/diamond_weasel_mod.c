@@ -206,6 +206,8 @@ static void load_real_bass(void) {
 #include "diamond_png_data.h"
 
 #define ICON_LOAD_HOOK     0x42A304
+#define WEASEL_DRAW_HOOK   0x44E139   /* call 0x42c7c0 (golden weasel draw) — RESULTS-ONLY */
+#define WEASEL_RET         0x44E13E   /* next instr after 0x44E139 */
 #define TT_WEASEL_APPEND   0x42F927   /* call 0x44abf0 (TT menu golden weasel) */
 #define SKIP_LATCH_HOOK    0x44CBAA   /* movb $1,0x25(esi)  (skip latch set) */
 #define SKIP_LATCH_RET     0x44CBB1   /* next instr after the 5 patched bytes */
@@ -222,18 +224,15 @@ static void load_real_bass(void) {
 #define RESULT_UPDATE_1_RET 0x44CB97  /* next instr after the 7 patched bytes at 0x44CB90 */
 #define RESULT_UPDATE_2    0x44B860   /* results update (vtable 0x4D6C00 slot 1): mov eax,[ecx+0x10];mov edx,[ecx+0x14] */
 #define RESULT_UPDATE_2_RET 0x44B866  /* next instr after the 6 patched bytes */
-#define PAUSE_BRANCH_RCLICK 0x4130B5   /* right-click: `74 17` je 0x4130ce (shallow branch decision; never touches 0x40a920) */
-#define PAUSE_BRANCH_ESCMSG 0x40B405   /* Win32 ESC:  `75 0d` jne 0x40b414 (shallow branch decision) */
-#define PAUSE_BRANCH_DIESC  0x419D5B   /* DI ESC:      `74 09` je 0x419d66 (shallow branch decision) */
 #define SPRITE_DRAW        0x42C7C0
 #define ABF0_APPEND        0x44ABF0   /* medal list append (__stdcall, ret 8) */
 #define STR_FMT_D          0x4D03F8   /* "%d" */
 #define STR_BUF            0x4F7448   /* AthenaString buffer */
 
-/* Per-frame reveal hook: GameUpdate frame epilogue (0x46C1F1) — see
- * install_present_cave(). This is the cold, boot-safe per-frame hook used by
- * all proven Hamsterball bass.dll proxy mods. Runs after all game logic +
- * D3D rendering, so the reveal can safely read game state and draw. */
+/* Inline reveal cave at 0x44E139 — fires INSTEAD of the game's own golden
+ * weasel draw (`call 0x42c7c0`). Draws the vortex + white-fade trophy +
+ * diamond swap from a results-screen-only context. NEVER runs during boot,
+ * safe to install from the init thread. See install_weasel_cave(). */
 
 
 /* Golden-weasel white-fade (result-frame keyed). The results screen
@@ -358,20 +357,13 @@ static DWORD g_vortexResults = 0;    /* results obj of the CURRENT vortex sessio
                                         the whoosh when a results screen is exited
                                         mid-cycle (frame never reaches the tail). */
 static int g_revealArmed = 0;        /* 1 once a results screen has GENUINELY
-                                        appeared (armed by the skip-latch cave).
-                                        Gates diamond_present_tick so it NEVER
-                                        reads game state during a loading screen
-                                        (warp's g_whiteAlpha early-return pattern). */
-static int g_presentInstalled = 0;   /* 1 once the present hook has been installed
-                                        (race-free, on the main thread, from the
-                                        arm cave when the results screen first
-                                        appears). */
-static int g_pauseApplied = 0;       /* 1 while the pause-block decider patches are
-                                        applied to the game (only while a reveal is armed);
-                                        restored to vanilla otherwise. Deciders = the
-                                        single-byte 0x74/0x75 -> 0xEB at the shallow branch
-                                        decision points (PAUSE_BRANCH_*), mirroring level_warp
-                                        — NEVER a code cave, NEVER touching 0x40a920. */
+                                        appeared (armed by the store-only arm
+                                        cave at 0x44D778). Debug signal only —
+                                        the reveal now runs inline from the
+                                        0x44E139 weasel-draw cave, not a present
+                                        tick, so nothing per-frame reads game
+                                        state during a loading screen. */
+static unsigned char *g_weaselCave = NULL;  /* the 0x44E139 inline reveal cave */
 
 /* ================================================================
  * Mod globals
@@ -441,7 +433,6 @@ static int   g_ttInstalled = 0;   /* has cherry TT cave been patched in? Start 0
                                    * called at startup (g_anyDiamond already 1) or
                                    * lazily from diamond_provision_unlock. */
 static unsigned char *g_skipCave = NULL;
-static unsigned char *g_presentCave = NULL;
 static unsigned char *g_armCave = NULL;
 
 /* ================================================================
@@ -713,13 +704,10 @@ static int get_player_time_cs(DWORD app) {
  * ================================================================ */
 __attribute__((used)) void diamond_load_icon_impl(DWORD app);
 __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app);
-static void install_present_cave(void);   /* defined below (patch helpers) */
-static void install_skip_cave(void);      /* defined below — lazily on results */
-static void install_arm_cave(void);       /* defined below — lazily on results */
-/* pause-block apply/remove (defined below, patch helpers): pause sites are
- * patched ONLY while a reveal is armed and restored to vanilla otherwise. */
-static void apply_pause_patch(void);
-static void remove_pause_patch(void);
+static void install_weasel_cave(void);   /* defined below (patch helpers) — the
+                                          * 0x44E139 inline reveal (results-only) */
+static void install_skip_cave(void);      /* defined below (patch helpers) */
+static void install_arm_cave(void);       /* defined below (patch helpers) */
 
 static int diamond_seq_frame(DWORD results);   /* frames since gold award */
 
@@ -769,7 +757,7 @@ __attribute__((used)) int diamond_block_skip(DWORD results) {
  * unreadable or the scene isn't holding a results screen, we allow pause
  * (return 0) so normal gameplay pause is never affected.
  */
-#define SCENE_RESULTS_LIST   0x8B8   /* scene+0x8B8 = results AthenaList (used by find_results_object) */
+#define SCENE_RESULTS_LIST   0x8B8   /* scene+0x8B8 = results AthenaList */
 #define SCENE_LIST_COUNT     0x04    /* AthenaList count */
 #define SCENE_LIST_ITEMS     0x40C   /* AthenaList items ptr */
 #define RESULTS_VTABLE       0x4D6CB8   /* smaller results/"score updater" screen */
@@ -1489,153 +1477,6 @@ __attribute__((used)) void diamond_tt_append(DWORD standings, int race) {
  * layering is: gold (native) -> white weasel (55..240) -> diamond (240+).
  */
 
-/* Locate the active results-screen object (scene+0x8B8 results list) or 0. */
-static DWORD find_results_object(void) {
-    DWORD app, scene, list, items, results, vt;
-    int count;
-    /* State-change tracker so vtable-mismatch diagnostics log once per distinct
-     * (count, vtable) rather than spamming every present frame. */
-    static int last_count = -1;
-    static DWORD last_vt = 0;
-    app = get_app();
-    if (!app) return 0;
-    if (IsBadReadPtr((void*)(app + APP_BOARD), 4)) return 0;
-    scene = *(DWORD*)(app + APP_BOARD);
-    if (!scene) return 0;
-    if (IsBadReadPtr((void*)(scene + SCENE_RESULTS_LIST), 4)) return 0;
-    list = scene + SCENE_RESULTS_LIST;
-    if (IsBadReadPtr((void*)(list + SCENE_LIST_COUNT), 4)) return 0;
-    count = *(int*)(list + SCENE_LIST_COUNT);
-    if (count <= 0) return 0;
-    if (IsBadReadPtr((void*)(list + SCENE_LIST_ITEMS), 4)) return 0;
-    items = *(DWORD*)(list + SCENE_LIST_ITEMS);
-    if (!items || IsBadReadPtr((void*)items, 4)) return 0;
-    results = *(DWORD*)items;
-    if (!results || IsBadReadPtr((void*)results, 4)) return 0;
-    vt = *(DWORD*)results;
-    /* Report ANY live scene+0x8B8 object, not just ones we accept, so a
-     * real-Windows run reveals the ACTUAL runtime vtable of the award screen.
-     * Logged once per distinct (count, vtable) to avoid per-frame spam. */
-    if (vt != last_vt || count != last_count) {
-        last_vt = vt; last_count = count;
-        if (!(vt == RESULTS_VTABLE || vt == RESULTS_VTABLE_OLD_1 ||
-              vt == RESULTS_VTABLE_OLD_2 || vt == RESULTS_VTABLE_AWARD))
-            diag_logf("[diamond] find_results: count=%d items=%08X first=%08X vt=%08X (UNEXPECTED vtable, ignoring)", count, items, results, vt);
-        else
-            diag_logf("[diamond] find_results: count=%d first=%08X vt=%08X (OK)", count, results, vt);
-    }
-    if (vt != RESULTS_VTABLE && vt != RESULTS_VTABLE_OLD_1 &&
-        vt != RESULTS_VTABLE_OLD_2 && vt != RESULTS_VTABLE_AWARD) return 0;
-    return results;
-}
-
-/* Scoped white-out: tint the weasel sprite white over the trophy. Instead of
- * tinting via the cave (set mult -> game draws -> clear), we set the color
- * multiplier, draw the weasel sprite OURSELVES through the game's draw fn
- * (0x42c7c0, tinted white by the multiplier), then clear it. Because this runs
- * at present-time (not mid-draw), the multiplier only affects OUR draw, not the
- * whole medal row. The game's native gold weasel stays underneath. */
-static void whiteout_tick(DWORD results) {
-    int frame;
-    DWORD app, sprite, gfx;
-    float m, *sc;
-    /* The color-multiplier (gfx+0x7A8 enable + gfx+0x7B0..0x7BC RGBA) is a
-     * SHARED global — the game itself uses it for its own flashes/fades. So
-     * we must SAVE the prior state and restore it exactly after our draw,
-     * not force it back to identity (which would clobber whatever the game
-     * had set for the upcoming frame and could wash out/alter the next draw).
-     * The game reads 0x7A8 as a byte enable and 0x7B0/0x7B4/0x7B8/0x7BC as
-     * four floats (diffuse/ambient/specular/emissive) — see 0x455123. */
-    BYTE  savedEnable;
-    float savedRGBA[4];
-    if (!results) return;
-    if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
-    if (!diamond_first_earn(results)) return;   /* replay -> no white-out */
-    frame = diamond_seq_frame(results);
-    if (frame <= WEASEL_WHITE_START || frame >= WEASEL_WHITE_TOTAL) return;
-    if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
-    app = *(DWORD*)(results + RESULT_APP);
-    if (!app || IsBadReadPtr((void*)(app + SPRITE_WEAEL_APP), 4)) return;
-    sprite = *(DWORD*)(app + SPRITE_WEAEL_APP);
-    if (!sprite || IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)) return;
-    gfx = *(DWORD*)(sprite + SPRITE_GFX);
-    if (!gfx || IsBadReadPtr((void*)(gfx + GFX_MULT_R), 16 + 4)) return;
-    if (frame >= WEASEL_WHITE_END) m = WEASEL_WHITE_MULT;
-    else m = 1.0f + (WEASEL_WHITE_MULT - 1.0f) *
-            ((float)(frame - WEASEL_WHITE_START) / (float)(WEASEL_WHITE_END - WEASEL_WHITE_START));
-    /* save prior color-mult state */
-    savedEnable = *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE);
-    sc = (float*)(gfx + GFX_MULT_R);
-    savedRGBA[0] = sc[0]; savedRGBA[1] = sc[1]; savedRGBA[2] = sc[2]; savedRGBA[3] = sc[3];
-    /* set our white multiplier */
-    *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = 1;
-    sc[0] = m; sc[1] = m; sc[2] = m; sc[3] = 1.0f;
-    /* draw the weasel sprite tinted white over the trophy spot (0x208, 0x63) */
-    __asm__ volatile(
-        "movl %1, %%ecx\n\t"          /* ecx = sprite */
-        "pushl $0x63\n\t"             /* y */
-        "pushl $0x208\n\t"            /* x */
-        "call *%0\n\t"                /* 0x42C7C0(sprite,x,y) -- ret $8 */
-        : : "r"((void*)SPRITE_DRAW), "r"(sprite)
-        : "eax", "ecx", "edx", "memory"
-    );
-    /* restore the PRIOR color-mult state (not identity) so a game-set
-     * multiplier for the upcoming frame is preserved */
-    sc[0] = savedRGBA[0]; sc[1] = savedRGBA[1]; sc[2] = savedRGBA[2]; sc[3] = savedRGBA[3];
-    *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = savedEnable;
-}
-
-/* Per-frame reveal driver, called from the present hook (ecx=gfx). Safe at the
- * frame boundary: no re-entrancy into the game's draw loop. Derives everything
- * itself (app -> scene -> results), so it takes no arguments. */
-__attribute__((used)) void diamond_present_tick(void) {
-    DWORD results;
-    /* SELF-ARM (replaces the boot-time arm/skip-latch caves, removed to fix
-     * the multi-address patch race at boot). find_results_object() is fully
-     * IsBadReadPtr- AND vtable-guarded: it derefs app->scene->results and
-     * only returns a live results object whose vtable is one of the 4 known
-     * results vtables. During the boot LoadingScreen (Initialize(26)) the
-     * board/results pointers are live-but-half-built with GARBAGE vtables, so
-     * find_results_object() returns 0 — the tick arms NOTHING and does zero
-     * reads of real game state. Only when a genuine medal-award results
-     * object is live on the main thread do we arm + apply pause + give it
-     * reads. This is safe and requires no .text patch at boot. */
-    results = find_results_object();
-    if (!results) {
-        if (g_revealArmed) {
-            /* results screen gone -> disarm, tear down left vortex + pause */
-            g_revealArmed = 0;
-            remove_pause_patch();
-            if (g_vortexActive) { g_vortexActive = 0; vortex_sound_stop(); }
-        }
-        return;
-    }
-    if (!g_revealArmed) {
-        diag_log("[diamond] SELF-ARM at present tick (results screen live)");
-        g_revealArmed = 1;
-        /* Lazy-install the skip-latch + arm caves NOW, on the main thread,
-         * from the safe results-screen frame (not at boot, where the init
-         * thread's multi-address patch raced the main thread's frames and
-         * crashed real Windows). These block the player's skip so the frame-240
-         * reveal plays out. Idempotent via g_skipCave/g_armCave. */
-        if (!g_skipCave) install_skip_cave();
-        if (!g_armCave) install_arm_cave();
-        apply_pause_patch();
-    }
-    /* Granular phase logging to pinpoint a real-Windows crash in the reveal.
-     * Gated so we record the LAST successful phase once (not every frame —
-     * the award screen runs hundreds of frames). */
-    static int last_phase = 0;
-    static DWORD last_results = 0;
-    if (results != last_results || last_phase != 1) { diag_log("[diamond] PRESENT: vortex tick"); last_phase=1; last_results=results; }
-    diamond_vortex_tick(results);   /* advances + draws vortex (raw D3D) */
-    if (last_phase != 2) { diag_log("[diamond] PRESENT: whiteout tick"); last_phase=2; }
-    whiteout_tick(results);         /* scoped white-out weasel draw */
-    if (last_phase != 3) { diag_log("[diamond] PRESENT: trophy swap"); last_phase=3; }
-    diamond_trophy_swap(results);   /* commit unlock + draw diamond at 240+ */
-    if (last_phase != 4) { diag_log("[diamond] PRESENT: done"); last_phase=4; }
-}
-
 /* ================================================================
  * Patch helpers + code caves
  * ================================================================ */
@@ -1649,6 +1490,82 @@ static void patch_bytes(void *addr, const void *data, DWORD size) {
     memcpy(addr, data, size);
     VirtualProtect(addr, size, old, &old);
     FlushInstructionCache(GetCurrentProcess(), addr, size);
+}
+
+/* Golden-weasel reveal cave at 0x44E139 — results-screen-only, NEVER runs
+ * during boot. Fires INSTEAD of the game's own golden weasel draw
+ * (`call 0x42c7c0`). Even though it reads game state and calls D3D, it is
+ * safe because it only executes on the award screen (never the LoadingScreen),
+ * so it is NOT the present-hook boot-crash source.
+ *
+ * At 0x44E139 the caller has already set: esi = results object, ecx =
+ * goldenweasel sprite, and pushed x=0x208 / y=0x63 for the (ret $8) draw.
+ * Sequence per frame the weasel is drawn:
+ *   1) draw vortex behind the trophy
+ *   2) set the white color-multiplier by frame (diamond_weasel_mult)
+ *   3) trophy swap: at frame>=240 the diamond replaces the gold weasel
+ *      (diamond_trophy_swap draws the diamond + returns 1=skip/0=draw gold)
+ *   4) clear the color-multiplier (diamond_weasel_mult_clear)
+ *   5) continue to 0x44E13E
+ * esi is preserved across every helper (pushad/popad); ecx across the swap.
+ */
+static void install_weasel_cave(void) {
+    DWORD patchAddr = EXE_BASE + (WEASEL_DRAW_HOOK - EXE_BASE);
+    DWORD retAddr   = EXE_BASE + (WEASEL_RET     - EXE_BASE);
+    unsigned char *p;
+    g_weaselCave = (unsigned char*)VirtualAlloc(NULL, 256, MEM_COMMIT|MEM_RESERVE,
+                                                PAGE_EXECUTE_READWRITE);
+    if (!g_weaselCave) return;
+    p = g_weaselCave;
+
+    /* 1) draw vortex behind the trophy */
+    p[0]=0x60; p+=1;                                  /* pushad */
+    p[0]=0x56; p+=1;                                  /* push esi (results) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_vortex_tick-(DWORD)(p+5); p+=5;
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
+    p[0]=0x61; p+=1;                                  /* popad */
+
+    /* 2) set the weasel white tint via color-multiplier */
+    p[0]=0x60; p+=1;                                  /* pushad */
+    p[0]=0x56; p+=1;                                  /* push esi (results) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_weasel_mult-(DWORD)(p+5); p+=5;
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
+    p[0]=0x61; p+=1;                                  /* popad */
+
+    /* 3) trophy swap: at frame>=240, diamond replaces the golden weasel.
+     *    diamond_trophy_swap draws the diamond (if earned) and returns 1
+     *    (skip gold) or 0 (draw gold). We preserve ecx (sprite) via push/pop
+     *    so the gold call below still works when not swapped, and keep the
+     *    return value in EAX (NOT pushad, which would clobber it).
+     *    NOTE: the game left x,y on the stack for the gold call (ret $8);
+     *    if we skip gold we still must pop x,y (add esp,8) to rebalance. */
+    p[0]=0x51; p+=1;                                  /* push ecx (save sprite) */
+    p[0]=0x56; p+=1;                                  /* push esi (results arg) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_trophy_swap-(DWORD)(p+5); p+=5;
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 (pop arg) */
+    p[0]=0x59; p+=1;                                  /* pop ecx (restore sprite) */
+    p[0]=0x85; p[1]=0xC0; p+=2;                       /* test eax,eax */
+    p[0]=0x74; p[1]=0x05; p+=2;                       /* jz +5 -> do_gold */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;             /* add esp,8 (swap: pop x,y) */
+    p[0]=0xEB; p[1]=0x05; p+=2;                       /* jmp +5 -> skip_gold */
+    /* do_gold: re-emit the gold weasel draw (ret $8 pops x,y) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(SPRITE_DRAW)-(DWORD)(p+5); p+=5;
+    /* skip_gold: (after gold draw OR after add esp,8) */
+
+    /* 4) clear the weasel tint */
+    p[0]=0x60; p+=1;                                  /* pushad */
+    p[0]=0x56; p+=1;                                  /* push esi */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_weasel_mult_clear-(DWORD)(p+5); p+=5;
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
+    p[0]=0x61; p+=1;                                  /* popad */
+
+    /* 5) back to original flow */
+    write_jmp(p, retAddr); p+=5;
+    unsigned char patch[5];
+    memset(patch, 0x90, 5);
+    write_jmp(patch, (DWORD)g_weaselCave);
+    patch_bytes((void*)patchAddr, patch, 5);
+    diag_log("[diamond] golden-weasel reveal cave installed at 0x44E139 (results-only, no present hook)");
 }
 
 /* Cave A: icon load at 0x42A304 (covers 9 bytes through 0x42A30C).
@@ -1755,11 +1672,9 @@ static void install_skip_cave(void) {
  * (VirtualAlloc + install_present_cave) did — that heavy path crashed real
  * Windows (EIP=01210017 cascades). The store only touches its own global.
  *
- * g_revealArmed gates the present tick's game-state reads, so setting it
- * this way (inside a genuinely-live award update, NOT during boot) is the
- * ONLY safe signal. The present-hook cave (GameUpdate epilogue 0x46C1F1) is installed from
- * DllMain (cold) and diamond_present_tick() early-returns until g_revealArmed
- * is set, so the boot LoadingScreen (Initialize(26)) never has game state read.
+ * g_revealArmed is kept as a debug signal. The reveal now runs inline from
+ * the 0x44E139 weasel-draw cave, not a present tick, so nothing per-frame
+ * reads game state during boot.
  */
 #define ARM_CAVE_HOOK 0x44D778   /* after SEH prologue: push esi;mov esi,ecx;lea ecx,[esi+0x4c4] */
 #define ARM_CAVE_RET  0x44D781   /* next instr after the 9 patched bytes (call 0x458e90) */
@@ -1789,90 +1704,6 @@ static void install_arm_cave(void) {
     write_jmp(patch, (DWORD)g_armCave);
     patch_bytes((void*)(EXE_BASE + (ARM_CAVE_HOOK - EXE_BASE)), patch, 9);
     diag_log("[diamond] arm cave installed (store-only) at 0x44D778 (award update)");
-}
-
-/* Cave F: block the PAUSE menu while the diamond reveal is pending (goal
- * touch -> frame-240 trophy swap) — OPTION B, mirroring level_warp.
- *
- * The game's OWN DirectInput-ESC pause path (Scene_Update, Path 1) is
- * already suppressed at goal (scene+0x880=1; check at 0x419d50 skips the
- * pause call). The OTHER two pause entry points do NOT consult scene+0x880,
- * so they can still open the pause menu mid-reveal and interrupt it:
- *
- *   Path 2 (right-click): 0x4130B5 `74 17` je 0x4130ce (skips pause when
- *                          the "pause disabled" flag is clear).
- *   Path 3 (Win32 ESC):   0x40B405 `75 0d` jne 0x40b414 (skips pause for
- *                          any key other than VK_ESCAPE).
- *   Path 1 (DI ESC):      0x419D5B `74 09` je 0x419d66 (already-skipped at
- *                          goal via scene+0x880; patched too for safety).
- *
- * We patch the SINGLE branch-decider byte at each of these SHALLOW decision
- * points by OR-ing it to 0xEB (the unconditional JMP short) — exactly the
- * approach level_warp's block_pause() uses (it works, and it NEVER touches
- * 0x40a920 or any heap code cave, so there is no SEH-frame re-entrancy).
- *   - Path 2: 0x74 -> 0xEB  => always jump to 0x4130ce (ret) — pause menu skipped.
- *   - Path 3: 0x75 -> 0xEB  => always jump to 0x40b414 (ret) — pause menu skipped.
- *   - Path 1: 0x74 -> 0xEB  => always jump to 0x419d66 — pause menu skipped.
- *
- * When blocked, the game NEVER reaches 0x40a920. When not blocked, the
- * original byte is restored verbatim, so the game runs its own native
- * pause path and 0x40a920 executes in its own native context — identical to
- * a normal gameplay pause. apply/remove are driven from diamond_present_tick
- * (arm on SELF-ARM) and its disarm branch (remove), so pause is only
- * blocked during the seconds the reveal is actually live.
- */
-
-/* Saved original decider byte for each path. The initial value is never
- * used; it is captured on the first apply (which is also when we verify the
- * byte matches the expected vanilla branch for that site). */
-static unsigned char g_pauseOrigB[3] = {0, 0, 0};
-
-static void apply_pause_patch(void) {
-    static const DWORD addrs[3] = {
-        EXE_BASE + (PAUSE_BRANCH_RCLICK - EXE_BASE),
-        EXE_BASE + (PAUSE_BRANCH_ESCMSG - EXE_BASE),
-        EXE_BASE + (PAUSE_BRANCH_DIESC  - EXE_BASE),
-    };
-    static const unsigned char expected[3] = {0x74, 0x75, 0x74};
-    int i;
-    DWORD old;
-    if (g_pauseApplied) return;
-    for (i = 0; i < 3; i++) {
-        /* On first apply, capture the real opcode and sanity-check it. */
-        VirtualProtect((void*)addrs[i], 1, PAGE_READWRITE, &old);
-        g_pauseOrigB[i] = *(volatile BYTE*)addrs[i];
-        if (expected[i] && g_pauseOrigB[i] != expected[i]) {
-            /* Mismatch — leave this site untouched (do not clobber unknown code). */
-            diag_logf("[diamond] WARN: pause branch @0x%X = %02X (expected %02X); skipped",
-                      addrs[i], g_pauseOrigB[i], expected[i]);
-            VirtualProtect((void*)addrs[i], 1, old, &old);
-            continue;
-        }
-        *(volatile BYTE*)addrs[i] = 0xEB;   /* unconditional JMP short */
-        FlushInstructionCache(GetCurrentProcess(), (void*)addrs[i], 1);
-        VirtualProtect((void*)addrs[i], 1, old, &old);
-    }
-    g_pauseApplied = 1;
-    diag_log("[diamond] pause blocked (3 branch deciders -> 0xEB, mirroring level_warp; no cave, 0x40a920 untouched)");
-}
-
-static void remove_pause_patch(void) {
-    static const DWORD addrs[3] = {
-        EXE_BASE + (PAUSE_BRANCH_RCLICK - EXE_BASE),
-        EXE_BASE + (PAUSE_BRANCH_ESCMSG - EXE_BASE),
-        EXE_BASE + (PAUSE_BRANCH_DIESC  - EXE_BASE),
-    };
-    int i;
-    DWORD old;
-    if (!g_pauseApplied) return;
-    for (i = 0; i < 3; i++) {
-        VirtualProtect((void*)addrs[i], 1, PAGE_READWRITE, &old);
-        *(volatile BYTE*)addrs[i] = g_pauseOrigB[i];
-        FlushInstructionCache(GetCurrentProcess(), (void*)addrs[i], 1);
-        VirtualProtect((void*)addrs[i], 1, old, &old);
-    }
-    g_pauseApplied = 0;
-    diag_log("[diamond] pause unblocked (3 branch deciders restored to vanilla; pause fully original)");
 }
 
 /* Cave C: TT-menu (standings) diamond mini-icon after golden weasel.
@@ -1930,112 +1761,38 @@ static void install_tt_cave(void) {
     diag_log("[diamond] TT-menu cave installed (diamond(s) earned)");
 }
 
-/* Present-hook cave: GameUpdate frame epilogue (0x46C1F1), the per-frame
- * hook used by all proven Hamsterball bass.dll proxy mods (ghost_triggers,
- * warp, etc.). This is COLD during the boot LoadingScreen so it can be
- * installed from DllMain without crashing real Windows.
- *   - Original 5 bytes at 0x46C1F1: 5E 83 C4 08 C3  POP ESI / ADD ESP,8 / RET
- *   - The game renders D3D BEFORE this point, so D3D state (device, textures)
- *     is safe to read at this hook. */
-#define FRAME_HOOK      0x46C1F1   /* per-frame epilogue (cold, safe) */
-#define FRAME_RET       0x46C1F6   /* next instr after the 5 patched bytes */
-
-static void install_present_cave(void) {
-    DWORD patchAddr = EXE_BASE + (FRAME_HOOK - EXE_BASE);
-    DWORD retAddr   = EXE_BASE + (FRAME_RET - EXE_BASE);
-    unsigned char *p;
-    unsigned char patch[5];
-    g_presentCave = (unsigned char*)VirtualAlloc(NULL, 48, MEM_COMMIT|MEM_RESERVE,
-                                                 PAGE_EXECUTE_READWRITE);
-    if (!g_presentCave) return;
-    p = g_presentCave;
-    /* pushad / pushfd — preserve ALL GPRs + EFLAGS across diamond_present_tick
-     * (it calls find_results_object, apply_pause_patch, diamond_vortex_tick,
-     * whiteout_tick and raw D3D/sprite __asm__ that clobber many registers
-     * and the flags). This matches the proven ghost_triggers stub exactly —
-     * any register clobber at the 0x46C1F1 frame epilogue corrupts the whole
-     * frame and crashes the game (heap-execution fault, edi/ebx garbage,
-     * erasable 2s crash during mesh load). */
-    p[0]=0x60; p+=1;      /* pushad */
-    p[0]=0x9C; p+=1;      /* pushfd */
-    /* call diamond_present_tick (cdecl, no args) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_present_tick-(DWORD)(p+5); p+=5;
-    p[0]=0x9D; p+=1;      /* popfd */
-    p[0]=0x61; p+=1;      /* popad */
-    /* re-emit original epilogue: pop esi; add esp,8; ret */
-    p[0]=0x5E; p+=1;
-    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;
-    p[0]=0xC3; p+=1;
-    /* jmp back to 0x46C1F6 */
-    write_jmp(p, retAddr); p+=5;
-    memset(patch, 0x90, 5);
-    write_jmp(patch, (DWORD)g_presentCave);
-    patch_bytes((void*)patchAddr, patch, 5);
-    g_presentInstalled = 1;
-    diag_log("[diamond] present-hook reveal cave installed at 0x46C1F1");
-}
-
 /* ================================================================
  * Install
  * ================================================================ */
 static void install_hooks(void) {
     install_icon_cave();
     install_tt_cave();
-    /* Skip-latch + arm caves are NOT installed here — only the single cold
-     * 0x46C1F1 epilogue is patched at boot (via install_present_cave from the
-     * init thread). Patching multiple .text addresses at 2s while the main
-     * thread runs frames tore the epilogue hook and crashed real Windows
-     * (heap fault, stack[6]=0x46BEF8). They are lazily installed on the main
-     * thread from diamond_present_tick the first time a results screen arms. */
+    install_weasel_cave();  /* 0x44E139 inline reveal — results-screen ONLY */
+    install_arm_cave();     /* store-only, COLD during boot (award update never
+                             * runs during the LoadingScreen) — safe to install
+                             * from the init thread. */
+    install_skip_cave();    /* 0x44CBAA skip-latch — also results-screen ONLY */
     diag_log("[diamond] hooks installed");
 }
-
-/* ================================================================
- * Present-hook install timing (see install_present_cave above)
- * ================================================================
- * Graphics_PresentOrEnd (0x455A90) fires EVERY FRAME, including the boot
- * loading screen (CURRENTOBJECT "LoadingScreen Gadget", Initialize(26)) —
- * it draws the loading bar itself (textures\hammy3.png, silver-icon.png,
- * Levels\Secret are still mid-load at ~2s). It is therefore a HOT address
- * during the loading screen: patching it and having the hook live at boot
- * crashed real Windows at RUNTIME 1s (heap-execution fault EIP=0x0137xxxx,
- * stack[0]=0x46BFAE, "Crash during LoadingScreen Draw"). Wine survives it
- * (43s OK) but real Windows does not — a real-Windows-only trap.
- *
- * The fix: hook the COLD frame epilogue 0x46C1F1 instead (the same address
- * ghost_triggers/warp use). It is the tail of the per-frame GameUpdate
- * function (0x46C180) — it runs AFTER all game logic + rendering, right
- * before the frame's function returns, and is never executing during the
- * boot loading screen (the loading screen draws through a different path).
- * It is installed from DllMain at DLL_PROCESS_ATTACH, which runs before the
- * game's frame loop starts — guaranteed cold, race-free, no background
- * thread, no sleep, no suspension. The tick then only reads game state
- * once the store-only arm cave has set g_revealArmed (see diamond_present_tick). */
 
 /* ================================================================
  * DllMain
  * ================================================================ */
 
-/* Real-Windows-only crashes in the reveal path lose the faulting EIP on the
- * game's crash screen (it reports a system-DLL address). Register a vectored
- * exception handler that logs the EXACT faulting address + what stage of the
- * reveal was running, then returns EXCEPTION_CONTINUE_SEARCH so the game's
- * normal crash handler still fires. This is what finally pinpoints a
- * real-Windows reveal crash that Wine can't reproduce. */
+/* Vectored exception handler that logs the EXACT faulting address + what
+ * stage of the reveal was running. Stays around in case a results-screen
+ * crash happens (which Wine can't reproduce). */
 static LONG CALLBACK diamond_veh(PEXCEPTION_POINTERS ep) {
-    diag_logf("[diamond] VEH FAULT: EIP=%08X ERRC=%08X regs(eax=%08X ebx=%08X ecx=%08X edx=%08X esi=%08X edi=%08X ebp=%08X esp=%08X) stage(armed=%d presInst=%d vortexAct=%d)",
+    diag_logf("[diamond] VEH FAULT: EIP=%08X ERRC=%08X regs(eax=%08X ebx=%08X ecx=%08X edx=%08X esi=%08X edi=%08X ebp=%08X esp=%08X)",
         (DWORD)ep->ExceptionRecord->ExceptionAddress,
         ep->ExceptionRecord->ExceptionCode,
         ep->ContextRecord->Eax, ep->ContextRecord->Ebx,
         ep->ContextRecord->Ecx, ep->ContextRecord->Edx,
         ep->ContextRecord->Esi, ep->ContextRecord->Edi,
-        ep->ContextRecord->Ebp, ep->ContextRecord->Esp,
-        g_revealArmed, g_presentInstalled, g_vortexActive);
+        ep->ContextRecord->Ebp, ep->ContextRecord->Esp);
     {
         DWORD *sp = (DWORD*)ep->ContextRecord->Esp;
         int i;
-        /* full stack walk — the return addresses identify the crashing
-         * function chain (input system -> game update loop) */
         for (i = 0; i < 12; i++) {
             if (!IsBadReadPtr(sp + i, 4)) {
                 DWORD ra = sp[i];
@@ -2054,12 +1811,19 @@ static LONG CALLBACK diamond_veh(PEXCEPTION_POINTERS ep) {
  * Windows loader lock is held; VirtualAlloc + VirtualProtect + patch inside
  * DllMain crashes real Windows at RUNTIME 0-1s (fonts\\showcardgothic28 / the
  * LoadingScreen) — the loader-lock hazard. Wine tolerates it (43s OK), real
- * Windows does not. Deferring to a thread avoids the loader lock entirely. */
+ * Windows does not. Deferring to a thread avoids the loader lock entirely.
+ *
+ * NOTE: Unlike the previous incarnations, this thread does NOT install a
+ * per-frame present hook (0x46C1F1/0x455A90). Those ran during boot and
+ * caused the now-understood real-Windows crash. Every hook here is a
+ * results-screen-only address that NEVER executes during the LoadingScreen
+ * (0x44E139 = golden-weasel draw; 0x42F927 = TT-menu append; 0x44CB90/0x44CBAA
+ * = award/skip; 0x44D778 = arm-store). None fire at boot — precisely why the
+ * stable era (pre present-hook refactor) was crash-free on real Windows. */
 static DWORD WINAPI diamond_init_thread(LPVOID param) {
     Sleep(2000);
     diag_log("[diamond] init thread: installing hooks");
     install_hooks();
-    install_present_cave();
     diag_log("[diamond] init thread: done");
     return 0;
 }
