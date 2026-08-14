@@ -240,82 +240,62 @@ game actually uses.)
 ## How it works (for the curious)
 
 The mod is a BASS proxy DLL (forwards all `BASS_*` calls to `bass_real.dll`).
-It hooks:
+It hooks only **results-screen-only** addresses — **none of them ever execute
+during the boot loading screen**. This is the whole trick: the reveal runs
+inline from the game's own medal-award draw, never from a per-frame
+present/GameUpdate hook. That is why it no longer crashes at boot on real
+Windows (the earlier present-hook versions did). It hooks:
 
-1. **Graphics_PresentOrEnd (0x455A90)** — the per-frame Present/EndScene entry.
-   The **entire reveal** — suction vortex, white-fade, and the diamond
-   trophy-swap — runs from here, once per frame at a safe frame boundary
-   (after all game logic + rendering, just before the backbuffer is presented):
-   - the **vortex** draws behind the trophy (raw `DrawPrimitiveUP` screen-space
-     streaks, FVF set explicitly),
-   - the white-fade drives the golden weasel's color-multiplier and re-draws the
-     weasel sprite tinted white over the trophy,
-   - at **gold + 240** the diamond is drawn in the trophy's place at (0x208,
-     0x63), firing the reveal effects (medal pop + star ring) on the first swap.
-   The game's own golden-weasel draw is left 100% original; the white weasel
-     and diamond draw over it at present time (layering: native gold → white
-     weasel 55..240 → diamond 240+). All timing is offset from the gold-medal
-     award frame (`results+0x4c`).
-
-     The reveal hook is the **GameUpdate frame epilogue `0x46C1F1`** — the same
-     cold, boot-safe per-frame address proven by the ghost_triggers/warp/magnet
-     mods (`pop esi; add esp,8; ret`). It runs after all game logic + D3D
-     rendering, right before the frame's function returns, so it can read game
-     state and draw safely. Crucially it is **cold during the boot loading
-     screen**, so it can be installed from `DllMain` at `DLL_PROCESS_ATTACH`
-     (before the frame loop starts) with no race. (Hooking `0x455A90` instead —
-     the Graphics_PresentOrEnd entry — made the hook live at boot and crashed
-     real Windows at RUNTIME 1s with a heap-execution fault `stack[0]=0x46BFAE`;
-     the loading screen draws through that function. Wine survives it but
-     Windows does not, so it was a real-Windows-only trap.)
-
-     The present tick **early-returns until it is armed** (warp's `g_whiteAlpha`
-     gate): a STORE-ONLY arm cave at `0x44D778` (the medal-award screen's
-     per-frame update `0x44D760`, vtable slot[1], hooked just AFTER its SEH
-     prologue) sets `g_revealArmed=1` with a single absolute store — no calls,
-     no allocation, no patching — so it cannot corrupt the SEH exception chain
-     (a heavy VirtualAlloc/patch inside that SEH frame crashed real Windows,
-     `EIP=01210017` cascades). Until that store fires, the present tick does
-     **zero** reads of game state, so the boot `LoadingScreen` (Initialize(26))
-     — where `app+0x178`/`scene+0x8B8` point at a live-but-half-built board —
-     is never dereferenced. (Reading it crashed real Windows at startup,
-     `RUNTIME 1s`, `stack[0]=0x46BFAE`.)
-
-     The present hook (`0x46C1F1` cave) is the ONLY .text patch installed at
-     boot. It is installed from a **background init thread that first
-     `Sleep(2000)`ms** — the exact pattern proven by ghost_triggers/warp.
-     Nothing else is patched in DllMain (VirtualAlloc/VirtualProtect under the
-     Windows loader lock crashes real Windows at RUNTIME 0-1s), and no other
-     .text patch is made at the 2s mark (patching skip-latch + arm + present
-     simultaneously at 2s while the main thread runs frames tore the epilogue
-     hook and crashed real Windows, heap fault stack[6]=0x46BEF8 during
-     Meshes\FunBall).
-
-     The skip-latch and arm caves are therefore installed **lazily on the main
-     thread** from inside `diamond_present_tick`, the first frame a genuine
-     results screen arms the reveal (a safe, results-screen-only context).
-     Until then the present tick does zero reads of game state, so the boot
-     LoadingScreen (Initialize(26)) — where `app+0x178`/`scene+0x8B8` point at
-     a live-but-half-built board — is never dereferenced (reading it crashed
-     real Windows with a heap fault at RUNTIME 1s). The present-tick cave uses
-     `pushad`/`pushfd` to preserve all registers + flags across the C calls,
-     matching ghost_triggers exactly — any register clobber at the frame
-     epilogue corrupts the whole frame and crashes the game.
-
-     Earlier versions tried to arm from `0x44CB90`, but that is the award
-     vtable's slot[4] / the "click to continue" vtable's slot[1] — it **never
-     runs during the award phase** (the award screen updates through vtable
-     slot[1] = `0x44D760`), so the reveal never armed. Arming from `0x44D760`
-     itself via a store-only cave fixes that without the SEH hazard.
+1. **Golden-weasel draw (0x44E139)** — the reveal is an inline code cave that
+   fires **instead of** the game's own golden-weasel sprite draw (`call
+   0x42c7c0`). It is a results-screen-only path (runs only while the medal
+   award screen is drawn, never during the load screen), so installing it is
+   safe and it reads game state + draws D3D exactly when the game intends to
+   draw the trophy. Per frame it:
+   - draws the **suction vortex** behind the trophy (raw `DrawPrimitiveUP`
+     screen-space streaks, issued before the sprite so it renders underneath),
+   - sets the golden weasel's color-multiplier to fade to **white** by frame
+     (55 → fully white at 150, hold to 240),
+   - at **gold + 240** swaps the trophy: draws the **diamond** at (0x208, 0x63)
+     instead of gold, firing the reveal effects (medal pop + star ring) on the
+     first swap,
+   - clears the color-multiplier so later draws are unaffected.
+   All timing is offset from the gold-medal award frame (`results+0x4c`).
 2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
    for a race, appends a diamond mini-icon entry to the standings medal list
-   right after the golden weasel, so it lays out to the right of it.
-3. **Icon load (write-on-first-unlock)** — the diamond PNG bytes are embedded
+   right after the golden weasel, so it lays out to the right of it. Also
+   results-screen-only.
+3. **Award arm-store (0x44D778)** — a STORE-ONLY cave on the medal-award
+   screen's per-frame update (`0x44D760`, vtable slot[1], hooked just AFTER
+   its SEH prologue) sets `g_revealArmed=1` with a single absolute store — no
+   calls, no allocation, no patching — so it cannot corrupt the SEH exception
+   chain (a heavy VirtualAlloc/patch inside that SEH frame crashed real
+   Windows, `EIP=01210017` cascades). It is a debug signal only.
+4. **Skip-latch (0x44CBAA)** — blocks the results/click "skip" when the
+   diamond was achieved so the full reveal plays out (it keeps the skip latch
+   from being set until frame 240). Results-screen-only.
+5. **Icon load (write-on-first-unlock)** — the diamond PNG bytes are embedded
    in the DLL as XOR-encrypted data (not extractable from the DLL). On the
    *first* time a diamond is awarded, the mod decrypts them and writes
-   `diamondweasel.png` + `diamondweasel-icon.png` into `Textures\`, then the
+   `diamondweasel.png` + `diamondweasel-icon.png` into `Textures\\`, then the
    game loads them through its normal file path. Before any unlock, no
    `diamond*.png` exists on disk.
+
+All five hooks are installed from a **background init thread that first
+`Sleep(2000)`ms** — the exact pattern proven by ghost_triggers/warp. Nothing
+is patched in DllMain (VirtualAlloc/VirtualProtect under the Windows loader
+lock crashes real Windows at RUNTIME 0-1s).
+
+> **Why no present/per-frame hook?** Earlier builds drove the reveal from a
+> `GameUpdate` frame-epilogue hook (`0x46C1F1`) or the `Graphics_PresentOrEnd`
+> (`0x455A90`) entry. Those addresses fire **every frame including the boot
+> loading screen**, so having the hook live at boot — and reading game state
+> / calling D3D through it once armed — crashed real Windows at RUNTIME 0-2s
+> (heap-execution faults during `Levels\Secret` / `fonts\showcardgothic28` /
+> `textures\hammy3.png` load). Wine tolerates this; real Windows does not —
+> a real-Windows-only trap that cost many versions to pin down. The inline
+> `0x44E139` reveal cave avoids it entirely because that code path only ever
+> runs on the award screen, never at boot.
 
 The unlock flag is persisted as the `DiamondMedals` registry value (15 bytes,
 one flag per race) in `HKCU\Software\Raptisoft\Hamsterball`, written at the
