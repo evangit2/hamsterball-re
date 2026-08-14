@@ -281,10 +281,15 @@ It hooks:
      is never dereferenced. (Reading it crashed real Windows at startup,
      `RUNTIME 1s`, `stack[0]=0x46BFAE`.)
 
-     The present hook (the `0x46C1F1` cave) is installed from **DllMain at
-     `DLL_PROCESS_ATTACH`**, before the game's frame loop begins, so the 5-byte
-     patch is written when the address is guaranteed cold — no race, no
-     background thread, safe on real Windows.
+     The present hook (`0x46C1F1` cave) and every other .text patch are
+     installed from a **background init thread that first `Sleep(2000)`ms** —
+     the exact pattern proven by ghost_triggers/warp. Patching from DllMain
+     at `DLL_PROCESS_ATTACH` runs while the Windows loader lock is held;
+     doing `VirtualAlloc`/`VirtualProtect`/patch under the loader lock crashes
+     real Windows at RUNTIME 0-1s (fonts\\showcardgothic28 / the LoadingScreen
+     Draw). Deferring to a thread lets the game finish booting first and
+     avoids the loader lock entirely — Wine tolerates the DllMain version
+     (43s OK) but Windows does not, a real-Windows-only trap.
 
      Earlier versions tried to arm from `0x44CB90`, but that is the award
      vtable's slot[4] / the "click to continue" vtable's slot[1] — it **never
