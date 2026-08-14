@@ -164,17 +164,28 @@ earned + reveal not yet played), so you cannot pause away the diamond. Pause
 works normally during gameplay, on already-earned replays, and after the
 reveal.
 
-**Pause-blocking rewrite (2026-08-13):** the original pause caves called
-`0x40a920` (Scene_CreateGameOverMenu) back from hand-rolled heap-cave memory,
-which crashed **on real Windows** on right-click pause (`CRASH_ADDRESS
-0000:00000000`, `CURRENTOBJECT: Board`, `MouseDown`) — Wine tolerates this so
-it slipped past crash tests. The pause caves were rebuilt to only hook the
-game's *decision* points (`0x4130c3` + `0x40b40f`) and, when pause is **not**
-blocked, **jump into the game's own unmodified `call`/`jmp 0x40a920`** so the
-game runs the pause menu in its own context (identical to a normal pause).
-When the reveal is pending, the caves jump to the game's own pause-skip label.
-The mod never issues its own call into `0x40a920`, so the crash vector is gone
-while the feature is fully preserved.
+**Pause-blocking rewrite (2026-08-14):** earlier versions hooked the *deep*
+pause call sites (`0x4130c3` / `0x40b40f`) and routed the not-blocked path
+back toward `0x40a920` (Scene_CreateGameOverMenu) through hand-rolled
+heap-cave memory. On **real Windows** merely having mod bytes at those sites —
+even a pure passthrough — crashed a normal pause (`CRASH_ADDRESS
+0001:FFFFFFFF`, `MouseDown`, ~10s) because control flowed back into
+`0x40a920`'s SEH frame from written memory. Wine tolerates this so it slipped
+past crash tests.
+
+The pause block now uses the **same proven approach as the level-warp mod
+(option B)**: it patches the *single branch-decider byte* at each shallow
+decision point *before* the pause function is reached, turning it into an
+unconditional skip:
+- right-click `0x4130B5` (`74`→`EB`), Win32 ESC `0x40B405` (`75`→`EB`),
+  DI-ESC `0x419D5B` (`74`→`EB`).
+
+No code cave, no jump-to-`0x40a920`, no heap memory in the pause path at all.
+When blocked, the game **never reaches** `0x40a920`; when unblocked, the
+original byte is restored verbatim so the game runs its own native pause path.
+apply/remove are driven around the reveal (armed when a diamond is pending,
+restored the instant it ends), so normal gameplay pause is 100% original —
+exactly how level_warp's conditional blocker works.
 
 **You do not need to provide any diamond icon files.**
 
