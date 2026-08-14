@@ -209,8 +209,20 @@ static void load_real_bass(void) {
 #define TT_WEASEL_APPEND   0x42F927   /* call 0x44abf0 (TT menu golden weasel) */
 #define SKIP_LATCH_HOOK    0x44CBAA   /* movb $1,0x25(esi)  (skip latch set) */
 #define SKIP_LATCH_RET     0x44CBB1   /* next instr after the 5 patched bytes */
-#define RESULT_UPDATE_1    0x44C7D0   /* results/medal screen update (vtable 0x4D6CB8 slot 1): push ebx;push esi;mov esi,ecx;mov eax,[esi+0x1c] — the REAL dispatched update (byte-identical prologue to old 0x44CB90) */
-#define RESULT_UPDATE_1_RET 0x44C7D7  /* next instr after the 7 patched bytes */
+#define RESULT_UPDATE_1    0x44D778   /* MEDAL-AWARD SCREEN update (vtable 0x4D6CF0 slot 1 =
+                                           fn 0x44D760, the per-frame update that awards gold
+                                           and runs the reveal). Hook at 0x44D778, right after
+                                           the fn's SEH prologue (fs:0x0 setup at 0x44D760) is
+                                           complete and ecx=this is still live. 9 bytes through
+                                           0x44D780 (3 complete instructions):
+                                           push esi (56); mov esi,ecx (8B F1);
+                                           lea ecx,[esi+0x4c4] (8D 8E C4 04 00 00).
+                                           RET = 0x44D781 (the call 0x458e90 that follows).
+                                           9-byte patch (JMP rel32 + 4 NOPs).
+                                           THIS is the object that shows on "beat a level"
+                                           with a medal time. The old 0x44C7D0 was a different
+                                           (smaller) results screen's update and never fired. */
+#define RESULT_UPDATE_1_RET 0x44D781  /* next instr after the 9 patched bytes at 0x44D778 */
 #define RESULT_UPDATE_2    0x44B860   /* results update (vtable 0x4D6C00 slot 1): mov eax,[ecx+0x10];mov edx,[ecx+0x14] */
 #define RESULT_UPDATE_2_RET 0x44B866  /* next instr after the 6 patched bytes */
 #define PAUSE_BRANCH_RCLICK 0x4130B5   /* right-click: `74 17` je 0x4130ce (shallow branch decision; never touches 0x40a920) */
@@ -788,9 +800,14 @@ __attribute__((used)) int diamond_block_skip(DWORD results) {
 #define SCENE_RESULTS_LIST   0x8B8   /* scene+0x8B8 = results AthenaList (used by find_results_object) */
 #define SCENE_LIST_COUNT     0x04    /* AthenaList count */
 #define SCENE_LIST_ITEMS     0x40C   /* AthenaList items ptr */
-#define RESULTS_VTABLE       0x4D6CB8
-#define RESULTS_VTABLE_OLD_1 0x4D6CFC
-#define RESULTS_VTABLE_OLD_2 0x4D6C00
+#define RESULTS_VTABLE       0x4D6CB8   /* smaller results/"score updater" screen */
+#define RESULTS_VTABLE_OLD_1 0x4D6CFC   /* "click to continue" continuation */
+#define RESULTS_VTABLE_OLD_2 0x4D6C00   /* pre-upgrade base results object */
+#define RESULTS_VTABLE_AWARD 0x4D6CF0   /* the MEDAL-AWARD screen: vtable[1]=0x44D760
+                                           (the per-frame update that awards gold +
+                                           runs the reveal). This is the object that
+                                           actually shows on "beat a level" with a
+                                           medal time — the arm cave MUST hook this. */
 
 /* Spawn the native medal-award effects (pop sound + star ring) for the
  * diamond, mirroring FUN_0044df70's first-earn block (0x44daf8-0x44dc10).
@@ -1528,12 +1545,14 @@ static DWORD find_results_object(void) {
      * Logged once per distinct (count, vtable) to avoid per-frame spam. */
     if (vt != last_vt || count != last_count) {
         last_vt = vt; last_count = count;
-        if (vt != RESULTS_VTABLE && vt != RESULTS_VTABLE_OLD_1 && vt != RESULTS_VTABLE_OLD_2)
+        if (!(vt == RESULTS_VTABLE || vt == RESULTS_VTABLE_OLD_1 ||
+              vt == RESULTS_VTABLE_OLD_2 || vt == RESULTS_VTABLE_AWARD))
             diag_logf("[diamond] find_results: count=%d items=%08X first=%08X vt=%08X (UNEXPECTED vtable, ignoring)", count, items, results, vt);
         else
             diag_logf("[diamond] find_results: count=%d first=%08X vt=%08X (OK)", count, results, vt);
     }
-    if (vt != RESULTS_VTABLE && vt != RESULTS_VTABLE_OLD_1 && vt != RESULTS_VTABLE_OLD_2) return 0;
+    if (vt != RESULTS_VTABLE && vt != RESULTS_VTABLE_OLD_1 &&
+        vt != RESULTS_VTABLE_OLD_2 && vt != RESULTS_VTABLE_AWARD) return 0;
     return results;
 }
 
@@ -1744,23 +1763,27 @@ static void install_arm_cave(void) {
     c1 = g_armCave;        /* first cave (0x44CB90) */
     c2 = g_armCave + 32;   /* second cave (0x44B860) */
 
-    /* cave 1: 0x44C7D0 — push ebx;push esi;mov esi,ecx;mov eax,[esi+0x1c] (7B).
-     * This is the REAL results/medal screen update (vtable 0x4D6CB8 slot 1),
-     * byte-identical prologue to the old (dead) 0x44CB90. */
+    /* cave 1: hook the MEDAL-AWARD screen's update fn 0x44D760 at 0x44D778
+     * (right AFTER its SEH prologue is complete, ecx=this still live) — the
+     * 9 bytes `push esi; mov esi,ecx; lea ecx,[esi+0x4c4]`
+     * (56 8B F1 8D 8E C4 04 00 00), RET 0x44D781. This is vtable 0x4D6CF0
+     * slot 1 — the per-frame update that actually AWARDS GOLD and runs the
+     * medal reveal. The old cave targeted 0x44C7D0 (slot 1 of vtable 0x4D6CB8,
+     * a DIFFERENT smaller results screen) which never fires on a real
+     * medal-award screen. */
     {
         unsigned char *p = c1;
         p[0]=0x51; p+=1;                                   /* push ecx (this) */
         p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_arm_reveal-(DWORD)(p+5); p+=5;
         p[0]=0x59; p+=1;                                   /* pop ecx */
-        p[0]=0x53; p+=1;                                   /* push ebx (re-emit) */
         p[0]=0x56; p+=1;                                   /* push esi (re-emit) */
         p[0]=0x8B; p[1]=0xF1; p+=2;                        /* mov esi,ecx */
-        p[0]=0x8B; p[1]=0x46; p[2]=0x1C; p+=3;             /* mov eax,[esi+0x1c] */
+        p[0]=0x8D; p[1]=0x8E; p[2]=0xC4; p[3]=0x04; p[4]=0x00; p[5]=0x00; p+=6;  /* lea ecx,[esi+0x4c4] */
         write_jmp(p, EXE_BASE + (RESULT_UPDATE_1_RET - EXE_BASE)); p+=5;
-        unsigned char patch[7];
-        memset(patch, 0x90, 7);
+        unsigned char patch[9];
+        memset(patch, 0x90, 9);
         write_jmp(patch, (DWORD)c1);
-        patch_bytes((void*)(EXE_BASE + (RESULT_UPDATE_1 - EXE_BASE)), patch, 7);
+        patch_bytes((void*)(EXE_BASE + (RESULT_UPDATE_1 - EXE_BASE)), patch, 9);
     }
 
     /* cave 2: 0x44B860 — mov eax,[ecx+0x10];mov edx,[ecx+0x14] (6B) */
