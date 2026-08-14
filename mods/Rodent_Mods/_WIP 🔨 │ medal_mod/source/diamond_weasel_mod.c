@@ -1837,6 +1837,15 @@ static void install_pause_caves(void) {
 
     /* ---- right-click cave (hook 0x4130c3) ---- */
     p = g_pauseCave;
+    /* Fast-path gate: if no results screen is armed (g_revealArmed==0), the
+     * reveal isn't running, so a pause is never blocked. JUMP straight to the
+     * native flow — do NOT call any C function. This eliminates the complex-C
+     * call (IsBadReadPtr/SEH/get_app/get_race_index) on normal gameplay pause,
+     * which is the real-Windows-only crash vector this mod hit repeatedly.
+     * Only when a results screen is genuinely live do we run the C block. */
+    p[0]=0xA1; *(DWORD*)(p+1)=(DWORD)&g_revealArmed; p+=5; /* mov eax,[g_revealArmed] */
+    p[0]=0x85; p[1]=0xC0; p+=2;                               /* test eax,eax */
+    p[0]=0x74; p[1]=0x0F; p+=2;                               /* jz .native (0x0F -> .native) */
     p[0]=0x51; p+=1;                      /* push ecx (save this) */
     p[0]=0x52; p+=1;                      /* push edx (save dl) */
     p[0]=0x51; p+=1;                      /* push ecx (arg: scene) */
@@ -1845,7 +1854,8 @@ static void install_pause_caves(void) {
     p[0]=0x5A; p+=1;                      /* pop edx (restore dl) */
     p[0]=0x59; p+=1;                      /* pop ecx (restore this) */
     p[0]=0x85; p[1]=0xC0; p+=2;           /* test eax,eax */
-    p[0]=0x75; p[1]=0x0B; p+=2;           /* jnz skip_pause (rel=0x0B) */
+    p[0]=0x75; p[1]=0x0B; p+=2;           /* jnz skip_pause (blocked) */
+    /* .native: */
     p[0]=0x84; p[1]=0xD2; p+=2;           /* test dl,dl (re-emit original guard) */
     p[0]=0x75; p[1]=0x07; p+=2;           /* jnz native skip (rel=7 -> 0x4130ce) */
     p[0]=0x6A; p[1]=0x01; p+=2;           /* push $1 (native arg) */
@@ -1854,10 +1864,14 @@ static void install_pause_caves(void) {
     p[0]=0xE9; *(DWORD*)(p+1)=rcRet-(DWORD)(p+5); p+=5;  /* jmp 0x4130ce (game's own skip) */
     { unsigned char patch[6]; memset(patch,0x90,6); write_jmp(patch,(DWORD)g_pauseCave);
       patch_bytes((void*)rcHook, patch, 6); }
-    diag_log("[diamond] pause-block cave REBUILT at 0x4130C3 (jump-to-native call)");
+    diag_log("[diamond] pause-block cave REBUILT at 0x4130C3 (g_revealArmed fast-path gate + jump-to-native call)");
 
     /* ---- ESC cave (hook 0x40b40f) ---- */
     p = g_pauseCave + 96;
+    /* Same fast-path gate: only call diamond_pause_blocked when g_revealArmed is set. */
+    p[0]=0xA1; *(DWORD*)(p+1)=(DWORD)&g_revealArmed; p+=5; /* mov eax,[g_revealArmed] */
+    p[0]=0x85; p[1]=0xC0; p+=2;                               /* test eax,eax */
+    p[0]=0x74; p[1]=0x0F; p+=2;                               /* jz .native_esc (rel=0x0f -> .native_esc) */
     p[0]=0x51; p+=1;                      /* push ecx */
     p[0]=0x52; p+=1;                      /* push edx */
     p[0]=0x51; p+=1;                      /* push ecx (arg: scene) */
@@ -1866,7 +1880,8 @@ static void install_pause_caves(void) {
     p[0]=0x5A; p+=1;
     p[0]=0x59; p+=1;
     p[0]=0x85; p[1]=0xC0; p+=2;           /* test eax,eax */
-    p[0]=0x75; p[1]=0x05; p+=2;           /* jnz skip_esc (rel=5) */
+    p[0]=0x75; p[1]=0x05; p+=2;           /* jnz skip_esc (blocked) */
+    /* .native_esc: */
     p[0]=0xE9; *(DWORD*)(p+1)=menu-(DWORD)(p+5); p+=5;   /* jmp 0x40a920 (re-emit native tail-call) */
     /* skip_esc: */
     p[0]=0xE9; *(DWORD*)(p+1)=esRet-(DWORD)(p+5); p+=5;  /* jmp 0x40b414 (ret $4) */
