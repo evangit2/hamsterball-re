@@ -2028,6 +2028,23 @@ static LONG CALLBACK diamond_veh(PEXCEPTION_POINTERS ep) {
     return EXCEPTION_CONTINUE_SEARCH;
 }
 
+/* ---- Init thread (proven ghost_triggers/warp pattern) ----
+ * ALL .text patching is deferred to a background thread that first
+ * Sleep(2000)ms, so the game's D3D/audio/font boot init completes before any
+ * hook goes live. Patching from DllMain at DLL_PROCESS_ATTACH runs while the
+ * Windows loader lock is held; VirtualAlloc + VirtualProtect + patch inside
+ * DllMain crashes real Windows at RUNTIME 0-1s (fonts\\showcardgothic28 / the
+ * LoadingScreen) — the loader-lock hazard. Wine tolerates it (43s OK), real
+ * Windows does not. Deferring to a thread avoids the loader lock entirely. */
+static DWORD WINAPI diamond_init_thread(LPVOID param) {
+    Sleep(2000);
+    diag_log("[diamond] init thread: installing hooks");
+    install_hooks();
+    install_present_cave();
+    diag_log("[diamond] init thread: done");
+    return 0;
+}
+
 BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hinst);
@@ -2038,13 +2055,9 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
         AddVectoredExceptionHandler(1, diamond_veh);
         init_thresholds();
         load_unlocks();
-        install_hooks();
-        install_present_cave();
-        /* Install the present-hook reveal cave (GameUpdate epilogue 0x46C1F1,
-         * a cold, boot-safe address) at DLL_PROCESS_ATTACH, before the game's
-         * frame loop starts — guaranteed cold, no race, no crash. The tick
-         * only reads game state once the store-only arm cave (on the medal-
-         * award update) has set g_revealArmed. */
+        /* Defer ALL .text patching to a background thread (Sleep 2s) so we
+         * never run VirtualAlloc/VirtualProtect under the loader lock. */
+        CreateThread(NULL, 0, diamond_init_thread, NULL, 0, NULL);
     }
     return TRUE;
 }
