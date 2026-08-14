@@ -258,17 +258,24 @@ It hooks:
    award frame (`results+0x4c`).
    
    The present hook fires **every frame**, including while the title screen
-   loads its animated menu background (`Levels\Level4-Trapdoor2`), when the
-   board/results pointers are half-built. To keep it safe the present tick is
-   **gated on an arm flag** that is set from the MEDAL-AWARD screen's own
-     per-frame update (vtable `0x4D6CF0` / `0x4D6CFC`, update `0x44CB90`) — the
-     tick early-returns before touching *any* game state until a results screen
-     has genuinely appeared. The present hook is installed on the main thread the
-     moment that update first runs (race-free). The arm deliberately hooks the
-     **non-SEH** `0x44CB90` update, NOT `0x44D760` (vtable slot 1) — `0x44D760`
-     installs an SEH exception frame and calling the mod's C logic from inside it
-     corrupts the exception chain on real Windows (cascading heap faults before
-     the arm can log).
+     loads its animated menu background (`Levels\Level4-Trapdoor2`), when the
+     board/results pointers are half-built. To keep it safe the present tick
+     **self-arms**: it calls `find_results_object()` (fully `IsBadReadPtr`- and
+     vtable-guarded; it only ever returns a live results object whose vtable is
+     one of the 4 known results vtables, so a half-built board's junk vtable is
+     rejected) and only starts reading game state once a real results screen is
+     live. The present hook itself is installed from **DllMain at
+     `DLL_PROCESS_ATTACH`** — i.e. *before* the game's frame loop begins, so
+     `0x455A90` is guaranteed cold and the 7-byte patch cannot tear an in-flight
+     instruction (no background thread, no race, safe on real Windows).
+
+     Earlier versions tried to arm from a cave on the medal-award update
+     `0x44CB90`, but that function is the award vtable's slot[4] / the
+     "click to continue" vtable's slot[1] — it **never runs during the award
+     phase** (the award screen updates through vtable slot[1] = `0x44D760`,
+     which is SEH and must not be hooked). So the old arm never fired and the
+     reveal never ran. The DllMain-install + self-arm approach removes that
+     fragile chain entirely.
 2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
    for a race, appends a diamond mini-icon entry to the standings medal list
    right after the golden weasel, so it lays out to the right of it.
