@@ -265,26 +265,34 @@ Windows (the earlier present-hook versions did). It hooks:
    for a race, appends a diamond mini-icon entry to the standings medal list
    right after the golden weasel, so it lays out to the right of it. Also
    results-screen-only.
-3. **Award arm-store (0x44D778)** — a STORE-ONLY cave on the medal-award
-   screen's per-frame update (`0x44D760`, vtable slot[1], hooked just AFTER
-   its SEH prologue) sets `g_revealArmed=1` with a single absolute store — no
-   calls, no allocation, no patching — so it cannot corrupt the SEH exception
-   chain (a heavy VirtualAlloc/patch inside that SEH frame crashed real
-   Windows, `EIP=01210017` cascades). It is a debug signal only.
-4. **Skip-latch (0x44CBAA)** — blocks the results/click "skip" when the
+3. **Skip-latch (0x44CBAA)** — blocks the results/click "skip" when the
    diamond was achieved so the full reveal plays out (it keeps the skip latch
    from being set until frame 240). Results-screen-only.
-5. **Icon load (write-on-first-unlock)** — the diamond PNG bytes are embedded
+4. **Icon load (write-on-first-unlock)** — the diamond PNG bytes are embedded
    in the DLL as XOR-encrypted data (not extractable from the DLL). On the
    *first* time a diamond is awarded, the mod decrypts them and writes
    `diamondweasel.png` + `diamondweasel-icon.png` into `Textures\\`, then the
    game loads them through its normal file path. Before any unlock, no
    `diamond*.png` exists on disk.
 
-All five hooks are installed from a **background init thread that first
+All four hooks are installed from a **background init thread that first
 `Sleep(2000)`ms** — the exact pattern proven by ghost_triggers/warp. Nothing
 is patched in DllMain (VirtualAlloc/VirtualProtect under the Windows loader
 lock crashes real Windows at RUNTIME 0-1s).
+
+> **Why no arm/present hook?** Earlier builds added a "store-only arm" cave at
+> `0x44D778` (inside the SEH-protected award update `0x44D760`) to flag the
+> results screen, plus a per-frame reveal hook. Both caused real-Windows
+> crashes: the arm cave patched **inside an SEH exception frame** (a `fs:0`
+> SEH handler is installed right before `0x44D778`), so whenever the award
+> screen raised any exception, unwinding through my redirected bytes
+> corrupted the exception chain → heap-fault at the award vtable during
+> `Board Update`. It also did nothing (it was a debug-only flag with no
+> reader). The weasel-draw cave itself (`0x44E139`) is inside another SEH
+> function (`0x44DF70`) but is byte-for-byte identical to the crash-free
+> stable era, so it is safe — only the redundant, later-added arm cave broke.
+> Removed it entirely; the reveal needs no arming signal because it reads
+> `diamond_first_earn` directly from the results object on the award screen.
 
 > **Why no present/per-frame hook?** Earlier builds drove the reveal from a
 > `GameUpdate` frame-epilogue hook (`0x46C1F1`) or the `Graphics_PresentOrEnd`

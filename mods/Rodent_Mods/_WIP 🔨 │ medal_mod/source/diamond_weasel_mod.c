@@ -356,13 +356,6 @@ static DWORD g_vortexResults = 0;    /* results obj of the CURRENT vortex sessio
                                         Detecting a change lets us reset state + stop
                                         the whoosh when a results screen is exited
                                         mid-cycle (frame never reaches the tail). */
-static int g_revealArmed = 0;        /* 1 once a results screen has GENUINELY
-                                        appeared (armed by the store-only arm
-                                        cave at 0x44D778). Debug signal only —
-                                        the reveal now runs inline from the
-                                        0x44E139 weasel-draw cave, not a present
-                                        tick, so nothing per-frame reads game
-                                        state during a loading screen. */
 static unsigned char *g_weaselCave = NULL;  /* the 0x44E139 inline reveal cave */
 
 /* ================================================================
@@ -433,7 +426,6 @@ static int   g_ttInstalled = 0;   /* has cherry TT cave been patched in? Start 0
                                    * called at startup (g_anyDiamond already 1) or
                                    * lazily from diamond_provision_unlock. */
 static unsigned char *g_skipCave = NULL;
-static unsigned char *g_armCave = NULL;
 
 /* ================================================================
  * Logging + path helpers
@@ -707,7 +699,6 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
 static void install_weasel_cave(void);   /* defined below (patch helpers) — the
                                           * 0x44E139 inline reveal (results-only) */
 static void install_skip_cave(void);      /* defined below (patch helpers) */
-static void install_arm_cave(void);       /* defined below (patch helpers) */
 
 static int diamond_seq_frame(DWORD results);   /* frames since gold award */
 
@@ -1659,53 +1650,6 @@ static void install_skip_cave(void) {
     diag_log("[diamond] skip-latch cave installed at 0x44CBAA");
 }
 
-/* Cave G: ARM the reveal from the medal-award screen's per-frame update.
- *
- * The award screen's per-frame update is vtable slot[1] = 0x44D760 (SEH).
- * We hook the byte just AFTER its SEH prologue (at 0x44D778, on
- * `push esi; mov esi,ecx; lea ecx,[esi+0x4c4]`, 9 bytes total through
- * 0x44D780) with a STORE-ONLY cave: it does
- * `mov DWORD PTR [g_revealArmed],1` (a single absolute-store — no calls, no
- * allocation, no patching), then re-emits the three original instructions
- * and jumps back to 0x44D781. Because it performs no calls/alloc/patches it
- * does NOT corrupt the SEH exception chain the way the earlier heavy arm
- * (VirtualAlloc + install_present_cave) did — that heavy path crashed real
- * Windows (EIP=01210017 cascades). The store only touches its own global.
- *
- * g_revealArmed is kept as a debug signal. The reveal now runs inline from
- * the 0x44E139 weasel-draw cave, not a present tick, so nothing per-frame
- * reads game state during boot.
- */
-#define ARM_CAVE_HOOK 0x44D778   /* after SEH prologue: push esi;mov esi,ecx;lea ecx,[esi+0x4c4] */
-#define ARM_CAVE_RET  0x44D781   /* next instr after the 9 patched bytes (call 0x458e90) */
-
-static void install_arm_cave(void) {
-    /* store-only arm cave on the award screen's per-frame update (0x44D760). */
-    unsigned char *p;
-    g_armCave = (unsigned char*)VirtualAlloc(NULL, 40, MEM_COMMIT|MEM_RESERVE,
-                                              PAGE_EXECUTE_READWRITE);
-    if (!g_armCave) return;
-    p = g_armCave;
-    /* mov DWORD PTR [g_revealArmed],1  (C7 05 <addr32> <imm32>) */
-    p[0]=0xC7; p[1]=0x05; *(DWORD*)(p+2)=(DWORD)&g_revealArmed; p+=6;
-    *(DWORD*)p=1; p+=4;
-    /* re-emit the three original instructions (0x44D778..0x44D780):
-     *   push esi (56)
-     *   mov esi,ecx (8B F1)
-     *   lea ecx,[esi+0x4c4] (8D 8E C4 04 00 00) */
-    p[0]=0x56; p+=1;
-    p[0]=0x8B; p[1]=0xF1; p+=2;
-    p[0]=0x8D; p[1]=0x8E; p[2]=0xC4; p[3]=0x04; p[4]=0x00; p[5]=0x00; p+=6;
-    /* jmp back to 0x44D781 (call 0x458e90) */
-    write_jmp(p, EXE_BASE + (ARM_CAVE_RET - EXE_BASE)); p+=5;
-    /* 9-byte patch at 0x44D778: JMP rel32 (5) + 4 NOPs */
-    unsigned char patch[9];
-    memset(patch, 0x90, 9);
-    write_jmp(patch, (DWORD)g_armCave);
-    patch_bytes((void*)(EXE_BASE + (ARM_CAVE_HOOK - EXE_BASE)), patch, 9);
-    diag_log("[diamond] arm cave installed (store-only) at 0x44D778 (award update)");
-}
-
 /* Cave C: TT-menu (standings) diamond mini-icon after golden weasel.
  * Hook at 0x42F927 (call 0x44abf0, the golden-weasel append, 5 bytes).
  *   cave:     mov ecx,esi          ; re-emit weasel append (stack has name+sprite)
@@ -1768,9 +1712,6 @@ static void install_hooks(void) {
     install_icon_cave();
     install_tt_cave();
     install_weasel_cave();  /* 0x44E139 inline reveal — results-screen ONLY */
-    install_arm_cave();     /* store-only, COLD during boot (award update never
-                             * runs during the LoadingScreen) — safe to install
-                             * from the init thread. */
     install_skip_cave();    /* 0x44CBAA skip-latch — also results-screen ONLY */
     diag_log("[diamond] hooks installed");
 }
