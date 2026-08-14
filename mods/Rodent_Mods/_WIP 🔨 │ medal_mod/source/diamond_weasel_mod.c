@@ -213,10 +213,9 @@ static void load_real_bass(void) {
 #define RESULT_UPDATE_1_RET 0x44C7D7  /* next instr after the 7 patched bytes */
 #define RESULT_UPDATE_2    0x44B860   /* results update (vtable 0x4D6C00 slot 1): mov eax,[ecx+0x10];mov edx,[ecx+0x14] */
 #define RESULT_UPDATE_2_RET 0x44B866  /* next instr after the 6 patched bytes */
-#define PAUSE_RCLICK_HOOK  0x4130C9   /* right-click: call 0x40a920 (5B) */
-#define PAUSE_RCLICK_RET   0x4130CE   /* next instr after the 5 patched bytes */
-#define PAUSE_ESCMSG_HOOK  0x40B40F   /* Win32 ESC: jmp 0x40a920 (5B) */
-#define PAUSE_ESCMSG_RET   0x40B414   /* next instr after the 5 patched bytes */
+#define PAUSE_BRANCH_RCLICK 0x4130B5   /* right-click: `74 17` je 0x4130ce (shallow branch decision; never touches 0x40a920) */
+#define PAUSE_BRANCH_ESCMSG 0x40B405   /* Win32 ESC:  `75 0d` jne 0x40b414 (shallow branch decision) */
+#define PAUSE_BRANCH_DIESC  0x419D5B   /* DI ESC:      `74 09` je 0x419d66 (shallow branch decision) */
 #define SPRITE_DRAW        0x42C7C0
 #define ABF0_APPEND        0x44ABF0   /* medal list append (__stdcall, ret 8) */
 #define STR_FMT_D          0x4D03F8   /* "%d" */
@@ -360,9 +359,12 @@ static int g_presentInstalled = 0;   /* 1 once the present hook has been install
                                         (race-free, on the main thread, from the
                                         arm cave when the results screen first
                                         appears). */
-static int g_pauseApplied = 0;       /* 1 while the pause-block patches are applied
-                                        to the game (only while a reveal is armed);
-                                        restored to vanilla otherwise. */
+static int g_pauseApplied = 0;       /* 1 while the pause-block decider patches are
+                                        applied to the game (only while a reveal is armed);
+                                        restored to vanilla otherwise. Deciders = the
+                                        single-byte 0x74/0x75 -> 0xEB at the shallow branch
+                                        decision points (PAUSE_BRANCH_*), mirroring level_warp
+                                        — NEVER a code cave, NEVER touching 0x40a920. */
 
 /* ================================================================
  * Mod globals
@@ -428,7 +430,6 @@ static FILE *g_log = NULL;
 static unsigned char *g_iconCave = NULL;
 static unsigned char *g_ttCave = NULL;
 static unsigned char *g_skipCave = NULL;
-static unsigned char *g_pauseCave = NULL;
 static unsigned char *g_presentCave = NULL;
 static unsigned char *g_armCave = NULL;
 
@@ -773,44 +774,12 @@ __attribute__((used)) int diamond_block_skip(DWORD results) {
  * unreadable or the scene isn't holding a results screen, we allow pause
  * (return 0) so normal gameplay pause is never affected.
  */
-#define SCENE_RESULTS_LIST   0x8B8   /* scene+0x8B8 = results AthenaList */
+#define SCENE_RESULTS_LIST   0x8B8   /* scene+0x8B8 = results AthenaList (used by find_results_object) */
 #define SCENE_LIST_COUNT     0x04    /* AthenaList count */
 #define SCENE_LIST_ITEMS     0x40C   /* AthenaList items ptr */
 #define RESULTS_VTABLE       0x4D6CB8
 #define RESULTS_VTABLE_OLD_1 0x4D6CFC
 #define RESULTS_VTABLE_OLD_2 0x4D6C00
-__attribute__((used)) int diamond_pause_blocked(DWORD scene) {
-    DWORD list, items, results, app, vt;
-    int count, frame, race, cs, thr;
-    if (!scene) return 0;
-    if (IsBadReadPtr((void*)(scene + SCENE_RESULTS_LIST), 4)) return 0;
-    list = scene + SCENE_RESULTS_LIST;
-    if (IsBadReadPtr((void*)(list + SCENE_LIST_COUNT), 4)) return 0;
-    count = *(int*)(list + SCENE_LIST_COUNT);
-    if (count <= 0) return 0;                       /* no results screen -> allow */
-    if (IsBadReadPtr((void*)(list + SCENE_LIST_ITEMS), 4)) return 0;
-    items = *(DWORD*)(list + SCENE_LIST_ITEMS);
-    if (!items || IsBadReadPtr((void*)items, 4)) return 0;
-    results = *(DWORD*)items;                        /* first item = results object */
-    if (!results || IsBadReadPtr((void*)(results + 0x10), 4)) return 0;   /* RESULT_FRAME */
-    /* Confirm it's really a results object (vtable matches the ctor-set one). */
-    if (IsBadReadPtr((void*)results, 4)) return 0;
-    vt = *(DWORD*)results;
-    if (vt != RESULTS_VTABLE && vt != RESULTS_VTABLE_OLD_1 && vt != RESULTS_VTABLE_OLD_2) return 0;
-    frame = diamond_seq_frame(results);          /* frames since gold award */
-    if (frame < 0 || frame >= WEASEL_WHITE_TOTAL) return 0;   /* reveal done -> allow */
-    /* Only block when the diamond was actually earned for this race. */
-    if (IsBadReadPtr((void*)(results + 0x0C), 4)) return 0;   /* RESULT_APP */
-    app = *(DWORD*)(results + 0x0C);
-    if (!app || !g_configLoaded) return 0;
-    race = get_race_index();
-    if (race < 0 || race > 14) return 0;
-    if (!g_hasSecret[race]) return 0;
-    if (g_won[race]) return 0;                 /* only on the FIRST earn */
-    cs = get_player_time_cs(app);
-    thr = g_secret_cs[race];
-    return (cs > 0 && cs <= thr) ? 1 : 0;
-}
 
 /* Spawn the native medal-award effects (pop sound + star ring) for the
  * diamond, mirroring FUN_0044df70's first-earn block (0x44daf8-0x44dc10).
@@ -1771,150 +1740,87 @@ static void install_arm_cave(void) {
 }
 
 /* Cave F: block the PAUSE menu while the diamond reveal is pending (goal
- * touch -> frame-240 trophy swap). The game's OWN DirectInput-ESC pause path
- * (Scene_Update, Path 1) is already suppressed at goal because the game sets
- * scene+0x880=1 there; that check runs at 0x419d50 and skips the pause call.
- * But the OTHER two pause entry points do NOT consult scene+0x880, so they
- * can still open the pause menu mid-reveal and interrupt it:
+ * touch -> frame-240 trophy swap) — OPTION B, mirroring level_warp.
  *
- *   Path 2 (right-click): decision point 0x4130c3 (3 bytes before the call).
- *   Path 3 (Win32 ESC):   0x40b40f `jmp  0x40a920` (5B) — vtable[8] thunk.
+ * The game's OWN DirectInput-ESC pause path (Scene_Update, Path 1) is
+ * already suppressed at goal (scene+0x880=1; check at 0x419d50 skips the
+ * pause call). The OTHER two pause entry points do NOT consult scene+0x880,
+ * so they can still open the pause menu mid-reveal and interrupt it:
  *
- * Both funnel into Scene_CreateGameOverMenu (0x40a920, which has an SEH
- * prologue, so we patch the CALL/DECISION sites, not the function entry).
- * Each cave calls diamond_pause_blocked(scene) (plain C — no SEH, safe to
- * call from a cave) and uses its return to inject ONE branch into the
- * game's own native control flow:
- *   - blocked (reveal pending): jump to the game's own pause-SKIP label
- *     (0x4130ce / 0x40b414), so 0x40a920 never runs.
- *   - not blocked: jump INTO the game's ORIGINAL unmodified `call`/
- *     `jmp 0x40a920` so the game executes 0x40a920 in its own context and
- *     returns to its own label naturally (identical to a normal pause).
- * The cave NEVER issues its own call/jmp to 0x40a920 — that re-entrancy
- * from heap memory is what crashed on real Windows (CRASH_ADDRESS 0,
- * MouseDown) while Wine tolerated it. (REBUILT 2026-08-13.)
+ *   Path 2 (right-click): 0x4130B5 `74 17` je 0x4130ce (skips pause when
+ *                          the "pause disabled" flag is clear).
+ *   Path 3 (Win32 ESC):   0x40B405 `75 0d` jne 0x40b414 (skips pause for
+ *                          any key other than VK_ESCAPE).
+ *   Path 1 (DI ESC):      0x419D5B `74 09` je 0x419d66 (already-skipped at
+ *                          goal via scene+0x880; patched too for safety).
  *
- * ecx = scene object at both call sites (preserved). Only eax is left as
- * the branch test; ecx/edx/esi/edi/ebx and flags are restored/native.
+ * We patch the SINGLE branch-decider byte at each of these SHALLOW decision
+ * points by OR-ing it to 0xEB (the unconditional JMP short) — exactly the
+ * approach level_warp's block_pause() uses (it works, and it NEVER touches
+ * 0x40a920 or any heap code cave, so there is no SEH-frame re-entrancy).
+ *   - Path 2: 0x74 -> 0xEB  => always jump to 0x4130ce (ret) — pause menu skipped.
+ *   - Path 3: 0x75 -> 0xEB  => always jump to 0x40b414 (ret) — pause menu skipped.
+ *   - Path 1: 0x74 -> 0xEB  => always jump to 0x419d66 — pause menu skipped.
+ *
+ * When blocked, the game NEVER reaches 0x40a920. When not blocked, the
+ * original byte is restored verbatim, so the game runs its own native
+ * pause path and 0x40a920 executes in its own native context — identical to
+ * a normal gameplay pause. apply/remove are driven from diamond_arm_reveal
+ * (arm) and diamond_present_tick's disarm branch (remove), so pause is only
+ * blocked during the seconds the reveal is actually live.
  */
-static void install_pause_caves(void) {
-    /* Pause-block: BUILT but NOT INSTALLED at startup.
-     *
-     * Root cause (CONFIRMED 2026-08-13 by two failed rebuilds): on real
-     * Windows, merely having mod patch bytes sitting at the pause sites —
-     * 0x4130c3 / 0x40b40f — crashes a normal pause, EVEN as a pure
-     * passthrough. The first two attempts re-emitted `call 0x40a920`; the
-     * third (g_revealArmed fast-path gate, zero C calls on a normal pause,
-     * straight jump into native) STILL crashed (CRASH_ADDRESS 0001:FFFFFFFF,
-     * MouseDown, 10s, Warm-Up, arm never fired). Wine tolerates the heap-memory
-     * flow into the 0x40a920 SEH frame; real Windows does not.
-     *
-     * FIX: never patch the pause sites during normal gameplay. The caves are
-     * built here (VirtualAlloc) but their patch bytes are applied to the game
-     * ONLY while a reveal is genuinely armed (results screen live), and
-     * restored to the original vanilla bytes the instant the reveal ends.
-     * During normal gameplay — the exact case that crashes — the pause
-     * addresses are byte-for-byte ORIGINAL, so a normal pause runs the game's
-     * own untouched code and cannot crash.
-     *
-     * apply/remove are driven from diamond_arm_reveal (arm) and
-     * diamond_present_tick's disarm branch (remove).
-     */
-    DWORD rcRet  = EXE_BASE + (0x4130CE - EXE_BASE);
-    DWORD rcCall = EXE_BASE + (0x4130C9 - EXE_BASE);   /* original call 0x40a920 (left unmodified) */
-    DWORD esRet  = EXE_BASE + (0x40B414 - EXE_BASE);   /* ret $4 */
-    DWORD menu   = EXE_BASE + (0x40A920 - EXE_BASE);
-    unsigned char *p;
 
-    g_pauseCave = (unsigned char*)VirtualAlloc(NULL, 192, MEM_COMMIT|MEM_RESERVE,
-                                               PAGE_EXECUTE_READWRITE);
-    if (!g_pauseCave) return;
+/* Saved original decider byte for each path. The initial value is never
+ * used; it is captured on the first apply (which is also when we verify the
+ * byte matches the expected vanilla branch for that site). */
+static unsigned char g_pauseOrigB[3] = {0, 0, 0};
 
-    /* ---- right-click cave (hook 0x4130c3) ---- */
-    p = g_pauseCave;
-    /* Fast-path gate: if no results screen is armed (g_revealArmed==0), the
-     * reveal isn't running, so a pause is never blocked. JUMP straight to the
-     * native flow — do NOT call any C function. This eliminates the complex-C
-     * call (IsBadReadPtr/SEH/get_app/get_race_index) on a pause that happens
-     * to coincide with a reveal. Only when a results screen is live do we run
-     * the C block. */
-    p[0]=0xA1; *(DWORD*)(p+1)=(DWORD)&g_revealArmed; p+=5; /* mov eax,[g_revealArmed] */
-    p[0]=0x85; p[1]=0xC0; p+=2;                               /* test eax,eax */
-    p[0]=0x74; p[1]=0x0F; p+=2;                               /* jz .native (0x0F -> .native) */
-    p[0]=0x51; p+=1;                      /* push ecx (save this) */
-    p[0]=0x52; p+=1;                      /* push edx (save dl) */
-    p[0]=0x51; p+=1;                      /* push ecx (arg: scene) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_pause_blocked-(DWORD)(p+5); p+=5; /* call block */
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;/* add esp,4 (pop arg) */
-    p[0]=0x5A; p+=1;                      /* pop edx (restore dl) */
-    p[0]=0x59; p+=1;                      /* pop ecx (restore this) */
-    p[0]=0x85; p[1]=0xC0; p+=2;           /* test eax,eax */
-    p[0]=0x75; p[1]=0x0B; p+=2;           /* jnz skip_pause (blocked) */
-    /* .native: */
-    p[0]=0x84; p[1]=0xD2; p+=2;           /* test dl,dl (re-emit original guard) */
-    p[0]=0x75; p[1]=0x07; p+=2;           /* jnz native skip (rel=7 -> 0x4130ce) */
-    p[0]=0x6A; p[1]=0x01; p+=2;           /* push $1 (native arg) */
-    p[0]=0xE9; *(DWORD*)(p+1)=rcCall-(DWORD)(p+5); p+=5; /* jmp 0x4130c9 -> run ORIGINAL call 0x40a920 */
-    /* skip_pause: */
-    p[0]=0xE9; *(DWORD*)(p+1)=rcRet-(DWORD)(p+5); p+=5;  /* jmp 0x4130ce (game's own skip) */
-    /* patch is NOT written here (see apply_pause_patch). */
-
-    /* ---- ESC cave (hook 0x40b40f) ---- */
-    p = g_pauseCave + 96;
-    /* Same fast-path gate: only call diamond_pause_blocked when g_revealArmed is set. */
-    p[0]=0xA1; *(DWORD*)(p+1)=(DWORD)&g_revealArmed; p+=5; /* mov eax,[g_revealArmed] */
-    p[0]=0x85; p[1]=0xC0; p+=2;                               /* test eax,eax */
-    p[0]=0x74; p[1]=0x0F; p+=2;                               /* jz .native_esc (rel=0x0f -> .native_esc) */
-    p[0]=0x51; p+=1;                      /* push ecx */
-    p[0]=0x52; p+=1;                      /* push edx */
-    p[0]=0x51; p+=1;                      /* push ecx (arg: scene) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_pause_blocked-(DWORD)(p+5); p+=5;
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;/* add esp,4 */
-    p[0]=0x5A; p+=1;
-    p[0]=0x59; p+=1;
-    p[0]=0x85; p[1]=0xC0; p+=2;           /* test eax,eax */
-    p[0]=0x75; p[1]=0x05; p+=2;           /* jnz skip_esc (blocked) */
-    /* .native_esc: */
-    p[0]=0xE9; *(DWORD*)(p+1)=menu-(DWORD)(p+5); p+=5;   /* jmp 0x40a920 (re-emit native tail-call) */
-    /* skip_esc: */
-    p[0]=0xE9; *(DWORD*)(p+1)=esRet-(DWORD)(p+5); p+=5;  /* jmp 0x40b414 (ret $4) */
-
-    diag_log("[diamond] pause-block caves BUILT (applied only while a reveal is armed; pause sites stay vanilla during normal gameplay)");
-}
-
-/* Apply the pause-block patches to the game. Called ONLY while a reveal is
- * armed (results screen live). The vanilla bytes at both sites are saved
- * first so they can be restored exactly. */
 static void apply_pause_patch(void) {
-    DWORD rcHook = EXE_BASE + (0x4130C3 - EXE_BASE);
-    DWORD esHook = EXE_BASE + (0x40B40F - EXE_BASE);
-    unsigned char patch[6];
-    if (!g_pauseCave || g_pauseApplied) return;
-    /* right-click: 6-byte JMP rel32 + 1 NOP (original is 6 bytes) */
-    memset(patch, 0x90, 6);
-    write_jmp(patch, (DWORD)g_pauseCave);
-    patch_bytes((void*)rcHook, patch, 6);
-    /* ESC: 5-byte JMP rel32 (original is exactly 5 bytes) */
-    memset(patch, 0x90, 5);
-    write_jmp(patch, (DWORD)(g_pauseCave + 96));
-    patch_bytes((void*)esHook, patch, 5);
+    static const DWORD addrs[3] = {
+        EXE_BASE + (PAUSE_BRANCH_RCLICK - EXE_BASE),
+        EXE_BASE + (PAUSE_BRANCH_ESCMSG - EXE_BASE),
+        EXE_BASE + (PAUSE_BRANCH_DIESC  - EXE_BASE),
+    };
+    static const unsigned char expected[3] = {0x74, 0x75, 0x74};
+    int i;
+    DWORD old;
+    if (g_pauseApplied) return;
+    for (i = 0; i < 3; i++) {
+        /* On first apply, capture the real opcode and sanity-check it. */
+        VirtualProtect((void*)addrs[i], 1, PAGE_READWRITE, &old);
+        g_pauseOrigB[i] = *(volatile BYTE*)addrs[i];
+        if (expected[i] && g_pauseOrigB[i] != expected[i]) {
+            /* Mismatch — leave this site untouched (do not clobber unknown code). */
+            diag_logf("[diamond] WARN: pause branch @0x%X = %02X (expected %02X); skipped",
+                      addrs[i], g_pauseOrigB[i], expected[i]);
+            VirtualProtect((void*)addrs[i], 1, old, &old);
+            continue;
+        }
+        *(volatile BYTE*)addrs[i] = 0xEB;   /* unconditional JMP short */
+        FlushInstructionCache(GetCurrentProcess(), (void*)addrs[i], 1);
+        VirtualProtect((void*)addrs[i], 1, old, &old);
+    }
     g_pauseApplied = 1;
-    diag_log("[diamond] pause-block patch APPLIED (reveal armed)");
+    diag_log("[diamond] pause blocked (3 branch deciders -> 0xEB, mirroring level_warp; no cave, 0x40a920 untouched)");
 }
 
-/* Restore the original vanilla bytes at both pause sites. Called when the
- * reveal ends / results screen is gone, so normal gameplay pause is 100%
- * original. */
 static void remove_pause_patch(void) {
-    DWORD rcHook = EXE_BASE + (0x4130C3 - EXE_BASE);
-    DWORD esHook = EXE_BASE + (0x40B40F - EXE_BASE);
-    static const unsigned char rc_orig[6] = {0x84,0xD2,0x75,0x07,0x6A,0x01}; /* test dl,dl; jne 0x4130ce; push $1 */
-    static const unsigned char es_orig[5] = {0xE9,0x0C,0xF5,0xFF,0xFF};       /* jmp 0x40a920 */
+    static const DWORD addrs[3] = {
+        EXE_BASE + (PAUSE_BRANCH_RCLICK - EXE_BASE),
+        EXE_BASE + (PAUSE_BRANCH_ESCMSG - EXE_BASE),
+        EXE_BASE + (PAUSE_BRANCH_DIESC  - EXE_BASE),
+    };
+    int i;
+    DWORD old;
     if (!g_pauseApplied) return;
-    patch_bytes((void*)rcHook, rc_orig, 6);
-    patch_bytes((void*)esHook, es_orig, 5);
+    for (i = 0; i < 3; i++) {
+        VirtualProtect((void*)addrs[i], 1, PAGE_READWRITE, &old);
+        *(volatile BYTE*)addrs[i] = g_pauseOrigB[i];
+        FlushInstructionCache(GetCurrentProcess(), (void*)addrs[i], 1);
+        VirtualProtect((void*)addrs[i], 1, old, &old);
+    }
     g_pauseApplied = 0;
-    diag_log("[diamond] pause-block patch REMOVED (reveal ended) — pause sites restored to vanilla");
+    diag_log("[diamond] pause unblocked (3 branch deciders restored to vanilla; pause fully original)");
 }
 
 /* Cave C: TT-menu (standings) diamond mini-icon after golden weasel.
@@ -2026,7 +1932,6 @@ static void install_hooks(void) {
     install_arm_cave();      /* arms the present reveal AND installs the present
                               * hook race-free on the main thread (see
                               * diamond_arm_reveal / install_present_cave) */
-    install_pause_caves();
     /* install_present_cave() is NOT called here. It is invoked lazily by
      * diamond_arm_reveal the first time a results-screen update runs, so the
      * 7-byte patch is never written while 0x455A90 is hot (the boot loading
