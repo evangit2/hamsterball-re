@@ -281,15 +281,26 @@ It hooks:
      is never dereferenced. (Reading it crashed real Windows at startup,
      `RUNTIME 1s`, `stack[0]=0x46BFAE`.)
 
-     The present hook (`0x46C1F1` cave) and every other .text patch are
-     installed from a **background init thread that first `Sleep(2000)`ms** —
-     the exact pattern proven by ghost_triggers/warp. Patching from DllMain
-     at `DLL_PROCESS_ATTACH` runs while the Windows loader lock is held;
-     doing `VirtualAlloc`/`VirtualProtect`/patch under the loader lock crashes
-     real Windows at RUNTIME 0-1s (fonts\\showcardgothic28 / the LoadingScreen
-     Draw). Deferring to a thread lets the game finish booting first and
-     avoids the loader lock entirely — Wine tolerates the DllMain version
-     (43s OK) but Windows does not, a real-Windows-only trap.
+     The present hook (`0x46C1F1` cave) is the ONLY .text patch installed at
+     boot. It is installed from a **background init thread that first
+     `Sleep(2000)`ms** — the exact pattern proven by ghost_triggers/warp.
+     Nothing else is patched in DllMain (VirtualAlloc/VirtualProtect under the
+     Windows loader lock crashes real Windows at RUNTIME 0-1s), and no other
+     .text patch is made at the 2s mark (patching skip-latch + arm + present
+     simultaneously at 2s while the main thread runs frames tore the epilogue
+     hook and crashed real Windows, heap fault stack[6]=0x46BEF8 during
+     Meshes\FunBall).
+
+     The skip-latch and arm caves are therefore installed **lazily on the main
+     thread** from inside `diamond_present_tick`, the first frame a genuine
+     results screen arms the reveal (a safe, results-screen-only context).
+     Until then the present tick does zero reads of game state, so the boot
+     LoadingScreen (Initialize(26)) — where `app+0x178`/`scene+0x8B8` point at
+     a live-but-half-built board — is never dereferenced (reading it crashed
+     real Windows with a heap fault at RUNTIME 1s). The present-tick cave uses
+     `pushad`/`pushfd` to preserve all registers + flags across the C calls,
+     matching ghost_triggers exactly — any register clobber at the frame
+     epilogue corrupts the whole frame and crashes the game.
 
      Earlier versions tried to arm from `0x44CB90`, but that is the award
      vtable's slot[4] / the "click to continue" vtable's slot[1] — it **never

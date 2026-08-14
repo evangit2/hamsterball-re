@@ -714,6 +714,8 @@ static int get_player_time_cs(DWORD app) {
 __attribute__((used)) void diamond_load_icon_impl(DWORD app);
 __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app);
 static void install_present_cave(void);   /* defined below (patch helpers) */
+static void install_skip_cave(void);      /* defined below — lazily on results */
+static void install_arm_cave(void);       /* defined below — lazily on results */
 /* pause-block apply/remove (defined below, patch helpers): pause sites are
  * patched ONLY while a reveal is armed and restored to vanilla otherwise. */
 static void apply_pause_patch(void);
@@ -1588,28 +1590,37 @@ static void whiteout_tick(DWORD results) {
  * itself (app -> scene -> results), so it takes no arguments. */
 __attribute__((used)) void diamond_present_tick(void) {
     DWORD results;
-    /* EARLY-EXIT GATE (warp's g_whiteAlpha pattern): the present hook fires
-     * EVERY frame, including during the boot loading screen (Initialize(26),
-     * "LoadingScreen Gadget") where app+0x178 (board) / scene+0x8B8 (results
-     * list) point at a LIVE-BUT-HALF-BUILT board. Reading ANY game state here
-     * corrupts the return chain -> heap-execution crash at startup on real
-     * Windows (EIP=0x0137xxxx, stack[0]=0x46BFAE, RUNTIME 1s, Crash during
-     * LoadingScreen Draw). IsBadReadPtr is NOT enough: the pointers are valid
-     * but their vtables/fields are garbage. We must NOT read game state
-     * until a results screen genuinely armed us. Nothing runs here while it
-     * is disarmed — zero reads. */
-    if (!g_revealArmed) return;
-    /* Apply the pause-block once, now armed (the arm cave is store-only and
-     * cannot call mod C). Idempotent via g_pauseApplied. */
-    apply_pause_patch();
+    /* SELF-ARM (replaces the boot-time arm/skip-latch caves, removed to fix
+     * the multi-address patch race at boot). find_results_object() is fully
+     * IsBadReadPtr- AND vtable-guarded: it derefs app->scene->results and
+     * only returns a live results object whose vtable is one of the 4 known
+     * results vtables. During the boot LoadingScreen (Initialize(26)) the
+     * board/results pointers are live-but-half-built with GARBAGE vtables, so
+     * find_results_object() returns 0 — the tick arms NOTHING and does zero
+     * reads of real game state. Only when a genuine medal-award results
+     * object is live on the main thread do we arm + apply pause + give it
+     * reads. This is safe and requires no .text patch at boot. */
     results = find_results_object();
     if (!results) {
-        /* results screen gone -> disarm so the NEXT loading screen is safe,
-         * and tear down any leftover vortex cycle */
-        g_revealArmed = 0;
-        remove_pause_patch();         /* restore vanilla pause bytes now */
-        if (g_vortexActive) { g_vortexActive = 0; vortex_sound_stop(); }
+        if (g_revealArmed) {
+            /* results screen gone -> disarm, tear down left vortex + pause */
+            g_revealArmed = 0;
+            remove_pause_patch();
+            if (g_vortexActive) { g_vortexActive = 0; vortex_sound_stop(); }
+        }
         return;
+    }
+    if (!g_revealArmed) {
+        diag_log("[diamond] SELF-ARM at present tick (results screen live)");
+        g_revealArmed = 1;
+        /* Lazy-install the skip-latch + arm caves NOW, on the main thread,
+         * from the safe results-screen frame (not at boot, where the init
+         * thread's multi-address patch raced the main thread's frames and
+         * crashed real Windows). These block the player's skip so the frame-240
+         * reveal plays out. Idempotent via g_skipCave/g_armCave. */
+        if (!g_skipCave) install_skip_cave();
+        if (!g_armCave) install_arm_cave();
+        apply_pause_patch();
     }
     /* Granular phase logging to pinpoint a real-Windows crash in the reveal.
      * Gated so we record the LAST successful phase once (not every frame —
@@ -1934,15 +1945,23 @@ static void install_present_cave(void) {
     DWORD retAddr   = EXE_BASE + (FRAME_RET - EXE_BASE);
     unsigned char *p;
     unsigned char patch[5];
-    g_presentCave = (unsigned char*)VirtualAlloc(NULL, 40, MEM_COMMIT|MEM_RESERVE,
+    g_presentCave = (unsigned char*)VirtualAlloc(NULL, 48, MEM_COMMIT|MEM_RESERVE,
                                                  PAGE_EXECUTE_READWRITE);
     if (!g_presentCave) return;
     p = g_presentCave;
-    p[0]=0x51; p+=1;                                  /* push ecx */
-    p[0]=0x52; p+=1;                                   /* push edx */
+    /* pushad / pushfd — preserve ALL GPRs + EFLAGS across diamond_present_tick
+     * (it calls find_results_object, apply_pause_patch, diamond_vortex_tick,
+     * whiteout_tick and raw D3D/sprite __asm__ that clobber many registers
+     * and the flags). This matches the proven ghost_triggers stub exactly —
+     * any register clobber at the 0x46C1F1 frame epilogue corrupts the whole
+     * frame and crashes the game (heap-execution fault, edi/ebx garbage,
+     * erasable 2s crash during mesh load). */
+    p[0]=0x60; p+=1;      /* pushad */
+    p[0]=0x9C; p+=1;      /* pushfd */
+    /* call diamond_present_tick (cdecl, no args) */
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_present_tick-(DWORD)(p+5); p+=5;
-    p[0]=0x5A; p+=1;                                   /* pop edx */
-    p[0]=0x59; p+=1;                                   /* pop ecx */
+    p[0]=0x9D; p+=1;      /* popfd */
+    p[0]=0x61; p+=1;      /* popad */
     /* re-emit original epilogue: pop esi; add esp,8; ret */
     p[0]=0x5E; p+=1;
     p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;
@@ -1962,12 +1981,12 @@ static void install_present_cave(void) {
 static void install_hooks(void) {
     install_icon_cave();
     install_tt_cave();
-    install_skip_cave();
-    install_arm_cave();      /* store-only arm on the award update (0x44D778);
-                              * cannot corrupt SEH (no calls/alloc/patch) */
-    /* install_present_cave() runs from DllMain (cold, race-free) — see there.
-     * The present tick early-returns until the arm cave sets g_revealArmed,
-     * so the boot LoadingScreen never has game state read. */
+    /* Skip-latch + arm caves are NOT installed here — only the single cold
+     * 0x46C1F1 epilogue is patched at boot (via install_present_cave from the
+     * init thread). Patching multiple .text addresses at 2s while the main
+     * thread runs frames tore the epilogue hook and crashed real Windows
+     * (heap fault, stack[6]=0x46BEF8). They are lazily installed on the main
+     * thread from diamond_present_tick the first time a results screen arms. */
     diag_log("[diamond] hooks installed");
 }
 
