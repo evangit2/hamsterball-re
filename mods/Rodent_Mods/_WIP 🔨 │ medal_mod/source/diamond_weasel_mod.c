@@ -444,6 +444,7 @@ static int   g_ttInstalled = 0;   /* has cherry TT cave been patched in? Start 0
                                    * lazily from diamond_provision_unlock. */
 static unsigned char *g_skipCave = NULL;
 static unsigned char *g_presentCave = NULL;
+static unsigned char *g_armCave = NULL;
 
 /* ================================================================
  * Logging + path helpers
@@ -1588,28 +1589,21 @@ static void whiteout_tick(DWORD results) {
  * itself (app -> scene -> results), so it takes no arguments. */
 __attribute__((used)) void diamond_present_tick(void) {
     DWORD results;
-    /* SELF-ARM gate: the medal-award screen's per-frame update is vtable
-     * slot[1] = 0x44D760 (SEH), NOT 0x44CB90, so the old arm-cave on 0x44CB90
-     * (award slot[4] / "click to continue" slot[1]) never fired during the
-     * award phase -> g_revealArmed stayed 0 -> no reveal. We now arm
-     * ourselves: the present hook is installed from DllMain (cold, before the
-     * game loop -> 0x455A90 is race-free), and this tick self-arms the first
-     * time it finds a live medal-award results object. find_results_object()
-     * is fully IsBadReadPtr-guarded and only returns a results object whose
-     * vtable is one of the 4 known results vtables, so it can never mistake a
-     * half-built board (title-screen Level4-Trapdoor2 load reads AVOIDED
-     * because those junk vtables are rejected). The sub-effects below are all
-     * additionally gated on diamond_first_earn, so arming on any results
-     * screen is safe and draws nothing on a non-diamond run. */
-    if (!g_revealArmed) {
-        results = find_results_object();
-        if (!results) return;
-        diag_log("[diamond] SELF-ARM at present tick (results screen live)");
-        g_revealArmed = 1;
-        apply_pause_patch();
-    } else {
-        results = find_results_object();
-    }
+    /* EARLY-EXIT GATE (warp's g_whiteAlpha pattern): the present hook fires
+     * EVERY frame, including during the boot loading screen (Initialize(26),
+     * "LoadingScreen Gadget") where app+0x178 (board) / scene+0x8B8 (results
+     * list) point at a LIVE-BUT-HALF-BUILT board. Reading ANY game state here
+     * corrupts the return chain -> heap-execution crash at startup on real
+     * Windows (EIP=0x0137xxxx, stack[0]=0x46BFAE, RUNTIME 1s, Crash during
+     * LoadingScreen Draw). IsBadReadPtr is NOT enough: the pointers are valid
+     * but their vtables/fields are garbage. We must NOT read game state
+     * until a results screen genuinely armed us. Nothing runs here while it
+     * is disarmed — zero reads. */
+    if (!g_revealArmed) return;
+    /* Apply the pause-block once, now armed (the arm cave is store-only and
+     * cannot call mod C). Idempotent via g_pauseApplied. */
+    apply_pause_patch();
+    results = find_results_object();
     if (!results) {
         /* results screen gone -> disarm so the NEXT loading screen is safe,
          * and tear down any leftover vortex cycle */
@@ -1738,25 +1732,53 @@ static void install_skip_cave(void) {
     diag_log("[diamond] skip-latch cave installed at 0x44CBAA");
 }
 
-/* Cave G: ARM the reveal from the results screen's per-frame update.
- * DISABLED (no-op) — the previous hook site was WRONG. The medal-award
- * screen's per-frame update is vtable slot[1] = 0x44D760 (SEH), NOT the
- * mod's old site 0x44CB90 (award slot[4] / "click to continue" slot[1]).
- * 0x44CB90 never ran during the award phase, so g_revealArmed stayed 0 and
- * no reveal fired (log: zero "reveal ARMED" lines, stage armed=0). We
- * must NOT hook 0x44D760 itself: it installs an SEH frame at its prologue,
- * and calling mod C (VirtualAlloc + patch) from inside that frame corrupts
- * the exception chain on real Windows -> cascading heap faults (EIP=01210017).
+/* Cave G: ARM the reveal from the medal-award screen's per-frame update.
  *
- * The robust replacement: install_present_cave() now runs from DllMain
- * (cold, race-free) and diamond_present_tick() SELF-ARMS the first frame it
- * finds a live medal-award results object (find_results_object() is fully
- * IsBadReadPtr/vtable-guarded, so a half-built title-screen board is never
- * dereferenced). Leaving this function patching anything would corrupt the
- * game with a stale hook, so it is a verified no-op. */
+ * The award screen's per-frame update is vtable slot[1] = 0x44D760 (SEH).
+ * We hook the byte just AFTER its SEH prologue (at 0x44D778, on
+ * `push esi; mov esi,ecx; lea ecx,[esi+0x4c4]`, 9 bytes total through
+ * 0x44D780) with a STORE-ONLY cave: it does
+ * `mov DWORD PTR [g_revealArmed],1` (a single absolute-store — no calls, no
+ * allocation, no patching), then re-emits the three original instructions
+ * and jumps back to 0x44D781. Because it performs no calls/alloc/patches it
+ * does NOT corrupt the SEH exception chain the way the earlier heavy arm
+ * (VirtualAlloc + install_present_cave) did — that heavy path crashed real
+ * Windows (EIP=01210017 cascades). The store only touches its own global.
+ *
+ * g_revealArmed gates the present tick's game-state reads, so setting it
+ * this way (inside a genuinely-live award update, NOT during boot) is the
+ * ONLY safe signal. The present-hook cave at 0x455A90 is installed from
+ * DllMain (cold) and diamond_present_tick() early-returns until g_revealArmed
+ * is set, so the boot LoadingScreen (Initialize(26)) never has game state read.
+ */
+#define ARM_CAVE_HOOK 0x44D778   /* after SEH prologue: push esi;mov esi,ecx;lea ecx,[esi+0x4c4] */
+#define ARM_CAVE_RET  0x44D781   /* next instr after the 9 patched bytes (call 0x458e90) */
+
 static void install_arm_cave(void) {
-    /* no-op: see comment above. The present hook is installed from DllMain
-     * and the tick self-arms. DO NOT patch 0x44CB90/0x44B860. */
+    /* store-only arm cave on the award screen's per-frame update (0x44D760). */
+    unsigned char *p;
+    g_armCave = (unsigned char*)VirtualAlloc(NULL, 40, MEM_COMMIT|MEM_RESERVE,
+                                              PAGE_EXECUTE_READWRITE);
+    if (!g_armCave) return;
+    p = g_armCave;
+    /* mov DWORD PTR [g_revealArmed],1  (C7 05 <addr32> <imm32>) */
+    p[0]=0xC7; p[1]=0x05; *(DWORD*)(p+2)=(DWORD)&g_revealArmed; p+=6;
+    *(DWORD*)p=1; p+=4;
+    /* re-emit the three original instructions (0x44D778..0x44D780):
+     *   push esi (56)
+     *   mov esi,ecx (8B F1)
+     *   lea ecx,[esi+0x4c4] (8D 8E C4 04 00 00) */
+    p[0]=0x56; p+=1;
+    p[0]=0x8B; p[1]=0xF1; p+=2;
+    p[0]=0x8D; p[1]=0x8E; p[2]=0xC4; p[3]=0x04; p[4]=0x00; p[5]=0x00; p+=6;
+    /* jmp back to 0x44D781 (call 0x458e90) */
+    write_jmp(p, EXE_BASE + (ARM_CAVE_RET - EXE_BASE)); p+=5;
+    /* 9-byte patch at 0x44D778: JMP rel32 (5) + 4 NOPs */
+    unsigned char patch[9];
+    memset(patch, 0x90, 9);
+    write_jmp(patch, (DWORD)g_armCave);
+    patch_bytes((void*)(EXE_BASE + (ARM_CAVE_HOOK - EXE_BASE)), patch, 9);
+    diag_log("[diamond] arm cave installed (store-only) at 0x44D778 (award update)");
 }
 
 /* Cave F: block the PAUSE menu while the diamond reveal is pending (goal
@@ -1941,11 +1963,11 @@ static void install_hooks(void) {
     install_icon_cave();
     install_tt_cave();
     install_skip_cave();
-    /* install_arm_cave() removed: 0x44CB90 is award-vtable slot[4] /
-     * "click to continue" slot[1], NOT the award update (slot[1]=0x44D760),
-     * so it never fired during the award. The present hook is now installed
-     * from DllMain and the tick self-arms when it sees a medal screen. */
-    /* install_present_cave() runs from DllMain (cold, race-free) — see there. */
+    install_arm_cave();      /* store-only arm on the award update (0x44D778);
+                              * cannot corrupt SEH (no calls/alloc/patch) */
+    /* install_present_cave() runs from DllMain (cold, race-free) — see there.
+     * The present tick early-returns until the arm cave sets g_revealArmed,
+     * so the boot LoadingScreen never has game state read. */
     diag_log("[diamond] hooks installed");
 }
 
