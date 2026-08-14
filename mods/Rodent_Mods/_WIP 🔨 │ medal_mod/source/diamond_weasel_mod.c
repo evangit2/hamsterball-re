@@ -2040,18 +2040,22 @@ static void install_hooks(void) {
  * normal crash handler still fires. This is what finally pinpoints a
  * real-Windows reveal crash that Wine can't reproduce. */
 static LONG CALLBACK diamond_veh(PEXCEPTION_POINTERS ep) {
-    diag_logf("[diamond] VEH FAULT: EIP=%08X ERRC=%08X stage-arm=%d armed=%d presInst=%d vortexAct=%d",
-        ep->ExceptionRecord->ExceptionAddress,
+    diag_logf("[diamond] VEH FAULT: EIP=%08X ERRC=%08X regs(eax=%08X ebx=%08X ecx=%08X edx=%08X esi=%08X edi=%08X ebp=%08X esp=%08X) stage(armed=%d presInst=%d vortexAct=%d)",
+        (DWORD)ep->ExceptionRecord->ExceptionAddress,
         ep->ExceptionRecord->ExceptionCode,
-        g_revealArmed, g_revealArmed, g_presentInstalled, g_vortexActive);
-    /* also log a small stack trace (top few return addrs) */
+        ep->ContextRecord->Eax, ep->ContextRecord->Ebx,
+        ep->ContextRecord->Ecx, ep->ContextRecord->Edx,
+        ep->ContextRecord->Esi, ep->ContextRecord->Edi,
+        ep->ContextRecord->Ebp, ep->ContextRecord->Esp,
+        g_revealArmed, g_presentInstalled, g_vortexActive);
     {
         DWORD *sp = (DWORD*)ep->ContextRecord->Esp;
         int i;
-        for (i = 0; i < 6; i++) {
+        /* full stack walk — the return addresses identify the crashing
+         * function chain (input system -> game update loop) */
+        for (i = 0; i < 12; i++) {
             if (!IsBadReadPtr(sp + i, 4)) {
                 DWORD ra = sp[i];
-                /* only log plausible code addrs (module .text range) */
                 if (ra >= 0x401000 && ra < 0x4f7000)
                     diag_logf("[diamond] VEH stack[%d]=%08X", i, ra);
             }
