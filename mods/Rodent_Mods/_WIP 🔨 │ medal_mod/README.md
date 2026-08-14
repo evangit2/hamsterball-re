@@ -25,10 +25,11 @@ golden weasel** mini-icon for that race.
 - The unlock is **persisted** per race (so it shows up on later visits).
 - The standings mini-icons **only activate once you've earned at least one
   diamond**. On a fresh profile nothing is touched (no code cave installed),
-  which is what keeps the menu from crashing; after your first diamond the
-  mini-icons show on your next launch for exactly the races you've unlocked.
-  Diamond assets are written the moment they're first earned, so the mini-icon
-  file only loads when it actually exists.
+  which is what keeps the menu from crashing. The **moment you earn your first
+  diamond** the cave is installed on the spot, so the mini-icons show **in
+  that same session** — no restart needed — for exactly the races you've
+  unlocked. Diamond assets are written the moment they're first earned, so the
+  mini-icon file only loads when it actually exists.
 
 ## Files
 

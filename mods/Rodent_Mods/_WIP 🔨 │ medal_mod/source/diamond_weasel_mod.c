@@ -429,6 +429,10 @@ static FILE *g_log = NULL;
 
 static unsigned char *g_iconCave = NULL;
 static unsigned char *g_ttCave = NULL;
+static int   g_ttInstalled = 0;   /* has cherry TT cave been patched in? Start 0;
+                                   * set 1 after install so it's idempotent whether
+                                   * called at startup (g_anyDiamond already 1) or
+                                   * lazily from diamond_provision_unlock. */
 static unsigned char *g_skipCave = NULL;
 static unsigned char *g_presentCave = NULL;
 static unsigned char *g_armCave = NULL;
@@ -527,6 +531,9 @@ static int diamond_materialize_pngs(void) {
  * Add every new effect/asset write here so the whole unlock stays all-or-nothing.
  */
 static int save_unlocks_reg(void);   /* defined below (registry save) */
+static void install_tt_cave(void);   /* defined below (patch helpers) — called
+                                      * lazily when the first diamond is earned
+                                      * so the TT mini-icon shows this session. */
 
 static int diamond_provision_unlock(int race) {
     int ok_pngs, ok_reg;
@@ -549,10 +556,14 @@ static int diamond_provision_unlock(int race) {
                   race, ok_reg);
         return 0;
     }
-    /* 3. Only after the registry commit succeeds: a diamond now exists ->
-     *    TT-menu cave eligible next launch. (Set AFTER g_won, so a failed reg
-     *    write rolls back cleanly with no lingering g_anyDiamond.) */
+    /* 3. Only after the registry commit succeeds: a diamond now exists -> the
+     *    TT-menu cave becomes eligible. Normally install_tt_cave() runs at
+     *    startup (a diamond was already earned on a prior save), but if this
+     *    is the player's FIRST diamond ever, g_anyDiamond was 0 at startup and
+     *    the cave is NOT yet installed — so install it NOW so the mini-icon
+     *    shows in the standings THIS session, not only on the next launch. */
     g_anyDiamond = 1;
+    install_tt_cave();
     diag_logf("[diamond] provision OK for race %d", race);
     return 1;
 }
@@ -1166,16 +1177,19 @@ static void vortex_draw(DWORD gfx) {
     {
         typedef HRESULT (__stdcall *PFN_SetRenderState)(void*, int, DWORD);
         typedef HRESULT (__stdcall *PFN_SetTextureStageState)(void*, int, int, DWORD);
+        typedef HRESULT (__stdcall *PFN_GetTextureStageState)(void*, int, int, DWORD*);
         typedef HRESULT (__stdcall *PFN_DrawPrimitiveUP)(void*, DWORD, DWORD, const void*, DWORD);
         typedef HRESULT (__stdcall *PFN_SetVertexShader)(void*, DWORD);
         typedef HRESULT (__stdcall *PFN_GetVertexShader)(void*, DWORD*);
         PFN_SetRenderState      SetRenderState  = (PFN_SetRenderState)      (*(void**)(vt + D3D_DEV_SETRENDERSTATE));
         PFN_SetTextureStageState SetTextureStageState = (PFN_SetTextureStageState)(*(void**)(vt + D3D_DEV_SETTEXTURESTAGE));
+        PFN_GetTextureStageState GetTextureStageState = (PFN_GetTextureStageState)(*(void**)(vt + 0x100)); /* vtable[64] */
         PFN_DrawPrimitiveUP     DrawPrimitiveUP = (PFN_DrawPrimitiveUP)     (*(void**)(vt + D3D_DEV_DRAWPRIMITIVEUP));
         PFN_SetVertexShader     SetVertexShader = (PFN_SetVertexShader)     (*(void**)(vt + D3D_DEV_SETVERTEXSHADER));
         PFN_GetVertexShader     GetVertexShader = (PFN_GetVertexShader)     (*(void**)(vt + D3D_DEV_GETVERTEXSHADER));
         void *dev = (void*)device;
         DWORD savedFVF = 0;
+        DWORD savedColorOp = 0, savedAlphaOp = 0;
 
         /* Save the game's FVF, set our TL-vertex format. Without this the
          * DrawPrimitiveUP reads the game's last-frame FVF (e.g. textured
@@ -1183,6 +1197,16 @@ static void vortex_draw(DWORD gfx) {
         if (GetVertexShader && SetVertexShader) {
             GetVertexShader(dev, &savedFVF);
             SetVertexShader(dev, D3DFVF_TLVERTEX);
+        }
+
+        /* Save the stage-0 color/alpha ops we are about to change so the
+         * next textured draw isn't stuck on SELECTARG2. The game re-asserts
+         * its stage states at material-apply in most paths, but not all, so
+         * a sprite drawn right after the vortex could come out tinted /
+         * untextured (works fine on Wine, flashes on real GPUs). */
+        if (GetTextureStageState) {
+            GetTextureStageState(dev, 0, D3DTSS_COLOROP, &savedColorOp);
+            GetTextureStageState(dev, 0, D3DTSS_ALPHAOP, &savedAlphaOp);
         }
 
         /* enable alpha blend (soft streaks) */
@@ -1202,6 +1226,10 @@ static void vortex_draw(DWORD gfx) {
         if (SetVertexShader) SetVertexShader(dev, savedFVF);
         SetRenderState(dev, D3DRS_ALPHABLENDENABLE, 0);
         SetRenderState(dev, D3DRS_FOGENABLE, 1);
+        if (SetTextureStageState && GetTextureStageState) {
+            SetTextureStageState(dev, 0, D3DTSS_COLOROP, savedColorOp);
+            SetTextureStageState(dev, 0, D3DTSS_ALPHAOP, savedAlphaOp);
+        }
     }
 }
 
@@ -1519,6 +1547,15 @@ static void whiteout_tick(DWORD results) {
     int frame;
     DWORD app, sprite, gfx;
     float m, *sc;
+    /* The color-multiplier (gfx+0x7A8 enable + gfx+0x7B0..0x7BC RGBA) is a
+     * SHARED global — the game itself uses it for its own flashes/fades. So
+     * we must SAVE the prior state and restore it exactly after our draw,
+     * not force it back to identity (which would clobber whatever the game
+     * had set for the upcoming frame and could wash out/alter the next draw).
+     * The game reads 0x7A8 as a byte enable and 0x7B0/0x7B4/0x7B8/0x7BC as
+     * four floats (diffuse/ambient/specular/emissive) — see 0x455123. */
+    BYTE  savedEnable;
+    float savedRGBA[4];
     if (!results) return;
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
     if (!diamond_first_earn(results)) return;   /* replay -> no white-out */
@@ -1530,12 +1567,16 @@ static void whiteout_tick(DWORD results) {
     sprite = *(DWORD*)(app + SPRITE_WEAEL_APP);
     if (!sprite || IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)) return;
     gfx = *(DWORD*)(sprite + SPRITE_GFX);
-    if (!gfx || IsBadReadPtr((void*)(gfx + GFX_MULT_R), 4)) return;
+    if (!gfx || IsBadReadPtr((void*)(gfx + GFX_MULT_R), 16 + 4)) return;
     if (frame >= WEASEL_WHITE_END) m = WEASEL_WHITE_MULT;
     else m = 1.0f + (WEASEL_WHITE_MULT - 1.0f) *
             ((float)(frame - WEASEL_WHITE_START) / (float)(WEASEL_WHITE_END - WEASEL_WHITE_START));
-    *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = 1;
+    /* save prior color-mult state */
+    savedEnable = *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE);
     sc = (float*)(gfx + GFX_MULT_R);
+    savedRGBA[0] = sc[0]; savedRGBA[1] = sc[1]; savedRGBA[2] = sc[2]; savedRGBA[3] = sc[3];
+    /* set our white multiplier */
+    *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = 1;
     sc[0] = m; sc[1] = m; sc[2] = m; sc[3] = 1.0f;
     /* draw the weasel sprite tinted white over the trophy spot (0x208, 0x63) */
     __asm__ volatile(
@@ -1546,9 +1587,10 @@ static void whiteout_tick(DWORD results) {
         : : "r"((void*)SPRITE_DRAW), "r"(sprite)
         : "eax", "ecx", "edx", "memory"
     );
-    /* restore identity multiplier so the rest of the frame is unaffected */
-    *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = 0;
-    sc[0] = sc[1] = sc[2] = sc[3] = 1.0f;
+    /* restore the PRIOR color-mult state (not identity) so a game-set
+     * multiplier for the upcoming frame is preserved */
+    sc[0] = savedRGBA[0]; sc[1] = savedRGBA[1]; sc[2] = savedRGBA[2]; sc[3] = savedRGBA[3];
+    *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = savedEnable;
 }
 
 /* Per-frame reveal driver, called from the present hook (ecx=gfx). Safe at the
@@ -1836,24 +1878,14 @@ static void remove_pause_patch(void) {
  *             jmp 0x42F92C         ; inc edi (original next instruction)
  */
 static void install_tt_cave(void) {
-    /* Gate the TT-menu cave on the player having EARNED at least one diamond.
-     *
-     * If no diamond has ever been unlocked (fresh profile: g_anyDiamond==0),
-     * we install NOTHING at 0x42F927 — the game's own golden-weasel append
-     * runs untouched, the mini-icon code is never entered, and the TT menu
-     * cannot crash from this cave. (The 0x42F927 crash only ever reproduced
-     * on real Windows, not on the Wine test-harness, which is why it slipped
-     * past the crash test.)
-     *
-     * Once the player earns their first diamond (g_anyDiamond becomes 1, set
-     * in diamond_provision_unlock), the cave activates on the NEXT launch so
-     * the mini diamond can show in the standings for exactly the races the
-     * player has unlocked (diamond_tt_append still guards each race on
-     * g_won[r]). Diamond assets are written at the moment they're first
-     * earned, so the mini-icon file only loads when it actually exists.
-     */
+    /* Only install once. This is idempotent whether it runs at startup (a
+     * diamond was already earned on a previous save: g_anyDiamond==1) OR
+     * lazily from diamond_provision_unlock the instant the player earns
+     * their first diamond mid-session (g_anyDiamond flips 0->1 here). */
+    if (g_ttInstalled) return;
+
     if (!g_anyDiamond) {
-        diag_log("[diamond] TT-menu cave NOT installed (no diamonds earned yet)");
+        diag_log("[diamond] TT-menu cave deferred (no diamonds earned yet)");
         return;
     }
     DWORD patchAddr = EXE_BASE + (TT_WEASEL_APPEND - EXE_BASE);
@@ -1884,6 +1916,7 @@ static void install_tt_cave(void) {
     memset(patch, 0x90, 5);
     write_jmp(patch, (DWORD)g_ttCave);
     patch_bytes((void*)patchAddr, patch, 5);
+    g_ttInstalled = 1;
     diag_log("[diamond] TT-menu cave installed (diamond(s) earned)");
 }
 
