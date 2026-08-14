@@ -253,35 +253,44 @@ It hooks:
    - at **gold + 240** the diamond is drawn in the trophy's place at (0x208,
      0x63), firing the reveal effects (medal pop + star ring) on the first swap.
    The game's own golden-weasel draw is left 100% original; the white weasel
-   and diamond draw over it at present time (layering: native gold → white
-   weasel 55..240 → diamond 240+). All timing is offset from the gold-medal
-   award frame (`results+0x4c`).
-   
-   The present hook fires **every frame**, including while the title screen
-  loads its animated menu background (`Levels\Level4-Trapdoor2`), when the
-  board/results pointers are half-built. To keep it safe the present tick
-  **early-returns until it is armed** (warp's `g_whiteAlpha` gate): a
-  STORE-ONLY arm cave at `0x44D778` (the medal-award screen's per-frame
-  update `0x44D760`, vtable slot[1], hooked just AFTER its SEH prologue)
-  sets `g_revealArmed=1` with a single absolute store — no calls, no
-  allocation, no patching — so it cannot corrupt the SEH exception chain
-  (a heavy VirtualAlloc/patch inside that SEH frame crashed real Windows,
-  `EIP=01210017` cascades). Until that store fires, the present tick does
-  **zero** reads of game state, so the boot `LoadingScreen` (Initialize(26))
-  — where `app+0x178`/`scene+0x8B8` point at a live-but-half-built board —
-  is never dereferenced. (Reading it crashed real Windows at startup,
-  `RUNTIME 1s`, `stack[0]=0x46BFAE`.)
+     and diamond draw over it at present time (layering: native gold → white
+     weasel 55..240 → diamond 240+). All timing is offset from the gold-medal
+     award frame (`results+0x4c`).
 
-  The present hook itself (cave at `0x455A90`) is installed from **DllMain
-  at `DLL_PROCESS_ATTACH`**, before the game's frame loop begins, so the
-  7-byte patch is written when `0x455A90` is guaranteed cold — no race, no
-  background thread, safe on real Windows.
+     The reveal hook is the **GameUpdate frame epilogue `0x46C1F1`** — the same
+     cold, boot-safe per-frame address proven by the ghost_triggers/warp/magnet
+     mods (`pop esi; add esp,8; ret`). It runs after all game logic + D3D
+     rendering, right before the frame's function returns, so it can read game
+     state and draw safely. Crucially it is **cold during the boot loading
+     screen**, so it can be installed from `DllMain` at `DLL_PROCESS_ATTACH`
+     (before the frame loop starts) with no race. (Hooking `0x455A90` instead —
+     the Graphics_PresentOrEnd entry — made the hook live at boot and crashed
+     real Windows at RUNTIME 1s with a heap-execution fault `stack[0]=0x46BFAE`;
+     the loading screen draws through that function. Wine survives it but
+     Windows does not, so it was a real-Windows-only trap.)
 
-  Earlier versions tried to arm from `0x44CB90`, but that is the award
-  vtable's slot[4] / the "click to continue" vtable's slot[1] — it **never
-  runs during the award phase** (the award screen updates through vtable
-  slot[1] = `0x44D760`), so the reveal never armed. Arming from `0x44D760`
-  itself via a store-only cave fixes that without the SEH hazard.
+     The present tick **early-returns until it is armed** (warp's `g_whiteAlpha`
+     gate): a STORE-ONLY arm cave at `0x44D778` (the medal-award screen's
+     per-frame update `0x44D760`, vtable slot[1], hooked just AFTER its SEH
+     prologue) sets `g_revealArmed=1` with a single absolute store — no calls,
+     no allocation, no patching — so it cannot corrupt the SEH exception chain
+     (a heavy VirtualAlloc/patch inside that SEH frame crashed real Windows,
+     `EIP=01210017` cascades). Until that store fires, the present tick does
+     **zero** reads of game state, so the boot `LoadingScreen` (Initialize(26))
+     — where `app+0x178`/`scene+0x8B8` point at a live-but-half-built board —
+     is never dereferenced. (Reading it crashed real Windows at startup,
+     `RUNTIME 1s`, `stack[0]=0x46BFAE`.)
+
+     The present hook (the `0x46C1F1` cave) is installed from **DllMain at
+     `DLL_PROCESS_ATTACH`**, before the game's frame loop begins, so the 5-byte
+     patch is written when the address is guaranteed cold — no race, no
+     background thread, safe on real Windows.
+
+     Earlier versions tried to arm from `0x44CB90`, but that is the award
+     vtable's slot[4] / the "click to continue" vtable's slot[1] — it **never
+     runs during the award phase** (the award screen updates through vtable
+     slot[1] = `0x44D760`), so the reveal never armed. Arming from `0x44D760`
+     itself via a store-only cave fixes that without the SEH hazard.
 2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
    for a race, appends a diamond mini-icon entry to the standings medal list
    right after the golden weasel, so it lays out to the right of it.

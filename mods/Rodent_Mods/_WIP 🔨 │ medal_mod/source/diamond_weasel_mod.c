@@ -230,12 +230,10 @@ static void load_real_bass(void) {
 #define STR_FMT_D          0x4D03F8   /* "%d" */
 #define STR_BUF            0x4F7448   /* AthenaString buffer */
 
-/* Graphics_PresentOrEnd (0x455A90): the per-frame Present/EndScene entry,
- * __thiscall(ecx=gfx). Runs AFTER all game logic + rendering and right before
- * the backbuffer is presented. Drawing from here (not from an inline Draw
- * cave) avoids re-entering the game's draw loop. */
-#define PRESENT_HOOK       0x455A90   /* mov al,[esp+4]; sub esp,0x20 (7B prologue) */
-#define PRESENT_RET        0x455A97   /* next instr after the 7 patched bytes */
+/* Per-frame reveal hook: GameUpdate frame epilogue (0x46C1F1) — see
+ * install_present_cave(). This is the cold, boot-safe per-frame hook used by
+ * all proven Hamsterball bass.dll proxy mods. Runs after all game logic +
+ * D3D rendering, so the reveal can safely read game state and draw. */
 
 
 /* Golden-weasel white-fade (result-frame keyed). The results screen
@@ -1480,9 +1478,10 @@ __attribute__((used)) void diamond_tt_append(DWORD standings, int race) {
  * cave at 0x44E139 (the game's own golden-weasel draw call site), which
  * re-emitted the gold draw (call 0x42c7c0) and re-entered the sprite loader
  * from inside the game's Draw loop. That re-entrancy crashed on real Windows
- * (Wine tolerates it). The whole reveal now runs from the Graphics_PresentOrEnd
- * hook (0x455A90), which fires ONCE PER FRAME at a safe boundary — after all
- * game logic + rendering, immediately before the backbuffer is presented. The
+ * (Wine tolerates it). The whole reveal now runs from the GameUpdate frame
+ * epilogue hook (0x46C1F1), which fires ONCE PER FRAME at a safe boundary —
+ * after all game logic + rendering, immediately before the function returns
+ * and the frame is presented. The
  * game's own weasel draw at 0x44E139 is left 100% original; we draw the
  * white-out weasel and the diamond ON TOP of it from present-time, so the
  * layering is: gold (native) -> white weasel (55..240) -> diamond (240+).
@@ -1747,7 +1746,7 @@ static void install_skip_cave(void) {
  *
  * g_revealArmed gates the present tick's game-state reads, so setting it
  * this way (inside a genuinely-live award update, NOT during boot) is the
- * ONLY safe signal. The present-hook cave at 0x455A90 is installed from
+ * ONLY safe signal. The present-hook cave (GameUpdate epilogue 0x46C1F1) is installed from
  * DllMain (cold) and diamond_present_tick() early-returns until g_revealArmed
  * is set, so the boot LoadingScreen (Initialize(26)) never has game state read.
  */
@@ -1920,40 +1919,41 @@ static void install_tt_cave(void) {
     diag_log("[diamond] TT-menu cave installed (diamond(s) earned)");
 }
 
-/* Present-hook cave: Graphics_PresentOrEnd (0x455A90), __thiscall(ecx=gfx).
- * Original prologue (7 bytes): 8A 44 24 04  MOV AL,[ESP+4]
- *                              83 EC 20     SUB ESP,0x20
- * Detour: save ecx/edx (the game reads ecx=gfx at 0x455A9A `mov esi,ecx` right
- * after this prologue), call diamond_present_tick (cdecl, no args), restore
- * ecx/edx, then re-emit the 7-byte prologue and jump back to 0x455A97. */
+/* Present-hook cave: GameUpdate frame epilogue (0x46C1F1), the per-frame
+ * hook used by all proven Hamsterball bass.dll proxy mods (ghost_triggers,
+ * warp, etc.). This is COLD during the boot LoadingScreen so it can be
+ * installed from DllMain without crashing real Windows.
+ *   - Original 5 bytes at 0x46C1F1: 5E 83 C4 08 C3  POP ESI / ADD ESP,8 / RET
+ *   - The game renders D3D BEFORE this point, so D3D state (device, textures)
+ *     is safe to read at this hook. */
+#define FRAME_HOOK      0x46C1F1   /* per-frame epilogue (cold, safe) */
+#define FRAME_RET       0x46C1F6   /* next instr after the 5 patched bytes */
+
 static void install_present_cave(void) {
-    DWORD patchAddr = EXE_BASE + (PRESENT_HOOK - EXE_BASE);
-    DWORD retAddr   = EXE_BASE + (PRESENT_RET - EXE_BASE);
+    DWORD patchAddr = EXE_BASE + (FRAME_HOOK - EXE_BASE);
+    DWORD retAddr   = EXE_BASE + (FRAME_RET - EXE_BASE);
     unsigned char *p;
-    unsigned char patch[7];
-    g_presentCave = (unsigned char*)VirtualAlloc(NULL, 64, MEM_COMMIT|MEM_RESERVE,
+    unsigned char patch[5];
+    g_presentCave = (unsigned char*)VirtualAlloc(NULL, 40, MEM_COMMIT|MEM_RESERVE,
                                                  PAGE_EXECUTE_READWRITE);
     if (!g_presentCave) return;
     p = g_presentCave;
-    /* save ecx (gfx) + edx across the helper call */
     p[0]=0x51; p+=1;                                  /* push ecx */
-    p[0]=0x52; p+=1;                                  /* push edx */
-    /* call diamond_present_tick (cdecl, no args) */
+    p[0]=0x52; p+=1;                                   /* push edx */
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_present_tick-(DWORD)(p+5); p+=5;
-    /* restore edx, ecx */
-    p[0]=0x5A; p+=1;                                  /* pop edx */
-    p[0]=0x59; p+=1;                                  /* pop ecx */
-    /* re-emit original 7-byte prologue: MOV AL,[ESP+4]; SUB ESP,0x20 */
-    p[0]=0x8A; p[1]=0x44; p[2]=0x24; p[3]=0x04; p+=4;
-    p[0]=0x83; p[1]=0xEC; p[2]=0x20; p+=3;
-    /* jump back */
+    p[0]=0x5A; p+=1;                                   /* pop edx */
+    p[0]=0x59; p+=1;                                   /* pop ecx */
+    /* re-emit original epilogue: pop esi; add esp,8; ret */
+    p[0]=0x5E; p+=1;
+    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;
+    p[0]=0xC3; p+=1;
+    /* jmp back to 0x46C1F6 */
     write_jmp(p, retAddr); p+=5;
-    /* 7-byte patch at 0x455A90: JMP rel32 (5 bytes) + 2 NOPs */
-    memset(patch, 0x90, 7);
+    memset(patch, 0x90, 5);
     write_jmp(patch, (DWORD)g_presentCave);
-    patch_bytes((void*)patchAddr, patch, 7);
+    patch_bytes((void*)patchAddr, patch, 5);
     g_presentInstalled = 1;
-    diag_log("[diamond] present-hook reveal cave installed at 0x455A90");
+    diag_log("[diamond] present-hook reveal cave installed at 0x46C1F1");
 }
 
 /* ================================================================
@@ -1978,18 +1978,20 @@ static void install_hooks(void) {
  * loading screen (CURRENTOBJECT "LoadingScreen Gadget", Initialize(26)) —
  * it draws the loading bar itself (textures\hammy3.png, silver-icon.png,
  * Levels\Secret are still mid-load at ~2s). It is therefore a HOT address
- * during the loading screen, so it cannot be patched from a background
- * thread: both the plain Sleep(2s)+patch (warp pattern) and a prior
- * SuspendThread/GetThreadContext "atomic" install raced with the main
- * thread's in-flight execution of 0x455A90 and crashed at exactly 2s with
- * non-deterministic heap addresses (MODULE:K / 1AF368:0BD02D70 etc.).
+ * during the loading screen: patching it and having the hook live at boot
+ * crashed real Windows at RUNTIME 1s (heap-execution fault EIP=0x0137xxxx,
+ * stack[0]=0x46BFAE, "Crash during LoadingScreen Draw"). Wine survives it
+ * (43s OK) but real Windows does not — a real-Windows-only trap.
  *
- * The race-free solution is to install the present hook from DllMain on the
- * MAIN THREAD during DLL_PROCESS_ATTACH, which runs BEFORE the game's frame
- * loop starts — so 0x455A90 is guaranteed COLD (not yet executing) and the
- * 7-byte write cannot tear an in-flight instruction. No background thread,
- * no sleep, no suspension. The tick then self-arms when a medal screen is
- * live (see diamond_present_tick). */
+ * The fix: hook the COLD frame epilogue 0x46C1F1 instead (the same address
+ * ghost_triggers/warp use). It is the tail of the per-frame GameUpdate
+ * function (0x46C180) — it runs AFTER all game logic + rendering, right
+ * before the frame's function returns, and is never executing during the
+ * boot loading screen (the loading screen draws through a different path).
+ * It is installed from DllMain at DLL_PROCESS_ATTACH, which runs before the
+ * game's frame loop starts — guaranteed cold, race-free, no background
+ * thread, no sleep, no suspension. The tick then only reads game state
+ * once the store-only arm cave has set g_revealArmed (see diamond_present_tick). */
 
 /* ================================================================
  * DllMain
@@ -2038,12 +2040,11 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
         load_unlocks();
         install_hooks();
         install_present_cave();
-        /* Install the present-hook reveal cave directly here, on the main
-         * thread, at DLL_PROCESS_ATTACH. This runs BEFORE the game's frame
-         * loop starts, so Graphics_PresentOrEnd (0x455A90) is guaranteed cold
-         * — no race, no crash (the old arm-cave chain raced/crashed at 2s).
-         * The tick self-arms itself the first frame a medal-award results
-         * screen is live. */
+        /* Install the present-hook reveal cave (GameUpdate epilogue 0x46C1F1,
+         * a cold, boot-safe address) at DLL_PROCESS_ATTACH, before the game's
+         * frame loop starts — guaranteed cold, no race, no crash. The tick
+         * only reads game state once the store-only arm cave (on the medal-
+         * award update) has set g_revealArmed. */
     }
     return TRUE;
 }
