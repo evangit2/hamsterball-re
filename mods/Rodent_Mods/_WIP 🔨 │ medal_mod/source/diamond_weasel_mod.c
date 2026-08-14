@@ -360,6 +360,9 @@ static int g_presentInstalled = 0;   /* 1 once the present hook has been install
                                         (race-free, on the main thread, from the
                                         arm cave when the results screen first
                                         appears). */
+static int g_pauseApplied = 0;       /* 1 while the pause-block patches are applied
+                                        to the game (only while a reveal is armed);
+                                        restored to vanilla otherwise. */
 
 /* ================================================================
  * Mod globals
@@ -692,6 +695,10 @@ static int get_player_time_cs(DWORD app) {
 __attribute__((used)) void diamond_load_icon_impl(DWORD app);
 __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app);
 static void install_present_cave(void);   /* defined below (patch helpers) */
+/* pause-block apply/remove (defined below, patch helpers): pause sites are
+ * patched ONLY while a reveal is armed and restored to vanilla otherwise. */
+static void apply_pause_patch(void);
+static void remove_pause_patch(void);
 
 /* Arming signal for the present hook: set g_revealArmed=1 and install the
  * present hook. Called from a cave at the results screen's per-frame update
@@ -708,6 +715,7 @@ static void install_present_cave(void);   /* defined below (patch helpers) */
  * Level4-Trapdoor2 background load) can never be dereferenced. */
 __attribute__((used)) void diamond_arm_reveal(void) {
     g_revealArmed = 1;
+    apply_pause_patch();              /* pause-block active only while reveal is armed */
     if (!g_presentInstalled) {
         g_presentInstalled = 1;
         install_present_cave();   /* main-thread, race-free (cold 0x455A90) */
@@ -1592,6 +1600,7 @@ __attribute__((used)) void diamond_present_tick(void) {
         /* results screen gone -> disarm so the NEXT loading screen is safe,
          * and tear down any leftover vortex cycle */
         g_revealArmed = 0;
+        remove_pause_patch();         /* restore vanilla pause bytes now */
         if (g_vortexActive) { g_vortexActive = 0; vortex_sound_stop(); }
         return;
     }
@@ -1789,44 +1798,30 @@ static void install_arm_cave(void) {
  * the branch test; ecx/edx/esi/edi/ebx and flags are restored/native.
  */
 static void install_pause_caves(void) {
-    /* Pause-block, REBUILT 2026-08-13 to never call 0x40a920 from the cave.
+    /* Pause-block: BUILT but NOT INSTALLED at startup.
      *
-     * Root cause of the real-Windows right-click crash (CRASH_ADDRESS 0000:00000000,
-     * MouseDown, ~21s in): the OLD caves re-emitted `call 0x40a920` from hand-rolled
-     * heap cave memory. 0x40a920 sets up its own SEH frame (mov %fs:0) and returns
-     * with ret $4; a `call` from a VirtualAlloc'd cave that then returns back into
-     * the cave was the crash vector on real Windows, while Wine tolerates it. The
-     * game's normal pause works fine because IT calls 0x40a920 natively in its own
-     * context.
+     * Root cause (CONFIRMED 2026-08-13 by two failed rebuilds): on real
+     * Windows, merely having mod patch bytes sitting at the pause sites —
+     * 0x4130c3 / 0x40b40f — crashes a normal pause, EVEN as a pure
+     * passthrough. The first two attempts re-emitted `call 0x40a920`; the
+     * third (g_revealArmed fast-path gate, zero C calls on a normal pause,
+     * straight jump into native) STILL crashed (CRASH_ADDRESS 0001:FFFFFFFF,
+     * MouseDown, 10s, Warm-Up, arm never fired). Wine tolerates the heap-memory
+     * flow into the 0x40a920 SEH frame; real Windows does not.
      *
-     * FIX: only patch the DECISION point before the game's own call, and JUMP INTO
-     * the game's unmodified `call 0x40a920` when not blocked (so 0x40a920 returns
-     * to the game's 0x4130ce naturally), or jump to the game's own skip branch
-     * (0x4130ce) when blocked. The cave NEVER issues a call/jmp to 0x40a920 — the
-     * game executes it in its own context. Same proven pattern as the other caves
-     * (call a plain-C helper, then let the original code run).
+     * FIX: never patch the pause sites during normal gameplay. The caves are
+     * built here (VirtualAlloc) but their patch bytes are applied to the game
+     * ONLY while a reveal is genuinely armed (results screen live), and
+     * restored to the original vanilla bytes the instant the reveal ends.
+     * During normal gameplay — the exact case that crashes — the pause
+     * addresses are byte-for-byte ORIGINAL, so a normal pause runs the game's
+     * own untouched code and cannot crash.
      *
-     * Right-click thunk (vtable[5]) at 0x4130a0:
-     *   4130a0 cmpl $1,0xc(%esp)  ; 4130a5  jne 0x4130ce (skip)
-     *   4130a7 mov eax,[ecx+0x878]; 4130ad mov dl,[eax+0x238]; 4130b3 test; 4130b5 je skip
-     *   4130b7 mov eax,[eax+0x220]; 4130bd mov dl,[eax+0x95]
-     *   4130c3 test dl,dl         ; 4130c5  jne 0x4130ce; 4130c7 push $1
-     *   4130c9 call 0x40a920      ; 4130ce  ret $0xc
-     *   -> hook 6 bytes 0x4130c3..0x4130c8, jump into ORIGINAL 0x4130c9.
-     *
-     * Win32-ESC thunk (vtable[8]) at 0x40b40f:
-     *   40b400 cmpl $0x1b,0x4(%esp); 40b405 jne 0x40b414; 40b407 movl $1,0x4(%esp)
-     *   40b40f jmp 0x40a920        ; 40b414 ret $4
-     *   -> hook the 5-byte jmp at 0x40b40f; re-emit the native `jmp 0x40a920`
-     *      tail-call when not blocked (matches native), else jmp 0x40b414.
-     *
-     * diamond_pause_blocked() is plain C (no SEH, no %fs) so calling IT from the
-     * cave is safe; only the game's own SEH function is left to the game.
+     * apply/remove are driven from diamond_arm_reveal (arm) and
+     * diamond_present_tick's disarm branch (remove).
      */
-    DWORD rcHook = EXE_BASE + (0x4130C3 - EXE_BASE);   /* test dl,dl — decision pt (6 bytes through 0x4130c8) */
     DWORD rcRet  = EXE_BASE + (0x4130CE - EXE_BASE);
     DWORD rcCall = EXE_BASE + (0x4130C9 - EXE_BASE);   /* original call 0x40a920 (left unmodified) */
-    DWORD esHook = EXE_BASE + (0x40B40F - EXE_BASE);   /* jmp 0x40a920 (ESC), 5 bytes */
     DWORD esRet  = EXE_BASE + (0x40B414 - EXE_BASE);   /* ret $4 */
     DWORD menu   = EXE_BASE + (0x40A920 - EXE_BASE);
     unsigned char *p;
@@ -1840,9 +1835,9 @@ static void install_pause_caves(void) {
     /* Fast-path gate: if no results screen is armed (g_revealArmed==0), the
      * reveal isn't running, so a pause is never blocked. JUMP straight to the
      * native flow — do NOT call any C function. This eliminates the complex-C
-     * call (IsBadReadPtr/SEH/get_app/get_race_index) on normal gameplay pause,
-     * which is the real-Windows-only crash vector this mod hit repeatedly.
-     * Only when a results screen is genuinely live do we run the C block. */
+     * call (IsBadReadPtr/SEH/get_app/get_race_index) on a pause that happens
+     * to coincide with a reveal. Only when a results screen is live do we run
+     * the C block. */
     p[0]=0xA1; *(DWORD*)(p+1)=(DWORD)&g_revealArmed; p+=5; /* mov eax,[g_revealArmed] */
     p[0]=0x85; p[1]=0xC0; p+=2;                               /* test eax,eax */
     p[0]=0x74; p[1]=0x0F; p+=2;                               /* jz .native (0x0F -> .native) */
@@ -1862,9 +1857,7 @@ static void install_pause_caves(void) {
     p[0]=0xE9; *(DWORD*)(p+1)=rcCall-(DWORD)(p+5); p+=5; /* jmp 0x4130c9 -> run ORIGINAL call 0x40a920 */
     /* skip_pause: */
     p[0]=0xE9; *(DWORD*)(p+1)=rcRet-(DWORD)(p+5); p+=5;  /* jmp 0x4130ce (game's own skip) */
-    { unsigned char patch[6]; memset(patch,0x90,6); write_jmp(patch,(DWORD)g_pauseCave);
-      patch_bytes((void*)rcHook, patch, 6); }
-    diag_log("[diamond] pause-block cave REBUILT at 0x4130C3 (g_revealArmed fast-path gate + jump-to-native call)");
+    /* patch is NOT written here (see apply_pause_patch). */
 
     /* ---- ESC cave (hook 0x40b40f) ---- */
     p = g_pauseCave + 96;
@@ -1885,9 +1878,43 @@ static void install_pause_caves(void) {
     p[0]=0xE9; *(DWORD*)(p+1)=menu-(DWORD)(p+5); p+=5;   /* jmp 0x40a920 (re-emit native tail-call) */
     /* skip_esc: */
     p[0]=0xE9; *(DWORD*)(p+1)=esRet-(DWORD)(p+5); p+=5;  /* jmp 0x40b414 (ret $4) */
-    { unsigned char patch[5]; memset(patch,0x90,5); write_jmp(patch,(DWORD)(g_pauseCave+96));
-      patch_bytes((void*)esHook, patch, 5); }
-    diag_log("[diamond] pause-block ESC cave REBUILT at 0x40B40F (jump-to-native jmp)");
+
+    diag_log("[diamond] pause-block caves BUILT (applied only while a reveal is armed; pause sites stay vanilla during normal gameplay)");
+}
+
+/* Apply the pause-block patches to the game. Called ONLY while a reveal is
+ * armed (results screen live). The vanilla bytes at both sites are saved
+ * first so they can be restored exactly. */
+static void apply_pause_patch(void) {
+    DWORD rcHook = EXE_BASE + (0x4130C3 - EXE_BASE);
+    DWORD esHook = EXE_BASE + (0x40B40F - EXE_BASE);
+    unsigned char patch[6];
+    if (!g_pauseCave || g_pauseApplied) return;
+    /* right-click: 6-byte JMP rel32 + 1 NOP (original is 6 bytes) */
+    memset(patch, 0x90, 6);
+    write_jmp(patch, (DWORD)g_pauseCave);
+    patch_bytes((void*)rcHook, patch, 6);
+    /* ESC: 5-byte JMP rel32 (original is exactly 5 bytes) */
+    memset(patch, 0x90, 5);
+    write_jmp(patch, (DWORD)(g_pauseCave + 96));
+    patch_bytes((void*)esHook, patch, 5);
+    g_pauseApplied = 1;
+    diag_log("[diamond] pause-block patch APPLIED (reveal armed)");
+}
+
+/* Restore the original vanilla bytes at both pause sites. Called when the
+ * reveal ends / results screen is gone, so normal gameplay pause is 100%
+ * original. */
+static void remove_pause_patch(void) {
+    DWORD rcHook = EXE_BASE + (0x4130C3 - EXE_BASE);
+    DWORD esHook = EXE_BASE + (0x40B40F - EXE_BASE);
+    static const unsigned char rc_orig[6] = {0x84,0xD2,0x75,0x07,0x6A,0x01}; /* test dl,dl; jne 0x4130ce; push $1 */
+    static const unsigned char es_orig[5] = {0xE9,0x0C,0xF5,0xFF,0xFF};       /* jmp 0x40a920 */
+    if (!g_pauseApplied) return;
+    patch_bytes((void*)rcHook, rc_orig, 6);
+    patch_bytes((void*)esHook, es_orig, 5);
+    g_pauseApplied = 0;
+    diag_log("[diamond] pause-block patch REMOVED (reveal ended) — pause sites restored to vanilla");
 }
 
 /* Cave C: TT-menu (standings) diamond mini-icon after golden weasel.
