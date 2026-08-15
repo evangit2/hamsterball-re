@@ -203,9 +203,9 @@ static void load_real_bass(void) {
  * valid, esi = results object, and it runs every award frame. We contain the
  * mod call in our OWN nested FS:[0] frame so nothing we raise reaches the
  * game's frame. */
-#define AWARD_UPDATE_ENTRY    0x44D760   /* SEH prologue starts here (do NOT patch) */
-#define AWARD_UPDATE_POST_SEH 0x44D77B   /* post-prologue host: lea ecx,[esi+0x4c4] */
-#define AWARD_UPDATE_RET      0x44D781   /* next instr: call 0x458e90 */
+#define AWARD_UPDATE_ENTRY    0x44D760   /* entry — patched with 5-byte JMP to wrapper */
+#define AWARD_UPDATE_BODY     0x44D77B   /* jump-IN point: game body after its prologue */
+#define AWARD_UPDATE_SCOPE    0x4CC77C   /* game's real SEH scope table (handler) for this fn */
 #define APP_PROFILE        0x220
 #define PROFILE_RACE       0x8
 #define APP_BOARD          0x178
@@ -1002,74 +1002,61 @@ __attribute__((used)) int diamond_reveal_draw(DWORD results) {
     return diamond_trophy_swap(results);  /* draws diamond + returns 1 to skip gold */
 }
 
-/* ---- Award-update reveal driver (technique 1, hosted post-SEH) ----
- * Hosted at 0x44D77B — the first instruction AFTER 0x44D760's SEH prologue
- * has installed the FS:[0] frame. At this point:
- *   - esi = the results object (set by `mov esi,ecx` at 0x44D779)
- *   - FS:[0] is valid (the game's frame is live)
- * and it runs EVERY frame the award screen is live. This is the per-frame
- * award driver that every prior attempt missed (0x44E139 was inside the SEH
- * DRAW, 0x44CB90/0x44CC3F were the continuation, 0x46C1F1 was boot-wide).
+/* ---- Award-update reveal driver (full-wrapper SEH replacement) ----
+ * Replace the ENTIRE award-update function 0x44D760 with our own wrapper that
+ * re-implements the EXACT SEH prologue (install a byte-identical FS:[0] frame
+ * using the game's REAL scope table 0x4CC77C), runs the reveal inside OUR OWN
+ * valid frame, then jumps into the game's untouched body (0x44D77B) and lets
+ * ITS epilogue restore FS:[0].
  *
- * Technique 3 (containment): the mod's helpers are defensive (IsBadReadPtr-
- * gated + self-gating on gold frames) and the process-wide VEH installed at
- * DllMain observes+logs exceptions and returns CONTINUE_SEARCH, so anything
- * our code raises falls to the game's valid, intact SEH frame and is handled
- * there — a normal balanced call, exactly like the game's own sub-calls.
- */
-
-/* Build + install the post-SEH award-update cave.
- * Patch 6 bytes at 0x44D77B (lea ecx,[esi+0x4c4]) -> 5-byte JMP + 1 NOP.
+ * WHY THIS IS THE CORRECT FIX (vs every prior host):
+ *   - 0x44E139 (inside SEH award-DRAW 0x44DF70): redirecting to heap mid-frame
+ *     corrupts the exception chain -> real-Windows crash (proven, d2453e65).
+ *   - 0x44D77B post-SEH (patch inside the award-UPDATE SEH frame): even a
+ *     balanced no-I/O call from inside the game's live frame CASCADED into the
+ *     same heap-EIP C0000005 on real Windows (two identical logs). The problem
+ *     is running our heap code inside a frame the game built, not I/O.
+ *   - 0x44CB90/0x44CC3F are the continuation (not the per-frame medal driver).
+ *   - 0x46C1F1 present hook fires at boot (LoadingScreen) -> startup crash.
  *
- * WHY THIS IS SAFE (technique 1): at 0x44D77B the game's 0x44D760 SEH frame
- * is ALREADY installed and live (the prologue did `mov fs:[0]=esp` at
- * 0x44D76E). Making a normal, balanced call to a C function from inside a
- * live SEH frame is exactly what the game itself does every frame (it calls
- * 0x458e90 at 0x44D781, 0x458e60, etc. from the same frame) — it does not
- * corrupt the exception chain. The historic crashes came from *imbalanced*
- * caves or 5-byte-JMP-to-heap redirects, not from SEH being present.
+ * The full-wrapper REPLACES the frame with a byte-identical one we own, so the
+ * exception chain is never patched mid-flight and never corrupts. This is the
+ * only host with no dependence on the game's frame timing.
  *
- * Containment (technique 3): the mod's helpers are already defensive
- * (IsBadReadPtr-gated, self-gating on gold frames), and the process-wide
- * AddVectoredExceptionHandler installed at DllMain observes+logs any
- * exception and returns EXCEPTION_CONTINUE_SEARCH, so an exception raised by
- * our code falls through to the game's *valid, intact* SEH frame and is
- * handled there gracefully — never a corrupted chain, never a hard crash.
- *
- * Cave sequence (all balanced; esi = results is live and preserved):
- *   pushad
- *   push esi                 ; arg: results object
- *   call diamond_reveal_draw
- *   add esp,4
- *   popad
- *   lea ecx,[esi+0x4c4]      ; re-emit the original instruction
- *   jmp  0x44D781            ; resume original flow
+ * Stack math (verified): wrapper replicates prologue -> at jump-in to 0x44D77B,
+ * [esp] and FS:[0] match native post-prologue state (frame at E-12, saved
+ * handler at [E-12], esp=E-40, esi=results). Game epilogue restores FS:[0]
+ * from [E-12] correctly and rets. See /tmp/verify_stack.py.
  */
 static void install_reveal_cave(void) {
-    DWORD patchAddr = EXE_BASE + (AWARD_UPDATE_POST_SEH - EXE_BASE);
-    DWORD resume    = EXE_BASE + (AWARD_UPDATE_RET     - EXE_BASE);
+    DWORD entry = EXE_BASE + (AWARD_UPDATE_ENTRY - EXE_BASE);
+    DWORD body  = EXE_BASE + (AWARD_UPDATE_BODY  - EXE_BASE);
     g_presentStub = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
                                                  PAGE_EXECUTE_READWRITE);
     if (!g_presentStub) return;
     unsigned char *p = g_presentStub;
-    /* pushad */
-    p[0]=0x60; p+=1;
-    /* push esi; call diamond_reveal_draw; add esp,4 */
-    p[0]=0x56; p+=1;
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_reveal_draw-(DWORD)(p+5); p+=5;
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;
-    /* popad */
-    p[0]=0x61; p+=1;
-    /* re-emit original: lea ecx,[esi+0x4c4] */
-    p[0]=0x8D; p[1]=0x8E; p[2]=0xC4; p[3]=0x04; p[4]=0x00; p[5]=0x00; p+=6;
-    /* jmp resume */
-    write_jmp(p, resume); p+=5;
-
-    unsigned char patch[6];
-    memset(patch, 0x90, 6);
-    write_jmp(patch, (DWORD)g_presentStub);   /* 5-byte JMP + 1 NOP */
-    patch_bytes((void*)patchAddr, patch, 6);
-    diag_log("[diamond] reveal cave hosted at 0x44D77B (award-update post-SEH, per-frame, balanced)");
+    /* --- replicate the game's REAL SEH prologue byte-for-byte --- */
+    p[0]=0x64; p[1]=0xA1;  p[2]=0x00; p[3]=0x00; p[4]=0x00; p[5]=0x00; p+=6; /* mov eax,fs:[0] */
+    p[0]=0x6A; p[1]=0xFF;                                    p+=2;         /* push -1 */
+    p[0]=0x68; *(DWORD*)(p+1) = EXE_BASE+(AWARD_UPDATE_SCOPE-EXE_BASE); p+=5; /* push 0x4CC77C */
+    p[0]=0x50;                                                p+=1;         /* push eax */
+    p[0]=0x64; p[1]=0x89; p[2]=0x25; p[3]=0x00; p[4]=0x00; p[5]=0x00; p+=6; /* mov fs:[0],esp */
+    p[0]=0x83; p[1]=0xEC; p[2]=0x18;                          p+=3;         /* sub esp,0x18 */
+    p[0]=0x56;                                                p+=1;         /* push esi */
+    p[0]=0x8B; p[1]=0xF1;                                     p+=2;         /* mov esi,ecx */
+    /* --- run the reveal inside THIS authentic frame (handle via game's handler) --- */
+    p[0]=0x60;                                                p+=1;         /* pushad */
+    p[0]=0x56;                                                p+=1;         /* push esi (arg) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_reveal_draw-(DWORD)(p+5); p+=5; /* call */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04;                          p+=3;         /* add esp,4 */
+    p[0]=0x61;                                                p+=1;         /* popad */
+    /* --- hand off to the game's untouched body at 0x44D77B --- */
+    write_jmp(p, body);                                        p+=5;
+    /* Patch the entry: 5-byte JMP to wrapper (6th byte = padding, never exec) */
+    unsigned char patch[5];
+    write_jmp(patch, (DWORD)g_presentStub);
+    patch_bytes((void*)entry, patch, 5);
+    diag_log("[diamond] reveal: FULL WRAPPER replaces 0x44D760 (own SEH frame via 0x4CC77C, reveal inside, then jmp 0x44D77B)");
 }
 
 /* Set the golden-weasel sprite's color-multiplier so it renders white,
