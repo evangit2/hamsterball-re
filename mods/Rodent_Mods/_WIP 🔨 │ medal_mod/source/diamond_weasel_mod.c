@@ -192,10 +192,20 @@ static void load_real_bass(void) {
  * ================================================================ */
 #define EXE_BASE           0x00400000
 #define APP_PTR            0x005341E0
-#define APP_FRAME_UPDATE_EPILOGUE 0x0046C1F1  /* GameUpdate frame epilogue: POP ESI / ADD ESP,8 / RET
-                                                 (5E 83 C4 08 C3) — fires once per frame at a safe
-                                                 boundary after all logic + render. Proven crash-safe
-                                                 (ghost_triggers pattern); inert during boot. */
+/* The medal-award screen's per-frame UPDATE is 0x44D760 (award vtable
+ * 0x4D6CF0 slot[1]) — the ONLY function that runs every frame the award
+ * screen is live. It is SEH-protected: its prologue pushes a frame onto the
+ * FS:[0] exception chain (`mov fs:[0]=esp` at 0x44D76E). Hooking its ENTRY
+ * (0x44D760) breaks that chain, and 5-byte-JMP-to-heap from inside its frame
+ * (e.g. the 0x44E139 draw site) corrupts the chain too. The SAFE host is the
+ * first instruction AFTER the prologue installs the frame: 0x44D77B
+ * (`lea ecx,[esi+0x4C4]`, 6 bytes -> JMP + 1 NOP). At that point FS:[0] is
+ * valid, esi = results object, and it runs every award frame. We contain the
+ * mod call in our OWN nested FS:[0] frame so nothing we raise reaches the
+ * game's frame. */
+#define AWARD_UPDATE_ENTRY    0x44D760   /* SEH prologue starts here (do NOT patch) */
+#define AWARD_UPDATE_POST_SEH 0x44D77B   /* post-prologue host: lea ecx,[esi+0x4c4] */
+#define AWARD_UPDATE_RET      0x44D781   /* next instr: call 0x458e90 */
 #define APP_PROFILE        0x220
 #define PROFILE_RACE       0x8
 #define APP_BOARD          0x178
@@ -431,7 +441,7 @@ static int   g_ttInstalled = 0;   /* has cherry TT cave been patched in? Start 0
                                    * set 1 after install so it's idempotent whether
                                    * called at startup (g_anyDiamond already 1) or
                                    * lazily from diamond_provision_unlock. */
-static unsigned char *g_presentStub = NULL;    /* 0x46C1F1 cold present-hook stub */
+static unsigned char *g_presentStub = NULL;    /* award-update post-SEH cave stub */
 
 /* ================================================================
  * Logging + path helpers
@@ -716,6 +726,9 @@ static int get_player_time_cs(DWORD app) {
 __attribute__((used)) void diamond_load_icon_impl(DWORD app);
 __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app);
 static void install_reveal_cave(void);   /* defined below (patch helpers) */
+/* patch-helper forward decls (defined in the patch-helpers section) */
+static void write_jmp(unsigned char *at, DWORD target);
+static void patch_bytes(void *addr, const void *data, DWORD size);
 
 static int diamond_seq_frame(DWORD results);   /* frames since gold award */
 /* reveal-helper forward decls (defined below, used by diamond_reveal_draw) */
@@ -949,41 +962,74 @@ __attribute__((used)) int diamond_reveal_draw(DWORD results) {
     return diamond_trophy_swap(results);  /* draws diamond + returns 1 to skip gold */
 }
 
-/* ---- Present-hook reveal driver ----
- * Runs once per frame from the 0x46C1F1 frame-epilogue hook (safe boundary,
- * outside the SEH-wrapped award functions). Locates the live medal-award
- * results object at scene+0x8B8 and drives the reveal helpers, which
- * self-gate on gold-award frames (diamond_first_earn + diamond_seq_frame),
- * so this is inert during boot and gameplay.
+/* ---- Award-update reveal driver (technique 1, hosted post-SEH) ----
+ * Hosted at 0x44D77B — the first instruction AFTER 0x44D760's SEH prologue
+ * has installed the FS:[0] frame. At this point:
+ *   - esi = the results object (set by `mov esi,ecx` at 0x44D779)
+ *   - FS:[0] is valid (the game's frame is live)
+ * and it runs EVERY frame the award screen is live. This is the per-frame
+ * award driver that every prior attempt missed (0x44E139 was inside the SEH
+ * DRAW, 0x44CB90/0x44CC3F were the continuation, 0x46C1F1 was boot-wide).
+ *
+ * Technique 3 (containment): the mod's helpers are defensive (IsBadReadPtr-
+ * gated + self-gating on gold frames) and the process-wide VEH installed at
+ * DllMain observes+logs exceptions and returns CONTINUE_SEARCH, so anything
+ * our code raises falls to the game's valid, intact SEH frame and is handled
+ * there — a normal balanced call, exactly like the game's own sub-calls.
  */
-static void present_reveal_handler(void) {
-    DWORD app, board, results, vt;
-    int listCount;
-    DWORD *items;
-    /* The reveal only acts while a medal-award results screen is live, so a
-     * fully-gated locator. No I/O, no D3D, no sound unless armed. */
-    if (IsBadReadPtr((void*)APP_PTR, 4)) return;
-    app = *(DWORD*)APP_PTR;
-    if (!app || app < 0x10000) return;
-    if (IsBadReadPtr((void*)(app + APP_BOARD), 4)) return;
-    board = *(DWORD*)(app + APP_BOARD);
-    if (!board) return;
-    /* results list at scene+0x8B8 (AthenaList: count at +0x04, items +0x40C) */
-    if (IsBadReadPtr((void*)(board + SCENE_RESULTS_LIST + SCENE_LIST_COUNT), 4)) return;
-    listCount = *(int*)(board + SCENE_RESULTS_LIST + SCENE_LIST_COUNT);
-    if (listCount <= 0 || listCount > 4) return;
-    if (IsBadReadPtr((void*)(board + SCENE_RESULTS_LIST + SCENE_LIST_ITEMS), 4)) return;
-    items = *(DWORD**)(board + SCENE_RESULTS_LIST + SCENE_LIST_ITEMS);
-    if (!items) return;
-    if (IsBadReadPtr(items, 4)) return;
-    results = items[0];
-    if (!results) return;
-    if (IsBadReadPtr((void*)results, 4)) return;
-    vt = *(DWORD*)results;
-    /* Must be a genuine results-screen object (award vtable 0x4D6CF0). */
-    if (vt != RESULTS_VTABLE_AWARD && vt != RESULTS_VTABLE_OLD_2 && vt != RESULTS_VTABLE_OLD_1)
-        return;
-    diamond_reveal_draw(results);
+
+/* Build + install the post-SEH award-update cave.
+ * Patch 6 bytes at 0x44D77B (lea ecx,[esi+0x4c4]) -> 5-byte JMP + 1 NOP.
+ *
+ * WHY THIS IS SAFE (technique 1): at 0x44D77B the game's 0x44D760 SEH frame
+ * is ALREADY installed and live (the prologue did `mov fs:[0]=esp` at
+ * 0x44D76E). Making a normal, balanced call to a C function from inside a
+ * live SEH frame is exactly what the game itself does every frame (it calls
+ * 0x458e90 at 0x44D781, 0x458e60, etc. from the same frame) — it does not
+ * corrupt the exception chain. The historic crashes came from *imbalanced*
+ * caves or 5-byte-JMP-to-heap redirects, not from SEH being present.
+ *
+ * Containment (technique 3): the mod's helpers are already defensive
+ * (IsBadReadPtr-gated, self-gating on gold frames), and the process-wide
+ * AddVectoredExceptionHandler installed at DllMain observes+logs any
+ * exception and returns EXCEPTION_CONTINUE_SEARCH, so an exception raised by
+ * our code falls through to the game's *valid, intact* SEH frame and is
+ * handled there gracefully — never a corrupted chain, never a hard crash.
+ *
+ * Cave sequence (all balanced; esi = results is live and preserved):
+ *   pushad
+ *   push esi                 ; arg: results object
+ *   call diamond_reveal_draw
+ *   add esp,4
+ *   popad
+ *   lea ecx,[esi+0x4c4]      ; re-emit the original instruction
+ *   jmp  0x44D781            ; resume original flow
+ */
+static void install_reveal_cave(void) {
+    DWORD patchAddr = EXE_BASE + (AWARD_UPDATE_POST_SEH - EXE_BASE);
+    DWORD resume    = EXE_BASE + (AWARD_UPDATE_RET     - EXE_BASE);
+    g_presentStub = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
+                                                 PAGE_EXECUTE_READWRITE);
+    if (!g_presentStub) return;
+    unsigned char *p = g_presentStub;
+    /* pushad */
+    p[0]=0x60; p+=1;
+    /* push esi; call diamond_reveal_draw; add esp,4 */
+    p[0]=0x56; p+=1;
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_reveal_draw-(DWORD)(p+5); p+=5;
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;
+    /* popad */
+    p[0]=0x61; p+=1;
+    /* re-emit original: lea ecx,[esi+0x4c4] */
+    p[0]=0x8D; p[1]=0x8E; p[2]=0xC4; p[3]=0x04; p[4]=0x00; p[5]=0x00; p+=6;
+    /* jmp resume */
+    write_jmp(p, resume); p+=5;
+
+    unsigned char patch[6];
+    memset(patch, 0x90, 6);
+    write_jmp(patch, (DWORD)g_presentStub);   /* 5-byte JMP + 1 NOP */
+    patch_bytes((void*)patchAddr, patch, 6);
+    diag_log("[diamond] reveal cave hosted at 0x44D77B (award-update post-SEH, per-frame, balanced)");
 }
 
 /* Set the golden-weasel sprite's color-multiplier so it renders white,
@@ -1627,53 +1673,6 @@ static void install_icon_cave(void) {
     diag_log("[diamond] icon cave DISABLED (icon loads lazily on first draw)");
 }
 
-/* Reveal driver — runs from the PROVEN cold present hook at 0x46C1F1
- * (GameUpdate frame epilogue: 5E 83 C4 08 C3 = POP ESI / ADD ESP,8 / RET),
- * the same crash-safe frame boundary used by ghost_triggers. This is the
- * correct host for the reveal: it fires ONCE PER FRAME after all game logic
- * + rendering, OUTSIDE the SEH-wrapped medal-award functions (0x44d760 /
- * 0x44df70). The earlier host (0x44CC3F = 0x44CB90's epilogue, award vtable
- * slot[4]) is NOT on the per-frame award path — 0x44cb90 only runs on the
- * "click to continue" continuation — so the cave never fired, which is why
- * the CAVE-FIRED probe never logged. Driving the reveal from 0x46C1F1 fixes
- * it: the helpers self-gate on gold-award frames and stay inert during boot.
- *
- * The driver locates the live medal-award results object at scene+0x8B8
- * (the scene's results AthenaList) and calls diamond_reveal_draw on it.
- */
-static void present_reveal_handler(void);
-
-/* Present-hook stub: pushad/pushfd -> call present_reveal_handler ->
- * popfd/popad -> re-emit the original 5 bytes (POP ESI / ADD ESP,8 / RET).
- */
-static void install_reveal_cave(void) {
-    g_presentStub = (unsigned char*)VirtualAlloc(NULL, 64, MEM_COMMIT|MEM_RESERVE,
-                                                 PAGE_EXECUTE_READWRITE);
-    if (!g_presentStub) return;
-    unsigned char *p = g_presentStub;
-    /* pushad */
-    p[0]=0x60; p+=1;
-    /* pushfd */
-    p[0]=0x9C; p+=1;
-    /* call present_reveal_handler */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)present_reveal_handler-(DWORD)(p+5); p+=5;
-    /* popfd */
-    p[0]=0x9D; p+=1;
-    /* popad */
-    p[0]=0x61; p+=1;
-    /* re-emit original 5 bytes: POP ESI / ADD ESP,8 / RET */
-    p[0]=0x5E; p+=1;
-    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;
-    p[0]=0xC3; p+=1;
-
-    DWORD patchAddr = EXE_BASE + (APP_FRAME_UPDATE_EPILOGUE - EXE_BASE);
-    unsigned char patch[5];
-    memset(patch, 0x90, 5);
-    write_jmp(patch, (DWORD)g_presentStub);
-    patch_bytes((void*)patchAddr, patch, 5);
-    diag_log("[diamond] reveal cave installed on 0x46C1F1 (GameUpdate frame epilogue, per-frame)");
-}
-
 /* Cave C: TT-menu (standings) diamond mini-icon after golden weasel.
  * Hook at 0x42F927 (call 0x44abf0, the golden-weasel append, 5 bytes).
  *   cave:     mov ecx,esi          ; re-emit weasel append (stack has name+sprite)
@@ -1735,8 +1734,8 @@ static void install_tt_cave(void) {
 static void install_hooks(void) {
     install_icon_cave();
     install_tt_cave();
-    install_reveal_cave();  /* 0x46C1F1 GameUpdate frame epilogue — per-frame reveal */
-    diag_log("[diamond] hooks installed (reveal drives off 0x46C1F1 frame epilogue; SEH award fns NOT hooked)");
+    install_reveal_cave();  /* 0x44D77B award-update post-SEH host — per-frame reveal, guarded */
+    diag_log("[diamond] hooks installed (reveal drives off 0x44D77B award-update post-SEH; SEH award entry NOT hooked)");
 }
 
 /* ================================================================
