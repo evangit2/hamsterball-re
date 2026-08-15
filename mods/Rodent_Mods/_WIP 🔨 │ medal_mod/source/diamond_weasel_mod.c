@@ -206,8 +206,8 @@ static void load_real_bass(void) {
 #include "diamond_png_data.h"
 
 #define ICON_LOAD_HOOK     0x42A304
-#define WEASEL_DRAW_HOOK   0x44E139   /* call 0x42c7c0 (golden weasel draw) — RESULTS-ONLY */
-#define WEASEL_RET         0x44E13E   /* next instr after 0x44E139 */
+/* 0x44E139 golden-weasel draw is NO LONGER hooked (proven to crash real
+ * Windows); the reveal runs from the 0x44CBAA update cave instead. */
 #define TT_WEASEL_APPEND   0x42F927   /* call 0x44abf0 (TT menu golden weasel) */
 #define SKIP_LATCH_HOOK    0x44CBAA   /* movb $1,0x25(esi)  (skip latch set) */
 #define SKIP_LATCH_RET     0x44CBB1   /* next instr after the 5 patched bytes */
@@ -356,8 +356,7 @@ static DWORD g_vortexResults = 0;    /* results obj of the CURRENT vortex sessio
                                         Detecting a change lets us reset state + stop
                                         the whoosh when a results screen is exited
                                         mid-cycle (frame never reaches the tail). */
-static unsigned char *g_weaselCave = NULL;  /* the 0x44E139 inline reveal cave */
-volatile int g_caveProbe = 0;               /* 0=never entered 1=entered 2=post-reveal */
+volatile int g_caveProbe = 0;        /* VEH-reading probe (0 = cave path untouched) */
 
 /* ================================================================
  * Mod globals
@@ -710,8 +709,6 @@ static int get_player_time_cs(DWORD app) {
  * ================================================================ */
 __attribute__((used)) void diamond_load_icon_impl(DWORD app);
 __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app);
-static void install_weasel_cave(void);   /* defined below (patch helpers) — the
-                                          * 0x44E139 inline reveal (results-only) */
 static void install_skip_cave(void);      /* defined below (patch helpers) */
 
 static int diamond_seq_frame(DWORD results);   /* frames since gold award */
@@ -1534,83 +1531,6 @@ static void patch_bytes(void *addr, const void *data, DWORD size) {
     FlushInstructionCache(GetCurrentProcess(), addr, size);
 }
 
-/* Golden-weasel reveal cave at 0x44E139 — results-screen-only, NEVER runs
- * during boot. Fires INSTEAD of the game's own golden weasel draw
- * (`call 0x42c7c0`). Even though it reads game state and calls D3D, it is
- * safe because it only executes on the award screen (never the LoadingScreen),
- * so it is NOT the present-hook boot-crash source.
- *
- * At 0x44E139 the caller has already set: esi = results object, ecx =
- * goldenweasel sprite, and pushed x=0x208 / y=0x63 for the (ret $8) draw.
- * Sequence per frame the weasel is drawn:
- *   1) draw vortex behind the trophy
- *   2) set the white color-multiplier by frame (diamond_weasel_mult)
- *   3) trophy swap: at frame>=240 the diamond replaces the gold weasel
- *      (diamond_trophy_swap draws the diamond + returns 1=skip/0=draw gold)
- *   4) clear the color-multiplier (diamond_weasel_mult_clear)
- *   5) continue to 0x44E13E
- * esi is preserved across every helper (pushad/popad); ecx across the swap.
- */
-static void install_weasel_cave(void) {
-    DWORD patchAddr = EXE_BASE + (WEASEL_DRAW_HOOK - EXE_BASE);
-    DWORD retAddr   = EXE_BASE + (WEASEL_RET     - EXE_BASE);
-    unsigned char *p;
-    g_weaselCave = (unsigned char*)VirtualAlloc(NULL, 256, MEM_COMMIT|MEM_RESERVE,
-                                                PAGE_EXECUTE_READWRITE);
-    if (!g_weaselCave) return;
-    p = g_weaselCave;
-
-    /* Probe markers — pure memory stores, NO file I/O, so we can tell from the
-     * VEH log exactly how far the cave executed before faulting (0=never
-     * entered, 1=entered, 2=after reveal_draw returned). */
-    extern volatile int g_caveProbe;
-    /* mov [g_caveProbe],1 — correct 10B: C7 05 <addr4> <imm4> */
-    p[0]=0xC7; p[1]=0x05; *(DWORD*)(p+2)=(DWORD)&g_caveProbe; *(DWORD*)(p+6)=1; p+=10;
-
-    /* Consolidated reveal: single call.
-     * pushad saves all GPRs. After the call, eax = diamond_reveal_draw return
-     * (0=draw gold, 1=diamond drawn). We STASH that return value on the stack
-     * (push eax) BEFORE popad so popad can't clobber it, then pop it back into
-     * eax after popad. */
-    p[0]=0x60; p+=1;                                  /* pushad */
-    p[0]=0x56; p+=1;                                  /* push esi (results) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_reveal_draw-(DWORD)(p+5); p+=5;
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
-    p[0]=0x50; p+=1;                                  /* push eax (save return) */
-    p[0]=0x61; p+=1;                                  /* popad (restores the 8 GPRs) */
-    p[0]=0x58; p+=1;                                  /* pop eax (restore return value) */
-    /* mov [g_caveProbe],2 — correct 10B: C7 05 <addr4> <imm4> */
-    p[0]=0xC7; p[1]=0x05; *(DWORD*)(p+2)=(DWORD)&g_caveProbe; *(DWORD*)(p+6)=2; p+=10;
-
-    /* trophy-swap return value handling: the game left x=0x208,y=0x63 on the
-     * stack for the gold draw (ret $8). diamond_reveal_draw drew the diamond
-     * (if earned) and returned 1 -> pop x,y and skip gold; or returned 0 ->
-     * draw gold (ret $8 pops x,y). eax now holds the true return value. */
-    p[0]=0x85; p[1]=0xC0; p+=2;                       /* test eax,eax */
-    p[0]=0x74; p[1]=0x05; p+=2;                       /* jz +5 -> do_gold */
-    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;             /* add esp,8 (swap: pop x,y) */
-    p[0]=0xEB; p[1]=0x05; p+=2;                       /* jmp +5 -> skip_gold */
-    /* do_gold: draw gold (ret $8 pops x,y) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(SPRITE_DRAW)-(DWORD)(p+5); p+=5;
-    /* skip_gold: (after gold draw OR after add esp,8) */
-
-    /* clear the weasel white tint (set by the reveal) so later draws are
-     * unaffected. pushad/popad preserve regs; esi = results still live. */
-    p[0]=0x60; p+=1;                                  /* pushad */
-    p[0]=0x56; p+=1;                                  /* push esi */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_weasel_mult_clear-(DWORD)(p+5); p+=5;
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
-    p[0]=0x61; p+=1;                                  /* popad */
-
-    /* back to original flow */
-    write_jmp(p, retAddr); p+=5;
-    unsigned char patch[5];
-    memset(patch, 0x90, 5);
-    write_jmp(patch, (DWORD)g_weaselCave);
-    patch_bytes((void*)patchAddr, patch, 5);
-    diag_log("[diamond] golden-weasel reveal cave installed at 0x44E139 (results-only, no present hook)");
-}
-
 /* Cave A: icon load at 0x42A304 (covers 9 bytes through 0x42A30C).
  *   original: call [eax+0x58] ; mov ecx,[esi+0x22C]
  *   cave: call [eax+0x58]; mov ecx,[esi+0x22C]; pushad; push esi;
@@ -1656,34 +1576,50 @@ static void install_icon_cave(void) {
 }
 
 /* Cave E: block the results-screen click/keypress skip when the diamond was
- * achieved (so the player sees the frame-240 reveal). We stop the SKIP LATCH
- * from being set rather than hacking the multiplier — the latch (results+0x25)
- * is the single source of truth for skip; if it never gets set, the frame
- * counter simply advances at 1x/frame and the reveal plays out.
+ * achieved (so the player sees the frame-240 reveal) AND drive the reveal
+ * (vortex + white-fade + diamond swap) from this PROVEN-SAFE host.
+ *
+ * Root cause of the results-screen crash (found via isolation test): hooking
+ * 0x44E139 — the interior of the SEH-protected award-DRAW function 0x44DF70 —
+ * crashes real Windows on the weasel-draw path no matter what the cave does
+ * (caveProbe=0: the cave never even runs; the fault is in 0x44DF70 itself
+ * after the pointer is corrupted). Disabling that hook stops the crash.
+ *
+ * The skip cave at 0x44CBAA lives INSIDE 0x44CB90, the award-screen UPDATE
+ * function — a NON-SEH function that runs every results frame with esi =
+ * results object, and which the isolation test proved is crash-safe. We run
+ * the reveal here instead: it issues D3D at the update boundary (like the
+ * earlier present-hook drawing, which was runtime-safe — only the boot hook
+ * crashed). Drawing one frame at update-time is fine.
  *
  * Hook at 0x44CBAA: `movb $1,0x25(%esi)` (set latch, 4 bytes) + the first
  * byte of the next instruction (`cmp %bl,0x24(%esi)` = 38 5e 24) = 5 bytes,
  * ret 0x44CBB1. The cave:
- *   push esi; call diamond_block_skip; add esp,4; test eax,eax
- *   jnz block_skip          ; block == achieved -> do NOT set the latch
- *   movb $1,0x25(esi)       ; re-emit original latch-set (not achieved)
+ *   pushad                         ; save all
+ *   push esi; call diamond_block_skip; add esp,4   ; skip-block decision
+ *   test eax,eax
+ *   jnz block_skip                 ; block == achieved -> do NOT set latch
+ *   movb $1,0x25(esi)              ; re-emit original latch-set (not achieved)
  * block_skip:
- *   cmp %bl,0x24(esi)       ; re-emit the borrowed cmp byte
- *   jmp 0x44CBB1
- * esi = results object is preserved (helper is callee-saved for esi/edi/ebx).
- */
+ *   cmp %bl,0x24(esi)              ; re-emit the borrowed cmp byte
+ *   push esi; call diamond_reveal_draw; add esp,4  ; run the reveal effects
+ *   popad                          ; restore all regs (esi back to game value)
+ *   jmp 0x44CBB1                   ; continue original flow
+ * eax (diamond_reveal_draw return) is intentionally dropped.
+
+ * esi = results object is preserved (helper is callee-saved / pushad covers it). */
 static void install_skip_cave(void) {
     DWORD patchAddr = EXE_BASE + (SKIP_LATCH_HOOK - EXE_BASE);
     DWORD retAddr   = EXE_BASE + (SKIP_LATCH_RET - EXE_BASE);
-    g_skipCave = (unsigned char*)VirtualAlloc(NULL, 48, MEM_COMMIT|MEM_RESERVE,
+    g_skipCave = (unsigned char*)VirtualAlloc(NULL, 96, MEM_COMMIT|MEM_RESERVE,
                                               PAGE_EXECUTE_READWRITE);
     if (!g_skipCave) return;
     unsigned char *p = g_skipCave;
-    /* push esi (arg: results) */
+    /* pushad (preserve ALL regs across our C calls + the reveal) */
+    p[0]=0x60; p+=1;
+    /* push esi; call diamond_block_skip; add esp,4 */
     p[0]=0x56; p+=1;
-    /* call diamond_block_skip (cdecl) */
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_block_skip-(DWORD)(p+5); p+=5;
-    /* add esp,4 (cdecl caller cleans) */
     p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;
     /* test eax,eax */
     p[0]=0x85; p[1]=0xC0; p+=2;
@@ -1693,13 +1629,19 @@ static void install_skip_cave(void) {
     p[0]=0xC6; p[1]=0x46; p[2]=0x25; p[3]=0x01; p+=4;
     /* block_skip: cmp %bl,0x24(esi) — re-emit the borrowed byte's instr */
     p[0]=0x38; p[1]=0x5E; p[2]=0x24; p+=3;
+    /* push esi; call diamond_reveal_draw; add esp,4 */
+    p[0]=0x56; p+=1;
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_reveal_draw-(DWORD)(p+5); p+=5;
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;
+    /* popad (restore all regs) */
+    p[0]=0x61; p+=1;
     /* jmp back */
     write_jmp(p, retAddr); p+=5;
     unsigned char patch[5];
     memset(patch, 0x90, 5);
     write_jmp(patch, (DWORD)g_skipCave);
     patch_bytes((void*)patchAddr, patch, 5);
-    diag_log("[diamond] skip-latch cave installed at 0x44CBAA");
+    diag_log("[diamond] skip-latch + reveal cave installed at 0x44CBAA (safe host, 0x44E139 no longer hooked)");
 }
 
 /* Cave C: TT-menu (standings) diamond mini-icon after golden weasel.
@@ -1763,9 +1705,8 @@ static void install_tt_cave(void) {
 static void install_hooks(void) {
     install_icon_cave();
     install_tt_cave();
-    install_weasel_cave();  /* 0x44E139 inline reveal — results-screen ONLY */
-    install_skip_cave();    /* 0x44CBAA skip-latch — also results-screen ONLY */
-    diag_log("[diamond] hooks installed");
+    install_skip_cave();    /* 0x44CBAA skip-latch + reveal — proven-safe host */
+    diag_log("[diamond] hooks installed (reveal lives on 0x44CBAA; 0x44E139 NOT hooked)");
 }
 
 /* ================================================================
