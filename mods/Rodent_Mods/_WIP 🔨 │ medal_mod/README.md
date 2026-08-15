@@ -246,23 +246,25 @@ inline from the game's own medal-award draw, never from a per-frame
 present/GameUpdate hook. That is why it no longer crashes at boot on real
 Windows (the earlier present-hook versions did). It hooks:
 
-1. **Golden-weasel reveal (hosted on 0x44CBAA)** — the reveal DOES NOT hook
+1. **Golden-weasel reveal (hosted on 0x44CC3F)** — the reveal DOES NOT hook
    `0x44E139` (hooking the interior of the SEH-protected award-DRAW function
    `0x44DF70` was proven by an isolation test to crash real Windows on the
-   weasel-draw path no matter what the cave did — `caveProbe=0` every time,
-   the fault was inside `0x44DF70` after the redirect corrupted state).
-   Instead the reveal runs from the same code cave as the skip-latch at
-   `0x44CBAA`, which lives inside the award-screen UPDATE function `0x44CB90`
-   — a NON-SEH function that runs every results frame with `esi` = results
-   object and is provably crash-safe. Per frame the cave calls:
-   - `diamond_block_skip` — blocks the skip latch when a first-earn reveal is
-     in progress so the animation isn't clicked past,
-   - `diamond_reveal_draw` — immediately checks `diamond_first_earn`; if not
-     active it does **absolutely nothing** (no I/O, no D3D, no sound, no
-     color-mult); only a genuine first-earn reveal draws the **suction
-     vortex**, fades the weasel to **white** (55 → white at 150, hold to 240),
-     then at gold+240 draws the **diamond** + fires the reveal effects
-     (pop + star ring).
+   weasel-draw path no matter what the cave did — the fault was inside
+   `0x44DF70` after the redirect corrupted a pointer). It also does NOT use
+   `0x44CBAA` (that instruction only executes in a one-time armed state, so a
+   cave there fired too rarely to drive the 240-frame reveal). Instead the
+   reveal is hosted at **`0x44CC3F`, the epilogue of the award-screen UPDATE
+   function `0x44CB90`** (`pop edi;pop esi;pop ebx;ret`) — a NON-SEH function
+   that runs once per award frame with `esi` = results object still live, so it
+   is a TRUE per-frame host. The cave does `pushad`; calls
+   `diamond_reveal_draw(results)`; `popad`; then resumes the original tail at
+   `0x44CC43`. `diamond_reveal_draw`:
+   - immediately checks `diamond_first_earn`; if not active it does
+     **absolutely nothing** (no I/O, no D3D, no sound, no color-mult),
+   - only a genuine first-earn reveal draws the **suction vortex**, fades the
+     weasel to **white** (frames 55 → white at 150, hold to 240), then at
+     gold+240 draws the **diamond** + fires the reveal effects (pop + star
+     ring) and persists the unlock.
    All register state is preserved via `pushad`/`popad`.
 2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
    for a race, appends a diamond mini-icon entry to the standings medal list
