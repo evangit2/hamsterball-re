@@ -246,21 +246,23 @@ inline from the game's own medal-award draw, never from a per-frame
 present/GameUpdate hook. That is why it no longer crashes at boot on real
 Windows (the earlier present-hook versions did). It hooks:
 
-1. **Golden-weasel reveal (hosted on 0x44D77B)** — the reveal does NOT hook
-   `0x44E139` (hooking the interior of the SEH-protected award-DRAW function
-   `0x44DF70` was proven by an isolation test to crash real Windows on the
-   weasel-draw path no matter what the cave did — the fault was inside
-   `0x44DF70` after the redirect corrupted a pointer). It also does NOT use
-   `0x44CBAA` (that instruction only executes in a one-time armed state) or
-   `0x44CC3F`/`0x44CB90` (those are the "click to continue" continuation, not
-   the per-frame medal driver, so a reveal there never fires). Instead the
-   reveal is hosted at **`0x44D77B` — the first instruction AFTER the award
-   update function `0x44D760`'s SEH prologue installs its `FS:[0]` frame** —
-   so it runs once per award frame with `esi` = results object live AND the
-   game's exception frame already valid. This is the true per-frame driver.
-   The cave does `pushad`; `push esi`; calls `diamond_reveal_draw(results)`;
-   `add esp,4`; `popad`; then re-emits the original `lea ecx,[esi+0x4c4]` and
-   resumes at `0x44D781`. `diamond_reveal_draw`:
+1. **Golden-weasel reveal (full-wrapper SEH replacement of 0x44D760)** — the
+   reveal does NOT hook `0x44E139` (interior of the SEH-protected award-DRAW
+   `0x44DF70`), `0x44CBAA`/`0x44CC3F`/`0x44CB90` (the "click to continue"
+   continuation, never fires per-frame), nor a present hook (boot crash), nor
+   even a post-SEH patch. **Every prior host crashed real Windows with the
+   same signature: heap EIP `C0000005` inside the award-update SEH frame.** The
+   root cause is running mod heap code inside an SEH frame the GAME built —
+   whether through a mid-frame redirect or a post-prologue patch. Fix: replace
+   the **entire** award-update function `0x44D760` with a wrapper that:
+   - re-implements the game's **exact** SEH prologue byte-for-byte (installs a
+     byte-identical `FS:[0]` frame using the game's real scope table
+     `0x4CC77C`, so exceptions route to the game's own handler),
+   - runs `diamond_reveal_draw(results)` inside **our own** authentic frame,
+   - then jumps into the game's untouched body at `0x44D77B` and lets its
+     epilogue restore `FS:[0]` and return.
+   Because the wrapper owns a frame identical to the game's, the exception
+   chain is never patched mid-flight — nothing to corrupt. `diamond_reveal_draw`:
    - immediately checks `diamond_first_earn`; if not active it does
      **absolutely nothing** (no I/O, no D3D, no sound, no color-mult),
    - only a genuine first-earn reveal draws the **suction vortex**, fades the
