@@ -1564,24 +1564,28 @@ static void install_weasel_cave(void) {
      * VEH log exactly how far the cave executed before faulting (0=never
      * entered, 1=entered, 2=after reveal_draw returned). */
     extern volatile int g_caveProbe;
-    p[0]=0xC7; p[1]=0x05; *(DWORD*)(p+2)=(DWORD)&g_caveProbe; *(DWORD*)p=1; p+=10; /* mov [g_caveProbe],1 */
+    /* mov [g_caveProbe],1 — correct 10B: C7 05 <addr4> <imm4> */
+    p[0]=0xC7; p[1]=0x05; *(DWORD*)(p+2)=(DWORD)&g_caveProbe; *(DWORD*)(p+6)=1; p+=10;
 
-    /* Consolidated reveal: single call. pushad/popad preserve all regs.
-     * diamond_reveal_draw returns 0 (draw gold) or 1 (diamond drawn, skip
-     * gold). It internally runs the vortex + white-out + clear itself, so the
-     * cave here is minimal — the common golden-weasel draw (no reveal) does a
-     * single cheap guard and never touches I/O/D3D/sound helpers. */
+    /* Consolidated reveal: single call.
+     * pushad saves all GPRs. After the call, eax = diamond_reveal_draw return
+     * (0=draw gold, 1=diamond drawn). We STASH that return value on the stack
+     * (push eax) BEFORE popad so popad can't clobber it, then pop it back into
+     * eax after popad. */
     p[0]=0x60; p+=1;                                  /* pushad */
     p[0]=0x56; p+=1;                                  /* push esi (results) */
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_reveal_draw-(DWORD)(p+5); p+=5;
     p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
-    p[0]=0x61; p+=1;                                  /* popad (restores eax too) */
-    p[0]=0xC7; p[1]=0x05; *(DWORD*)(p+2)=(DWORD)&g_caveProbe; *(DWORD*)p=2; p+=10; /* mov [g_caveProbe],2 */
+    p[0]=0x50; p+=1;                                  /* push eax (save return) */
+    p[0]=0x61; p+=1;                                  /* popad (restores the 8 GPRs) */
+    p[0]=0x58; p+=1;                                  /* pop eax (restore return value) */
+    /* mov [g_caveProbe],2 — correct 10B: C7 05 <addr4> <imm4> */
+    p[0]=0xC7; p[1]=0x05; *(DWORD*)(p+2)=(DWORD)&g_caveProbe; *(DWORD*)(p+6)=2; p+=10;
 
     /* trophy-swap return value handling: the game left x=0x208,y=0x63 on the
      * stack for the gold draw (ret $8). diamond_reveal_draw drew the diamond
      * (if earned) and returned 1 -> pop x,y and skip gold; or returned 0 ->
-     * draw gold (ret $8 pops x,y). We re-read eax (popad restored it). */
+     * draw gold (ret $8 pops x,y). eax now holds the true return value. */
     p[0]=0x85; p[1]=0xC0; p+=2;                       /* test eax,eax */
     p[0]=0x74; p[1]=0x05; p+=2;                       /* jz +5 -> do_gold */
     p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;             /* add esp,8 (swap: pop x,y) */
