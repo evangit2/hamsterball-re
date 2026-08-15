@@ -929,6 +929,9 @@ __attribute__((used)) static int diamond_first_earn(DWORD results) {
  * Returns 1 to skip gold (diamond drawn), 0 to draw gold. */
 __attribute__((used)) int diamond_reveal_draw(DWORD results) {
     int frame;
+    /* UNCONDITIONAL one-shot per-run probe: confirms whether the 0x44CC3F
+     * cave fires AT ALL (before any gate). 0 = cave not reached. */
+    { static int p = 0; if (!p) { p = 1; diag_logf("[diamond] CAVE-FIRED results=%08X", results); } }
     if (!diamond_first_earn(results)) return 0;   /* no reveal -> plain gold */
     frame = diamond_seq_frame(results);
     if (frame < WEASEL_WHITE_TOTAL) {
