@@ -249,18 +249,18 @@ Windows (the earlier present-hook versions did). It hooks:
 1. **Golden-weasel draw (0x44E139)** — the reveal is an inline code cave that
    fires **instead of** the game's own golden-weasel sprite draw (`call
    0x42c7c0`). It is a results-screen-only path (runs only while the medal
-   award screen is drawn, never during the load screen), so installing it is
-   safe and it reads game state + draws D3D exactly when the game intends to
-   draw the trophy. Per frame it:
-   - draws the **suction vortex** behind the trophy (raw `DrawPrimitiveUP`
-     screen-space streaks, issued before the sprite so it renders underneath),
-   - sets the golden weasel's color-multiplier to fade to **white** by frame
-     (55 → fully white at 150, hold to 240),
-   - at **gold + 240** swaps the trophy: draws the **diamond** at (0x208, 0x63)
-     instead of gold, firing the reveal effects (medal pop + star ring) on the
-     first swap,
-   - clears the color-multiplier so later draws are unaffected.
-   All timing is offset from the gold-medal award frame (`results+0x4c`).
+   award screen is drawn, never during the load screen). Per frame it calls a
+   single consolidated helper `diamond_reveal_draw` that:
+   - **immediately checks** whether a genuine first-earn reveal is active
+     (`diamond_first_earn` = met the diamond time AND not earned before); if
+     not, it does **absolutely nothing** (no I/O, no D3D, no sound, no
+     color-mult) and the gold weasel draws exactly as the game intended —
+     so beating only the golden-weasel time (below diamond) is completely
+     inert,
+   - only for an active reveal draws the **suction vortex** behind the trophy,
+     fades the weasel to **white** (55 → fully white at 150, hold to 240), then
+     at gold+240 **swaps to the diamond**, fires the reveal effects (pop +
+     star ring), and clears the color-multiplier.
 2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
    for a race, appends a diamond mini-icon entry to the standings medal list
    right after the golden weasel, so it lays out to the right of it. Also

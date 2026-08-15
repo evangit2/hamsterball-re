@@ -436,14 +436,15 @@ static void diag_log(const char *msg) {
 }
 static void diag_logf(const char *fmt, ...);  /* defined below */
 
-/* Throttled cave-phase tracer. Logs once per observed results-session pointer
- * (not per frame), so the next real-Windows crash log tells us EXACTLY which
- * golden-weasel-cave helper entered + its diamond_first_earn decision. */
-static void cave_phase(DWORD results, const char *phase, int first_earn) {
+/* Throttled cave-phase tracer. Logs the cave-helper NAME the moment the
+ * helper is entered — BEFORE any game-state reads — so a real-Windows crash
+ * that happens during the first read still identifies which helper it was.
+ * Throttled to once per observed results-session pointer. */
+static void cave_enter(DWORD results, const char *phase) {
     static DWORD last_results = 0;
     if (results != last_results) {
         last_results = results;
-        diag_logf("[diamond] CAVE results=%08X first_earn=%d -> %s", results, first_earn, phase);
+        diag_logf("[diamond] CAVE-ENTER results=%08X -> %s", results, phase);
     }
 }
 static void diag_logf(const char *fmt, ...) {
@@ -713,6 +714,11 @@ static void install_weasel_cave(void);   /* defined below (patch helpers) — th
 static void install_skip_cave(void);      /* defined below (patch helpers) */
 
 static int diamond_seq_frame(DWORD results);   /* frames since gold award */
+/* reveal-helper forward decls (defined below, used by diamond_reveal_draw) */
+__attribute__((used)) void diamond_vortex_tick(DWORD results);
+__attribute__((used)) void diamond_weasel_mult(DWORD results);
+__attribute__((used)) void diamond_weasel_mult_clear(DWORD results);
+__attribute__((used)) int  diamond_trophy_swap(DWORD results);
 
 /* BLOCK the results-screen click/keypress skip when the diamond time was
  * achieved for the current race. The skip latch (results+0x25) drives the
@@ -727,7 +733,7 @@ static int diamond_seq_frame(DWORD results);   /* frames since gold award */
 __attribute__((used)) int diamond_block_skip(DWORD results) {
     int frame, race, cs, thr;
     DWORD app;
-    cave_phase(results, "block_skip", -1);
+    cave_enter(results, "block_skip");
     if (!results) return 0;
     if (IsBadReadPtr((void*)(results + 0x10), 4)) return 0;   /* RESULT_FRAME */
     frame = diamond_seq_frame(results);          /* frames since gold award */
@@ -903,6 +909,33 @@ __attribute__((used)) static int diamond_first_earn(DWORD results) {
     return (cs > 0 && cs <= thr) ? 1 : 0;
 }
 
+/* Consolidated reveal draw — the SINGLE helper the 0x44E139 cave calls.
+ *
+ * On a FAST-but-not-diamond run (weasel medal drawn, no diamond time), and on
+ * replays, diamond_first_earn is 0 -> we do NOTHING (no I/O, no D3D, no sound,
+ * no color-mult) and return 0 so the cave's gold draw proceeds untouched. Only
+ * when a genuine first-earn reveal is active do we run the vortex, white-out,
+ * and trophy-swap. This keeps the common golden-weasel draw path completely
+ * inert — a key crash fix: earlier caves called logging/vortex/color helpers on
+ * every weasel draw, and entering those (which pull in fopen/vsnprintf/D3D/
+ * sound calls) from inside the game's embedded award-draw frame crashed real
+ * Windows. 
+ * Returns 1 to skip gold (diamond drawn), 0 to draw gold. */
+__attribute__((used)) int diamond_reveal_draw(DWORD results) {
+    int frame;
+    if (!diamond_first_earn(results)) return 0;   /* no reveal -> plain gold */
+    frame = diamond_seq_frame(results);
+    if (frame < WEASEL_WHITE_TOTAL) {
+        /* reveal in progress: vortex + white-out, but gold still drawn (swap
+         * happens at WEASEL_WHITE_TOTAL, i.e. the trophy swap frame) */
+        diamond_vortex_tick(results);
+        diamond_weasel_mult(results);   /* fade to white by frame */
+        return 0;                        /* draw gold (white-faded under it) */
+    }
+    /* paste the hold end -> swap to diamond */
+    return diamond_trophy_swap(results);  /* draws diamond + returns 1 to skip gold */
+}
+
 /* Set the golden-weasel sprite's color-multiplier so it renders white,
  * phased over result-frames [55,150]. Sets gfx+0x7A8=1 and the RGBA scale at
  * gfx+0x7B0..0x7BC to (m,m,m,1). gfx comes from the weasel sprite (sprite+4).
@@ -911,7 +944,7 @@ __attribute__((used)) void diamond_weasel_mult(DWORD results) {
     int frame;
     float m, *sc;
     DWORD app, sprite, gfx;
-    cave_phase(results, "weasel_mult", diamond_first_earn(results));
+    cave_enter(results, "weasel_mult");
     if (!results) return;
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
     if (!diamond_first_earn(results)) return;   /* replay -> no white-out */
@@ -939,7 +972,7 @@ __attribute__((used)) void diamond_weasel_mult(DWORD results) {
 __attribute__((used)) void diamond_weasel_mult_clear(DWORD results) {
     DWORD app, sprite, gfx;
     float *sc;
-    cave_phase(results, "weasel_mult_clear", -1);
+    cave_enter(results, "weasel_mult_clear");
     if (!results) return;
     if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
     app = *(DWORD*)(results + RESULT_APP);
@@ -1251,7 +1284,7 @@ static void vortex_sound_stop(void) {
 __attribute__((used)) void diamond_vortex_tick(DWORD results) {
     int frame, i;
     DWORD app, sprite, gfx;
-    cave_phase(results, "vortex_tick", diamond_first_earn(results));
+    cave_enter(results, "vortex_tick");
     if (!results) return;
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
     if (!diamond_first_earn(results)) {          /* replay -> no vortex */
@@ -1334,7 +1367,7 @@ __attribute__((used)) void diamond_vortex_tick(DWORD results) {
 __attribute__((used)) int diamond_trophy_swap(DWORD results) {
     int frame, race, cs, thr;
     DWORD app;
-    cave_phase(results, "trophy_swap", diamond_first_earn(results));
+    cave_enter(results, "trophy_swap");
     if (!results) return 0;
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return 0;
     frame = diamond_seq_frame(results);          /* frames since gold award */
@@ -1526,48 +1559,38 @@ static void install_weasel_cave(void) {
     if (!g_weaselCave) return;
     p = g_weaselCave;
 
-    /* 1) draw vortex behind the trophy */
+    /* Consolidated reveal: single call. pushad/popad preserve all regs.
+     * diamond_reveal_draw returns 0 (draw gold) or 1 (diamond drawn, skip
+     * gold). It internally runs the vortex + white-out + clear itself, so the
+     * cave here is minimal — the common golden-weasel draw (no reveal) does a
+     * single cheap guard and never touches I/O/D3D/sound helpers. */
     p[0]=0x60; p+=1;                                  /* pushad */
     p[0]=0x56; p+=1;                                  /* push esi (results) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_vortex_tick-(DWORD)(p+5); p+=5;
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_reveal_draw-(DWORD)(p+5); p+=5;
     p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
-    p[0]=0x61; p+=1;                                  /* popad */
+    p[0]=0x61; p+=1;                                  /* popad (restores eax too) */
 
-    /* 2) set the weasel white tint via color-multiplier */
-    p[0]=0x60; p+=1;                                  /* pushad */
-    p[0]=0x56; p+=1;                                  /* push esi (results) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_weasel_mult-(DWORD)(p+5); p+=5;
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
-    p[0]=0x61; p+=1;                                  /* popad */
-
-    /* 3) trophy swap: at frame>=240, diamond replaces the golden weasel.
-     *    diamond_trophy_swap draws the diamond (if earned) and returns 1
-     *    (skip gold) or 0 (draw gold). We preserve ecx (sprite) via push/pop
-     *    so the gold call below still works when not swapped, and keep the
-     *    return value in EAX (NOT pushad, which would clobber it).
-     *    NOTE: the game left x,y on the stack for the gold call (ret $8);
-     *    if we skip gold we still must pop x,y (add esp,8) to rebalance. */
-    p[0]=0x51; p+=1;                                  /* push ecx (save sprite) */
-    p[0]=0x56; p+=1;                                  /* push esi (results arg) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_trophy_swap-(DWORD)(p+5); p+=5;
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 (pop arg) */
-    p[0]=0x59; p+=1;                                  /* pop ecx (restore sprite) */
+    /* trophy-swap return value handling: the game left x=0x208,y=0x63 on the
+     * stack for the gold draw (ret $8). diamond_reveal_draw drew the diamond
+     * (if earned) and returned 1 -> pop x,y and skip gold; or returned 0 ->
+     * draw gold (ret $8 pops x,y). We re-read eax (popad restored it). */
     p[0]=0x85; p[1]=0xC0; p+=2;                       /* test eax,eax */
     p[0]=0x74; p[1]=0x05; p+=2;                       /* jz +5 -> do_gold */
     p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;             /* add esp,8 (swap: pop x,y) */
     p[0]=0xEB; p[1]=0x05; p+=2;                       /* jmp +5 -> skip_gold */
-    /* do_gold: re-emit the gold weasel draw (ret $8 pops x,y) */
+    /* do_gold: draw gold (ret $8 pops x,y) */
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(SPRITE_DRAW)-(DWORD)(p+5); p+=5;
     /* skip_gold: (after gold draw OR after add esp,8) */
 
-    /* 4) clear the weasel tint */
+    /* clear the weasel white tint (set by the reveal) so later draws are
+     * unaffected. pushad/popad preserve regs; esi = results still live. */
     p[0]=0x60; p+=1;                                  /* pushad */
     p[0]=0x56; p+=1;                                  /* push esi */
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_weasel_mult_clear-(DWORD)(p+5); p+=5;
     p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
     p[0]=0x61; p+=1;                                  /* popad */
 
-    /* 5) back to original flow */
+    /* back to original flow */
     write_jmp(p, retAddr); p+=5;
     unsigned char patch[5];
     memset(patch, 0x90, 5);
