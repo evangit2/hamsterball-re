@@ -434,6 +434,18 @@ static void diag_log(const char *msg) {
     if (!g_log) { if (g_logPath[0]) g_log = fopen(g_logPath, "a"); }
     if (g_log) { fprintf(g_log, "%s\n", msg); fflush(g_log); }
 }
+static void diag_logf(const char *fmt, ...);  /* defined below */
+
+/* Throttled cave-phase tracer. Logs once per observed results-session pointer
+ * (not per frame), so the next real-Windows crash log tells us EXACTLY which
+ * golden-weasel-cave helper entered + its diamond_first_earn decision. */
+static void cave_phase(DWORD results, const char *phase, int first_earn) {
+    static DWORD last_results = 0;
+    if (results != last_results) {
+        last_results = results;
+        diag_logf("[diamond] CAVE results=%08X first_earn=%d -> %s", results, first_earn, phase);
+    }
+}
 static void diag_logf(const char *fmt, ...) {
     char buf[512]; va_list ap;
     if (!g_log) { if (g_logPath[0]) g_log = fopen(g_logPath, "a"); }
@@ -715,6 +727,7 @@ static int diamond_seq_frame(DWORD results);   /* frames since gold award */
 __attribute__((used)) int diamond_block_skip(DWORD results) {
     int frame, race, cs, thr;
     DWORD app;
+    cave_phase(results, "block_skip", -1);
     if (!results) return 0;
     if (IsBadReadPtr((void*)(results + 0x10), 4)) return 0;   /* RESULT_FRAME */
     frame = diamond_seq_frame(results);          /* frames since gold award */
@@ -898,6 +911,7 @@ __attribute__((used)) void diamond_weasel_mult(DWORD results) {
     int frame;
     float m, *sc;
     DWORD app, sprite, gfx;
+    cave_phase(results, "weasel_mult", diamond_first_earn(results));
     if (!results) return;
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
     if (!diamond_first_earn(results)) return;   /* replay -> no white-out */
@@ -925,6 +939,7 @@ __attribute__((used)) void diamond_weasel_mult(DWORD results) {
 __attribute__((used)) void diamond_weasel_mult_clear(DWORD results) {
     DWORD app, sprite, gfx;
     float *sc;
+    cave_phase(results, "weasel_mult_clear", -1);
     if (!results) return;
     if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
     app = *(DWORD*)(results + RESULT_APP);
@@ -1236,6 +1251,7 @@ static void vortex_sound_stop(void) {
 __attribute__((used)) void diamond_vortex_tick(DWORD results) {
     int frame, i;
     DWORD app, sprite, gfx;
+    cave_phase(results, "vortex_tick", diamond_first_earn(results));
     if (!results) return;
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
     if (!diamond_first_earn(results)) {          /* replay -> no vortex */
@@ -1318,6 +1334,7 @@ __attribute__((used)) void diamond_vortex_tick(DWORD results) {
 __attribute__((used)) int diamond_trophy_swap(DWORD results) {
     int frame, race, cs, thr;
     DWORD app;
+    cave_phase(results, "trophy_swap", diamond_first_earn(results));
     if (!results) return 0;
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return 0;
     frame = diamond_seq_frame(results);          /* frames since gold award */
