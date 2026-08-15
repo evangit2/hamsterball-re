@@ -911,19 +911,24 @@ __attribute__((used)) static int diamond_seq_frame(DWORD results) {
  * normal gold, then the diamond just swaps in at gold+240 with no buildup. */
 static int g_firstEarnLog[15] = {0};   /* one-shot diagnostic per race */
 __attribute__((used)) static int diamond_first_earn(DWORD results) {
-    int race, cs, thr;
-    DWORD app;
-    if (!results) return 0;
-    if (!g_configLoaded) return 0;
-    if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return 0;
-    app = *(DWORD*)(results + RESULT_APP);
-    if (!app) return 0;
-    race = get_race_index();
-    if (race < 0 || race > 14) return 0;
-    if (!g_hasSecret[race]) return 0;
-    if (g_won[race]) return 0;                 /* already earned -> replay */
+    int race = -1, cs = 0, thr = 0;
+    DWORD app = 0;
+    const char *skip = NULL;   /* first blocking reason, logged once/session */
+    if (!results)                         skip = "no-results";
+    else if (!g_configLoaded)            skip = "no-config";
+    else if (IsBadReadPtr((void*)(results + RESULT_APP), 4))
+                                          skip = "app-BAD";
+    else if (!(app = *(DWORD*)(results + RESULT_APP)))
+                                          skip = "app-null";
+    else { race = get_race_index();
+           if (race < 0 || race > 14)     skip = "race-OOR";
+           else if (!g_hasSecret[race])   skip = "no-secret";
+           else if (g_won[race])          skip = "already-won";
+    }
+    if (skip) { cave_enter(results, skip); return 0; }
     cs = get_player_time_cs(app);
     thr = g_secret_cs[race];
+    cave_enter(results, "checks-passed");
     if (!g_firstEarnLog[race]) {
         g_firstEarnLog[race] = 1;
         diag_logf("[diamond] FIRST-EARN race=%d time=%d thr=%d won=%d cfg=%d hasSecr=%d",
