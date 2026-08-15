@@ -1759,10 +1759,18 @@ static void install_tt_cave(void) {
  * Install
  * ================================================================ */
 static void install_hooks(void) {
-    install_icon_cave();
-    install_tt_cave();
-    install_reveal_cave();  /* 0x44D77B award-update post-SEH host — per-frame reveal, guarded */
-    diag_log("[diamond] hooks installed (reveal drives off 0x44D77B award-update post-SEH; SEH award entry NOT hooked)");
+    install_icon_cave();     /* no-op */
+    install_tt_cave();       /* deferred until first diamond */
+#ifdef DIAMOND_REVEAL_DISABLED
+    /* ISOLATION TEST: reveal patch completely OFF. No game hooks installed.
+     * Keeps VEH + BASS proxy + flusher thread (the mod "baseline"). If the
+     * crash persists here, the reveal patch is innocent and the fault is in
+     * the baseline; if it clears, the 0x44D760 host is the cause. */
+    diag_log("[diamond] ISOLATION BUILD: reveal cave DISABLED (no game patches)");
+#else
+    install_reveal_cave();
+    diag_log("[diamond] hooks installed (reveal = full-wrapper SEH replacement of 0x44D760)");
+#endif
 }
 
 /* ================================================================
