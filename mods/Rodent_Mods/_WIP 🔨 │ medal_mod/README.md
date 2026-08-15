@@ -261,6 +261,10 @@ Windows (the earlier present-hook versions did). It hooks:
      fades the weasel to **white** (55 → fully white at 150, hold to 240), then
      at gold+240 **swaps to the diamond**, fires the reveal effects (pop +
      star ring), and clears the color-multiplier.
+   The cave saves/restores all registers via `pushad`/`popad` and, critically,
+   stashes the helper's return value **on the stack across `popad`** (so a
+   wrong gold-vs-diamond branch can never leave the game's x/y stack
+   unbalanced — the root cause of an earlier results-screen corruption).
 2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
    for a race, appends a diamond mini-icon entry to the standings medal list
    right after the golden weasel, so it lays out to the right of it. Also
