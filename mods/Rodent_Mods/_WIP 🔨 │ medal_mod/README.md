@@ -246,25 +246,24 @@ inline from the game's own medal-award draw, never from a per-frame
 present/GameUpdate hook. That is why it no longer crashes at boot on real
 Windows (the earlier present-hook versions did). It hooks:
 
-1. **Golden-weasel draw (0x44E139)** — the reveal is an inline code cave that
-   fires **instead of** the game's own golden-weasel sprite draw (`call
-   0x42c7c0`). It is a results-screen-only path (runs only while the medal
-   award screen is drawn, never during the load screen). Per frame it calls a
-   single consolidated helper `diamond_reveal_draw` that:
-   - **immediately checks** whether a genuine first-earn reveal is active
-     (`diamond_first_earn` = met the diamond time AND not earned before); if
-     not, it does **absolutely nothing** (no I/O, no D3D, no sound, no
-     color-mult) and the gold weasel draws exactly as the game intended —
-     so beating only the golden-weasel time (below diamond) is completely
-     inert,
-   - only for an active reveal draws the **suction vortex** behind the trophy,
-     fades the weasel to **white** (55 → fully white at 150, hold to 240), then
-     at gold+240 **swaps to the diamond**, fires the reveal effects (pop +
-     star ring), and clears the color-multiplier.
-   The cave saves/restores all registers via `pushad`/`popad` and, critically,
-   stashes the helper's return value **on the stack across `popad`** (so a
-   wrong gold-vs-diamond branch can never leave the game's x/y stack
-   unbalanced — the root cause of an earlier results-screen corruption).
+1. **Golden-weasel reveal (hosted on 0x44CBAA)** — the reveal DOES NOT hook
+   `0x44E139` (hooking the interior of the SEH-protected award-DRAW function
+   `0x44DF70` was proven by an isolation test to crash real Windows on the
+   weasel-draw path no matter what the cave did — `caveProbe=0` every time,
+   the fault was inside `0x44DF70` after the redirect corrupted state).
+   Instead the reveal runs from the same code cave as the skip-latch at
+   `0x44CBAA`, which lives inside the award-screen UPDATE function `0x44CB90`
+   — a NON-SEH function that runs every results frame with `esi` = results
+   object and is provably crash-safe. Per frame the cave calls:
+   - `diamond_block_skip` — blocks the skip latch when a first-earn reveal is
+     in progress so the animation isn't clicked past,
+   - `diamond_reveal_draw` — immediately checks `diamond_first_earn`; if not
+     active it does **absolutely nothing** (no I/O, no D3D, no sound, no
+     color-mult); only a genuine first-earn reveal draws the **suction
+     vortex**, fades the weasel to **white** (55 → white at 150, hold to 240),
+     then at gold+240 draws the **diamond** + fires the reveal effects
+     (pop + star ring).
+   All register state is preserved via `pushad`/`popad`.
 2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
    for a race, appends a diamond mini-icon entry to the standings medal list
    right after the golden weasel, so it lays out to the right of it. Also
