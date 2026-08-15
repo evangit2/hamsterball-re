@@ -1773,13 +1773,38 @@ static void install_hooks(void) {
  * ================================================================ */
 
 /* Vectored exception handler that logs the EXACT faulting address + what
- * stage of the reveal was running. Stays around in case a results-screen
- * crash happens (which Wine can't reproduce). */
+ * stage the reveal was in. A single real crash raises a CASCADE of exceptions
+ * (E06D7363/C0000005 during unwind), so we LATCH the FIRST one — the genuine
+ * primary fault — and only log the rest as a suppressed cascade count. The
+ * primary entry records the faulting EIP, whether it's inside the game module
+ * or heap, and the first instruction bytes at EIP (to see if it's mid-cave).
+ *
+ * This is essential: earlier logs drowned the real fault in cascade noise with
+ * a corrupted CONTEXT (esp=1.0f etc.); only the first exception's CONTEXT is
+ * trustworthy. */
+static volatile LONG g_primaryLogged = 0;
 static LONG CALLBACK diamond_veh(PEXCEPTION_POINTERS ep) {
-    diag_logf("[diamond] VEH FAULT: EIP=%08X ERRC=%08X regs(eax=%08X ebx=%08X ecx=%08X edx=%08X esi=%08X edi=%08X ebp=%08X esp=%08X) caveProbe=%d",
-        (DWORD)ep->ExceptionRecord->ExceptionAddress,
-        (DWORD)g_caveProbe,
-        ep->ExceptionRecord->ExceptionCode,
+    DWORD eip = (DWORD)ep->ExceptionRecord->ExceptionAddress;
+    DWORD code = ep->ExceptionRecord->ExceptionCode;
+    /* If we already latched the primary, just count the cascade (logged once). */
+    if (InterlockedExchange(&g_primaryLogged, 1)) {
+        static volatile LONG cascadeDone = 0;
+        if (!InterlockedExchange(&cascadeDone, 1))
+            diag_logf("[diamond] VEH: (cascade) subsequent exceptions suppressed; final code=%08X", code);
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    /* ---- PRIMARY fault ---- */
+    /* Is EIP inside the game module? 0x400000 image base, ~0x110000 (0x400000..0x510000). */
+    const char *where = (eip >= EXE_BASE && eip < EXE_BASE + 0x200000) ? "EXE" : "HEAP/OTHER";
+    diag_logf("[diamond] ** PRIMARY ** EIP=%08X [%s] ERRC=%08X caveProbe=%d",
+        eip, where, code, (DWORD)g_caveProbe);
+    /* instruction bytes at EIP (only if readable) */
+    {
+        BYTE b[8]; int n=0;
+        for (int i=0;i<8;i++){ if(!IsBadReadPtr((void*)(eip+i),1)) { b[n++] = *(BYTE*)(eip+i);} else break; }
+        if (n){ char h[40]; for(int i=0;i<n;i++) sprintf(h+i*2,"%02X",b[i]); h[n*2]=0; diag_logf("[diamond]   EIP bytes: %s", h); }
+    }
+    diag_logf("[diamond]   regs eax=%08X ebx=%08X ecx=%08X edx=%08X esi=%08X edi=%08X ebp=%08X esp=%08X",
         ep->ContextRecord->Eax, ep->ContextRecord->Ebx,
         ep->ContextRecord->Ecx, ep->ContextRecord->Edx,
         ep->ContextRecord->Esi, ep->ContextRecord->Edi,
@@ -1790,8 +1815,8 @@ static LONG CALLBACK diamond_veh(PEXCEPTION_POINTERS ep) {
         for (i = 0; i < 12; i++) {
             if (!IsBadReadPtr(sp + i, 4)) {
                 DWORD ra = sp[i];
-                if (ra >= 0x401000 && ra < 0x4f7000)
-                    diag_logf("[diamond] VEH stack[%d]=%08X", i, ra);
+                if (ra >= EXE_BASE && ra < EXE_BASE + 0x200000)
+                    diag_logf("[diamond]   stack[%d]=%08X", i, ra);
             }
         }
     }
