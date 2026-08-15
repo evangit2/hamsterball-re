@@ -435,6 +435,39 @@ static const char *g_xml_block[15] = {
 static char  g_logPath[MAX_PATH] = {0};
 static FILE *g_log = NULL;
 
+/* ---- Crash-safe trace logging (no file I/O inside the game's SEH frame) ----
+ * The award-screen update (0x44D760) installs a live SEH frame via FS:[0], and
+ * our reveal helpers run INSIDE that frame every frame the results screen is up.
+ * Calling fopen/fprintf/fflush there crashes real Windows with C0000005 (CRT
+ * file I/O is not safe from inside a live exception frame during dispatch) —
+ * Wine tolerates it, Windows does not. So ALL frame-path tracing writes to an
+ * in-memory ring buffer under a spinlock, and a dedicated background thread
+ * drains it to disk. Nothing in the frame path ever touches the filesystem. */
+#define RING_ROWS    256
+#define RING_LEN     160
+static char    g_ring[RING_ROWS][RING_LEN];
+static volatile int  g_ringW = 0;   /* next write slot (monotonic) */
+static volatile LONG g_ringLock = 0;/* spinlock */
+static int g_flusherStarted = 0;    /* ensure the flusher thread starts once */
+
+/* Lock-free-ish spinlock helpers (no CRT, no SEH). */
+static void ring_lock(void)   { while (InterlockedCompareExchange(&g_ringLock,1,0)) Sleep(0); }
+static void ring_unlock(void) { InterlockedExchange(&g_ringLock,0); }
+
+/* Thread-safe in-memory trace. NEVER does file I/O. Safe to call from inside
+ * the game's live SEH frame. This is the crash-safe replacement for per-frame
+ * diag_logf calls in the award/reveal path. */
+static void trace_logf(const char *fmt, ...) {
+    char buf[256]; va_list ap;
+    va_start(ap, fmt); vsnprintf(buf, sizeof(buf), fmt, ap); va_end(ap);
+    ring_lock();
+    int slot = (g_ringW % RING_ROWS);
+    strncpy(g_ring[slot], buf, RING_LEN-1);
+    g_ring[slot][RING_LEN-1] = 0;
+    g_ringW++;
+    ring_unlock();
+}
+
 static unsigned char *g_iconCave = NULL;
 static unsigned char *g_ttCave = NULL;
 static int   g_ttInstalled = 0;   /* has cherry TT cave been patched in? Start 0;
@@ -455,12 +488,14 @@ static void diag_logf(const char *fmt, ...);  /* defined below */
 /* Throttled cave-phase tracer. Logs the cave-helper NAME the moment the
  * helper is entered — BEFORE any game-state reads — so a real-Windows crash
  * that happens during the first read still identifies which helper it was.
- * Throttled to once per observed results-session pointer. */
+ * Throttled to once per observed results-session pointer.
+ * CRASH-SAFE: writes to the in-memory ring (trace_logf), never file I/O, so
+ * it is safe to call from inside the award screen's live SEH frame. */
 static void cave_enter(DWORD results, const char *phase) {
     static DWORD last_results = 0;
     if (results != last_results) {
         last_results = results;
-        diag_logf("[diamond] CAVE-ENTER results=%08X -> %s", results, phase);
+        trace_logf("[diamond] CAVE-ENTER results=%08X -> %s", results, phase);
     }
 }
 static void diag_logf(const char *fmt, ...) {
@@ -931,7 +966,7 @@ __attribute__((used)) static int diamond_first_earn(DWORD results) {
     cave_enter(results, "checks-passed");
     if (!g_firstEarnLog[race]) {
         g_firstEarnLog[race] = 1;
-        diag_logf("[diamond] FIRST-EARN race=%d time=%d thr=%d won=%d cfg=%d hasSecr=%d",
+        trace_logf("[diamond] FIRST-EARN race=%d time=%d thr=%d won=%d cfg=%d hasSecr=%d",
                   race, cs, thr, g_won[race], g_configLoaded, g_hasSecret[race]);
     }
     return (cs > 0 && cs <= thr) ? 1 : 0;
@@ -953,7 +988,7 @@ __attribute__((used)) int diamond_reveal_draw(DWORD results) {
     int frame;
     /* UNCONDITIONAL one-shot per-run probe: confirms whether the 0x44CC3F
      * cave fires AT ALL (before any gate). 0 = cave not reached. */
-    { static int p = 0; if (!p) { p = 1; diag_logf("[diamond] CAVE-FIRED results=%08X", results); } }
+    { static int p = 0; if (!p) { p = 1; trace_logf("[diamond] CAVE-FIRED results=%08X", results); } }
     if (!diamond_first_earn(results)) return 0;   /* no reveal -> plain gold */
     frame = diamond_seq_frame(results);
     if (frame < WEASEL_WHITE_TOTAL) {
@@ -1065,7 +1100,7 @@ __attribute__((used)) void diamond_weasel_mult(DWORD results) {
     *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = 1;
     sc = (float*)(gfx + GFX_MULT_R);
     sc[0] = m; sc[1] = m; sc[2] = m; sc[3] = 1.0f;
-    diag_logf("[diamond] weasel white frame=%d mult=%.2f", frame, m);
+    trace_logf("[diamond] weasel white frame=%d mult=%.2f", frame, m);
 }
 
 /* Clear the weasel color-multiplier back to identity (all 1.0) so
@@ -1486,12 +1521,12 @@ __attribute__((used)) int diamond_trophy_swap(DWORD results) {
      * gate (fast time + reveal passed 240). Logs cs/thr/race so a real-Windows
      * run shows exactly why the diamond did/didn't appear. Spams once per frame
      * while the gate holds, but only during the short results window. */
-    diag_logf("[diamond] SWAP-GATE race=%d time=%d threshold=%d (won=%d)", race, cs, thr, g_won[race]);
+    trace_logf("[diamond] SWAP-GATE race=%d time=%d threshold=%d (won=%d)", race, cs, thr, g_won[race]);
     if (!(cs > 0 && cs <= thr)) return 0;
     /* Atomic unlock commit on first reveal. */
     if (!g_won[race]) {
         if (!diamond_provision_unlock(race)) {
-            diag_logf("[diamond] trophy swap unlock aborted for race %d", race);
+            trace_logf("[diamond] trophy swap unlock aborted for race %d", race);
             return 0;
         }
         diamond_spawn_medal_effects(results, app);   /* pop + star ring */
@@ -1822,6 +1857,36 @@ static DWORD WINAPI diamond_init_thread(LPVOID param) {
     return 0;
 }
 
+/* Background flusher: drains the in-memory trace ring to the log file. Runs on
+ * its own thread, NEVER inside the game's SEH frame, so CRT fopen/fprintf is
+ * safe here. Calls diag_logf (which writes to g_log). Wakes every 250ms. */
+static DWORD WINAPI diamond_flusher_thread(LPVOID param) {
+    int seen = 0;
+    for (;;) {
+        Sleep(250);
+        ring_lock();
+        int w = g_ringW;
+        ring_unlock();
+        while (seen < w) {
+            int slot = (seen % RING_ROWS);
+            char line[RING_LEN];
+            ring_lock(); memcpy(line, g_ring[slot], RING_LEN); ring_unlock();
+            line[RING_LEN-1] = 0;
+            diag_logf("%s", line);
+            seen++;
+        }
+    }
+    return 0;
+}
+
+/* Start the flusher thread (once, idempotent) — from DllMain as a plain
+ * CreateThread outside the loader-lock risk (it only reads memory + logs). */
+static void start_flusher(void) {
+    if (g_flusherStarted) return;
+    g_flusherStarted = 1;
+    CreateThread(NULL, 0, diamond_flusher_thread, NULL, 0, NULL);
+}
+
 BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hinst);
@@ -1829,6 +1894,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
         get_own_dir(g_logPath, sizeof(g_logPath));
         snprintf(g_logPath,    sizeof(g_logPath), "%s\\\\diamond_weasel_mod.log", g_logPath);
         diag_log("=== DIAMOND WEASEL MOD LOADED ===");
+        start_flusher();   /* drains trace ring to disk on its own thread */
         AddVectoredExceptionHandler(1, diamond_veh);
         init_thresholds();
         load_unlocks();

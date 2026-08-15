@@ -246,19 +246,21 @@ inline from the game's own medal-award draw, never from a per-frame
 present/GameUpdate hook. That is why it no longer crashes at boot on real
 Windows (the earlier present-hook versions did). It hooks:
 
-1. **Golden-weasel reveal (hosted on 0x44CC3F)** — the reveal DOES NOT hook
+1. **Golden-weasel reveal (hosted on 0x44D77B)** — the reveal does NOT hook
    `0x44E139` (hooking the interior of the SEH-protected award-DRAW function
    `0x44DF70` was proven by an isolation test to crash real Windows on the
    weasel-draw path no matter what the cave did — the fault was inside
    `0x44DF70` after the redirect corrupted a pointer). It also does NOT use
-   `0x44CBAA` (that instruction only executes in a one-time armed state, so a
-   cave there fired too rarely to drive the 240-frame reveal). Instead the
-   reveal is hosted at **`0x44CC3F`, the epilogue of the award-screen UPDATE
-   function `0x44CB90`** (`pop edi;pop esi;pop ebx;ret`) — a NON-SEH function
-   that runs once per award frame with `esi` = results object still live, so it
-   is a TRUE per-frame host. The cave does `pushad`; calls
-   `diamond_reveal_draw(results)`; `popad`; then resumes the original tail at
-   `0x44CC43`. `diamond_reveal_draw`:
+   `0x44CBAA` (that instruction only executes in a one-time armed state) or
+   `0x44CC3F`/`0x44CB90` (those are the "click to continue" continuation, not
+   the per-frame medal driver, so a reveal there never fires). Instead the
+   reveal is hosted at **`0x44D77B` — the first instruction AFTER the award
+   update function `0x44D760`'s SEH prologue installs its `FS:[0]` frame** —
+   so it runs once per award frame with `esi` = results object live AND the
+   game's exception frame already valid. This is the true per-frame driver.
+   The cave does `pushad`; `push esi`; calls `diamond_reveal_draw(results)`;
+   `add esp,4`; `popad`; then re-emits the original `lea ecx,[esi+0x4c4]` and
+   resumes at `0x44D781`. `diamond_reveal_draw`:
    - immediately checks `diamond_first_earn`; if not active it does
      **absolutely nothing** (no I/O, no D3D, no sound, no color-mult),
    - only a genuine first-earn reveal draws the **suction vortex**, fades the
@@ -266,6 +268,16 @@ Windows (the earlier present-hook versions did). It hooks:
      gold+240 draws the **diamond** + fires the reveal effects (pop + star
      ring) and persists the unlock.
    All register state is preserved via `pushad`/`popad`.
+
+   **CRASH-SAFE LOGGING (important):** the award-screen update runs inside a
+   live SEH frame. Calling CRT file I/O (`fopen`/`fprintf`/`fflush`) inside
+   that frame crashes real Windows with `C0000005` (Wine tolerates it) —
+   this bit us when per-frame `diag_logf` calls were added. ALL frame-path
+   tracing (`CAVE-FIRED`, `CAVE-ENTER`, `FIRST-EARN`, `weasel white`,
+   `SWAP-GATE`) therefore writes to an **in-memory ring buffer** under a
+   spinlock (`trace_logf`), and a dedicated background thread
+   (`diamond_flusher_thread`) drains it to the log file. Nothing in the
+   frame path touches the filesystem.
 2. **TT-menu golden-weasel append (0x42F927)** — when the diamond is unlocked
    for a race, appends a diamond mini-icon entry to the standings medal list
    right after the golden weasel, so it lays out to the right of it. Also
