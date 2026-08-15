@@ -357,6 +357,7 @@ static DWORD g_vortexResults = 0;    /* results obj of the CURRENT vortex sessio
                                         the whoosh when a results screen is exited
                                         mid-cycle (frame never reaches the tail). */
 static unsigned char *g_weaselCave = NULL;  /* the 0x44E139 inline reveal cave */
+volatile int g_caveProbe = 0;               /* 0=never entered 1=entered 2=post-reveal */
 
 /* ================================================================
  * Mod globals
@@ -1559,6 +1560,12 @@ static void install_weasel_cave(void) {
     if (!g_weaselCave) return;
     p = g_weaselCave;
 
+    /* Probe markers — pure memory stores, NO file I/O, so we can tell from the
+     * VEH log exactly how far the cave executed before faulting (0=never
+     * entered, 1=entered, 2=after reveal_draw returned). */
+    extern volatile int g_caveProbe;
+    p[0]=0xC7; p[1]=0x05; *(DWORD*)(p+2)=(DWORD)&g_caveProbe; *(DWORD*)p=1; p+=10; /* mov [g_caveProbe],1 */
+
     /* Consolidated reveal: single call. pushad/popad preserve all regs.
      * diamond_reveal_draw returns 0 (draw gold) or 1 (diamond drawn, skip
      * gold). It internally runs the vortex + white-out + clear itself, so the
@@ -1569,6 +1576,7 @@ static void install_weasel_cave(void) {
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_reveal_draw-(DWORD)(p+5); p+=5;
     p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;             /* add esp,4 */
     p[0]=0x61; p+=1;                                  /* popad (restores eax too) */
+    p[0]=0xC7; p[1]=0x05; *(DWORD*)(p+2)=(DWORD)&g_caveProbe; *(DWORD*)p=2; p+=10; /* mov [g_caveProbe],2 */
 
     /* trophy-swap return value handling: the game left x=0x208,y=0x63 on the
      * stack for the gold draw (ret $8). diamond_reveal_draw drew the diamond
@@ -1764,8 +1772,9 @@ static void install_hooks(void) {
  * stage of the reveal was running. Stays around in case a results-screen
  * crash happens (which Wine can't reproduce). */
 static LONG CALLBACK diamond_veh(PEXCEPTION_POINTERS ep) {
-    diag_logf("[diamond] VEH FAULT: EIP=%08X ERRC=%08X regs(eax=%08X ebx=%08X ecx=%08X edx=%08X esi=%08X edi=%08X ebp=%08X esp=%08X)",
+    diag_logf("[diamond] VEH FAULT: EIP=%08X ERRC=%08X regs(eax=%08X ebx=%08X ecx=%08X edx=%08X esi=%08X edi=%08X ebp=%08X esp=%08X) caveProbe=%d",
         (DWORD)ep->ExceptionRecord->ExceptionAddress,
+        (DWORD)g_caveProbe,
         ep->ExceptionRecord->ExceptionCode,
         ep->ContextRecord->Eax, ep->ContextRecord->Ebx,
         ep->ContextRecord->Ecx, ep->ContextRecord->Edx,
