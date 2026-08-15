@@ -192,6 +192,10 @@ static void load_real_bass(void) {
  * ================================================================ */
 #define EXE_BASE           0x00400000
 #define APP_PTR            0x005341E0
+#define APP_FRAME_UPDATE_EPILOGUE 0x0046C1F1  /* GameUpdate frame epilogue: POP ESI / ADD ESP,8 / RET
+                                                 (5E 83 C4 08 C3) — fires once per frame at a safe
+                                                 boundary after all logic + render. Proven crash-safe
+                                                 (ghost_triggers pattern); inert during boot. */
 #define APP_PROFILE        0x220
 #define PROFILE_RACE       0x8
 #define APP_BOARD          0x178
@@ -427,7 +431,7 @@ static int   g_ttInstalled = 0;   /* has cherry TT cave been patched in? Start 0
                                    * set 1 after install so it's idempotent whether
                                    * called at startup (g_anyDiamond already 1) or
                                    * lazily from diamond_provision_unlock. */
-static unsigned char *g_skipCave = NULL;
+static unsigned char *g_presentStub = NULL;    /* 0x46C1F1 cold present-hook stub */
 
 /* ================================================================
  * Logging + path helpers
@@ -943,6 +947,43 @@ __attribute__((used)) int diamond_reveal_draw(DWORD results) {
     }
     /* paste the hold end -> swap to diamond */
     return diamond_trophy_swap(results);  /* draws diamond + returns 1 to skip gold */
+}
+
+/* ---- Present-hook reveal driver ----
+ * Runs once per frame from the 0x46C1F1 frame-epilogue hook (safe boundary,
+ * outside the SEH-wrapped award functions). Locates the live medal-award
+ * results object at scene+0x8B8 and drives the reveal helpers, which
+ * self-gate on gold-award frames (diamond_first_earn + diamond_seq_frame),
+ * so this is inert during boot and gameplay.
+ */
+static void present_reveal_handler(void) {
+    DWORD app, board, results, vt;
+    int listCount;
+    DWORD *items;
+    /* The reveal only acts while a medal-award results screen is live, so a
+     * fully-gated locator. No I/O, no D3D, no sound unless armed. */
+    if (IsBadReadPtr((void*)APP_PTR, 4)) return;
+    app = *(DWORD*)APP_PTR;
+    if (!app || app < 0x10000) return;
+    if (IsBadReadPtr((void*)(app + APP_BOARD), 4)) return;
+    board = *(DWORD*)(app + APP_BOARD);
+    if (!board) return;
+    /* results list at scene+0x8B8 (AthenaList: count at +0x04, items +0x40C) */
+    if (IsBadReadPtr((void*)(board + SCENE_RESULTS_LIST + SCENE_LIST_COUNT), 4)) return;
+    listCount = *(int*)(board + SCENE_RESULTS_LIST + SCENE_LIST_COUNT);
+    if (listCount <= 0 || listCount > 4) return;
+    if (IsBadReadPtr((void*)(board + SCENE_RESULTS_LIST + SCENE_LIST_ITEMS), 4)) return;
+    items = *(DWORD**)(board + SCENE_RESULTS_LIST + SCENE_LIST_ITEMS);
+    if (!items) return;
+    if (IsBadReadPtr(items, 4)) return;
+    results = items[0];
+    if (!results) return;
+    if (IsBadReadPtr((void*)results, 4)) return;
+    vt = *(DWORD*)results;
+    /* Must be a genuine results-screen object (award vtable 0x4D6CF0). */
+    if (vt != RESULTS_VTABLE_AWARD && vt != RESULTS_VTABLE_OLD_2 && vt != RESULTS_VTABLE_OLD_1)
+        return;
+    diamond_reveal_draw(results);
 }
 
 /* Set the golden-weasel sprite's color-multiplier so it renders white,
@@ -1586,53 +1627,51 @@ static void install_icon_cave(void) {
     diag_log("[diamond] icon cave DISABLED (icon loads lazily on first draw)");
 }
 
-/* Reveal cave hosted at 0x44CC3F — the epilogue of the award-screen UPDATE
- * function 0x44CB90 (`pop edi;pop esi;pop ebx;ret` = 5F 5E 5B C3), which runs
- * on EVERY award-update call (once per game frame the medal screen is live)
- * with esi = results object still live. It is NON-SEH and proven crash-safe.
+/* Reveal driver — runs from the PROVEN cold present hook at 0x46C1F1
+ * (GameUpdate frame epilogue: 5E 83 C4 08 C3 = POP ESI / ADD ESP,8 / RET),
+ * the same crash-safe frame boundary used by ghost_triggers. This is the
+ * correct host for the reveal: it fires ONCE PER FRAME after all game logic
+ * + rendering, OUTSIDE the SEH-wrapped medal-award functions (0x44d760 /
+ * 0x44df70). The earlier host (0x44CC3F = 0x44CB90's epilogue, award vtable
+ * slot[4]) is NOT on the per-frame award path — 0x44cb90 only runs on the
+ * "click to continue" continuation — so the cave never fired, which is why
+ * the CAVE-FIRED probe never logged. Driving the reveal from 0x46C1F1 fixes
+ * it: the helpers self-gate on gold-award frames and stay inert during boot.
  *
- * Root cause of the reveal-not-firing: the old host 0x44CBAA (`movb $1,
- * 0x25(esi)`) is NOT on the per-frame path — it only executes when
- * `[esi+0x1c] <= 0` (a one-time armed state at the very start of awarding),
- * so the cave ran only rarely and the 240-frame vortex/whiteout sequence never
- * progressed. 0x44CC3F is reached unconditionally on every update call.
- *
- * Cave (patch 5 bytes 0x44CC3F..0x44CC43 = 5F 5E 5B C3 8B):
- *   pushad
- *   push esi            ; arg: results object
- *   call diamond_reveal_draw
- *   add esp,4
- *   popad               ; restore all GPRs
- *   pop edi; pop esi; pop ebx   ; re-emit pops (NOT ret — resume at 0x44CC43)
- *   jmp 0x44CC43        ; resume original tail (sets board level-done flags)
- * NOTE: 0x44CC43 (`mov ecx,[esi+0xc]`...) is a branch target INSIDE the same
- * function, not a separate fn — capturing its 8B byte is safe.
+ * The driver locates the live medal-award results object at scene+0x8B8
+ * (the scene's results AthenaList) and calls diamond_reveal_draw on it.
+ */
+static void present_reveal_handler(void);
+
+/* Present-hook stub: pushad/pushfd -> call present_reveal_handler ->
+ * popfd/popad -> re-emit the original 5 bytes (POP ESI / ADD ESP,8 / RET).
  */
 static void install_reveal_cave(void) {
-    DWORD patchAddr = EXE_BASE + (RESULT_UPDATE_EPILOGUE - EXE_BASE);  /* 0x44CC3F */
-    DWORD resume    = EXE_BASE + (RESULT_UPDATE_EPILOGUE + 4);         /* 0x44CC43 */
-    g_skipCave = (unsigned char*)VirtualAlloc(NULL, 64, MEM_COMMIT|MEM_RESERVE,
-                                              PAGE_EXECUTE_READWRITE);
-    if (!g_skipCave) return;
-    unsigned char *p = g_skipCave;
+    g_presentStub = (unsigned char*)VirtualAlloc(NULL, 64, MEM_COMMIT|MEM_RESERVE,
+                                                 PAGE_EXECUTE_READWRITE);
+    if (!g_presentStub) return;
+    unsigned char *p = g_presentStub;
     /* pushad */
     p[0]=0x60; p+=1;
-    /* push esi; call diamond_reveal_draw; add esp,4 */
-    p[0]=0x56; p+=1;
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_reveal_draw-(DWORD)(p+5); p+=5;
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;
+    /* pushfd */
+    p[0]=0x9C; p+=1;
+    /* call present_reveal_handler */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)present_reveal_handler-(DWORD)(p+5); p+=5;
+    /* popfd */
+    p[0]=0x9D; p+=1;
     /* popad */
     p[0]=0x61; p+=1;
-    /* re-emit pops: pop edi; pop esi; pop ebx */
-    p[0]=0x5F; p[1]=0x5E; p[2]=0x5B; p+=3;
-    /* jmp 0x44CC43 (resume) */
-    write_jmp(p, resume); p+=5;
-    /* 5-byte patch at 0x44CC3F */
+    /* re-emit original 5 bytes: POP ESI / ADD ESP,8 / RET */
+    p[0]=0x5E; p+=1;
+    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;
+    p[0]=0xC3; p+=1;
+
+    DWORD patchAddr = EXE_BASE + (APP_FRAME_UPDATE_EPILOGUE - EXE_BASE);
     unsigned char patch[5];
     memset(patch, 0x90, 5);
-    write_jmp(patch, (DWORD)g_skipCave);
+    write_jmp(patch, (DWORD)g_presentStub);
     patch_bytes((void*)patchAddr, patch, 5);
-    diag_log("[diamond] reveal cave installed at 0x44CC3F (award-update epilogue, per-frame)");
+    diag_log("[diamond] reveal cave installed on 0x46C1F1 (GameUpdate frame epilogue, per-frame)");
 }
 
 /* Cave C: TT-menu (standings) diamond mini-icon after golden weasel.
@@ -1696,8 +1735,8 @@ static void install_tt_cave(void) {
 static void install_hooks(void) {
     install_icon_cave();
     install_tt_cave();
-    install_reveal_cave();  /* 0x44CC3F award-update epilogue — per-frame reveal */
-    diag_log("[diamond] hooks installed (reveal lives on 0x44CC3F; 0x44E139 NOT hooked)");
+    install_reveal_cave();  /* 0x46C1F1 GameUpdate frame epilogue — per-frame reveal */
+    diag_log("[diamond] hooks installed (reveal drives off 0x46C1F1 frame epilogue; SEH award fns NOT hooked)");
 }
 
 /* ================================================================
