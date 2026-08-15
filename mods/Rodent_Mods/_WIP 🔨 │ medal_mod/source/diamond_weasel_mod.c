@@ -890,6 +890,7 @@ __attribute__((used)) static int diamond_seq_frame(DWORD results) {
  * The white-out, vortex, and trophy-swap reveal all gate on this so they play
  * only on the genuine first earn — on a replay the golden weasel renders
  * normal gold, then the diamond just swaps in at gold+240 with no buildup. */
+static int g_firstEarnLog[15] = {0};   /* one-shot diagnostic per race */
 __attribute__((used)) static int diamond_first_earn(DWORD results) {
     int race, cs, thr;
     DWORD app;
@@ -904,6 +905,11 @@ __attribute__((used)) static int diamond_first_earn(DWORD results) {
     if (g_won[race]) return 0;                 /* already earned -> replay */
     cs = get_player_time_cs(app);
     thr = g_secret_cs[race];
+    if (!g_firstEarnLog[race]) {
+        g_firstEarnLog[race] = 1;
+        diag_logf("[diamond] FIRST-EARN race=%d time=%d thr=%d won=%d cfg=%d hasSecr=%d",
+                  race, cs, thr, g_won[race], g_configLoaded, g_hasSecret[race]);
+    }
     return (cs > 0 && cs <= thr) ? 1 : 0;
 }
 
