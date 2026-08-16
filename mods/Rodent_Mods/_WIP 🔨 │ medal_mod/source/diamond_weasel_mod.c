@@ -1598,6 +1598,8 @@ __attribute__((used)) int diamond_trophy_swap(DWORD results) {
                 : : "r"(resultsCtx), "r"(slot), "r"(g_iconFile), "r"(0x4752F0)
                 : "eax", "ecx", "edx", "memory");
             g_diamondSprite = *(DWORD*)diaSlot;       /* slot now has the sprite */
+            diag_logf("[diamond] additive ctx=%08X slot=%08X -> sprite=%08X loaded=%d",
+                      resultsCtx, diaSlot, g_diamondSprite, g_iconLoaded);
             if (g_diamondSprite) g_iconLoaded = 1;
         }
     }
