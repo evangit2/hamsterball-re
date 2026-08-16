@@ -1758,10 +1758,166 @@ static void install_tt_cave(void) {
 /* ================================================================
  * Install
  * ================================================================ */
+
+/* PATH-1 PROBE: the untested NON-SEH results function 0x44CB90.
+ * Entry bytes: 53 56 8B F1 (push ebx; push esi; mov esi,ecx) — 4 bytes,
+ * NO fs:[0] SEH frame. Hook the entry with a 5-byte JMP trampoline that
+ * logs entry + the results frame counter [esi+0x1c], throttled to once per
+ * unique results object + every ~60 hits, then re-emits the prologue and
+ * resumes. Crash-safe (non-SEH host, pure throttled in-memory log).
+ * Build: -DDIAMOND_CB90_PROBE. Answers: does 0x44CB90 run per-frame during
+ * the results window, and is it a safe host? */
+#ifdef DIAMOND_CB90_PROBE
+#define CB90_ENTRY   0x44CB90   /* push ebx; push esi; mov esi,ecx (4 bytes) */
+#define CB90_RESUME  0x44CB94   /* resume: mov 0x1c(esi),eax */
+static int g_cb90Count = 0;
+static DWORD g_cb90LastObj = 0;
+
+static void cb90_probe(DWORD obj) {
+    DWORD frame = 0;
+    if (!obj || IsBadReadPtr((void*)obj, 0x100)) return;
+    if (obj != g_cb90LastObj) {
+        g_cb90LastObj = obj;
+        g_cb90Count = 0;
+        trace_logf("[CB90] new results obj=%08X", obj);
+    }
+    g_cb90Count++;
+    if (g_cb90Count <= 1 || (g_cb90Count % 60) == 0) {
+        if (IsBadReadPtr((void*)(obj + 0x1c), 4)) frame = 0;
+        else frame = *(DWORD*)(obj + 0x1c);
+        trace_logf("[CB90] hit #%d frame_cnt=%d obj=%08X", g_cb90Count, frame, obj);
+    }
+}
+
+static void install_cb90_probe(void) {
+    DWORD addr = EXE_BASE + (CB90_ENTRY - EXE_BASE);
+    DWORD resume = EXE_BASE + (CB90_RESUME - EXE_BASE);
+    unsigned char *stub = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
+                                                       PAGE_EXECUTE_READWRITE);
+    if (!stub) return;
+    unsigned char *p = stub;
+    p[0]=0x60; p+=1;                              /* pushad */
+    p[0]=0x9C; p+=1;                              /* pushfd */
+    p[0]=0x56; p+=1;                              /* push esi (results obj) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)cb90_probe-(DWORD)(p+5); p+=5; /* call */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;        /* add esp,4 */
+    p[0]=0x9D; p+=1;                              /* popfd */
+    p[0]=0x61; p+=1;                              /* popad */
+    p[0]=0x53; p+=1;                              /* re-emit: push ebx */
+    p[0]=0x56; p+=1;                              /* re-emit: push esi */
+    p[0]=0x8B; p[1]=0xF1; p+=2;                   /* re-emit: mov esi,ecx */
+    write_jmp(p, resume); p+=5;                   /* jmp 0x44CB94 */
+    unsigned char patch[5];
+    write_jmp(patch, (DWORD)stub);
+    patch_bytes((void*)addr, patch, 5);
+    diag_log("[diamond] CB90 PROBE: trampoline at 0x44CB90 (non-SEH results fn)");
+}
+#endif /* DIAMOND_CB90_PROBE */
+
+/* APPROACH-D VTABLE OVERRIDE (the real fix — DIAMOND_VTABLE_OVERRIDE).
+ *
+ * Insight: board collision handlers hook fine (board vtable slot 0x1D =
+ * DispatchCollisionEvents 0x40C5D0) — vtable-slot OVERRIDE is the proven
+ * safe pattern, NOT interior-of-SEH code patches. The results/award object is
+ * also a vtable-dispatched object: its ctor writes vtable 0x4D6CF0 at
+ * 0x44C8DE, and each frame the scene's results iterator calls slot[1]=0x44D760
+ * (the SEH award update). Instead of patching 0x44D760's interior (which
+ * corrupted the FS:[0] chain in every prior host), we:
+ *   1. COPY the shared 0x4D6CF0 vtable into a per-object heap buffer.
+ *   2. Override my copy's slot[1] (offset 0x4) to diamond_reveal_update — a
+ *      normal __thiscall(ecx=results) C fn.
+ *   3. Point the results object's *(obj) at my copy (store at the ctor's
+ *      vtable-write, 0x44C8DE).
+ * diamond_reveal_update runs the reveal animation, then CALLS the original
+ * 0x44D760 as a normal sub-call. 0x44D760 sets up its own valid SEH frame
+ * internally and tears it down — no fs:[0] churn around OUR code, nothing
+ * patched inside the SEH function's body. Identical to the proven
+ * board-vtable[0x1D] override. Build: -DDIAMOND_VTABLE_OVERRIDE.
+ */
+#ifdef DIAMOND_VTABLE_OVERRIDE
+#define AWARD_VTABLE       0x4D6CF0   /* results/award object vtable (written @0x44C8DE) */
+#define AWARD_VTABLE_WRITE 0x44C8DE   /* ctor write: movl $0x4d6cf0,(%esi)   (6 bytes) */
+#define AWARD_VTABLE_RESUME 0x44C8E4  /* resume: call 0x46b840 */
+#define AWARD_ORIG_UPDATE  0x44D760   /* vtable slot[1] = the SEH award update (called as sub-call) */
+#define AWARD_VTABLE_SIZE  8           /* copy 8 DWORDs (32B) of the shared vtable */
+
+static DWORD g_awardVtblCopy[AWARD_VTABLE_SIZE];
+static int   g_awardVtblReady = 0;
+typedef void (__thiscall *award_update_fn)(void *self);
+static award_update_fn g_origAwardUpdate = NULL;
+static int g_revealArmedVtbl = 0;
+
+/* The reveal update: __thiscall(ecx=results). Runs the reveal, then calls the
+ * original award update so the screen behaves normally. */
+static void __thiscall diamond_reveal_update(void *self) {
+    DWORD results = (DWORD)self;
+    if (g_revealArmedVtbl) {
+        diamond_vortex_tick(results);
+        diamond_weasel_mult(results);
+        if (diamond_seq_frame(results) >= WEASEL_WHITE_TOTAL) {
+            diamond_trophy_swap(results);
+            g_revealArmedVtbl = 0;
+        }
+    }
+    if (g_origAwardUpdate) g_origAwardUpdate(self);
+}
+
+/* Redirect the object's vtable to our copy-with-override. Runs from the tiny
+ * store-only cave at 0x44C8DE (after the ctor stores 0x4d6cf0, we re-point). */
+static void redirect_award_vtable(DWORD obj) {
+    DWORD orig;
+    if (!g_awardVtblReady) {
+        memcpy(g_awardVtblCopy, (void*)(EXE_BASE+(AWARD_VTABLE-EXE_BASE)), AWARD_VTABLE_SIZE*4);
+        g_origAwardUpdate = (award_update_fn)(EXE_BASE+(AWARD_ORIG_UPDATE-EXE_BASE));
+        g_awardVtblCopy[1] = (DWORD)diamond_reveal_update;   /* slot[1] override */
+        g_awardVtblReady = 1;
+    }
+    orig = *(DWORD*)obj;
+    if (orig == AWARD_VTABLE) {            /* only redirect if still original shared vtable */
+        *(DWORD*)obj = (DWORD)g_awardVtblCopy;
+        g_revealArmedVtbl = 1;
+        trace_logf("[diamond] award vtable -> copy at %08X (slot1=reveal+orig)", (DWORD)g_awardVtblCopy);
+    }
+}
+
+/* Store-only cave at 0x44C8DE: after the ctor writes 0x4d6cf0, redirect to copy. */
+static void install_vtable_override(void) {
+    DWORD addr = EXE_BASE + (AWARD_VTABLE_WRITE - EXE_BASE);
+    DWORD resume = EXE_BASE + (AWARD_VTABLE_RESUME - EXE_BASE);
+    unsigned char *stub = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
+                                                       PAGE_EXECUTE_READWRITE);
+    if (!stub) return;
+    unsigned char *p = stub;
+    p[0]=0x60; p+=1;                              /* pushad */
+    p[0]=0x9C; p+=1;                              /* pushfd */
+    p[0]=0x56; p+=1;                              /* push esi (obj) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)redirect_award_vtable-(DWORD)(p+5); p+=5; /* call */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;        /* add esp,4 */
+    p[0]=0x9D; p+=1;                              /* popfd */
+    p[0]=0x61; p+=1;                              /* popad */
+    /* re-emit original: movl $0x4d6cf0,(%esi) */
+    p[0]=0xC7; p[1]=0x06; p[2]=0xF0; p[3]=0x6C; p[4]=0x4D; p[5]=0x00; p+=6;
+    write_jmp(p, resume); p+=5;                   /* jmp 0x44C8E4 */
+    unsigned char patch[6];
+    write_jmp(patch, (DWORD)stub);               /* 5-byte JMP + ... */
+    patch[5] = 0x90;                              /* NOP padding */
+    patch_bytes((void*)addr, patch, 6);
+    diag_log("[diamond] VTABLE OVERRIDE: award slot[1] -> reveal+orig via per-object vtable copy");
+}
+#endif /* DIAMOND_VTABLE_OVERRIDE */
+
 static void install_hooks(void) {
     install_icon_cave();     /* no-op */
     install_tt_cave();       /* deferred until first diamond */
-#ifdef DIAMOND_REVEAL_DISABLED
+#ifdef DIAMOND_VTABLE_OVERRIDE
+    install_vtable_override();
+    diag_log("[diamond] hooks installed (VTABLE OVERRIDE: slot[1]=reveal+orig, per-object copy)");
+#elif defined(DIAMOND_CB90_PROBE)
+    /* PATH-1 PROBE: hook the untested non-SEH results fn 0x44CB90.
+     * Logs entry/frame counters; reveals whether it fires per-frame. */
+    install_cb90_probe();
+    diag_log("[diamond] hooks installed (CB90 PROBE: 0x44CB90 trampoline, no reveal)");
+#elif defined(DIAMOND_REVEAL_DISABLED)
     /* ISOLATION TEST: reveal patch completely OFF. No game hooks installed.
      * Keeps VEH + BASS proxy + flusher thread (the mod "baseline"). If the
      * crash persists here, the reveal patch is innocent and the fault is in
