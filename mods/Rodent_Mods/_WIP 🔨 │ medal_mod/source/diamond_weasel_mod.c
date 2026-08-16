@@ -1605,6 +1605,8 @@ __attribute__((used)) void diamond_load_icon_impl(DWORD app) {
          * Native call site (0x42a2f8): push $0x4d31c0 (str); push %edx (&slot);
          * call *0x58(%eax). The loader is __stdcall `ret $8` (cleans its own two
          * args) — its caller does NOT `add esp,8` afterwards. */
+        diag_logf("[diamond] load_icon: mgr=%08X vt=%08X load=%08X file=%s config=%d",
+                  mgr, vt, load, g_iconFile, g_configLoaded);
         __asm__ volatile(
                     "pushl %3\n\t"        /* g_iconFile (str) — pushed FIRST */
                     "pushl %2\n\t"        /* &g_diamondSprite (slot) */
