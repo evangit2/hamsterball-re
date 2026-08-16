@@ -741,7 +741,15 @@ static int get_race_index(void) {
     DWORD prof = *(DWORD*)(app + APP_PROFILE);
     if (!prof) return -1;
     if (IsBadReadPtr((void*)(prof + PROFILE_RACE), 4)) return -1;
-    return *(int*)(prof + PROFILE_RACE);
+    int idx = *(int*)(prof + PROFILE_RACE);
+    /* The game's tournament race slot (Profile+0x8) is 1-INDEXED: slot 1 =
+     * WARM-UP, ..., slot 9 = ODD, slot 10 = TOOB (verified in
+     * Tournament_AdvanceRace 0x427080 switch). Our per-race arrays
+     * (g_secret_cs, g_default_diamond_s, g_xml_block) are 0-indexed. Convert:
+     * game slot N -> our index N-1. Without this, Odd (game slot 9) hit
+     * our [9]=TOOB default (25.0s) instead of Odd's 12.0s. */
+    if (idx >= 1) idx -= 1;
+    return idx;
 }
 /* board+0x1C is an INTEGER centisecond counter (native medal code compares
  * it with CMP at 0x44d932 / 0x44d958), NOT a float. Reading it as float
