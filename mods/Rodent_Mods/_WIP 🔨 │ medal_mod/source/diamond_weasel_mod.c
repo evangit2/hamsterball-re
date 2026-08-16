@@ -1589,18 +1589,20 @@ __attribute__((used)) int diamond_trophy_swap(DWORD results) {
 __attribute__((used)) void diamond_load_mini_icon_impl(DWORD app);  /* fwd decl */
 __attribute__((used)) void diamond_load_icon_impl(DWORD app) {
     DWORD mgr, vt, load;
-    if (g_iconLoaded) return;
-    if (!app || !g_configLoaded) return;
+    diag_logf("[diamond] load_icon ENTER app=%08X iconLoaded=%d config=%d", app, g_iconLoaded, g_configLoaded);
+    if (g_iconLoaded) { diag_log("[diamond] load_icon: already loaded"); return; }
+    if (!app || !g_configLoaded) { diag_logf("[diamond] load_icon: bail app/config (app=%08X config=%d)", app, g_configLoaded); return; }
     /* The diamond PNG is loaded through the game's NORMAL file path (it was
      * written to Textures\ on first unlock). No manual texture building. */
     mgr = *(DWORD*)(app + APP_MGR);
-    if (!mgr) return;
-    if (IsBadReadPtr((void*)mgr, 4)) return;
+    diag_logf("[diamond] load_icon: mgr=%08X", mgr);
+    if (!mgr) { diag_log("[diamond] load_icon: mgr=0"); return; }
+    if (IsBadReadPtr((void*)mgr, 4)) { diag_log("[diamond] load_icon: mgr unreadable"); return; }
     vt = *(DWORD*)mgr;
-    if (!vt) return;
-    if (IsBadReadPtr((void*)(vt + 0x58), 4)) return;
+    if (!vt) { diag_log("[diamond] load_icon: vt=0"); return; }
+    if (IsBadReadPtr((void*)(vt + 0x58), 4)) { diag_log("[diamond] load_icon: vt+0x58 unreadable"); return; }
     load = *(DWORD*)(vt + 0x58);
-    if (!load) return;
+    if (!load) { diag_log("[diamond] load_icon: load=0"); return; }
     /* __thiscall: ecx=mgr, push <str> FIRST, then push &slot, call [vt+0x58].
          * Native call site (0x42a2f8): push $0x4d31c0 (str); push %edx (&slot);
          * call *0x58(%eax). The loader is __stdcall `ret $8` (cleans its own two
