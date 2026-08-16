@@ -934,18 +934,19 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
          * position; the velocity block is a bare unit vector).
          *   pos.x = cos(a)*r + cx   pos.y = sin(a)*r + cy
          *   vel.x = cos(a)          vel.y = sin(a)
-         * The diamond REPLACES the golden weasel, so it rings at the NATIVE
-         * GOLDEN-WEASEL ring center/radius, not the gold medal's. Verified in
-         * the award render (0x44DF70, native weasel ring block 0x44DB20..):
-         *   X = fcos(deg*pi/180) * 30.0 + 429   (const 0x4d6d84=429, rad 0x4cf528=30)
-         *   Y = fsin(deg*pi/180) * 30.0 + 317   (const 0x4d6d80=317)
-         * angle = loop counter (0,20,..340 deg). The OLD (227,648) r=74 were
-         * the GOLD MEDAL's constants (block 0x44D9B0, consts 0x4d6d8c/88) —
-         * wrong for the weasel, put the burst off to the lower-left. */
+         * The diamond REPLACES the golden weasel (it swaps into the SAME
+         * ctx+0x37C slot the gold weasel trophy draws from), so the ring uses
+         * the NATIVE GOLDEN-WEASEL ring constants — verified in the award
+         * render block 0x44D980 (flag 0x8BF):
+         *   cos(deg) * 0x4d6d90(74) + 0x4d6d8c(227)  -> X
+         *   sin(deg) * 0x4d6d90(74) + 0x4d6d88(648)  -> Y
+         * angle = loop counter 0,20,..340 deg.
+         * (0x4d6d84=429/0x4d6d80=317 are the SILVER ring's, and (429,317)
+         * appeared down-left — NOT the weasel's. (227,648) r=74 is correct.) */
         {
             float rad = (float)angle * 3.14159265f / 180.0f;
             float c = cosf(rad), s = sinf(rad);
-            float cx = 429.0f, cy = 317.0f, r = 30.0f;   /* native golden-weasel ring */
+            float cx = 227.0f, cy = 648.0f, r = 74.0f;   /* native golden-weasel ring */
             *(float*)(part + 0x08) = c * r + cx;
             *(float*)(part + 0x0C) = s * r + cy;
             *(float*)(part + 0x10) = 0.0f;
