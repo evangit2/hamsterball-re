@@ -358,10 +358,26 @@ same moment the PNG assets are created.
 
 ## Build
 
+**IMPORTANT:** the results-screen trophy and the TT-menu mini icon are two
+separate mechanisms, enabled by separate `-D` flags. Both must be present or
+one of them silently disappears:
+
+- `-DDIAMOND_TT_WRAPPER` → the TT-menu diamond mini-icons (clones
+  `TimeTrialMenu_ctor` 0x42F810 with a 5th in-flow append).
+- `-DDIAMOND_VTABLE_OVERRIDE` → the results-screen diamond trophy reveal
+  (patches award vtable slot[1]=0x4D6CF4) + the render-path sprite swap into
+  `ctx+0x37C`.
+- `-DVORTEX_OFF` → the suction vortex is compiled out (its raw `DrawPrimitiveUP`
+  crashed d3d8 on real Windows; white-fade + diamond swap stay enabled).
+
+Use all three together — building only the VTABLE_OVERRIDE (without the TT
+wrapper) removes the TT-menu diamonds, and vice versa.
+
 ```
 i686-w64-mingw32-gcc -shared -o bass.dll diamond_weasel_mod.c -lwinmm \
   -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
-  -Wl,--add-stdcall-alias -msse2 -mfpmath=sse
+  -Wl,--add-stdcall-alias -msse2 -mfpmath=sse \
+  -DDIAMOND_TT_WRAPPER -DDIAMOND_VTABLE_OVERRIDE -DVORTEX_OFF
 ```
 
 ## Credit
