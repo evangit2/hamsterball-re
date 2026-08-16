@@ -1770,45 +1770,18 @@ static void install_icon_cave(void) {
  *             jmp 0x42F92C         ; inc edi (original next instruction)
  */
 static void install_tt_cave(void) {
-    /* Re-enabled 2026-08-16 with hardened guards. Historically DISABLED
-     * (commit 63e60b32) because appending a NULL diamond mini-sprite crashed
-     * the TT menu on real Windows. That root cause is resolved: diamond_tt_append
-     * now lazy-loads the mini icon and skips (logs) if the sprite is still NULL,
-     * and the diamond sprite reliably loads now that the reveal works. Also fixes
-     * the off-by-one (game slot vs g_won[]). If it STILL crashes the TT menu, the
-     * re-entrancy of 0x44abf0 from the cave is the cause and we disable again. */
-    if (g_ttInstalled) return;
-    if (!g_anyDiamond) return;
-    DWORD patchAddr = EXE_BASE + (TT_WEASEL_APPEND - EXE_BASE);
-    DWORD retAddr = patchAddr + 5;   /* 0x42F92C */
-    g_ttCave = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
-                                            PAGE_EXECUTE_READWRITE);
-    if (!g_ttCave) return;
-    unsigned char *p = g_ttCave;
-    /* mov ecx, esi */
-    p[0]=0x8B; p[1]=0xCE; p+=2;
-    /* call 0x44abf0 (re-emit weasel append) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(ABF0_APPEND)-(DWORD)(p+5); p+=5;
-    /* pushad */
-    p[0]=0x60; p+=1;
-    /* push esi */
-    p[0]=0x56; p+=1;
-    /* push edi */
-    p[0]=0x57; p+=1;
-    /* call diamond_tt_append */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_tt_append-(DWORD)(p+5); p+=5;
-    /* add esp,8 */
-    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;
-    /* popad */
-    p[0]=0x61; p+=1;
-    /* jmp retAddr */
-    write_jmp(p, retAddr); p+=5;
-    unsigned char patch[5];
-    memset(patch, 0x90, 5);
-    write_jmp(patch, (DWORD)g_ttCave);
-    patch_bytes((void*)patchAddr, patch, 5);
-    g_ttInstalled = 1;
-    diag_log("[diamond] TT-menu cave installed (hardened: null-sprite-safe)");
+    /* DISABLED — PROVEN to crash the TT menu on real Windows (2 user logs,
+     * identical signature: TT-menu open, CURRENTOBJECT Game Menu / MouseDown,
+     * stack[8]=0x433E70 = GameSelectionManager SEH frame). The cave re-enters
+     * the game's medal-list append 0x44abf0 from inside GameSelectionManager's
+     * active SEH frame while it opens the TT menu -> heap-EIP C0000005. The
+     * null-sprite guard did NOT fix it (crash persisted) — root cause is the
+     * re-entrancy, exactly as commit 63e60b32 documented. The mini-icon is
+     * informative but this cave is fundamentally unsafe. 0x42F927 left 100%
+     * original. (To restore per-race earned display, use a non-reentrant
+     * mechanism — e.g. overlay the dots on the menu screen — not a re-entry
+     * into 0x44abf0.) */
+    diag_log("[diamond] TT-menu cave DISABLED (re-enters 0x44abf0 inside GameSelectionManager SEH -> crashes)");
 }
 
 /* ================================================================
