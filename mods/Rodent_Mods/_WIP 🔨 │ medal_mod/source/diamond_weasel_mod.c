@@ -1582,28 +1582,32 @@ __attribute__((used)) int diamond_trophy_swap(DWORD results) {
      * the bronze/silver/gold/weasel SPRITE slots, and whose vtable[0x58] is the
      * AddSprite (FUN_004752F0) that populates a slot. So the correct this for
      * AddSprite is ctx = *(results+0xC), diamond slot = ctx+0x380. */
-    DWORD resultsCtx = 0, diaSlot = 0;
-    if (!IsBadReadPtr((void*)(results + 0xC), 4))
-        resultsCtx = *(DWORD*)(results + 0xC);
-    diag_logf("[diamond] trophy_swap: results=%08X resultsCtx=%08X g_diamondSprite=%08X iconLoaded=%d",
-              results, resultsCtx, g_diamondSprite, g_iconLoaded);
-    if (resultsCtx && resultsCtx > 0x10000 && !IsBadReadPtr((void*)resultsCtx, 4)) {
-        diaSlot = resultsCtx + 0x380;                 /* diamond sprite slot */
-        if (!g_diamondSprite) {
-            /* AddSprite(ctx, ctx+0x380, "diamondweasel.png") — __thiscall(ecx=ctx) */
-            DWORD slot=diaSlot;
-            __asm__ volatile(
-                "pushl %2\n\t"
-                "pushl %1\n\t"
-                "movl %0, %%ecx\n\t"
-                "call *%3\n\t"
-                : : "r"(resultsCtx), "r"(slot), "r"(g_iconFile), "r"(0x4752F0)
-                : "eax", "ecx", "edx", "memory");
-            g_diamondSprite = *(DWORD*)diaSlot;       /* slot now has the sprite */
-            diag_logf("[diamond] additive ctx=%08X slot=%08X -> sprite=%08X loaded=%d",
-                      resultsCtx, diaSlot, g_diamondSprite, g_iconLoaded);
-            if (g_diamondSprite) g_iconLoaded = 1;
+    /* CORRECTED (2026-08-16, definitive): AddSprite (FUN_004752F0) only creates a
+     * 0x48-byte menu-list entry with a filename — NO texture, so it draws
+     * nothing. The proper drawable is created by Sprite_ctor (0x45D0C0), which
+     * builds the full 0xD4 Sprite AND loads the texture via FUN_00455c50 into
+     * sprite+0x50, sets width(+200)/height(+0xCC). gfx for ctor = App+0x174.
+     * Reuse a persistent diamond sprite (created once, drawn each reveal frame). */
+    if (!g_diamondSprite) {
+        DWORD gfx = 0, app2 = (DWORD)get_app();
+        if (app2 && !IsBadReadPtr((void*)(app2 + APP_GFX), 4)) gfx = *(DWORD*)(app2 + APP_GFX);
+        if (gfx && gfx > 0x10000 && !IsBadReadPtr((void*)gfx, 4)) {
+            unsigned char *sp = (unsigned char*)VirtualAlloc(NULL, 0xD4, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+            if (sp) {
+                memset(sp, 0, 0xD4);
+                __asm__ volatile(
+                    "pushl %2\n\t"        /* filename */
+                    "pushl %1\n\t"        /* gfx */
+                    "movl %0, %%ecx\n\t"  /* sprite */
+                    "call *%3\n\t"        /* Sprite_ctor __thiscall RET 0x8? callee cleans 2 */
+                    : : "r"(sp), "r"(gfx), "r"(g_iconFile), "r"(0x45D0C0)
+                    : "eax", "ecx", "edx", "memory");
+                g_diamondSprite = (DWORD)sp;
+                g_iconLoaded = 1;
+            }
         }
+        diag_logf("[diamond] sprite_ctor gfx=%08X -> g_diamondSprite=%08X loaded=%d",
+                  gfx, g_diamondSprite, g_iconLoaded);
     }
     if (!g_diamondSprite) return 0;                  /* not loadable -> gold stays */
     __asm__ volatile(
