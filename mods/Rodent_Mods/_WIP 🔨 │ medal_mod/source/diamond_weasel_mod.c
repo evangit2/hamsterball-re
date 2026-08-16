@@ -379,6 +379,21 @@ volatile int g_caveProbe = 0;        /* VEH-reading probe (0 = cave path untouch
  * ================================================================ */
 static DWORD g_diamondSprite = 0;
 static DWORD g_diamondMiniSprite = 0;
+
+/* ---- RESULTS-SCREEN BIG DIAMOND TROPHY (render-path fix, 2026-08-16) ----
+ * The golden-weasel medal is composited by the game's RENDER fn (award vtable
+ * slot[2]=0x44DF70, draw at 0x44E12C):  mov ecx,[ctx+0x37C]; Sprite_DrawRect
+ * (ctx+0x37C = golden-weasel sprite slot, ctx = *(results+0xC)). Drawing the
+ * diamond from the UPDATE host never composites. Instead we redirect the
+ * game's own renderer: swap the sprite pointer at ctx+0x37C to g_diamondSprite
+ * (qualification is decided from the safe update host), restore it when the
+ * reveal is no longer active. No heap cave in the render/SEH path. */
+#define RESULT_CTX  0x0C    /* results+0xC = display context (see ctor 0x44C8B4) */
+#define CTX_WEASEL  0x37C   /* ctx+0x37C = golden-weasel sprite slot (renderer reads this) */
+static DWORD g_trophySwapCtx  = 0;   /* ctx whose +0x37C we redirected */
+static DWORD g_trophySwapOrig = 0;   /* original golden-weasel sprite at ctx+0x37C */
+static DWORD g_trophySwapResults = 0;/* results obj the swap belongs to (cross-screen guard) */
+static int   g_trophySwapActive = 0; /* 1 while the renderer is showing the diamond here */
 static int   g_secret_cs[15] = {0};   /* per-race DIAMOND threshold in CENTISECONDS (int) */
 static int   g_hasSecret[15] = {0};
 static BYTE  g_won[15]       = {0};
@@ -792,6 +807,7 @@ __attribute__((used)) void diamond_vortex_tick(DWORD results);
 __attribute__((used)) void diamond_weasel_mult(DWORD results);
 __attribute__((used)) void diamond_weasel_mult_clear(DWORD results);
 __attribute__((used)) int  diamond_trophy_swap(DWORD results);
+__attribute__((used)) void diamond_trophy_restore(DWORD results);
 
 /* BLOCK the results-screen click/keypress skip when the diamond time was
  * achieved for the current race. The skip latch (results+0x25) drives the
@@ -1546,6 +1562,11 @@ __attribute__((used)) int diamond_trophy_swap(DWORD results) {
     int frame, race, cs, thr;
     DWORD app;
     cave_enter(results, "trophy_swap");
+    /* Cross-screen guard: if a previous results screen armed the swap and we
+     * are now on a DIFFERENT results object, restore the old ctx before doing
+     * anything — the diamond sprite must not leak onto the new screen. */
+    if (results != g_trophySwapResults)
+        diamond_trophy_restore(results);
     if (!results) return 0;
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return 0;
     frame = diamond_seq_frame(results);          /* frames since gold award */
@@ -1564,7 +1585,7 @@ __attribute__((used)) int diamond_trophy_swap(DWORD results) {
      * run shows exactly why the diamond did/didn't appear. Spams once per frame
      * while the gate holds, but only during the short results window. */
     trace_logf("[diamond] SWAP-GATE race=%d time=%d threshold=%d (won=%d)", race, cs, thr, g_won[race]);
-    if (!(cs > 0 && cs <= thr)) return 0;
+    if (!(cs > 0 && cs <= thr)) { diamond_trophy_restore(results); return 0; }
     /* Atomic unlock commit on first reveal. */
     if (!g_won[race]) {
         if (!diamond_provision_unlock(race)) {
@@ -1611,18 +1632,50 @@ __attribute__((used)) int diamond_trophy_swap(DWORD results) {
                   gfx, g_diamondSprite, g_iconLoaded);
     }
     if (!g_diamondSprite) return 0;                  /* not loadable -> gold stays */
-    __asm__ volatile(
-        "movl %2, %%ecx\n\t"          /* ecx = g_diamondSprite */
-        "pushl $0x63\n\t"             /* y */
-        "pushl $0x208\n\t"            /* x */
-        "call *%1\n\t"                /* 0x42C7C0(sprite,x,y) -- ret $8 */
-        : : "r"(0), "r"(SPRITE_DRAW), "r"(g_diamondSprite)
-        : "eax", "ecx", "edx", "memory"
-    );
-    return 1;                                          /* skip the gold draw */
+    /* REDIRECT the game's own renderer instead of drawing here.
+     * The golden-weasel medal is composited by the award RENDER fn (slot[2]=
+     * 0x44DF70) at 0x44E12C via `mov ecx,[ctx+0x37C]; Sprite_DrawRect(sp,0x208,
+     * 0x63)` where ctx = *(results+0xC). Drawing the diamond HERE (from the
+     * UPDATE host) does not composite — the frame draws in the render fn.
+     * So swap ctx+0x37C (golden-weasel sprite slot) to the diamond sprite;
+     * the game's own render draw then composites the diamond at the weasel
+     * spot. Restore is handled by diamond_trophy_restore() on frames where the
+     * reveal is no longer active. ctx lives past the update frame (it is the
+     * results screen's display context), so a swap here is seen by the render. */
+    {
+        DWORD ctx = 0;
+        if (!IsBadReadPtr((void*)(results + RESULT_CTX), 4)) ctx = *(DWORD*)(results + RESULT_CTX);
+        if (ctx && ctx > 0x10000 && !IsBadReadPtr((void*)(ctx + CTX_WEASEL), 4)) {
+            if (!g_trophySwapActive) {
+                g_trophySwapOrig = *(DWORD*)(ctx + CTX_WEASEL);
+                g_trophySwapCtx  = ctx;
+                g_trophySwapResults = results;
+                g_trophySwapActive = 1;
+                trace_logf("[diamond] TROPHY-SWAP arm ctx=%08X orig=%08X -> diamond=%08X results=%08X",
+                           ctx, g_trophySwapOrig, g_diamondSprite, results);
+            }
+            *(volatile DWORD*)(ctx + CTX_WEASEL) = g_diamondSprite;
+        }
+    }
+    return 1;                                          /* gold is suppressed by the swap */
 }
 
-__attribute__((used)) void diamond_load_mini_icon_impl(DWORD app);  /* fwd decl */
+/* Restore the game's golden-weasel sprite pointer at ctx+0x37C when the
+ * reveal is no longer active. Safe to call from the update host on any frame;
+ * does nothing if no swap is armed. Prevents the diamond sprite from leaking
+ * onto the next results screen / other medal rows. */
+__attribute__((used)) void diamond_trophy_restore(DWORD results) {
+    (void)results;
+    if (!g_trophySwapActive) return;
+    if (g_trophySwapCtx && g_trophySwapCtx > 0x10000 &&
+        !IsBadReadPtr((void*)(g_trophySwapCtx + CTX_WEASEL), 4)) {
+        *(volatile DWORD*)(g_trophySwapCtx + CTX_WEASEL) = g_trophySwapOrig;
+    }
+    trace_logf("[diamond] TROPHY-SWAP disarm ctx=%08X restore=%08X",
+               g_trophySwapCtx, g_trophySwapOrig);
+    g_trophySwapCtx = 0; g_trophySwapOrig = 0;
+    g_trophySwapResults = 0; g_trophySwapActive = 0;
+}
 __attribute__((used)) void diamond_load_icon_impl(DWORD app) {
     DWORD mgr, vt, load;
     diag_logf("[diamond] load_icon ENTER app=%08X iconLoaded=%d config=%d", app, g_iconLoaded, g_configLoaded);
@@ -2266,7 +2319,13 @@ static void __thiscall diamond_reveal_update(void *self) {
     /* 1) run the ORIGINAL award update FIRST so board+0x1C (player time) is
      *    populated before the reveal reads it to decide qualification. */
     if (g_origAwardUpdate) g_origAwardUpdate(self);
-    /* 2) now run the reveal (reads the time correctly). */
+    /* 2) always guard that an armed trophy swap stays bound to THIS results
+     *    object. Once the reveal disarms (g_revealArmedVtbl=0) we stop calling
+     *    diamond_trophy_swap, so without this the diamond sprite pointer would
+     *    leak onto the next screen's ctx+0x37C. Restore if the object changed. */
+    if (g_trophySwapActive && results != g_trophySwapResults)
+        diamond_trophy_restore(results);
+    /* 3) now run the reveal (reads the time correctly). */
     if (g_revealArmedVtbl) {
 #ifndef VORTEX_OFF
         diamond_vortex_tick(results);
