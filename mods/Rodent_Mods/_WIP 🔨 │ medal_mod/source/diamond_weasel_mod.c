@@ -1188,20 +1188,38 @@ __attribute__((used)) void diamond_weasel_mult(DWORD results) {
             memcpy(g_multSave, (float*)(gfx + GFX_MULT_R), 16);
         g_multSaved = 1;
     }
-    /* linear ramp 1.0 -> WHITE_TARGET. The old cap of 1.5 was a barely-visible
-     * lift (the user can't see the weasel glow at all). Raised to 3.0, a clear
-     * white blow-out on the weasel. The shared multiplier save/restore
-     * (g_multSaved / diamond_weasel_mult_clear) that 8175782b added already
-     * prevents the whole-race white-out bleed — the cap back then only existed
-     * because the clear was never called, which is fixed now. 3.0 not 4.0 keeps
-     * it from scorching the whole frame while clearly reading as white. */
+    /* Weasel color-multiplier is DISABLED from the shared global path (it
+     * bleaches the whole race). Instead EXPERIMENT (2026-08-16, user-approved
+     * low-risk data-write): drive the GOLDEN-WEASEL SPRITE's OWN material
+     * diffuse color white, per-frame, from this safe update host — no code
+     * cave. The sprite material is the D3DMATERIAL8 at [sprite+8]; its Diffuse
+     * (D3DCOLORVALUE, 4 floats) is at [sprite+8+4] = [sprite+0x0C]. The sprite
+     * draw (0x45D300 -> 0x455110) passes [sprite+8] to Graphics_ApplyMaterial
+     * and draws texture x diffuse (MODULATE). We ramp the diffuse from white
+     * toward a brighten, so the gold WASHES toward white without touching the
+     * shared gfx multiplier. If the renderer honors material diffuse
+     * multiplicatively, the trophy whitens on its own; if not, we learn that
+     * here and escalate to a minimal self-limited blend hook.
+     *
+     * NOTE: default sprite diffuse is already (1,1,1,1), so a multiply can't
+     * exceed the texture's own max. The REAL lever for a true white-blowout is
+     * a per-sprite ADD blend. But per the approved plan we FIRST confirm whether
+     * the renderer honors per-sprite material diffuse at all before any render
+     * path change. To make the test observable, ramp the diffuse to (1,1,1,1)
+     * AND flip the material's alpha-blend flag (+0x4C) so we also learn if the
+     * +0x4C byte reaches the SRC/DEST blend decision. */
     t = (frame - WEASEL_WHITE_START) / (float)(WEASEL_WHITE_END - WEASEL_WHITE_START);
     if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
-    m = 1.0f + t * 2.0f;        /* ramps to 3.0 max (clear white glow) */
-    *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = 1;
-    sc = (float*)(gfx + GFX_MULT_R);
-    sc[0] = m; sc[1] = m; sc[2] = m; sc[3] = 1.0f;
-    trace_logf("[diamond] weasel white frame=%d mult=%.2f", frame, m);
+    m = 1.0f + t * 1.0f;        /* diffuse 1.0 -> 2.0 (attempt a white push) */
+    {   /* write the sprite's own material diffuse + alpha-blend flag */
+        float *d = (float*)(sprite + 0x0C);          /* material diffuse RGB(A) */
+        if (!IsBadReadPtr(d, 16)) {
+            d[0] = m; d[1] = m; d[2] = m;             /* diffuse RGB */
+            d[3] = 1.0f;                              /* diffuse alpha */
+        }
+        *(volatile unsigned char*)(sprite + 0x4C) = 1;  /* material blend flag */
+    }
+    trace_logf("[diamond] weasel sprite-diffuse frame=%d m=%.2f sprite=%08X", frame, m, sprite);
 }
 
 /* Clear the weasel color-multiplier back to identity (all 1.0) so
@@ -1218,6 +1236,13 @@ __attribute__((used)) void diamond_weasel_mult_clear(DWORD results) {
     if (!sprite || IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)) return;
     gfx = *(DWORD*)(sprite + SPRITE_GFX);
     if (!gfx || IsBadReadPtr((void*)(gfx + GFX_MULT_R), 4)) return;
+    /* Restore the sprite's own material diffuse + blend flag back to the game's
+     * defaults (1,1,1,1 and 0) so the gold-weasel/sprite isn't left modified
+     * after the white-out. */
+    {   float *d = (float*)(sprite + 0x0C);
+        if (!IsBadReadPtr(d, 16)) { d[0]=1.0f; d[1]=1.0f; d[2]=1.0f; d[3]=1.0f; }
+        *(volatile unsigned char*)(sprite + 0x4C) = 0;
+    }
     /* restore the PRIOR saved shared state (not force identity) so we don't
      * clobber whatever the game had queued for the frame. */
     if (g_multSaved) {
