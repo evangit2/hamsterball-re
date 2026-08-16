@@ -1773,7 +1773,207 @@ static void install_icon_cave(void) {
  *             popad
  *             jmp 0x42F92C         ; inc edi (original next instruction)
  */
+/* ================================================================
+ * FULL-WRAPPER TT ctor clone (DIAMOND_TT_WRAPPER) — Option 3
+ * ================================================================
+ * The 0x42F927 detour is PROVEN structurally impossible on real Windows (a
+ * minimal 12-byte re-emit probe crashed identically). Option 3 replaces the
+ * WHOLE TimeTrialMenu_ctor (0x42F810) with a byte-exact clone in a VirtualAlloc
+ * RWX stub that keeps the SAME SEH prologue/setup/epilogue and the SAME 4-medal
+ * append loop, plus a 5th in-flow diamond append. The clone is a COMPLETE
+ * function (own valid FS:[0] set/teardown; no mod-C running inside the game's
+ * frame), so it avoids the crash class. See emit_tt_clone below.
+ */
+#define TT_CTOR_ORIG     0x42F810   /* TimeTrialMenu_ctor entry (JMP target) */
+#define TT_CTOR_PRACTICE 0x42EA30   /* PracticeMenu_ctor (parent, __thiscall) */
+#define TT_CTOR_ABF0     0x44ABF0   /* Scene_AddTextureToList (__thiscall ret 8) */
+#define TT_CTOR_STRFMT   0x466C70   /* AthenaString_Format */
+#define TT_CTOR_STRBUF   0x4F7448   /* AthenaString object */
+#define TT_CTOR_FMT      0x4D03F8   /* "%d" format */
+
+/* Emit one in-flow medal append block (exact native byte pattern). The caller
+ * provides them; returns bytes written. flag_idx = 0..3 for bronze/silver/gold/
+ * weasel. sprite_slot = App+0x380/384/388/38C. */
+static unsigned emit_tt_block(unsigned char *p, int flag_idx, DWORD sprite_slot) {
+    unsigned char *start = p;
+    p[0]=0x8B; p[1]=0x86; *(DWORD*)(p+2)=0x878;      p+=6; /* mov 0x878(%esi),%eax */
+    p[0]=0x8A; p[1]=0x8C; p[2]=0xB8;
+    *(DWORD*)(p+3)=(0x8C0+flag_idx);                  p+=7; /* mov 0x8C?(%eax,%edi,4),%cl */
+    p[0]=0x84; p[1]=0xC9;                             p+=2; /* test %cl,%cl */
+    p[0]=0x74; p[1]=0x00;                             p+=2; /* je skip (patched) */
+    p[0]=0x8B; p[1]=0x88; *(DWORD*)(p+2)=sprite_slot; p+=6; /* mov 0x38?(%eax),%ecx */
+    p[0]=0x51; p+=1;                                       /* push %ecx */
+    p[0]=0x57; p+=1;                                       /* push %edi */
+    p[0]=0x68; *(DWORD*)(p+1)=TT_CTOR_FMT;        p+=5;    /* push $FMT */
+    p[0]=0x68; *(DWORD*)(p+1)=TT_CTOR_STRBUF;     p+=5;    /* push $STRBUF */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(TT_CTOR_STRFMT)-(DWORD)(p+5); p+=5; /* call STRFORMAT */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x0C;              p+=3;    /* add $0xc,%esp */
+    p[0]=0x50; p+=1;                                       /* push %eax */
+    p[0]=0x8B; p[1]=0xCE; p+=2;                            /* mov %esi,%ecx */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(TT_CTOR_ABF0)-(DWORD)(p+5); p+=5; /* call ABF0 */
+    /* skip: patch the je (at start+8, 2-byte instr; disp = here - (je+2)) */
+    start[9] = (unsigned char)((p-(start+10)) & 0xFF);
+    return (unsigned)(p - start);
+}
+
+/* Emit the full clone (SEH prologue + setup + 4-medal loop + diamond 5th +
+ * epilogue) into b. Returns size. */
+static unsigned emit_tt_clone(unsigned char *b) {
+    unsigned char *p = b;
+    p[0]=0x6A; p[1]=0xFF;                                  p+=2; /* push -1 */
+    p[0]=0x68; *(DWORD*)(p+1)=0x4CB378;                    p+=5; /* push sehscope */
+    p[0]=0x64; p[1]=0xA1; p[2]=0;p[3]=0;p[4]=0;p[5]=0;      p+=6; /* mov eax,fs:[0] */
+    p[0]=0x50; p+=1;                                              /* push eax */
+    p[0]=0x64; p[1]=0x89; p[2]=0x25; p[3]=0;p[4]=0;p[5]=0;p[6]=0; p+=7; /* mov fs:[0],esp */
+    p[0]=0x51; p+=1;                                              /* push ecx */
+    p[0]=0x8B; p[1]=0x44; p[2]=0x24; p[3]=0x14; p+=4;             /* mov eax,[esp+0x14] */
+    p[0]=0x56; p+=1;                                              /* push esi */
+    p[0]=0x57; p+=1;                                              /* push edi */
+    p[0]=0x8B; p[1]=0xF1; p+=2;                                  /* mov esi,ecx */
+    p[0]=0x50; p+=1;                                              /* push eax */
+    p[0]=0x89; p[1]=0x74; p[2]=0x24; p[3]=0x0C; p+=4;             /* mov [esp+0xc],esi */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(TT_CTOR_PRACTICE)-(DWORD)(p+5); p+=5; /* call PracticeMenu_ctor */
+    p[0]=0xC7; p[1]=0x44; p[2]=0x24; p[3]=0x14; *(DWORD*)(p+4)=0; p+=8; /* movl $0,0x14(%esp) */
+    p[0]=0xC7; p[1]=0x06; *(DWORD*)(p+2)=0x4D4670;         p+=6;  /* movl vt1,(%esi) */
+    p[0]=0xC7; p[1]=0x86; *(DWORD*)(p+2)=0x868; *(DWORD*)(p+6)=0x4D4660; p+=10;
+    p[0]=0xC7; p[1]=0x86; *(DWORD*)(p+2)=0x888; *(DWORD*)(p+6)=0x4D4644; p+=10;
+    p[0]=0x33; p[1]=0xFF; p+=2;                                   /* xor edi,edi */
+    unsigned char *loop_top = p;
+    p += emit_tt_block(p, 0, 0x380);  /* bronze */
+    p += emit_tt_block(p, 1, 0x384);  /* silver */
+    p += emit_tt_block(p, 2, 0x388);  /* gold */
+    p += emit_tt_block(p, 3, 0x38C);  /* weasel */
+    /* DIAMOND 5th: read g_won (absolute) indexed by edi, append mini sprite.
+     *   mov eax,<g_won_base>
+     *   movzx ecx,byte [eax+edi]
+     *   test cl,cl ; je skip
+     *   push edi ; push FMT ; push STRBUF ; call STRFORMAT ; add esp,0xc
+     *   push eax(name) ; mov ecx,<mini> ; push ecx ; mov ecx,esi ; call ABF0
+     * skip:
+     */
+    {
+        unsigned char *ds = p;
+        /* DIAMOND 5th: read g_won (absolute) indexed by RACE. The standings loop
+         * iterates edi=0..14 and each edi DISPLAYS race edi+1 (1-indexed, the
+         * loop's App+0x8C0+edi*4 flags are race edi+1; edi=0 shows race 1
+         * BEGINNER, edi=14 shows the free tail). So a diamond at display index
+         * edi corresponds to g_won[edi+1], NOT g_won[edi]. We therefore index
+         * g_won + edi + 1 (g_won[15] past the 15-byte array is the native
+         * phantom-tail slot, all-zero, so never triggers). Registers we clobber
+         * (edx, eax, ecx) are freely reusable — the diamond block is LAST per
+         * loop iteration, and the loop only carries edi/esi across iterations.
+         * Push order for f(name,sprite): sprite pushed FIRST (deepest), name
+         * LAST (topmost) so [esp]=name,[esp+4]=sprite. */
+        p[0]=0x8D; p[1]=0x97; *(DWORD*)(p+2)=(DWORD)g_won; p+=6;   /* lea edx,[g_won] */
+        p[0]=0x8B; p[1]=0xCF; p+=2;                               /* mov ecx,edi */
+        p[0]=0x41; p+=1;                                          /* inc ecx (=edi+1) */
+        /* bounds guard: edi=14 -> ecx=15 (phantom tail, OOB read) — skip. */
+        p[0]=0x83; p[1]=0xF9; p[2]=0x0F; p+=3;                     /* cmp ecx,$0xf */
+        p[0]=0x7D; p[1]=0x00; p+=2;                               /* jge skip3 (patched) */
+        p[0]=0x0F; p[1]=0xB6; p[2]=0x04; p[3]=0x0A; p+=4;         /* movzx eax,byte[edx+ecx] */
+        p[0]=0x84; p[1]=0xC0; p+=2;                               /* test al,al */
+        p[0]=0x74; p[1]=0x00; p+=2;                               /* je1 skip */
+        /* push edi+1 as the "%dD" value (race label should be edi+1 to match) */
+        p[0]=0x51; p+=1;                                          /* push ecx (=edi+1) */
+        p[0]=0x68; *(DWORD*)(p+1)=(DWORD)g_fmtDiamond; p+=5;      /* push "%dD" fmt */
+        p[0]=0x68; *(DWORD*)(p+1)=TT_CTOR_STRBUF;  p+=5;
+        p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(TT_CTOR_STRFMT)-(DWORD)(p+5); p+=5;
+        p[0]=0x83; p[1]=0xC4; p[2]=0x0C; p+=3;
+        /* eax = name (from format). Now push sprite, then name LAST. */
+        /* load mini sprite into ecx, push as arg2 (first C arg, deepest) */
+        p[0]=0xB9; *(DWORD*)(p+1)=(DWORD)&g_diamondMiniSprite; p+=5;/* mov ecx,&mini */
+        p[0]=0x8B; p[1]=0x09; p+=2;                               /* mov ecx,[ecx] */
+        p[0]=0x85; p[1]=0xC9; p+=2;                               /* test ecx,ecx */
+        p[0]=0x74; p[1]=0x00; p+=2;                               /* je2 skip (null) */
+        p[0]=0x51; p+=1;                                          /* push sprite (deepest) */
+        p[0]=0x50; p+=1;                                          /* push eax=name (top) */
+        /* now [esp]=name,[esp+4]=sprite, ecx held 0? -> set ecx=this */
+        p[0]=0x8B; p[1]=0xCE; p+=2;                               /* mov ecx,esi (this) */
+        p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(TT_CTOR_ABF0)-(DWORD)(p+5); p+=5; /* call ABF0(ret 8) */
+        /* skip: patch ALL THREE branch rel8s. Layout from ds:
+         * ds+0: 8D 97 imm32 (6) lea edx,[g_won]
+         * ds+6: 8B CF (2) mov ecx,edi ; ds+8: 41 inc
+         * ds+9: 83 F9 0F (3) cmp ecx,0xf
+         * ds+12: 7D ?? (2) jge3 disp@ds+13
+         * ds+14: 0F B6 04 0A (4) movzx eax,[edx+ecx]
+         * ds+18: 84 C0 (2) test al,al
+         * ds+20: 74 ?? (2) je1 disp@ds+21
+         * ds+22: 51; ds+23:68(5); ds+28:68(5); ds+33:E8(5); ds+38:83C40C(3)
+         * ds+41: B9 imm32(5) mov ecx,&mini; ds+46: 8B09; ds+48: 85C9
+         * ds+50: 74 ?? (2) je2 disp@ds+51
+         * ds+52: 51; ds+53: 50; ds+54: 8B CE; ds+56: E8(5) call
+         * skip (here) = ds+61. rel8 disp at byte X = here-(X+1).
+         */
+        ds[13] = (unsigned char)((p-(ds+14)) & 0xFF);
+        ds[21] = (unsigned char)((p-(ds+22)) & 0xFF);
+        ds[51] = (unsigned char)((p-(ds+52)) & 0xFF);
+    }
+    /* inc edi; cmp $0xf,edi; jl loop_top */
+    p[0]=0x47; p+=1;
+    p[0]=0x83; p[1]=0xFF; p[2]=0x0F; p+=3;
+    p[0]=0x0F; p[1]=0x8C; *(DWORD*)(p+2)=(DWORD)(loop_top-(p+6)); p+=6; /* jl rel32 */
+    /* epilogue */
+    p[0]=0x8B; p[1]=0x4C; p[2]=0x24; p[3]=0x0C; p+=4;             /* mov ecx,[esp+0xc] */
+    p[0]=0x5F; p+=1;
+    p[0]=0x8B; p[1]=0xC6; p+=2;
+    p[0]=0x5E; p+=1;
+    p[0]=0x64; p[1]=0x89; p[2]=0x0D; p[3]=0;p[4]=0;p[5]=0;p[6]=0; p+=7; /* mov fs:[0],ecx */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x10; p+=3;
+    p[0]=0xC2; p[1]=0x04; p[2]=0x00; p+=3;
+    return (unsigned)(p - b);
+}
+
+static void install_tt_wrapper(void) {
+#ifdef DIAMOND_TT_WRAPPER
+    unsigned char *stub = (unsigned char*)VirtualAlloc(NULL, 1024, MEM_COMMIT|MEM_RESERVE,
+                                                       PAGE_EXECUTE_READWRITE);
+    if (!stub) { diag_log("[diamond] TT WRAPPER: VirtualAlloc failed"); return; }
+    unsigned sz = emit_tt_clone(stub);
+    FlushInstructionCache(GetCurrentProcess(), stub, sz);
+    unsigned char jmp[5] = {0xE9,0,0,0,0};
+    DWORD tar = (DWORD)stub;
+    *(DWORD*)(jmp+1) = tar - (EXE_BASE + (TT_CTOR_ORIG - EXE_BASE)) - 5;
+    patch_bytes((void*)(EXE_BASE + (TT_CTOR_ORIG - EXE_BASE)), jmp, 5);
+    diag_logf("[diamond] TT WRAPPER: TimeTrialMenu_ctor cloned+patched (emit %u bytes)", sz);
+#else
+    (void)0;
+#endif
+}
+
 static void install_tt_cave(void) {
+    /* PROBE ISOLATION (DIAMOND_TT_PROBE): minimal cave that does ONLY the bare
+     * re-emit the game itself does (mov ecx,esi; call 0x44abf0) then jmp back
+     * to 0x42F92C — NO diamond handler, NO pushad, NO extra calls. Build:
+     * -DDIAMOND_VTABLE_OVERRIDE -DVORTEX_OFF -DDIAMOND_TT_PROBE.
+     * This isolates whether ANY 5-byte detour from inside this SEH frame
+     * (TimeTrialMenu_ctor) crashes real Windows, independent of handler
+     * content. If this crashes: the detour architecture itself is the problem
+     * and no in-flow patch here can work. If it doesn't: the crash is in
+     * diamond_tt_append and we hunt that. */
+#ifdef DIAMOND_TT_PROBE
+    if (g_ttInstalled) return;
+    DWORD patchAddr = EXE_BASE + (TT_WEASEL_APPEND - EXE_BASE);
+    DWORD retAddr = patchAddr + 5;   /* 0x42F92C */
+    g_ttCave = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
+                                            PAGE_EXECUTE_READWRITE);
+    if (!g_ttCave) return;
+    unsigned char *p = g_ttCave;
+    /* mov ecx, esi */
+    p[0]=0x8B; p[1]=0xCE; p+=2;
+    /* call 0x44abf0 (re-emit weasel append) — the stack already has the
+     * name+sprite args the game pushed before 0x42F927. */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(ABF0_APPEND)-(DWORD)(p+5); p+=5;
+    /* jmp retAddr (inc edi) */
+    write_jmp(p, retAddr); p+=5;
+    unsigned char patch[5];
+    memset(patch, 0x90, 5);
+    write_jmp(patch, (DWORD)g_ttCave);
+    patch_bytes((void*)patchAddr, patch, 5);
+    g_ttInstalled = 1;
+    diag_log("[diamond] TT PROBE: minimal re-emit cave (no diamond handler) installed");
+    return;
+#endif
+
     /* DISABLED — CONCLUSIVELY proved to crash the TT menu on real Windows.
      * THREE byte-identical crashes (2026-08-16) across THREE different cave
      * contents: (1) lazy-loader re-entrant, (2) null-guard, (3) Option B =
@@ -1933,7 +2133,12 @@ static void install_vtable_override(void) {
 
 static void install_hooks(void) {
     install_icon_cave();     /* no-op */
+#ifdef DIAMOND_TT_WRAPPER
+    install_tt_wrapper();
+    install_tt_cave();       /* (disabled in this build) */
+#else
     install_tt_cave();       /* deferred until first diamond */
+#endif
 #ifdef DIAMOND_VTABLE_OVERRIDE
     install_vtable_override();
     diag_log("[diamond] hooks installed (VTABLE OVERRIDE: slot[1]=reveal+orig, per-object copy)");
