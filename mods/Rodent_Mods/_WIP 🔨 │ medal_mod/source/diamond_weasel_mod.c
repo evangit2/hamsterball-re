@@ -934,13 +934,18 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
          * position; the velocity block is a bare unit vector).
          *   pos.x = cos(a)*r + cx   pos.y = sin(a)*r + cy
          *   vel.x = cos(a)          vel.y = sin(a)
-         * The diamond REPLACES the golden weasel, so the ring uses the
-         * WEASEL's native center/radius (227,648) r=74, NOT the bronze ring's
-         * (429,317) r=30. */
+         * The diamond REPLACES the golden weasel, which is drawn at WORLD
+         * (0x208, 0x63) via ctx+0x37C (the render-path swap). Particle coords
+         * here are WORLD space (the particle render 0x45d300 transforms them
+         * through Gfx_TransformX/Y, same as the vortex center). The old
+         * native (227,648) was the ORIGINAL results-layout ring center and put
+         * the burst off-screen bottom-left relative to the trophy. Ring the
+         * DIAMOND at its true world spot. r=74 (world units) = golden-weasel
+         * ring radius. */
         {
             float rad = (float)angle * 3.14159265f / 180.0f;
             float c = cosf(rad), s = sinf(rad);
-            float cx = 227.0f, cy = 648.0f, r = 74.0f;
+            float cx = 0x208, cy = 0x63, r = 74.0f;   /* diamond's world spot */
             *(float*)(part + 0x08) = c * r + cx;
             *(float*)(part + 0x0C) = s * r + cy;
             *(float*)(part + 0x10) = 0.0f;
@@ -1148,12 +1153,16 @@ __attribute__((used)) void diamond_weasel_mult(DWORD results) {
             memcpy(g_multSave, (float*)(gfx + GFX_MULT_R), 16);
         g_multSaved = 1;
     }
-    /* linear ramp 1.0 -> WHITE_TARGET (cap <= 1.5 so it looks white but does
-     * not blow out the whole frame). Kept modest so the shared multiplier
-     * only lightens, never scorches the screen. */
+    /* linear ramp 1.0 -> WHITE_TARGET. The old cap of 1.5 was a barely-visible
+     * lift (the user can't see the weasel glow at all). Raised to 3.0, a clear
+     * white blow-out on the weasel. The shared multiplier save/restore
+     * (g_multSaved / diamond_weasel_mult_clear) that 8175782b added already
+     * prevents the whole-race white-out bleed — the cap back then only existed
+     * because the clear was never called, which is fixed now. 3.0 not 4.0 keeps
+     * it from scorching the whole frame while clearly reading as white. */
     t = (frame - WEASEL_WHITE_START) / (float)(WEASEL_WHITE_END - WEASEL_WHITE_START);
     if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
-    m = 1.0f + t * (0.5f);          /* ramps to 1.5 max (mild white lift) */
+    m = 1.0f + t * 2.0f;        /* ramps to 3.0 max (clear white glow) */
     *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = 1;
     sc = (float*)(gfx + GFX_MULT_R);
     sc[0] = m; sc[1] = m; sc[2] = m; sc[3] = 1.0f;
