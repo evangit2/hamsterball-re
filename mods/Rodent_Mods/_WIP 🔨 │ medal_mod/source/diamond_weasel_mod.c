@@ -1811,8 +1811,18 @@ static unsigned emit_tt_block(unsigned char *p, int flag_idx, DWORD sprite_slot)
     p[0]=0x50; p+=1;                                       /* push %eax */
     p[0]=0x8B; p[1]=0xCE; p+=2;                            /* mov %esi,%ecx */
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(TT_CTOR_ABF0)-(DWORD)(p+5); p+=5; /* call ABF0 */
-    /* skip: patch the je (at start+8, 2-byte instr; disp = here - (je+2)) */
-    start[9] = (unsigned char)((p-(start+10)) & 0xFF);
+    /* skip: patch the je displacement. Block layout (offsets from start):
+     *   0-5  8B 86 78 08 00 00   mov 0x878(%esi),%eax      (6)
+     *   6-12 8A 8C B8 <c0+idx>   mov 0x8C?(%eax,%edi,4),%cl (7)
+     *   13-14 84 C9              test %cl,%cl              (2)
+     *   15-16 74 ??              je                        (2) disp@start[16]
+     *   17+  mov 0x38?(%eax),%ecx ... call ABF0
+     * je is a 2-byte instr spanning [15..16]; rel8 displacement is byte[16],
+     * and is measured from the END of the je (offset 17). So disp = here-17.
+     * (Writing start[9] here corrupted the flag-address immediate and left the
+     * real disp at 0 -> je never taken -> all medals appended unconditionally.)
+     */
+    start[16] = (unsigned char)((p-(start+17)) & 0xFF);
     return (unsigned)(p - start);
 }
 
