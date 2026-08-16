@@ -1844,6 +1844,14 @@ static int g_revealArmedVtbl = 0;
 /* The reveal update: __thiscall(ecx=results). Runs the reveal, then calls the
  * original award update (which owns its own valid SEH frame internally).
  *
+ * CRITICAL ORDER: call the ORIGINAL award update FIRST. 0x44D760 commits the
+ * player race time (board+0x1C) into the results object / board; the reveal
+ * reads that time (via get_player_time_cs -> board+0x1C) to decide if the
+ * diamond qualified. Running the reveal BEFORE the original read time=0 and
+ * silently did nothing (FIRST-EARN time=0 + SWAP-GATE time=0 in the user log).
+ * After the original runs, the time is populated and the reveal evaluates
+ * correctly.
+ *
  * OPTION-1 (VORTEX_OFF): the suction-vortex raw D3D8 draw crashed real Windows
  * at frame ~57 (eax=0 deref inside d3d8.dll). The white-fade + diamond-swap
  * do NOT touch the D3D device, so they're kept. Vortex is compiled out here so
@@ -1851,6 +1859,10 @@ static int g_revealArmedVtbl = 0;
  * DrawPrimitiveUP is made Windows-robust. */
 static void __thiscall diamond_reveal_update(void *self) {
     DWORD results = (DWORD)self;
+    /* 1) run the ORIGINAL award update FIRST so board+0x1C (player time) is
+     *    populated before the reveal reads it to decide qualification. */
+    if (g_origAwardUpdate) g_origAwardUpdate(self);
+    /* 2) now run the reveal (reads the time correctly). */
     if (g_revealArmedVtbl) {
 #ifndef VORTEX_OFF
         diamond_vortex_tick(results);
@@ -1861,7 +1873,6 @@ static void __thiscall diamond_reveal_update(void *self) {
             g_revealArmedVtbl = 0;
         }
     }
-    if (g_origAwardUpdate) g_origAwardUpdate(self);
 }
 
 /* Patch the SHARED vtable slot from the safe init thread (no SEH frame). */
