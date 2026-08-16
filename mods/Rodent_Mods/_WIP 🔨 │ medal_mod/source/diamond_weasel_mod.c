@@ -1851,17 +1851,6 @@ static unsigned emit_tt_clone(unsigned char *b) {
     p[0]=0x50; p+=1;                                              /* push eax */
     p[0]=0x89; p[1]=0x74; p[2]=0x24; p[3]=0x0C; p+=4;             /* mov [esp+0xc],esi */
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(TT_CTOR_PRACTICE)-(DWORD)(p+5); p+=5; /* call PracticeMenu_ctor */
-    /* Lazily load the diamond MINI sprite on the main thread AT TT-open (this
-     * ctor runs on the main render thread when the user opens the TT menu —
-     * guaranteed after App-init and before the medal loop). Pass App as arg:
-     *   push App ; call diamond_load_mini_icon_impl ; add esp,4
-     * (The init-thread preload and the App-init piggyback both ran too early /
-     * in the wrong context; this is the correct late main-thread moment.) */
-    p[0]=0xB8; *(DWORD*)(p+1)=APP_PTR; p+=5;                     /* mov eax,<APP_PTR> */
-    p[0]=0x8B; p[1]=0x00; p+=2;                                  /* mov eax,[eax] = App */
-    p[0]=0x50; p+=1;                                             /* push App */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(diamond_load_mini_icon_impl)-(DWORD)(p+5); p+=5; /* call */
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;                       /* add esp,4 */
     p[0]=0xC7; p[1]=0x44; p[2]=0x24; p[3]=0x14; *(DWORD*)(p+4)=0; p+=8; /* movl $0,0x14(%esp) */
     p[0]=0xC7; p[1]=0x06; *(DWORD*)(p+2)=0x4D4670;         p+=6;  /* movl vt1,(%esi) */
     p[0]=0xC7; p[1]=0x86; *(DWORD*)(p+2)=0x868; *(DWORD*)(p+6)=0x4D4660; p+=10;
@@ -2011,7 +2000,6 @@ static void install_tt_piggyback(void) {
 
 static void install_tt_wrapper(void) {
 #ifdef DIAMOND_TT_WRAPPER
-    install_tt_piggyback();
     unsigned char *stub = (unsigned char*)VirtualAlloc(NULL, 1024, MEM_COMMIT|MEM_RESERVE,
                                                        PAGE_EXECUTE_READWRITE);
     if (!stub) { diag_log("[diamond] TT WRAPPER: VirtualAlloc failed"); return; }
@@ -2028,21 +2016,11 @@ static void install_tt_wrapper(void) {
      * is ready whenever the TT menu opens — regardless of whether a race was
      * completed this session (the results-draw preload only fires after racing,
      * which left it 0 and hid every diamond). The sprite manager (App+0x22C)
-     * is valid after init; diamond_load_mini_icon_impl guards all pointers. */
-    if (g_anyDiamond && !g_miniIconLoaded) {
-        DWORD app = get_app();
-        DWORD mgr = 0, exists = 0;
-        char mp[MAX_PATH], dir[MAX_PATH];
-        if (app) mgr = *(DWORD*)(app + APP_MGR);
-        get_own_dir(dir, sizeof(dir));
-        snprintf(mp, sizeof(mp), "%s\\Textures\\diamondweasel-icon.png", dir);
-        exists = (GetFileAttributesA(mp) != INVALID_FILE_ATTRIBUTES) ? 1 : 0;
-        diag_logf("[diamond] TT WRAPPER: preload attempt app=%08X mgr=%08X fileExists=%d (%.*s)",
-                  app, mgr, exists, 48, mp);
-        if (app) diamond_load_mini_icon_impl(app);
-        diag_logf("[diamond] TT WRAPPER: post-startup mini preload -> g_diamondMiniSprite=%08X loaded=%d",
-                  g_diamondMiniSprite, g_miniIconLoaded);
-    }
+     * is valid after init; diamond_load_mini_icon_impl guards all pointers.
+     * REMOVED 2026-08-16: calling the sprite loader from the init thread returns
+     * null (wrong context), and from the TT-ctor it crashes. The loader only
+     * works in the results-screen draw context. The mini sprite is therefore
+     * loaded only on the results-draw (diamond_load_icon_impl). */
 #else
     (void)0;
 #endif
