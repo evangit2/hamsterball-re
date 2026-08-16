@@ -721,6 +721,14 @@ static void load_unlocks(void) {
         diag_log("[diamond] no DiamondMedals registry value (or unexpected)");
     }
     RegCloseKey(hk);
+    /* LOG the actual g_won bytes so we can see WHICH races are flagged (esp.
+     * Warm-Up=0 / Odd=8) and whether the load is byte-aligned to our indices. */
+    {
+        char buf[96]; int n=0;
+        n += sprintf(buf+n, "[diamond] g_won[0..14] =");
+        for (int i=0;i<15;i++) n += sprintf(buf+n, " %d", g_won[i]);
+        diag_log(buf);
+    }
     /* has the player EVER earned a diamond? (gates the TT-menu mini-icons) */
     for (int i = 0; i < 15; i++) if (g_won[i]) { g_anyDiamond = 1; break; }
 }
@@ -1945,6 +1953,8 @@ static void install_tt_wrapper(void) {
     *(DWORD*)(jmp+1) = tar - (EXE_BASE + (TT_CTOR_ORIG - EXE_BASE)) - 5;
     patch_bytes((void*)(EXE_BASE + (TT_CTOR_ORIG - EXE_BASE)), jmp, 5);
     diag_logf("[diamond] TT WRAPPER: TimeTrialMenu_ctor cloned+patched (emit %u bytes)", sz);
+    diag_logf("[diamond] TT WRAPPER: g_won_base=%p g_diamondMiniSprite=%08X (preload status)",
+              (void*)g_won, g_diamondMiniSprite);
 #else
     (void)0;
 #endif
