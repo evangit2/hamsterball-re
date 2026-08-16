@@ -1962,6 +1962,14 @@ static void install_tt_wrapper(void) {
      * is valid after init; diamond_load_mini_icon_impl guards all pointers. */
     if (g_anyDiamond && !g_miniIconLoaded) {
         DWORD app = get_app();
+        DWORD mgr = 0, exists = 0;
+        char mp[MAX_PATH], dir[MAX_PATH];
+        if (app) mgr = *(DWORD*)(app + APP_MGR);
+        get_own_dir(dir, sizeof(dir));
+        snprintf(mp, sizeof(mp), "%s\\Textures\\diamondweasel-icon.png", dir);
+        exists = (GetFileAttributesA(mp) != INVALID_FILE_ATTRIBUTES) ? 1 : 0;
+        diag_logf("[diamond] TT WRAPPER: preload attempt app=%08X mgr=%08X fileExists=%d (%.*s)",
+                  app, mgr, exists, 48, mp);
         if (app) diamond_load_mini_icon_impl(app);
         diag_logf("[diamond] TT WRAPPER: post-startup mini preload -> g_diamondMiniSprite=%08X loaded=%d",
                   g_diamondMiniSprite, g_miniIconLoaded);
