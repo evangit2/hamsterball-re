@@ -314,7 +314,10 @@ Windows (the earlier present-hook versions did). It hooks:
    results-screen-only.
 3. **Skip-latch (0x44CBAA)** — blocks the results/click "skip" when the
    diamond was achieved so the full reveal plays out (it keeps the skip latch
-   from being set until frame 240). Results-screen-only.
+   from being set until frame 240). Results-screen-only. *(Re-enabled 2026-08-16:
+   it had been dropped when the reveal host moved to the vtable override — the
+   "countdown starts too early" bug was the click-to-continue fast-forwarding
+   the frame counter 10x past the gold+240 reveal.)*
 4. **Icon load (write-on-first-unlock)** — the diamond PNG bytes are embedded
    in the DLL as XOR-encrypted data (not extractable from the DLL). On the
    *first* time a diamond is awarded, the mod decrypts them and writes

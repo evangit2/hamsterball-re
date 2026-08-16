@@ -394,6 +394,7 @@ static DWORD g_trophySwapCtx  = 0;   /* ctx whose +0x37C we redirected */
 static DWORD g_trophySwapOrig = 0;   /* original golden-weasel sprite at ctx+0x37C */
 static DWORD g_trophySwapResults = 0;/* results obj the swap belongs to (cross-screen guard) */
 static int   g_trophySwapActive = 0; /* 1 while the renderer is showing the diamond here */
+static unsigned char *g_skipCave = NULL;  /* results-screen skip-latch cave (0x44CBAA) */
 static int   g_secret_cs[15] = {0};   /* per-race DIAMOND threshold in CENTISECONDS (int) */
 static int   g_hasSecret[15] = {0};
 static BYTE  g_won[15]       = {0};
@@ -797,6 +798,7 @@ static int get_player_time_cs(DWORD app) {
 __attribute__((used)) void diamond_load_icon_impl(DWORD app);
 __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app);
 static void install_reveal_cave(void);   /* defined below (patch helpers) */
+static void install_skip_cave(void);     /* defined below (patch helpers) */
 /* patch-helper forward decls (defined in the patch-helpers section) */
 static void write_jmp(unsigned char *at, DWORD target);
 static void patch_bytes(void *addr, const void *data, DWORD size);
@@ -2212,6 +2214,56 @@ static void install_tt_cave(void) {
     diag_log("[diamond] TT-menu cave DISABLED (cave architecture crashes TT menu on real Windows)");
 }
 
+/* Cave E: block the results-screen click/keypress skip when the diamond was
+ * achieved (so the player sees the full gold+240 reveal instead of the frame
+ * counter rocketing forward at 10x). We stop the SKIP LATCH from being set
+ * rather than hacking the multiplier — the latch (results+0x25) is the single
+ * source of truth for skip; if it never gets set, +0x10 advances 1x/frame and
+ * the white-fade/vortex/trophy timeline plays out. This was dropped when the
+ * reveal host moved to the vtable override (issue #4: "countdown starts much
+ * too early" — without it, clicking continue fast-forwards past gold and the
+ * reveal fires all at once).
+ *
+ * Hook at 0x44CBAA: `movb $1,0x25(%esi)` (set latch, 4 bytes) + first byte of
+ * next instr (`cmp %bl,0x24(%esi)` = 38 5e 24) = 5 bytes, ret 0x44CBB1. Cave:
+ *   push esi; call diamond_block_skip; add esp,4; test eax,eax
+ *   jnz block_skip          ; achieved -> do NOT set the latch
+ *   movb $1,0x25(esi)       ; re-emit original latch-set (not achieved)
+ * block_skip:
+ *   cmp %bl,0x24(esi)       ; re-emit the borrowed cmp byte
+ *   jmp 0x44CBB1
+ * esi = results object is preserved (helper is callee-saved for esi/edi/ebx).
+ */
+static void install_skip_cave(void) {
+    DWORD patchAddr = EXE_BASE + (SKIP_LATCH_HOOK - EXE_BASE);
+    DWORD retAddr   = EXE_BASE + (SKIP_LATCH_RET - EXE_BASE);
+    g_skipCave = (unsigned char*)VirtualAlloc(NULL, 48, MEM_COMMIT|MEM_RESERVE,
+                                              PAGE_EXECUTE_READWRITE);
+    if (!g_skipCave) return;
+    unsigned char *p = g_skipCave;
+    /* push esi (arg: results) */
+    p[0]=0x56; p+=1;
+    /* call diamond_block_skip (cdecl) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_block_skip-(DWORD)(p+5); p+=5;
+    /* add esp,4 (cdecl caller cleans) */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;
+    /* test eax,eax */
+    p[0]=0x85; p[1]=0xC0; p+=2;
+    /* jnz block_skip (rel=4: skip the 4-byte movb) */
+    p[0]=0x75; p[1]=0x04; p+=2;
+    /* movb $1,0x25(esi) — original latch-set (only when NOT blocked) */
+    p[0]=0xC6; p[1]=0x46; p[2]=0x25; p[3]=0x01; p+=4;
+    /* block_skip: cmp %bl,0x24(esi) — re-emit the borrowed byte's instr */
+    p[0]=0x38; p[1]=0x5E; p[2]=0x24; p+=3;
+    /* jmp back */
+    write_jmp(p, retAddr); p+=5;
+    unsigned char patch[5];
+    memset(patch, 0x90, 5);
+    write_jmp(patch, (DWORD)g_skipCave);
+    patch_bytes((void*)patchAddr, patch, 5);
+    diag_log("[diamond] skip-latch cave installed at 0x44CBAA");
+}
+
 /* ================================================================
  * Install
  * ================================================================ */
@@ -2367,6 +2419,7 @@ static void install_hooks(void) {
 #endif
 #ifdef DIAMOND_VTABLE_OVERRIDE
     install_vtable_override();
+    install_skip_cave();                     /* block skip so the gold+240 reveal plays */
     diag_log("[diamond] hooks installed (VTABLE OVERRIDE: slot[1]=reveal+orig, per-object copy)");
 #elif defined(DIAMOND_CB90_PROBE)
     /* PATH-1 PROBE: hook the untested non-SEH results fn 0x44CB90.
