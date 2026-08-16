@@ -1572,8 +1572,35 @@ __attribute__((used)) int diamond_trophy_swap(DWORD results) {
         }
         diamond_spawn_medal_effects(results, app);   /* pop + star ring */
     }
-    /* Ensure the diamond icon is loaded, then draw it at the trophy spot. */
-    if (!g_iconLoaded) diamond_load_icon_impl(app);
+    /* Ensure the diamond icon is loaded, then draw it at the trophy spot.
+     * FIX (2026-08-16): the ORIGINAL used the GLOBAL App manager (App+0x22C ->
+     * vtable[0x58]) which is NOT the sprite manager at results-time (its
+     * vtable[0x58] is 0, proven by diagnostics). The decompiled gold-medal
+     * draw shows the CORRECT mechanism: the award screen draws its medals via
+     *   Graphics_SetScaleAndPosition( *(*(this+0xC)) + 0x370..0x37C, x, y )
+     * where *(this+0xC) is the award's DISPLAY CONTEXT whose +0x370..0x37C are
+     * the bronze/silver/gold/weasel SPRITE slots, and whose vtable[0x58] is the
+     * AddSprite (FUN_004752F0) that populates a slot. So the correct this for
+     * AddSprite is ctx = *(results+0xC), diamond slot = ctx+0x380. */
+    DWORD resultsCtx = 0, diaSlot = 0;
+    if (!IsBadReadPtr((void*)(results + 0xC), 4))
+        resultsCtx = *(DWORD*)(results + 0xC);
+    if (resultsCtx && resultsCtx > 0x10000 && !IsBadReadPtr((void*)resultsCtx, 4)) {
+        diaSlot = resultsCtx + 0x380;                 /* diamond sprite slot */
+        if (!g_diamondSprite) {
+            /* AddSprite(ctx, ctx+0x380, "diamondweasel.png") — __thiscall(ecx=ctx) */
+            DWORD slot=diaSlot;
+            __asm__ volatile(
+                "pushl %2\n\t"
+                "pushl %1\n\t"
+                "movl %0, %%ecx\n\t"
+                "call *%3\n\t"
+                : : "r"(resultsCtx), "r"(slot), "r"(g_iconFile), "r"(0x4752F0)
+                : "eax", "ecx", "edx", "memory");
+            g_diamondSprite = *(DWORD*)diaSlot;       /* slot now has the sprite */
+            if (g_diamondSprite) g_iconLoaded = 1;
+        }
+    }
     if (!g_diamondSprite) return 0;                  /* not loadable -> gold stays */
     __asm__ volatile(
         "movl %2, %%ecx\n\t"          /* ecx = g_diamondSprite */
