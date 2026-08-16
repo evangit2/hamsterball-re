@@ -1585,6 +1585,8 @@ __attribute__((used)) int diamond_trophy_swap(DWORD results) {
     DWORD resultsCtx = 0, diaSlot = 0;
     if (!IsBadReadPtr((void*)(results + 0xC), 4))
         resultsCtx = *(DWORD*)(results + 0xC);
+    diag_logf("[diamond] trophy_swap: results=%08X resultsCtx=%08X g_diamondSprite=%08X iconLoaded=%d",
+              results, resultsCtx, g_diamondSprite, g_iconLoaded);
     if (resultsCtx && resultsCtx > 0x10000 && !IsBadReadPtr((void*)resultsCtx, 4)) {
         diaSlot = resultsCtx + 0x380;                 /* diamond sprite slot */
         if (!g_diamondSprite) {
