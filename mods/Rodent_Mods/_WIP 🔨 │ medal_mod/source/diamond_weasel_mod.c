@@ -387,6 +387,13 @@ volatile int g_caveProbe = 0;        /* VEH-reading probe (0 = cave path untouch
 static DWORD g_diamondSprite = 0;
 static DWORD g_diamondMiniSprite = 0;
 
+/* Star-ring center, computed at trophy-swap time from the ACTUAL sprite that
+ * is (or will be) in ctx+0x37C — the diamond trophy's true on-screen center.
+ * Set by diamond_trophy_swap before diamond_spawn_medal_effects, so the ring
+ * never depends on hardcoded/guessed coordinates. Defaults to the draw top-left
+ * (0x208,0x63) + half the sprite's live width/height (sprite+0xC8/+0xCC). */
+static float g_ringCx = 0.0f, g_ringCy = 0.0f;
+
 /* ---- RESULTS-SCREEN BIG DIAMOND TROPHY (render-path fix, 2026-08-16) ----
  * The golden-weasel medal is composited by the game's RENDER fn (award vtable
  * slot[2]=0x44DF70, draw at 0x44E12C):  mov ecx,[ctx+0x37C]; Sprite_DrawRect
@@ -885,10 +892,36 @@ __attribute__((used)) int diamond_block_skip(DWORD results) {
  */
 __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app) {
     int angle, i;
-    DWORD channel, plist, part;
+    DWORD channel, plist, part, sprite;
     if (!results || !app) return;
     if (IsBadReadPtr((void*)(results + RESULT_PARTICLES), 4)) return;
     plist = results + RESULT_PARTICLES;
+    /* Resolve the ring CENTER from the ACTUAL trophy sprite (not a hardcoded
+     * constant). The award renderer draws the gold-weasel/diamond trophy from
+     * ctx+0x37C at a world TOP-LEFT of (0x208, 0x63) (Sprite_DrawRect at 0x44E12C:
+     * mov ecx,[ctx+0x37C]; push 0x63; push 0x208; call Sprite_DrawRect). The
+     * sprite's real display size is sprite+0xC8 (width) / +0xCC (height) in
+     * world units (set in Sprite_ctor, and the renderer builds corners from
+     * them). So the trophy's true center is top-left + half dims:
+     *   cx = 0x208 + sprite[0xC8]/2    cy = 0x63 + sprite[0xCC]/2
+     * The ring particles render through the SAME world->screen transform as
+     * the sprite (particle vtable 0x44ACE0 -> 0x45d300), so centering on the
+     * sprite's world-box center makes the burst coincide with the diamond —
+     * regardless of the PNG's aspect (user reports the trophy renders as a
+     * ~2:3 rectangle, not the 256x256 PNG). falls back to (227,648) r=74
+     * (the native golden-weasel ring) only if the sprite is unreadable. */
+    if (IsBadReadPtr((void*)(app + CTX_WEASEL), 4)) return;
+    sprite = *(DWORD*)(app + CTX_WEASEL);   /* app here = ctx = *(results+0xC) */
+    if (sprite && sprite > 0x10000 && !IsBadReadPtr((void*)(sprite + 0xC8), 8)) {
+        float w = *(float*)(sprite + 0xC8), h = *(float*)(sprite + 0xCC);
+        if (w > 1.0f && h > 1.0f) {
+            g_ringCx = 0x208 + w * 0.5f;
+            g_ringCy = 0x63  + h * 0.5f;
+            diag_logf("[diamond] ring center from sprite: w=%.1f h=%.1f -> (%.1f, %.1f)",
+                      w, h, g_ringCx, g_ringCy);
+        }
+    }
+    if (g_ringCx == 0.0f || g_ringCy == 0.0f) { g_ringCx = 227.0f; g_ringCy = 648.0f; }
     /* (1) Play the medal pop on the medal channel (App+0x50C). */
     if (IsBadReadPtr((void*)(app + SND_CHANNEL_MEDAL), 4)) return;
     channel = *(DWORD*)(app + SND_CHANNEL_MEDAL);
@@ -946,7 +979,8 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
         {
             float rad = (float)angle * 3.14159265f / 180.0f;
             float c = cosf(rad), s = sinf(rad);
-            float cx = 227.0f, cy = 648.0f, r = 74.0f;   /* native golden-weasel ring */
+            /* center computed from the actual ctx+0x37C sprite box above. */
+            float cx = g_ringCx, cy = g_ringCy, r = 74.0f;
             *(float*)(part + 0x08) = c * r + cx;
             *(float*)(part + 0x0C) = s * r + cy;
             *(float*)(part + 0x10) = 0.0f;
