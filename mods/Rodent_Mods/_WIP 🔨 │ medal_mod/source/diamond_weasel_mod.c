@@ -1670,29 +1670,35 @@ __attribute__((used)) void diamond_load_icon_impl(DWORD app) {
         diamond_load_mini_icon_impl(app);
 }
 __attribute__((used)) void diamond_load_mini_icon_impl(DWORD app) {
-    DWORD mgr, vt, load;
+    /* FIX (2026-08-16): the ORIGINAL used the vtable[0x58] loader via App+0x22C,
+     * which is NOT a valid sprite manager (returns null / garbage at runtime).
+     * The PROVEN correct constructor is Sprite_ctor (0x45D0C0) — it builds a
+     * full 0xD4 Sprite AND loads the texture via FUN_00455c50 into sprite+0x50,
+     * sets width/height. gfx = App+0x174. This is the same fix that made the
+     * big diamond sprite load (g_diamondSprite=025B0000). */
+    DWORD gfx = 0;
+    unsigned char *sp;
     if (g_miniIconLoaded) return;
     if (!app || !g_configLoaded) return;
-    mgr = *(DWORD*)(app + APP_MGR);
-    if (!mgr) return;
-    if (IsBadReadPtr((void*)mgr, 4)) return;
-    vt = *(DWORD*)mgr;
-    if (!vt) return;
-    if (IsBadReadPtr((void*)(vt + 0x58), 4)) return;
-    load = *(DWORD*)(vt + 0x58);
-    if (!load) return;
+    if (!IsBadReadPtr((void*)(app + APP_GFX), 4)) gfx = *(DWORD*)(app + APP_GFX);
+    if (!gfx || gfx <= 0x10000 || IsBadReadPtr((void*)gfx, 4)) return;
+    sp = (unsigned char*)VirtualAlloc(NULL, 0xD4, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    if (!sp) return;
+    memset(sp, 0, 0xD4);
     __asm__ volatile(
-        "pushl %3\n\t"        /* g_miniIconFile (str) — pushed FIRST */
-        "pushl %2\n\t"        /* &g_diamondMiniSprite (slot) */
-        "movl %0, %%ecx\n\t"  /* mgr */
-        "call *%1\n\t"        /* load — ret $8, no add esp */
-        : : "r"(mgr), "r"(load), "r"(&g_diamondMiniSprite), "r"(g_miniIconFile)
-        : "eax", "ecx", "edx", "memory"
-    );
-    if (g_diamondMiniSprite) {
-        g_miniIconLoaded = 1;
-        diag_logf("[diamond] mini icon loaded: %s -> %08X", g_miniIconFile, g_diamondMiniSprite);
+        "pushl %2\n\t"        /* filename */
+        "pushl %1\n\t"        /* gfx */
+        "movl %0, %%ecx\n\t"  /* sprite */
+        "call *%3\n\t"        /* Sprite_ctor __thiscall (ret 8) */
+        : : "r"(sp), "r"(gfx), "r"(g_miniIconFile), "r"(0x45D0C0)
+        : "eax", "ecx", "edx", "memory");
+    if (sp[0] == 0 && sp[1] == 0) {   /* vtable not set -> ctor may have bailed */
+        VirtualFree(sp, 0, MEM_RELEASE);
+        return;
     }
+    g_diamondMiniSprite = (DWORD)sp;
+    g_miniIconLoaded = 1;
+    diag_logf("[diamond] mini icon loaded: %s -> %08X (gfx=%08X)", g_miniIconFile, g_diamondMiniSprite, gfx);
 }
 
 /* TT-menu: append a diamond medal entry to the standings list.
@@ -1893,6 +1899,17 @@ static unsigned emit_tt_clone(unsigned char *b) {
     p[0]=0x50; p+=1;                                              /* push eax */
     p[0]=0x89; p[1]=0x74; p[2]=0x24; p[3]=0x0C; p+=4;             /* mov [esp+0xc],esi */
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(TT_CTOR_PRACTICE)-(DWORD)(p+5); p+=5; /* call PracticeMenu_ctor */
+    /* On the MAIN thread at TT-open, build the diamond MINI sprite via
+     * diamond_load_mini_icon_impl (now Sprite_ctor-based). This was the missing
+     * piece: the earlier in-flow load crashed because it used the broken
+     * vtable[0x58] loader; with Sprite_ctor (0x45D0C0) it now builds a textured
+     * sprite in-flow, so the diamond append block below finds g_diamondMiniSprite
+     * non-null. push App ; call diamond_load_mini_icon_impl ; add esp,4 */
+    p[0]=0xB8; *(DWORD*)(p+1)=APP_PTR; p+=5;                     /* mov eax,<APP_PTR> */
+    p[0]=0x8B; p[1]=0x00; p+=2;                                  /* mov eax,[eax] = App */
+    p[0]=0x50; p+=1;                                             /* push App */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(diamond_load_mini_icon_impl)-(DWORD)(p+5); p+=5; /* call */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;                       /* add esp,4 */
     p[0]=0xC7; p[1]=0x44; p[2]=0x24; p[3]=0x14; *(DWORD*)(p+4)=0; p+=8; /* movl $0,0x14(%esp) */
     p[0]=0xC7; p[1]=0x06; *(DWORD*)(p+2)=0x4D4670;         p+=6;  /* movl vt1,(%esi) */
     p[0]=0xC7; p[1]=0x86; *(DWORD*)(p+2)=0x868; *(DWORD*)(p+6)=0x4D4660; p+=10;
