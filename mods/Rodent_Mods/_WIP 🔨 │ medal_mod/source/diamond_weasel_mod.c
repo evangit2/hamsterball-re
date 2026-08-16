@@ -1645,20 +1645,31 @@ __attribute__((used)) void diamond_load_mini_icon_impl(DWORD app) {
  * free App tail 0x8F8 = phantom all-zero flags, so it must be skipped).
  * 0x44abf0 is __stdcall(ecx=this, name, sprite) with ret 8.
  */
-__attribute__((used)) void diamond_tt_append(DWORD standings, int race) {
+__attribute__((used)) void diamond_tt_append(DWORD standings, int race1) {
     static char namebuf[16];
-    int r = race + 1;                 /* edi is 1-indexed into race */
-    if (r < 0 || r > 14) return;      /* guard: edi=14 -> r=15 (phantom tail) */
-    if (!g_won[r]) return;
-    /* lazy-load mini icon (manager valid during TT menu) */
+    /* race1 = the game's 1-indexed tournament slot (the cave passes edi at the
+     * 0x42F927 loop, which iterates game slots 0..14, i.e. edi is the slot as
+     * shown in the standings = 1-indexed race). The standings-name key 0x44abf0
+     * matches uses the SAME 1-indexed slot as the game's own "%d" entry, so we
+     * format the name with race1. Our g_won[] array is 0-indexed, so guard it
+     * with race1-1. */
+    int r0 = race1 - 1;
+    if (race1 < 1 || r0 > 14) return;
+    if (!g_won[r0]) return;
+    /* lazy-load mini icon (manager valid during TT menu) — never append a null
+     * sprite (the historical TT-menu crash was appending a NULL sprite). */
     if (!g_miniIconLoaded) {
         DWORD app = get_app();
         if (app) diamond_load_mini_icon_impl(app);
     }
-    if (!g_diamondMiniSprite) return;
+    if (!g_diamondMiniSprite) {
+        trace_logf("[diamond] TT diamond SKIPPED race %d (mini sprite null)", race1);
+        return;
+    }
     /* format a distinct name "%dD" for the diamond entry (must differ from
-     * the weasel's "%d" so 0x44abf0 creates a NEW list entry) */
-    sprintf(namebuf, g_fmtDiamond, r);
+     * the weasel's "%d" so 0x44abf0 creates a NEW list entry) — use the
+     * 1-indexed slot so it keys to the same race row as the game's "%d". */
+    sprintf(namebuf, g_fmtDiamond, race1);
     /* 0x44abf0(ecx=standings, arg1=name, arg2=sprite) __stdcall ret 8 */
     __asm__ volatile(
         "pushl %1\n\t"        /* sprite (arg2) */
@@ -1668,7 +1679,7 @@ __attribute__((used)) void diamond_tt_append(DWORD standings, int race) {
         : : "r"(namebuf), "r"(g_diamondMiniSprite), "r"(standings), "r"(ABF0_APPEND)
         : "eax", "ecx", "edx", "memory"
     );
-    diag_logf("[diamond] TT diamond appended for race %d", r);
+    trace_logf("[diamond] TT diamond appended for race %d", race1);
 }
 
 /* ================================================================
@@ -1759,15 +1770,45 @@ static void install_icon_cave(void) {
  *             jmp 0x42F92C         ; inc edi (original next instruction)
  */
 static void install_tt_cave(void) {
-    /* DISABLED (no-op) — ROOT CAUSE of the Time-Trial-menu crash (real Windows).
-     * The TT cave at 0x42F927 re-enters the game's medal-list append (0x44abf0)
-     * from inside a VirtualAlloc'd cave during the TT standings render — the
-     * only hook that fires when the TT menu opens. Wine tolerates the
-     * re-entrancy; real Windows crashes (verify: user log "TT-menu cave
-     * installed" followed by crash on opening TT menu, CURRENTOBJECT: Game Menu,
-     * MouseDown). The mini diamond in the TT standings is cosmetic; the reveal
-     * host (vtable override) does NOT need it. 0x42F927 left 100% original. */
-    diag_log("[diamond] TT-menu cave DISABLED (crash on TT-menu open)");
+    /* Re-enabled 2026-08-16 with hardened guards. Historically DISABLED
+     * (commit 63e60b32) because appending a NULL diamond mini-sprite crashed
+     * the TT menu on real Windows. That root cause is resolved: diamond_tt_append
+     * now lazy-loads the mini icon and skips (logs) if the sprite is still NULL,
+     * and the diamond sprite reliably loads now that the reveal works. Also fixes
+     * the off-by-one (game slot vs g_won[]). If it STILL crashes the TT menu, the
+     * re-entrancy of 0x44abf0 from the cave is the cause and we disable again. */
+    if (g_ttInstalled) return;
+    if (!g_anyDiamond) return;
+    DWORD patchAddr = EXE_BASE + (TT_WEASEL_APPEND - EXE_BASE);
+    DWORD retAddr = patchAddr + 5;   /* 0x42F92C */
+    g_ttCave = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
+                                            PAGE_EXECUTE_READWRITE);
+    if (!g_ttCave) return;
+    unsigned char *p = g_ttCave;
+    /* mov ecx, esi */
+    p[0]=0x8B; p[1]=0xCE; p+=2;
+    /* call 0x44abf0 (re-emit weasel append) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(ABF0_APPEND)-(DWORD)(p+5); p+=5;
+    /* pushad */
+    p[0]=0x60; p+=1;
+    /* push esi */
+    p[0]=0x56; p+=1;
+    /* push edi */
+    p[0]=0x57; p+=1;
+    /* call diamond_tt_append */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_tt_append-(DWORD)(p+5); p+=5;
+    /* add esp,8 */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;
+    /* popad */
+    p[0]=0x61; p+=1;
+    /* jmp retAddr */
+    write_jmp(p, retAddr); p+=5;
+    unsigned char patch[5];
+    memset(patch, 0x90, 5);
+    write_jmp(patch, (DWORD)g_ttCave);
+    patch_bytes((void*)patchAddr, patch, 5);
+    g_ttInstalled = 1;
+    diag_log("[diamond] TT-menu cave installed (hardened: null-sprite-safe)");
 }
 
 /* ================================================================
