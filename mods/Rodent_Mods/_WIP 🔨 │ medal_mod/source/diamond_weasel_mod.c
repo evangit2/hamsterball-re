@@ -934,18 +934,18 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
          * position; the velocity block is a bare unit vector).
          *   pos.x = cos(a)*r + cx   pos.y = sin(a)*r + cy
          *   vel.x = cos(a)          vel.y = sin(a)
-         * The diamond REPLACES the golden weasel, which is drawn at WORLD
-         * (0x208, 0x63) via ctx+0x37C (the render-path swap). Particle coords
-         * here are WORLD space (the particle render 0x45d300 transforms them
-         * through Gfx_TransformX/Y, same as the vortex center). The old
-         * native (227,648) was the ORIGINAL results-layout ring center and put
-         * the burst off-screen bottom-left relative to the trophy. Ring the
-         * DIAMOND at its true world spot. r=74 (world units) = golden-weasel
-         * ring radius. */
+         * The diamond REPLACES the golden weasel, so it rings at the NATIVE
+         * GOLDEN-WEASEL ring center/radius, not the gold medal's. Verified in
+         * the award render (0x44DF70, native weasel ring block 0x44DB20..):
+         *   X = fcos(deg*pi/180) * 30.0 + 429   (const 0x4d6d84=429, rad 0x4cf528=30)
+         *   Y = fsin(deg*pi/180) * 30.0 + 317   (const 0x4d6d80=317)
+         * angle = loop counter (0,20,..340 deg). The OLD (227,648) r=74 were
+         * the GOLD MEDAL's constants (block 0x44D9B0, consts 0x4d6d8c/88) —
+         * wrong for the weasel, put the burst off to the lower-left. */
         {
             float rad = (float)angle * 3.14159265f / 180.0f;
             float c = cosf(rad), s = sinf(rad);
-            float cx = 0x208, cy = 0x63, r = 74.0f;   /* diamond's world spot */
+            float cx = 429.0f, cy = 317.0f, r = 30.0f;   /* native golden-weasel ring */
             *(float*)(part + 0x08) = c * r + cx;
             *(float*)(part + 0x0C) = s * r + cy;
             *(float*)(part + 0x10) = 0.0f;
