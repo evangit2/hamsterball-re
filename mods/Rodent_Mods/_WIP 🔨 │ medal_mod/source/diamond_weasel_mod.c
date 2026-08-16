@@ -263,6 +263,13 @@ static void load_real_bass(void) {
 #define WEASEL_WHITE_END     150
 #define WEASEL_WHITE_MULT    4.0f      /* saturating color multiplier for pure white */
 #define WEASEL_WHITE_HOLD    55        /* frames the white trophy holds with no particles */
+/* Lead-in dead zone before the reveal countdown begins. The gold gate is at
+ * results+0x4c (0x1e0=480), but some results screens reach the reveal state
+ * earlier than the user expects — add a fixed no-op window up front so the
+ * white-fade/vortex/trophy don't start too soon. Subtracted in
+ * diamond_seq_frame so every phase (white start 55, total 240) shifts later
+ * together. */
+#define REVEAL_LEAD_IN      400
 /* Total result-frame at which the white hold ends and the trophy reverts to
  * normal gold: (white start) + (active spawns) + (fade tail) + (hold). */
 #define WEASEL_WHITE_TOTAL   (WEASEL_WHITE_START + (int)VORTEX_FRAMES + (int)VORTEX_TAIL + WEASEL_WHITE_HOLD)
@@ -961,12 +968,12 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
                                  0x74 is a DIFFERENT medal's gate (0x44dd67). */
 #define RESULT_APP     0x0C   /* App ptr [esi+0xc] */
 
-/* Frames SINCE the gold medal was awarded: sequence frame = results+0x10
- * (frame counter) minus results+0x4c (the gold-award gate). The unlock
- * sequence (white-out, vortex, reveal) is rebased to this so it starts the
- * moment gold is awarded, per the user's design: reveal lands at gold+240.
+/* Frames SINCE the start of the reveal countdown. The gold gate is at
+ * results+0x4c; the reveal countdown begins REVEAL_LEAD_IN frames after gold
+ * (a fixed no-op window so the white-fade/vortex/trophy don't start too soon).
  * Returns the raw frame counter if +0x4c is unreadable (defensive), and
- * clamps below 0 in case the counter is read before the gate is set. */
+ * clamps below 0 during the lead-in (all phases gate on < threshold so they
+ * hold off correctly). */
 __attribute__((used)) static int diamond_seq_frame(DWORD results) {
     int frame, gold;
     if (!results) return 0;
@@ -975,7 +982,7 @@ __attribute__((used)) static int diamond_seq_frame(DWORD results) {
     if (IsBadReadPtr((void*)(results + RESULT_GOLD), 4)) return frame;
     gold = *(int*)(results + RESULT_GOLD);
     if (gold < 0) gold = 0;
-    return (frame < gold) ? 0 : (frame - gold);
+    return (frame < (gold + REVEAL_LEAD_IN)) ? 0 : (frame - gold - REVEAL_LEAD_IN);
 }
 
 /* True only while the diamond's FIRST-EARN reveal is running for the current
