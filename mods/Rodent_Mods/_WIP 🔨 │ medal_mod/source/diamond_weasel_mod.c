@@ -1602,6 +1602,9 @@ __attribute__((used)) void diamond_load_icon_impl(DWORD app) {
     if (!vt) { diag_log("[diamond] load_icon: vt=0"); return; }
     if (IsBadReadPtr((void*)(vt + 0x58), 4)) { diag_log("[diamond] load_icon: vt+0x58 unreadable"); return; }
     load = *(DWORD*)(vt + 0x58);
+    diag_logf("[diamond] load_icon: vt=%08X slots[48]=%08X [4C]=%08X [50]=%08X [54]=%08X [58]=%08X [5C]=%08X",
+              vt, *(DWORD*)(vt+0x48), *(DWORD*)(vt+0x4C), *(DWORD*)(vt+0x50), *(DWORD*)(vt+0x54),
+              *(DWORD*)(vt+0x58), *(DWORD*)(vt+0x5C));
     if (!load) { diag_log("[diamond] load_icon: load=0"); return; }
     /* __thiscall: ecx=mgr, push <str> FIRST, then push &slot, call [vt+0x58].
          * Native call site (0x42a2f8): push $0x4d31c0 (str); push %edx (&slot);
