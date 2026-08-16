@@ -1066,10 +1066,24 @@ static void install_reveal_cave(void) {
 /* Set the golden-weasel sprite's color-multiplier so it renders white,
  * phased over result-frames [55,150]. Sets gfx+0x7A8=1 and the RGBA scale at
  * gfx+0x7B0..0x7BC to (m,m,m,1). gfx comes from the weasel sprite (sprite+4).
+ *
+ * CRITICAL (shared-global fix): gfx+0x7A8 (enable) + gfx+0x7B0..0x7BC (RGBA
+ * scale) is a GAME-OWNED SHARED multiplier the whole screen uses. Leaving it
+ * set globally (the old m pegged at WEASEL_WHITE_MULT=4.0) bleaches the ENTIRE
+ * race render ("the race whited out") and corrupts the next screen. We:
+ *   - SAVE the prior enable byte + 4 floats ONCE at the start of the fade,
+ *   - only ramp toward white and CAP at 1.0 (a clean white tint; >1.0 blows
+ *     out the whole frame),
+ *   - RESTORE the saved prior state when the fade ends (the reveal driver
+ *     calls diamond_weasel_mult_clear at WEASEL_WHITE_TOTAL) — not force
+ *     identity, preserving whatever the game had queued.
  */
+static int   g_multSaved = 0;
+static BYTE  g_multSaveEnable = 0;
+static float g_multSave[4] = {1,1,1,1};
 __attribute__((used)) void diamond_weasel_mult(DWORD results) {
     int frame;
-    float m, *sc;
+    float m, t, *sc;
     DWORD app, sprite, gfx;
     cave_enter(results, "weasel_mult");
     if (!results) return;
@@ -1085,9 +1099,19 @@ __attribute__((used)) void diamond_weasel_mult(DWORD results) {
     if (!sprite || IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)) return;
     gfx = *(DWORD*)(sprite + SPRITE_GFX);
     if (!gfx || IsBadReadPtr((void*)(gfx + GFX_MULT_R), 4)) return;
-    if (frame >= WEASEL_WHITE_END) m = WEASEL_WHITE_MULT;
-    else m = 1.0f + (WEASEL_WHITE_MULT - 1.0f) *
-            ((float)(frame - WEASEL_WHITE_START) / (float)(WEASEL_WHITE_END - WEASEL_WHITE_START));
+    /* save the prior shared state once */
+    if (!g_multSaved) {
+        g_multSaveEnable = *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE);
+        if (!IsBadReadPtr((void*)(gfx + GFX_MULT_R), 16))
+            memcpy(g_multSave, (float*)(gfx + GFX_MULT_R), 16);
+        g_multSaved = 1;
+    }
+    /* linear ramp 1.0 -> WHITE_TARGET (cap <= 1.5 so it looks white but does
+     * not blow out the whole frame). Kept modest so the shared multiplier
+     * only lightens, never scorches the screen. */
+    t = (frame - WEASEL_WHITE_START) / (float)(WEASEL_WHITE_END - WEASEL_WHITE_START);
+    if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
+    m = 1.0f + t * (0.5f);          /* ramps to 1.5 max (mild white lift) */
     *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = 1;
     sc = (float*)(gfx + GFX_MULT_R);
     sc[0] = m; sc[1] = m; sc[2] = m; sc[3] = 1.0f;
@@ -1108,9 +1132,19 @@ __attribute__((used)) void diamond_weasel_mult_clear(DWORD results) {
     if (!sprite || IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)) return;
     gfx = *(DWORD*)(sprite + SPRITE_GFX);
     if (!gfx || IsBadReadPtr((void*)(gfx + GFX_MULT_R), 4)) return;
-    *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = 0;
-    sc = (float*)(gfx + GFX_MULT_R);
-    sc[0] = sc[1] = sc[2] = sc[3] = 1.0f;
+    /* restore the PRIOR saved shared state (not force identity) so we don't
+     * clobber whatever the game had queued for the frame. */
+    if (g_multSaved) {
+        *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = g_multSaveEnable;
+        if (!IsBadReadPtr((void*)(gfx + GFX_MULT_R), 16))
+            memcpy((float*)(gfx + GFX_MULT_R), g_multSave, 16);
+        g_multSaved = 0;
+    } else {
+        /* no prior save (shouldn't happen) — safe default identity */
+        *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = 0;
+        sc = (float*)(gfx + GFX_MULT_R);
+        sc[0] = sc[1] = sc[2] = sc[3] = 1.0f;
+    }
 }
 
 /* ================================================================
@@ -1873,6 +1907,10 @@ static void __thiscall diamond_reveal_update(void *self) {
 #endif
         diamond_weasel_mult(results);
         if (diamond_seq_frame(results) >= WEASEL_WHITE_TOTAL) {
+            /* reveal done: restore the shared color-multiplier FIRST (leaving
+             * it set bleaches the whole race + corrupts the next screen/TT
+             * menu), then swap in the diamond and disarm. */
+            diamond_weasel_mult_clear(results);
             diamond_trophy_swap(results);
             g_revealArmedVtbl = 0;
         }
