@@ -1759,46 +1759,15 @@ static void install_icon_cave(void) {
  *             jmp 0x42F92C         ; inc edi (original next instruction)
  */
 static void install_tt_cave(void) {
-    /* Only install once. This is idempotent whether it runs at startup (a
-     * diamond was already earned on a previous save: g_anyDiamond==1) OR
-     * lazily from diamond_provision_unlock the instant the player earns
-     * their first diamond mid-session (g_anyDiamond flips 0->1 here). */
-    if (g_ttInstalled) return;
-
-    if (!g_anyDiamond) {
-        diag_log("[diamond] TT-menu cave deferred (no diamonds earned yet)");
-        return;
-    }
-    DWORD patchAddr = EXE_BASE + (TT_WEASEL_APPEND - EXE_BASE);
-    DWORD retAddr = patchAddr + 5;   /* 0x42F92C */
-    g_ttCave = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
-                                            PAGE_EXECUTE_READWRITE);
-    if (!g_ttCave) return;
-    unsigned char *p = g_ttCave;
-    /* mov ecx, esi */
-    p[0]=0x8B; p[1]=0xCE; p+=2;
-    /* call 0x44abf0 (re-emit weasel append) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(ABF0_APPEND)-(DWORD)(p+5); p+=5;
-    /* pushad */
-    p[0]=0x60; p+=1;
-    /* push esi */
-    p[0]=0x56; p+=1;
-    /* push edi */
-    p[0]=0x57; p+=1;
-    /* call diamond_tt_append */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_tt_append-(DWORD)(p+5); p+=5;
-    /* add esp,8 */
-    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;
-    /* popad */
-    p[0]=0x61; p+=1;
-    /* jmp retAddr */
-    write_jmp(p, retAddr); p+=5;
-    unsigned char patch[5];
-    memset(patch, 0x90, 5);
-    write_jmp(patch, (DWORD)g_ttCave);
-    patch_bytes((void*)patchAddr, patch, 5);
-    g_ttInstalled = 1;
-    diag_log("[diamond] TT-menu cave installed (diamond(s) earned)");
+    /* DISABLED (no-op) — ROOT CAUSE of the Time-Trial-menu crash (real Windows).
+     * The TT cave at 0x42F927 re-enters the game's medal-list append (0x44abf0)
+     * from inside a VirtualAlloc'd cave during the TT standings render — the
+     * only hook that fires when the TT menu opens. Wine tolerates the
+     * re-entrancy; real Windows crashes (verify: user log "TT-menu cave
+     * installed" followed by crash on opening TT menu, CURRENTOBJECT: Game Menu,
+     * MouseDown). The mini diamond in the TT standings is cosmetic; the reveal
+     * host (vtable override) does NOT need it. 0x42F927 left 100% original. */
+    diag_log("[diamond] TT-menu cave DISABLED (crash on TT-menu open)");
 }
 
 /* ================================================================
