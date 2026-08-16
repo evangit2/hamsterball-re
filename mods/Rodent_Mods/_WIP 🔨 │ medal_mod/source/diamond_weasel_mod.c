@@ -1950,12 +1950,13 @@ static unsigned emit_tt_clone(unsigned char *b) {
          * loop iteration, and the loop only carries edi/esi across iterations.
          * Push order for f(name,sprite): sprite pushed FIRST (deepest), name
          * LAST (topmost) so [esp]=name,[esp+4]=sprite. */
-        p[0]=0x8D; p[1]=0x97; *(DWORD*)(p+2)=(DWORD)g_won; p+=6;   /* lea edx,[g_won] */
+        p[0]=0xBA; *(DWORD*)(p+1)=(DWORD)g_won; p+=5;   /* mov edx,<g_won> (BA imm32) — NOT lea! 0x8D 0x97 was lea edx,[edi+g_won], adding edi into the address -> read g_won[2*edi] ('reads two bytes'). */
+        /* FLAG INDEX FIX: use edi (NOT edi+1). The standings rows are shown in
+         * the loop order edi=0..13 and each row displays game race edi+1; g_won
+         * is mod-0-indexed (get_race_index subtracts 1 from the game slot), so
+         * race (edi+1) earned = g_won[edi]. Using g_won[edi+1] placed Odd's
+         * diamond (g_won[8]) one row early at row 7 (which shows Tower). */
         p[0]=0x8B; p[1]=0xCF; p+=2;                               /* mov ecx,edi */
-        p[0]=0x41; p+=1;                                          /* inc ecx (=edi+1) */
-        /* bounds guard: edi=14 -> ecx=15 (phantom tail, OOB read) — skip. */
-        p[0]=0x83; p[1]=0xF9; p[2]=0x0F; p+=3;                     /* cmp ecx,$0xf */
-        p[0]=0x7D; p[1]=0x00; p+=2;                               /* jge skip3 (patched) */
         p[0]=0x0F; p[1]=0xB6; p[2]=0x04; p[3]=0x0A; p+=4;         /* movzx eax,byte[edx+ecx] */
         p[0]=0x84; p[1]=0xC0; p+=2;                               /* test al,al */
         p[0]=0x74; p[1]=0x00; p+=2;                               /* je1 skip */
@@ -1988,23 +1989,20 @@ static unsigned emit_tt_clone(unsigned char *b) {
         /* now [esp]=name,[esp+4]=sprite, ecx held 0? -> set ecx=this */
         p[0]=0x8B; p[1]=0xCE; p+=2;                               /* mov ecx,esi (this) */
         p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(TT_CTOR_ABF0)-(DWORD)(p+5); p+=5; /* call ABF0(ret 8) */
-        /* skip: patch ALL THREE branch rel8s. Layout from ds:
-         * ds+0: 8D 97 imm32 (6) lea edx,[g_won]
-         * ds+6: 8B CF (2) mov ecx,edi ; ds+8: 41 inc
-         * ds+9: 83 F9 0F (3) cmp ecx,0xf
-         * ds+12: 7D ?? (2) jge3 disp@ds+13
-         * ds+14: 0F B6 04 0A (4) movzx eax,[edx+ecx]
-         * ds+18: 84 C0 (2) test al,al
-         * ds+20: 74 ?? (2) je1 disp@ds+21
-         * ds+22: 51; ds+23:68(5); ds+28:68(5); ds+33:E8(5); ds+38:83C40C(3)
-         * ds+41: B9 imm32(5) mov ecx,&mini; ds+46: 8B09; ds+48: 85C9
-         * ds+50: 74 ?? (2) je2 disp@ds+51
-         * ds+52: 51; ds+53: 50; ds+54: 8B CE; ds+56: E8(5) call
+        /* skip: patch the TWO branch rel8s. Layout from ds (mov edx,<g_won>):
+         * ds+0:  BA imm32 (5) mov edx,<g_won>
+         * ds+5:  8B CF (2) mov ecx,edi
+         * ds+7:  0F B6 04 0A (4) movzx eax,[edx+ecx]
+         * ds+11: 84 C0 (2) test al,al
+         * ds+13: 74 ?? (2) je1 disp@ds+14
+         * ds+15: 57; ds+16:68(5); ds+21:68(5); ds+26:E8(5); ds+31:83C40C(3)
+         * ds+34: B9 imm32(5) mov ecx,&mini; ds+39:8B09; ds+41:85C9
+         * ds+43: 74 ?? (2) je2 disp@ds+44
+         * ds+45: 51; ds+46:50; ds+47:B8(5); ds+52:FF00(2); ds+54:8BCE(2); ds+56:E8(5) call
          * skip (here) = ds+61. rel8 disp at byte X = here-(X+1).
          */
-        ds[13] = (unsigned char)((p-(ds+14)) & 0xFF);
-        ds[21] = (unsigned char)((p-(ds+22)) & 0xFF);
-        ds[51] = (unsigned char)((p-(ds+52)) & 0xFF);
+        ds[14] = (unsigned char)((p-(ds+15)) & 0xFF);
+        ds[44] = (unsigned char)((p-(ds+45)) & 0xFF);
     }
     /* inc edi; cmp $0xf,edi; jl loop_top */
     p[0]=0x47; p+=1;
