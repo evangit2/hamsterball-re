@@ -1842,11 +1842,19 @@ static award_update_fn g_origAwardUpdate = NULL;
 static int g_revealArmedVtbl = 0;
 
 /* The reveal update: __thiscall(ecx=results). Runs the reveal, then calls the
- * original award update (which owns its own valid SEH frame internally). */
+ * original award update (which owns its own valid SEH frame internally).
+ *
+ * OPTION-1 (VORTEX_OFF): the suction-vortex raw D3D8 draw crashed real Windows
+ * at frame ~57 (eax=0 deref inside d3d8.dll). The white-fade + diamond-swap
+ * do NOT touch the D3D device, so they're kept. Vortex is compiled out here so
+ * we ship a stable reveal; re-enable (undef VORTEX_OFF) after the vortex's
+ * DrawPrimitiveUP is made Windows-robust. */
 static void __thiscall diamond_reveal_update(void *self) {
     DWORD results = (DWORD)self;
     if (g_revealArmedVtbl) {
+#ifndef VORTEX_OFF
         diamond_vortex_tick(results);
+#endif
         diamond_weasel_mult(results);
         if (diamond_seq_frame(results) >= WEASEL_WHITE_TOTAL) {
             diamond_trophy_swap(results);
