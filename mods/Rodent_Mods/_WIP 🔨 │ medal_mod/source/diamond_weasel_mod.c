@@ -1941,8 +1941,66 @@ static unsigned emit_tt_clone(unsigned char *b) {
     return (unsigned)(p - b);
 }
 
+/* Main-thread PIGGYBACK: load the diamond MINI sprite where the game loads its
+ * OWN TT icons (goldenweasel-icon at 0x42A2F8-0x42A304, vtable[0x58]) — the
+ * proven-safe main-thread App-init icon-load context. This is the correct place
+ * to load g_diamondMiniSprite (the init-thread preload has a valid manager but
+ * still returns null, and the results-draw path only fires after racing).
+ *
+ * Patch site: 0x42A307 = `mov 0x22c(%esi),%ecx` (8B 8E 2C 02 00 00, 6 bytes),
+ * immediately after the game loads goldenweasel-icon into App+0x38C.
+ * Cave (heap RWX) body:
+ *     pushad
+ *     mov  ecx,[esi+0x22c]      ; manager (mgr)
+ *     test ecx,ecx ; jz done
+ *     push <&g_diamondMiniSprite>
+ *     push <g_miniIconFile>     ; "diamondweasel-icon.png" (str pushed FIRST)
+ *     mov  eax,[ecx]
+ *     call *0x58(%eax)          ; loader (ret 8) — same as the game uses
+ * done:
+ *     popad
+ *     mov  ecx,[esi+0x22c]      ; re-emit original
+ *     jmp  0x42A30D
+ * Runs only on the main thread during App-init icon load. This is a SEPARATE
+ * call at a natural boundary (NOT re-entering a loader from inside its own
+ * frame), so it avoids the historical startup-icone crash class.
+ */
+static void install_tt_piggyback(void) {
+    if (g_miniIconLoaded) return;               /* already loaded (results-draw) */
+    if (!g_anyDiamond) return;
+    DWORD patchAddr = EXE_BASE + 0x2A307;      /* 0x42A307 */
+    DWORD retAddr   = EXE_BASE + 0x2A30D;      /* 0x42A30D */
+    unsigned char *cave = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
+                                                       PAGE_EXECUTE_READWRITE);
+    if (!cave) return;
+    unsigned char *p = cave;
+    p[0]=0x60; p+=1;                                             /* pushad */
+    p[0]=0x8B; p[1]=0x8E; *(DWORD*)(p+2)=0x22C; p+=6;            /* mov ecx,[esi+0x22c] */
+    p[0]=0x85; p[1]=0xC9; p+=2;                                  /* test ecx,ecx */
+    p[0]=0x74; p[1]=0x1E; p+=2;                                  /* jz done (dispatch below) */
+    p[0]=0x68; *(DWORD*)(p+1)=(DWORD)&g_diamondMiniSprite; p+=5; /* push &slot */
+    p[0]=0x68; *(DWORD*)(p+1)=(DWORD)g_miniIconFile; p+=5;       /* push str */
+    p[0]=0x8B; p[1]=0x01; p+=2;                                  /* mov eax,[ecx] */
+    p[0]=0xFF; p[1]=0x50; p[2]=0x58; p+=3;                       /* call *0x58(%eax) */
+    /* done: */
+    p[0]=0x61; p+=1;                                             /* popad */
+    p[0]=0x8B; p[1]=0x8E; *(DWORD*)(p+2)=0x22C; p+=6;            /* mov ecx,[esi+0x22c] (orig) */
+    write_jmp(p, retAddr); p+=5;                                 /* jmp 0x42A30D */
+    /* jz displacement: the jz at cave+8 (2B), target = the "done:" label = here after the call block.
+     * done offset: cave[0]=pushad(1) cave[1..6]=mov(6) cave[7..8]=test(2) cave[9..10]=jz(2)
+     * push&slot(5)=11..15 push str(5)=16..20 mov eax(2)=21..22 call(3)=23..25
+     * done label = cave+26. jz at cave+9, disp = (cave+26)-(cave+11) = 15. */
+    cave[10] = 15;
+    unsigned char patch[6];
+    memset(patch, 0x90, 6);
+    write_jmp(patch, (DWORD)cave);
+    patch_bytes((void*)patchAddr, patch, 6);
+    diag_log("[diamond] TT PIGGYBACK: diamond mini icon load hooked at 0x42A307 (main-thread gold-icon context)");
+}
+
 static void install_tt_wrapper(void) {
 #ifdef DIAMOND_TT_WRAPPER
+    install_tt_piggyback();
     unsigned char *stub = (unsigned char*)VirtualAlloc(NULL, 1024, MEM_COMMIT|MEM_RESERVE,
                                                        PAGE_EXECUTE_READWRITE);
     if (!stub) { diag_log("[diamond] TT WRAPPER: VirtualAlloc failed"); return; }
