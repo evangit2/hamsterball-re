@@ -1309,20 +1309,16 @@ static void diamond_set_add(DWORD results, float intens) {
         if (intens > 0.001f) {
             /* entering additive for the reveal */
             if (!g_addDown || g_lastBlendDev != device) {
-                /* save the game's current blend once so we can restore exactly */
-                if (!g_blendSaved || g_lastBlendDev != device) {
-                    /* D3D8 GetRenderState = vtable 0x18 (24). Use it to snapshot. */
-                    typedef HRESULT (__stdcall *PFN_GetRenderState)(void*, int, DWORD*);
-                    PFN_GetRenderState GetRenderState =
-                        (PFN_GetRenderState)(g_lastBlendDev != device ?
-                            (void*)(*(void**)(vt + 0x18)) : (void*)0);
-                    if (GetRenderState) {
-                        if (GetRenderState(dev, D3DRS_SRCBLEND, &g_blendSaveSrc) == 0)
-                            { /* got it */ }
-                        GetRenderState(dev, D3DRS_DESTBLEND, &g_blendSaveDst);
-                    }
-                    g_blendSaved = 1;
-                }
+                /* Save the game's intended blend. The medal/sprites render with
+                 * SRCALPHA/INVSRCALPHA (the standard alpha blend the game uses
+                 * for all sprites — the vortex itself sets exactly these at
+                 * its draw). We snapshot via known defaults, NOT a GetRenderState
+                 * call: D3D8 GetRenderState is vtable 0xCC, and calling the
+                 * wrong slot corrupts the stack (proven — real-Windows crash at
+                 * d3d8.dll on the first reveal using vtable 0x18). */
+                g_blendSaveSrc = D3DBLEND_SRCALPHA;      /* 5 */
+                g_blendSaveDst = D3DBLEND_INVSRCALPHA;   /* 6 */
+                g_blendSaved = 1;
                 g_lastBlendDev = device;
                 /* additive: src=ONE, dst=ONE */
                 SetRenderState(dev, D3DRS_SRCBLEND,  D3DBLEND_ONE);
