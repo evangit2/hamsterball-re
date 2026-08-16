@@ -1959,9 +1959,13 @@ static unsigned emit_tt_clone(unsigned char *b) {
         p[0]=0x0F; p[1]=0xB6; p[2]=0x04; p[3]=0x0A; p+=4;         /* movzx eax,byte[edx+ecx] */
         p[0]=0x84; p[1]=0xC0; p+=2;                               /* test al,al */
         p[0]=0x74; p[1]=0x00; p+=2;                               /* je1 skip */
-        /* push edi+1 as the "%dD" value (race label should be edi+1 to match) */
+        /* push edi+1 as the "%d" value (race label matches the game's row name
+         * so 0x44ABF0 finds the race's medal row and appends the diamond into
+         * it — rendering it in-flow after the weasel. USING "%dD" FAILED: rows
+         * are named "%d" (e.g. "8"), so "__stricmp(row->name, "8D")" matched
+         * nothing and the append silently no-op'd (count bumped but no icon). */
         p[0]=0x51; p+=1;                                          /* push ecx (=edi+1) */
-        p[0]=0x68; *(DWORD*)(p+1)=(DWORD)g_fmtDiamond; p+=5;      /* push "%dD" fmt */
+        p[0]=0x68; *(DWORD*)(p+1)=TT_CTOR_FMT; p+=5;              /* push "%d" fmt */
         p[0]=0x68; *(DWORD*)(p+1)=TT_CTOR_STRBUF;  p+=5;
         p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(TT_CTOR_STRFMT)-(DWORD)(p+5); p+=5;
         p[0]=0x83; p[1]=0xC4; p[2]=0x0C; p+=3;
