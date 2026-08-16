@@ -1851,6 +1851,17 @@ static unsigned emit_tt_clone(unsigned char *b) {
     p[0]=0x50; p+=1;                                              /* push eax */
     p[0]=0x89; p[1]=0x74; p[2]=0x24; p[3]=0x0C; p+=4;             /* mov [esp+0xc],esi */
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(TT_CTOR_PRACTICE)-(DWORD)(p+5); p+=5; /* call PracticeMenu_ctor */
+    /* Lazily load the diamond MINI sprite on the main thread AT TT-open (this
+     * ctor runs on the main render thread when the user opens the TT menu —
+     * guaranteed after App-init and before the medal loop). Pass App as arg:
+     *   push App ; call diamond_load_mini_icon_impl ; add esp,4
+     * (The init-thread preload and the App-init piggyback both ran too early /
+     * in the wrong context; this is the correct late main-thread moment.) */
+    p[0]=0xB8; *(DWORD*)(p+1)=APP_PTR; p+=5;                     /* mov eax,<APP_PTR> */
+    p[0]=0x8B; p[1]=0x00; p+=2;                                  /* mov eax,[eax] = App */
+    p[0]=0x50; p+=1;                                             /* push App */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(diamond_load_mini_icon_impl)-(DWORD)(p+5); p+=5; /* call */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;                       /* add esp,4 */
     p[0]=0xC7; p[1]=0x44; p[2]=0x24; p[3]=0x14; *(DWORD*)(p+4)=0; p+=8; /* movl $0,0x14(%esp) */
     p[0]=0xC7; p[1]=0x06; *(DWORD*)(p+2)=0x4D4670;         p+=6;  /* movl vt1,(%esi) */
     p[0]=0xC7; p[1]=0x86; *(DWORD*)(p+2)=0x868; *(DWORD*)(p+6)=0x4D4660; p+=10;
