@@ -748,11 +748,15 @@ static int get_race_index(void) {
  * reinterprets e.g. 3000 (30s) as a denormal ~4e-42, which is always
  * "beats the secret" -> silent unlock on every race. */
 static int get_player_time_cs(DWORD app) {
-    if (IsBadReadPtr((void*)(app + APP_BOARD), 4)) return 0;
-    DWORD board = *(DWORD*)(app + APP_BOARD);
-    if (!board) return 0;
-    if (IsBadReadPtr((void*)(board + BOARD_TIME), 4)) return 0;
-    return *(int*)(board + BOARD_TIME);
+    /* The AUTHORITATIVE player-1 finish time is App+0x5E8 (centiseconds),
+     * NOT board+0x1C. board+0x1C is a transient/partial value read as time=0
+     * even on a diamond-qualifying run (and read as 61 on a non-qualifying
+     * run) — it is not the frozen race time. App+0x5E8 is the player-1 timer
+     * slot (stride 0xA0); the N:GOAL handler reads it (0x40CF38) and freezes
+     * it into the BTT tracker at the goal moment — the authoritative finish
+     * time in centiseconds (threshold 2500 = 25.00s). */
+    if (IsBadReadPtr((void*)(app + 0x5E8), 4)) return 0;
+    return *(int*)(app + 0x5E8);
 }
 
 /* ================================================================
