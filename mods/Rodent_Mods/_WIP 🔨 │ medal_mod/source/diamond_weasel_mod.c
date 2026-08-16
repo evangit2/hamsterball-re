@@ -813,6 +813,7 @@ __attribute__((used)) void diamond_load_icon_impl(DWORD app);
 __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app);
 static void install_reveal_cave(void);   /* defined below (patch helpers) */
 static void install_skip_cave(void);     /* defined below (patch helpers) */
+static void diamond_set_add(DWORD results, float intens);   /* defined above */
 /* patch-helper forward decls (defined in the patch-helpers section) */
 static void write_jmp(unsigned char *at, DWORD target);
 static void patch_bytes(void *addr, const void *data, DWORD size);
@@ -1163,6 +1164,7 @@ static void install_reveal_cave(void) {
 static int   g_multSaved = 0;
 static BYTE  g_multSaveEnable = 0;
 static float g_multSave[4] = {1,1,1,1};
+static float g_weaselIntens = 0.0f;   /* fade intensity 0..1 for the additive blend */
 __attribute__((used)) void diamond_weasel_mult(DWORD results) {
     int frame;
     float m, t, *sc;
@@ -1210,6 +1212,7 @@ __attribute__((used)) void diamond_weasel_mult(DWORD results) {
      * +0x4C byte reaches the SRC/DEST blend decision. */
     t = (frame - WEASEL_WHITE_START) / (float)(WEASEL_WHITE_END - WEASEL_WHITE_START);
     if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
+    g_weaselIntens = t;                 /* 0..1 additive blend intensity for the reveal */
     m = 1.0f + t * 1.0f;        /* diffuse 1.0 -> 2.0 (attempt a white push) */
     {   /* write the sprite's own material diffuse + alpha-blend flag */
         float *d = (float*)(sprite + 0x0C);          /* material diffuse RGB(A) */
@@ -1266,6 +1269,77 @@ __attribute__((used)) void diamond_weasel_mult_clear(DWORD results) {
         *(volatile unsigned char*)(gfx + GFX_MULT_ENABLE) = 0;
         sc = (float*)(gfx + GFX_MULT_R);
         sc[0] = sc[1] = sc[2] = sc[3] = 1.0f;
+    }
+}
+
+/* ---- SEH-SAFE additive white-out (2026-08-16) ----
+ * The award/medal screen renders ONLY 2D sprites (verified: its render fn
+ * 0x44DF70 calls only Sprite_DrawRect/0x42c7c0 + text helpers — it never
+ * re-renders the 3D level). So flipping the device SRC/DEST blend to ADDITIVE
+ * during the white-out only affects the medal panel's own sprites — the level
+ * behind stays normal. This is issued from the SAFE vtable-update host (NOT
+ * the SEH render fn; never patch 0x44E139 — that corrupted the exception chain
+ * on real Windows, proven). Persistent device render-state: set here before the
+ * render fn draws the frame, restored once the fade ends. */
+#define D3DBLEND_ONE 2
+static int   g_blendSaved = 0;
+static DWORD g_blendSaveSrc = 0, g_blendSaveDst = 0;   /* saved game default blend */
+static DWORD g_lastBlendDev = 0;                        /* dev we left ADDitive on */
+static int   g_addDown = 0;                             /* 1 while we're holding ADD */
+/* intens in [0..1]: 0 = normal, >0 ramps the trophy toward additive white. */
+static void diamond_set_add(DWORD results, float intens) {
+    DWORD app, sprite, gfx, device, vt, src, dst;
+    if (!results || intens < 0.0f) return;
+    if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
+    app = *(DWORD*)(results + RESULT_APP);
+    if (!app || IsBadReadPtr((void*)(app + CTX_WEASEL), 4)) return;
+    sprite = *(DWORD*)(app + CTX_WEASEL);
+    if (!sprite || IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)) return;
+    gfx = *(DWORD*)(sprite + SPRITE_GFX);
+    if (!gfx || IsBadReadPtr((void*)(gfx + GFX_DEV_OFFSET), 4)) return;
+    device = *(DWORD*)(gfx + GFX_DEV_OFFSET);
+    if (!device || IsBadReadPtr((void*)device, 4)) return;
+    vt = *(DWORD*)device;
+    if (!vt || IsBadReadPtr((void*)(vt + D3D_DEV_SETRENDERSTATE), 4)) return;
+    {
+        typedef HRESULT (__stdcall *PFN_SetRenderState)(void*, int, DWORD);
+        PFN_SetRenderState SetRenderState = (PFN_SetRenderState)(*(void**)(vt + D3D_DEV_SETRENDERSTATE));
+        void *dev = (void*)device;
+        if (!SetRenderState) return;
+        if (intens > 0.001f) {
+            /* entering additive for the reveal */
+            if (!g_addDown || g_lastBlendDev != device) {
+                /* save the game's current blend once so we can restore exactly */
+                if (!g_blendSaved || g_lastBlendDev != device) {
+                    /* D3D8 GetRenderState = vtable 0x18 (24). Use it to snapshot. */
+                    typedef HRESULT (__stdcall *PFN_GetRenderState)(void*, int, DWORD*);
+                    PFN_GetRenderState GetRenderState =
+                        (PFN_GetRenderState)(g_lastBlendDev != device ?
+                            (void*)(*(void**)(vt + 0x18)) : (void*)0);
+                    if (GetRenderState) {
+                        if (GetRenderState(dev, D3DRS_SRCBLEND, &g_blendSaveSrc) == 0)
+                            { /* got it */ }
+                        GetRenderState(dev, D3DRS_DESTBLEND, &g_blendSaveDst);
+                    }
+                    g_blendSaved = 1;
+                }
+                g_lastBlendDev = device;
+                /* additive: src=ONE, dst=ONE */
+                SetRenderState(dev, D3DRS_SRCBLEND,  D3DBLEND_ONE);
+                SetRenderState(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+                g_addDown = 1;
+            }
+        } else if (g_addDown) {
+            /* leaving additive: restore exactly what the game had */
+            src = g_blendSaveSrc; dst = g_blendSaveDst;
+            if (!src) src = D3DBLEND_SRCALPHA;      /* 5: defensive default */
+            if (!dst) dst = D3DBLEND_INVSRCALPHA;   /* 6 */
+            SetRenderState(dev, D3DRS_SRCBLEND,  src);
+            SetRenderState(dev, D3DRS_DESTBLEND, dst);
+            g_addDown = 0;
+            g_blendSaved = 0;      /* invalidate cache so a later reveal re-reads */
+            g_lastBlendDev = 0;
+        }
     }
 }
 
@@ -2475,11 +2549,17 @@ static void __thiscall diamond_reveal_update(void *self) {
         diamond_vortex_tick(results);
 #endif
         diamond_weasel_mult(results);
+        /* SEH-SAFE additive white-out: after weasel_mult computes g_weaselIntens
+         * (0..1 fade), apply the device ADD blend so this frame's medal screen
+         * (2D-only render 0x44DF70) draws additively toward white. The level
+         * behind is untouched. Runs BEFORE the render fn each frame. */
+        diamond_set_add(results, g_weaselIntens);
         if (diamond_seq_frame(results) >= WEASEL_WHITE_TOTAL) {
             /* reveal done: restore the shared color-multiplier FIRST (leaving
              * it set bleaches the whole race + corrupts the next screen/TT
-             * menu), then swap in the diamond and disarm. */
+             * menu), restore the ADD blend, then swap in the diamond + disarm. */
             diamond_weasel_mult_clear(results);
+            diamond_set_add(results, 0.0f);      /* back to normal blend */
             diamond_trophy_swap(results);
             g_revealArmedVtbl = 0;
         }
