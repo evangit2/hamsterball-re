@@ -1814,41 +1814,35 @@ static void install_cb90_probe(void) {
 }
 #endif /* DIAMOND_CB90_PROBE */
 
-/* APPROACH-D VTABLE OVERRIDE (the real fix — DIAMOND_VTABLE_OVERRIDE).
+/* APPROACH-D VTABLE OVERRIDE — shared-slot version (DIAMOND_VTABLE_OVERRIDE).
  *
  * Insight: board collision handlers hook fine (board vtable slot 0x1D =
- * DispatchCollisionEvents 0x40C5D0) — vtable-slot OVERRIDE is the proven
- * safe pattern, NOT interior-of-SEH code patches. The results/award object is
- * also a vtable-dispatched object: its ctor writes vtable 0x4D6CF0 at
- * 0x44C8DE, and each frame the scene's results iterator calls slot[1]=0x44D760
- * (the SEH award update). Instead of patching 0x44D760's interior (which
- * corrupted the FS:[0] chain in every prior host), we:
- *   1. COPY the shared 0x4D6CF0 vtable into a per-object heap buffer.
- *   2. Override my copy's slot[1] (offset 0x4) to diamond_reveal_update — a
- *      normal __thiscall(ecx=results) C fn.
- *   3. Point the results object's *(obj) at my copy (store at the ctor's
- *      vtable-write, 0x44C8DE).
- * diamond_reveal_update runs the reveal animation, then CALLS the original
- * 0x44D760 as a normal sub-call. 0x44D760 sets up its own valid SEH frame
- * internally and tears it down — no fs:[0] churn around OUR code, nothing
- * patched inside the SEH function's body. Identical to the proven
- * board-vtable[0x1D] override. Build: -DDIAMOND_VTABLE_OVERRIDE.
+ * DispatchCollisionEvents 0x40C5D0) — a vtable SLOT override is the proven safe
+ * pattern, NOT interior-of-SEH code patches / not a per-object copy.
+ *
+ * Prior attempt (per-object vtable copy via a cave at 0x44C8DE) CRASHED because
+ * 0x44C8DE sits INSIDE the SEH-wrapped results-ctor 0x44C880 — running mod C
+ * inside any SEH results function corrupts the chain (5th confirmation, user
+ * log: stack[4]=0x4CC69F ctor scope, stack[6]=0x409F56 = after call 0x44c880).
+ *
+ * FIX: patch the SHARED vtable slot 0x4D6CF0+4 directly from the SAFE init
+ * thread (no SEH frame there). Point slot[1] at diamond_reveal_update — a
+ * legitimate __thiscall(ecx=results) dispatch target, called by the scene's
+ * results iterator from OUTSIDE any SEH body (identical to how board
+ * vtable[0x1D] handlers are dispatched). No mod code ever runs inside an SEH
+ * function. Build: -DDIAMOND_VTABLE_OVERRIDE.
  */
 #ifdef DIAMOND_VTABLE_OVERRIDE
-#define AWARD_VTABLE       0x4D6CF0   /* results/award object vtable (written @0x44C8DE) */
-#define AWARD_VTABLE_WRITE 0x44C8DE   /* ctor write: movl $0x4d6cf0,(%esi)   (6 bytes) */
-#define AWARD_VTABLE_RESUME 0x44C8E4  /* resume: call 0x46b840 */
+#define AWARD_VTABLE       0x4D6CF0   /* results/award object vtable */
 #define AWARD_ORIG_UPDATE  0x44D760   /* vtable slot[1] = the SEH award update (called as sub-call) */
-#define AWARD_VTABLE_SIZE  8           /* copy 8 DWORDs (32B) of the shared vtable */
+#define AWARD_VTABLE_SLOT1 0x4D6CF4   /* shared vtable + 4 = slot[1] */
 
-static DWORD g_awardVtblCopy[AWARD_VTABLE_SIZE];
-static int   g_awardVtblReady = 0;
 typedef void (__thiscall *award_update_fn)(void *self);
 static award_update_fn g_origAwardUpdate = NULL;
 static int g_revealArmedVtbl = 0;
 
 /* The reveal update: __thiscall(ecx=results). Runs the reveal, then calls the
- * original award update so the screen behaves normally. */
+ * original award update (which owns its own valid SEH frame internally). */
 static void __thiscall diamond_reveal_update(void *self) {
     DWORD results = (DWORD)self;
     if (g_revealArmedVtbl) {
@@ -1862,47 +1856,18 @@ static void __thiscall diamond_reveal_update(void *self) {
     if (g_origAwardUpdate) g_origAwardUpdate(self);
 }
 
-/* Redirect the object's vtable to our copy-with-override. Runs from the tiny
- * store-only cave at 0x44C8DE (after the ctor stores 0x4d6cf0, we re-point). */
-static void redirect_award_vtable(DWORD obj) {
-    DWORD orig;
-    if (!g_awardVtblReady) {
-        memcpy(g_awardVtblCopy, (void*)(EXE_BASE+(AWARD_VTABLE-EXE_BASE)), AWARD_VTABLE_SIZE*4);
-        g_origAwardUpdate = (award_update_fn)(EXE_BASE+(AWARD_ORIG_UPDATE-EXE_BASE));
-        g_awardVtblCopy[1] = (DWORD)diamond_reveal_update;   /* slot[1] override */
-        g_awardVtblReady = 1;
-    }
-    orig = *(DWORD*)obj;
-    if (orig == AWARD_VTABLE) {            /* only redirect if still original shared vtable */
-        *(DWORD*)obj = (DWORD)g_awardVtblCopy;
-        g_revealArmedVtbl = 1;
-        trace_logf("[diamond] award vtable -> copy at %08X (slot1=reveal+orig)", (DWORD)g_awardVtblCopy);
-    }
-}
-
-/* Store-only cave at 0x44C8DE: after the ctor writes 0x4d6cf0, redirect to copy. */
+/* Patch the SHARED vtable slot from the safe init thread (no SEH frame). */
 static void install_vtable_override(void) {
-    DWORD addr = EXE_BASE + (AWARD_VTABLE_WRITE - EXE_BASE);
-    DWORD resume = EXE_BASE + (AWARD_VTABLE_RESUME - EXE_BASE);
-    unsigned char *stub = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
-                                                       PAGE_EXECUTE_READWRITE);
-    if (!stub) return;
-    unsigned char *p = stub;
-    p[0]=0x60; p+=1;                              /* pushad */
-    p[0]=0x9C; p+=1;                              /* pushfd */
-    p[0]=0x56; p+=1;                              /* push esi (obj) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)redirect_award_vtable-(DWORD)(p+5); p+=5; /* call */
-    p[0]=0x83; p[1]=0xC4; p[2]=0x04; p+=3;        /* add esp,4 */
-    p[0]=0x9D; p+=1;                              /* popfd */
-    p[0]=0x61; p+=1;                              /* popad */
-    /* re-emit original: movl $0x4d6cf0,(%esi) */
-    p[0]=0xC7; p[1]=0x06; p[2]=0xF0; p[3]=0x6C; p[4]=0x4D; p[5]=0x00; p+=6;
-    write_jmp(p, resume); p+=5;                   /* jmp 0x44C8E4 */
-    unsigned char patch[6];
-    write_jmp(patch, (DWORD)stub);               /* 5-byte JMP + ... */
-    patch[5] = 0x90;                              /* NOP padding */
-    patch_bytes((void*)addr, patch, 6);
-    diag_log("[diamond] VTABLE OVERRIDE: award slot[1] -> reveal+orig via per-object vtable copy");
+    DWORD slot = EXE_BASE + (AWARD_VTABLE_SLOT1 - EXE_BASE);
+    DWORD origAddr = *(DWORD*)slot;              /* should be 0x44D760 */
+    DWORD origUpdate = (DWORD)(EXE_BASE+(AWARD_ORIG_UPDATE-EXE_BASE));
+    g_origAwardUpdate = (award_update_fn)origUpdate;
+    if (origAddr != origUpdate) {
+        diag_logf("[diamond] VTABLE OVERRIDE: unexpected slot1 %08X (expected %08X) — patching anyway", origAddr, origUpdate);
+    }
+    patch_bytes((void*)slot, &(DWORD){ (DWORD)diamond_reveal_update }, 4);
+    g_revealArmedVtbl = 1;
+    diag_log("[diamond] VTABLE OVERRIDE: shared slot[1]=0x4D6CF4 -> reveal+orig (patched from init thread, no SEH)");
 }
 #endif /* DIAMOND_VTABLE_OVERRIDE */
 
