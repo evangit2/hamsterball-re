@@ -1578,6 +1578,7 @@ __attribute__((used)) int diamond_trophy_swap(DWORD results) {
     return 1;                                          /* skip the gold draw */
 }
 
+__attribute__((used)) void diamond_load_mini_icon_impl(DWORD app);  /* fwd decl */
 __attribute__((used)) void diamond_load_icon_impl(DWORD app) {
     DWORD mgr, vt, load;
     if (g_iconLoaded) return;
@@ -1611,6 +1612,12 @@ __attribute__((used)) void diamond_load_icon_impl(DWORD app) {
         g_iconLoaded = 1;
         diag_logf("[diamond] icon loaded: %s -> %08X", g_iconFile, g_diamondSprite);
     }
+    /* Pre-load the TT-menu MINI icon at the same safe time (same manager
+     * context, NOT during TT render). This is the Option-B fix: the TT
+     * append handler must NOT lazily re-enter the sprite loader during the
+     * TT standings render (that re-entrancy is the historical TT-crash). */
+    if (!g_miniIconLoaded)
+        diamond_load_mini_icon_impl(app);
 }
 __attribute__((used)) void diamond_load_mini_icon_impl(DWORD app) {
     DWORD mgr, vt, load;
@@ -1656,12 +1663,9 @@ __attribute__((used)) void diamond_tt_append(DWORD standings, int race1) {
     int r0 = race1 - 1;
     if (race1 < 1 || r0 > 14) return;
     if (!g_won[r0]) return;
-    /* lazy-load mini icon (manager valid during TT menu) — never append a null
-     * sprite (the historical TT-menu crash was appending a NULL sprite). */
-    if (!g_miniIconLoaded) {
-        DWORD app = get_app();
-        if (app) diamond_load_mini_icon_impl(app);
-    }
+    /* Option-B: NO lazy-load here. The mini icon is pre-loaded at the safe
+     * time (diamond_load_icon_impl on the results draw). Re-entering the
+     * sprite loader during the TT standings render is the historical crash. */
     if (!g_diamondMiniSprite) {
         trace_logf("[diamond] TT diamond SKIPPED race %d (mini sprite null)", race1);
         return;
@@ -1770,18 +1774,46 @@ static void install_icon_cave(void) {
  *             jmp 0x42F92C         ; inc edi (original next instruction)
  */
 static void install_tt_cave(void) {
-    /* DISABLED — PROVEN to crash the TT menu on real Windows (2 user logs,
-     * identical signature: TT-menu open, CURRENTOBJECT Game Menu / MouseDown,
-     * stack[8]=0x433E70 = GameSelectionManager SEH frame). The cave re-enters
-     * the game's medal-list append 0x44abf0 from inside GameSelectionManager's
-     * active SEH frame while it opens the TT menu -> heap-EIP C0000005. The
-     * null-sprite guard did NOT fix it (crash persisted) — root cause is the
-     * re-entrancy, exactly as commit 63e60b32 documented. The mini-icon is
-     * informative but this cave is fundamentally unsafe. 0x42F927 left 100%
-     * original. (To restore per-race earned display, use a non-reentrant
-     * mechanism — e.g. overlay the dots on the menu screen — not a re-entry
-     * into 0x44abf0.) */
-    diag_log("[diamond] TT-menu cave DISABLED (re-enters 0x44abf0 inside GameSelectionManager SEH -> crashes)");
+    /* Re-enabled 2026-08-16 (Option B). PROVEN the crash was the re-entrancy:
+     * the handler lazily re-entered the sprite loader (vtable[0x58]) during
+     * the TT standings render from inside GameSelectionManager's SEH frame.
+     * FIX: pre-load the mini icon at the safe time (diamond_load_icon_impl,
+     * called from the results-screen draw) so the append handler performs ONLY
+     * the in-flow 0x44abf0 append — the same family as the game's own
+     * per-race append calls. If this STILL crashes the TT menu, the in-flow
+     * 0x44abf0 re-entry from the cave is itself the cause and we disable. */
+    if (g_ttInstalled) return;
+    if (!g_anyDiamond) return;
+    DWORD patchAddr = EXE_BASE + (TT_WEASEL_APPEND - EXE_BASE);
+    DWORD retAddr = patchAddr + 5;   /* 0x42F92C */
+    g_ttCave = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
+                                            PAGE_EXECUTE_READWRITE);
+    if (!g_ttCave) return;
+    unsigned char *p = g_ttCave;
+    /* mov ecx, esi */
+    p[0]=0x8B; p[1]=0xCE; p+=2;
+    /* call 0x44abf0 (re-emit weasel append) */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(ABF0_APPEND)-(DWORD)(p+5); p+=5;
+    /* pushad */
+    p[0]=0x60; p+=1;
+    /* push esi */
+    p[0]=0x56; p+=1;
+    /* push edi */
+    p[0]=0x57; p+=1;
+    /* call diamond_tt_append */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_tt_append-(DWORD)(p+5); p+=5;
+    /* add esp,8 */
+    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;
+    /* popad */
+    p[0]=0x61; p+=1;
+    /* jmp retAddr */
+    write_jmp(p, retAddr); p+=5;
+    unsigned char patch[5];
+    memset(patch, 0x90, 5);
+    write_jmp(patch, (DWORD)g_ttCave);
+    patch_bytes((void*)patchAddr, patch, 5);
+    g_ttInstalled = 1;
+    diag_log("[diamond] TT-menu cave installed (Option B: preloaded icon, in-flow append)");
 }
 
 /* ================================================================
