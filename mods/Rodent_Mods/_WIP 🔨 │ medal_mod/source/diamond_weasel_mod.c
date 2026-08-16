@@ -997,7 +997,7 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
             : : "r"((void*)0x453810), "r"(part), "r"(plist)
             : "eax", "ecx", "edx", "memory");
     }
-    diag_logf("[diamond] medal effects spawned (pop + %d star particles) for race", i);
+    diag_logf("[diamond] medal effects spawned (pop + %d star particles)", i);
 }
 
 /* RESULT_OBJ offsets used by the weasel white-fade + diamond 5th-medal. */
@@ -1219,7 +1219,18 @@ __attribute__((used)) void diamond_weasel_mult(DWORD results) {
         }
         *(volatile unsigned char*)(sprite + 0x4C) = 1;  /* material blend flag */
     }
-    trace_logf("[diamond] weasel sprite-diffuse frame=%d m=%.2f sprite=%08X", frame, m, sprite);
+    /* THROTTLED: don't spam the ring every frame during the 55-240 fade. Log
+     * only start/end + every 15 frames so a freeze at a specific frame (like
+     * the 131-stall seen in the field) is still clearly visible without a
+     * ~250-line flood. */
+    {   static int lastLogged = -1;
+        if (lastLogged < 0 || frame == WEASEL_WHITE_END ||
+            frame == WEASEL_WHITE_TOTAL-1 || frame - lastLogged >= 15) {
+            trace_logf("[diamond] weasel sprite-diffuse frame=%d m=%.2f sprite=%08X",
+                       frame, m, sprite);
+            lastLogged = frame;
+        }
+    }
 }
 
 /* Clear the weasel color-multiplier back to identity (all 1.0) so
@@ -1658,11 +1669,16 @@ __attribute__((used)) int diamond_trophy_swap(DWORD results) {
     if (!g_hasSecret[race]) return 0;
     cs = get_player_time_cs(app);
     thr = g_secret_cs[race];
-    /* One-shot diagnostic: report the decision each time we reach the threshold
-     * gate (fast time + reveal passed 240). Logs cs/thr/race so a real-Windows
-     * run shows exactly why the diamond did/didn't appear. Spams once per frame
-     * while the gate holds, but only during the short results window. */
-    trace_logf("[diamond] SWAP-GATE race=%d time=%d threshold=%d (won=%d)", race, cs, thr, g_won[race]);
+    /* One-shot diagnostic: report the decision the first time we reach the
+     * threshold gate (fast time + reveal passed 240). Logs cs/thr/race so a
+     * real-Windows run shows exactly why the diamond did/didn't appear. */
+    {   static DWORD lastGateResults = 0;
+        if (results != lastGateResults) {
+            lastGateResults = results;
+            trace_logf("[diamond] SWAP-GATE race=%d time=%d threshold=%d (won=%d)",
+                       race, cs, thr, g_won[race]);
+        }
+    }
     if (!(cs > 0 && cs <= thr)) { diamond_trophy_restore(results); return 0; }
     /* Atomic unlock commit on first reveal. */
     if (!g_won[race]) {
@@ -2222,7 +2238,7 @@ static void install_tt_wrapper(void) {
     *(DWORD*)(jmp+1) = tar - (EXE_BASE + (TT_CTOR_ORIG - EXE_BASE)) - 5;
     patch_bytes((void*)(EXE_BASE + (TT_CTOR_ORIG - EXE_BASE)), jmp, 5);
     diag_logf("[diamond] TT WRAPPER: TimeTrialMenu_ctor cloned+patched (emit %u bytes)", sz);
-    diag_logf("[diamond] TT WRAPPER: g_won_base=%p g_diamondMiniSprite=%08X (preload status)",
+    diag_logf("[diamond] TT WRAPPER: g_won_base=%p g_diamondMiniSprite=%08X (0=loads lazily on first TT draw)",
               (void*)g_won, g_diamondMiniSprite);
     /* PRELOAD the mini sprite HERE at startup if any diamond is earned, so it
      * is ready whenever the TT menu opens — regardless of whether a race was
