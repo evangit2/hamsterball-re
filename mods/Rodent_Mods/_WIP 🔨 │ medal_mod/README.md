@@ -134,6 +134,34 @@ looped — and the stream is freed when the cycle ends.
 The white trophy then **holds for another 55 frames** with no particles, before
 **reverting to its normal golden color.**
 
+## How the diamond trophy renders (results screen)
+
+The trophy swap works by **redirecting the game's own medal renderer**, not by
+drawing on top of it. The golden-weasel medal is composited by the award-screen
+**render** function (award vtable slot[2] = `0x44DF70`), at `0x44E12C`:
+
+```asm
+mov eax,[esi+0xC]      ; eax = display context
+mov ecx,[eax+0x37C]    ; ctx+0x37C = the golden-weasel sprite slot
+push 0x63; push 0x208; call 0x42c7c0   ; draw it at (0x208,0x63)
+```
+
+Earlier builds tried to draw the diamond from the award **update** host (vtable
+slot[1] = `0x44D760`) by calling `Sprite_DrawRect` directly — but that host does
+**not** composite to screen (the frame draws in the render function), so the
+gold weasel rendered and the diamond never appeared.
+
+**The fix (2026-08-16):** instead of drawing from the update host, the mod
+swaps the sprite pointer at `ctx+0x37C` (ctx = `*(results+0xC)`) to the diamond
+sprite from the safe update host. The game's own render function then draws the
+diamond at the weasel spot. No heap cave is introduced in the render/SEH path —
+the render function runs 100% original.
+
+The swap is armed only while the reveal is active for the *current* results
+object. When the results screen changes (or a run no longer qualifies), the mod
+restores `ctx+0x37C` to the original golden-weasel sprite so the diamond never
+leaks onto another screen or medal row.
+
 ## The reveal at gold + 240
 
 At **240 frames after the gold medal is awarded** the golden weasel **stops
