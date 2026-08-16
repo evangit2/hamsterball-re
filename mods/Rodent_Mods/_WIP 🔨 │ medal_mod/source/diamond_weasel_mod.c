@@ -1964,7 +1964,12 @@ static unsigned emit_tt_clone(unsigned char *b) {
          * it — rendering it in-flow after the weasel. USING "%dD" FAILED: rows
          * are named "%d" (e.g. "8"), so "__stricmp(row->name, "8D")" matched
          * nothing and the append silently no-op'd (count bumped but no icon). */
-        p[0]=0x51; p+=1;                                          /* push ecx (=edi+1) */
+        /* KEY FIX: the name key must be EDI (the loop index 0-14, matching how
+         * the GAME names the standings rows). Native appends `push %edi` then
+         * formats "%d" -> row names are the loop index "0".."14". Using edi+1
+         * was OFF BY ONE: for edi=7 the row is "7" but we pushed "8" -> no
+         * __stricmp match -> silent no-op (count bumped, no icon). */
+        p[0]=0x57; p+=1;                                          /* push edi (=row name) */
         p[0]=0x68; *(DWORD*)(p+1)=TT_CTOR_FMT; p+=5;              /* push "%d" fmt */
         p[0]=0x68; *(DWORD*)(p+1)=TT_CTOR_STRBUF;  p+=5;
         p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(TT_CTOR_STRFMT)-(DWORD)(p+5); p+=5;
