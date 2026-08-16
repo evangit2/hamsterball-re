@@ -382,6 +382,7 @@ static DWORD g_diamondMiniSprite = 0;
 static int   g_secret_cs[15] = {0};   /* per-race DIAMOND threshold in CENTISECONDS (int) */
 static int   g_hasSecret[15] = {0};
 static BYTE  g_won[15]       = {0};
+static int   g_ttAppendCount = 0;   /* bumped by the TT wrapper diamond append (diagnostic) */
 static int   g_anyDiamond    = 0;    /* 1 once ANY diamond has been earned (gates TT-menu cave) */
 static char  g_iconFile[64]  = "diamondweasel.png";
 static char  g_miniIconFile[64] = "diamondweasel-icon.png";
@@ -1701,6 +1702,14 @@ __attribute__((used)) void diamond_load_mini_icon_impl(DWORD app) {
     diag_logf("[diamond] mini icon loaded: %s -> %08X (gfx=%08X)", g_miniIconFile, g_diamondMiniSprite, gfx);
 }
 
+/* Called from the TT-ctor-clone epilogue AFTER the medal-append loop. Logs
+ * whether the diamond append actually fired (g_ttAppendCount) and the mini
+ * sprite state — the definitive check that the mini icon is being appended. */
+__attribute__((used)) void diamond_tt_post_log(void) {
+    diag_logf("[diamond] TT append: count=%d miniSprite=%08X miniLoaded=%d",
+              g_ttAppendCount, g_diamondMiniSprite, g_miniIconLoaded);
+}
+
 /* TT-menu: append a diamond medal entry to the standings list.
  * Called from the TT cave. standings = the standings screen object (esi),
  * race = the loop counter edi, which is 1-INDEXED into race (edi=0 shows
@@ -1964,6 +1973,9 @@ static unsigned emit_tt_clone(unsigned char *b) {
         p[0]=0x74; p[1]=0x00; p+=2;                               /* je2 skip (null) */
         p[0]=0x51; p+=1;                                          /* push sprite (deepest) */
         p[0]=0x50; p+=1;                                          /* push eax=name (top) */
+        /* bump g_ttAppendCount so we can confirm the append fired (diagnostic) */
+        p[0]=0xB8; *(DWORD*)(p+1)=(DWORD)&g_ttAppendCount; p+=5;  /* mov eax,&g_ttAppendCount */
+        p[0]=0xFF; p[1]=0x00; p+=2;                               /* inc dword[&count] */
         /* now [esp]=name,[esp+4]=sprite, ecx held 0? -> set ecx=this */
         p[0]=0x8B; p[1]=0xCE; p+=2;                               /* mov ecx,esi (this) */
         p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(TT_CTOR_ABF0)-(DWORD)(p+5); p+=5; /* call ABF0(ret 8) */
@@ -1989,6 +2001,9 @@ static unsigned emit_tt_clone(unsigned char *b) {
     p[0]=0x47; p+=1;
     p[0]=0x83; p[1]=0xFF; p[2]=0x0F; p+=3;
     p[0]=0x0F; p[1]=0x8C; *(DWORD*)(p+2)=(DWORD)(loop_top-(p+6)); p+=6; /* jl rel32 */
+    /* diagnostic: call diamond_tt_post_log() once per TT construction to log
+     * whether the diamond append fired. __cdecl, no args. */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(diamond_tt_post_log)-(DWORD)(p+5); p+=5;
     /* epilogue */
     p[0]=0x8B; p[1]=0x4C; p[2]=0x24; p[3]=0x0C; p+=4;             /* mov ecx,[esp+0xc] */
     p[0]=0x5F; p+=1;
