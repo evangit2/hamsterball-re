@@ -1955,6 +1955,17 @@ static void install_tt_wrapper(void) {
     diag_logf("[diamond] TT WRAPPER: TimeTrialMenu_ctor cloned+patched (emit %u bytes)", sz);
     diag_logf("[diamond] TT WRAPPER: g_won_base=%p g_diamondMiniSprite=%08X (preload status)",
               (void*)g_won, g_diamondMiniSprite);
+    /* PRELOAD the mini sprite HERE at startup if any diamond is earned, so it
+     * is ready whenever the TT menu opens — regardless of whether a race was
+     * completed this session (the results-draw preload only fires after racing,
+     * which left it 0 and hid every diamond). The sprite manager (App+0x22C)
+     * is valid after init; diamond_load_mini_icon_impl guards all pointers. */
+    if (g_anyDiamond && !g_miniIconLoaded) {
+        DWORD app = get_app();
+        if (app) diamond_load_mini_icon_impl(app);
+        diag_logf("[diamond] TT WRAPPER: post-startup mini preload -> g_diamondMiniSprite=%08X loaded=%d",
+                  g_diamondMiniSprite, g_miniIconLoaded);
+    }
 #else
     (void)0;
 #endif
