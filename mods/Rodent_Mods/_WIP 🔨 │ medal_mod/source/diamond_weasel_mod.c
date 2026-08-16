@@ -1774,46 +1774,22 @@ static void install_icon_cave(void) {
  *             jmp 0x42F92C         ; inc edi (original next instruction)
  */
 static void install_tt_cave(void) {
-    /* Re-enabled 2026-08-16 (Option B). PROVEN the crash was the re-entrancy:
-     * the handler lazily re-entered the sprite loader (vtable[0x58]) during
-     * the TT standings render from inside GameSelectionManager's SEH frame.
-     * FIX: pre-load the mini icon at the safe time (diamond_load_icon_impl,
-     * called from the results-screen draw) so the append handler performs ONLY
-     * the in-flow 0x44abf0 append — the same family as the game's own
-     * per-race append calls. If this STILL crashes the TT menu, the in-flow
-     * 0x44abf0 re-entry from the cave is itself the cause and we disable. */
-    if (g_ttInstalled) return;
-    if (!g_anyDiamond) return;
-    DWORD patchAddr = EXE_BASE + (TT_WEASEL_APPEND - EXE_BASE);
-    DWORD retAddr = patchAddr + 5;   /* 0x42F92C */
-    g_ttCave = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
-                                            PAGE_EXECUTE_READWRITE);
-    if (!g_ttCave) return;
-    unsigned char *p = g_ttCave;
-    /* mov ecx, esi */
-    p[0]=0x8B; p[1]=0xCE; p+=2;
-    /* call 0x44abf0 (re-emit weasel append) */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(ABF0_APPEND)-(DWORD)(p+5); p+=5;
-    /* pushad */
-    p[0]=0x60; p+=1;
-    /* push esi */
-    p[0]=0x56; p+=1;
-    /* push edi */
-    p[0]=0x57; p+=1;
-    /* call diamond_tt_append */
-    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)diamond_tt_append-(DWORD)(p+5); p+=5;
-    /* add esp,8 */
-    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;
-    /* popad */
-    p[0]=0x61; p+=1;
-    /* jmp retAddr */
-    write_jmp(p, retAddr); p+=5;
-    unsigned char patch[5];
-    memset(patch, 0x90, 5);
-    write_jmp(patch, (DWORD)g_ttCave);
-    patch_bytes((void*)patchAddr, patch, 5);
-    g_ttInstalled = 1;
-    diag_log("[diamond] TT-menu cave installed (Option B: preloaded icon, in-flow append)");
+    /* DISABLED — CONCLUSIVELY proved to crash the TT menu on real Windows.
+     * THREE byte-identical crashes (2026-08-16) across THREE different cave
+     * contents: (1) lazy-loader re-entrant, (2) null-guard, (3) Option B =
+     * preloaded icon + pure in-flow 0x44abf0 append (identical to the game's
+     * own per-race append). All crash at the SAME trace:
+     *   regs esi=0D3xE310 ebp=0D3x1348 esp=001AFB54 edi=0,
+     *   stack[2]=0x4D3FDD stack[6]=0x4CB378 stack[8]=0x433E70 (GameSelectionManager)
+     *   crash on TT-menu open, CURRENTOBJECT Game Menu / MouseDown.
+     * => The crash is the CAVE ARCHITECTURE ITSELF: jumping to a
+     * VirtualAlloc'd region from inside GameSelectionManager's active SEH
+     * frame corrupts the ESP-relative unwind state on real Windows, regardless
+     * of handler content. Punctuated: the game's own in-line 0x44abf0 calls
+     * are safe; a mod cave re-entering that code is not.
+     * 0x42F927 left 100% original. Per-race earned indicators must be drawn as
+     * a NON-REENTRANT overlay (read g_won[], never re-enter 0x44abf0). */
+    diag_log("[diamond] TT-menu cave DISABLED (cave architecture crashes TT menu on real Windows)");
 }
 
 /* ================================================================
