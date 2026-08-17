@@ -105,43 +105,43 @@ instant (`results+0x10 − results+0x4c`), so the whole reveal plays off gold:
 
 The white-fade **whitens the golden-weasel sprite itself** from the award-screen
 update host (`0x44D760`, vtable[1] — the only place that actually renders on the
-award screen). Two complementary pushes, both from that safe host (no code cave,
-no present hook):
-1. `diamond_weasel_mult` ramps the sprite's own material diffuse whiter
-   (`m: 1.0 → 2.0`) so the gold resolves toward white.
-2. `diamond_set_add` flips the device SRC/DST blend to **additive** (ONE/ONE)
-   so the whiter sprite genuinely blows out to white instead of clamping at the
-   texture's max. Additive affects only the medal panel's own sprites during
-   the award (that render path draws only sprites/text).
+award screen). The **consolidated procedural-composite** (see below) now does the
+white-out *and* the vortex in one mechanism — no code cave, no present hook.
 
-Both are restored to the game's defaults (diffuse 1,1,1,1 / blend SRCALPHA) the
-moment the reveal finishes at gold+240.
+**Golden-weasel suction vortex + white-fade** (first earn only) — consolidated
+into ONE procedurally-generated texture
 
-**Golden-weasel suction vortex** (first earn only)
+Instead of drawing raw D3D primitives (which crashed `d3d8.dll` on real Windows
+at frame ~57 from a mis-slot) or juggling device blend/material state, the mod
+**renders the entire effect through the game's own sprite renderer**:
 
-While the weasel is turning white it is surrounded by a **suction vortex**:
-small white **thin rectangles** fade in at random angles and radii around the
-trophy, then pull straight inward toward its center (no swirl), disappear behind
-it, and the cycle repeats for ~100 result-frames. Each streak has a soft
-**alpha gradient**: it fades in at both ends and is most opaque in its middle
-(subdivided into `VORTEX_SEGS=8` segments with a tapered per-vertex alpha). It is
-drawn with the game's D3D8 device directly (`DrawPrimitiveUP`, screen-space
-`D3DFVF_TLVERTEX` quads) **before** the trophy sprite draw, so the streaks render
-behind the golden weasel. Each streak also fades out as its inner tip nears the
-trophy center, reaching fully transparent exactly when the tip reaches the
-center — so the streak never visibly sticks out past the trophy before
-despawning. Its center is the trophy's true center (sprite top-left + half of
-its width/height), and center tracking replicates the game's own
-`Gfx_TransformX/Y` world→screen math so it stays anchored at any resolution.
+1. At the start of the reveal it **captures the golden weasel's real pixels**
+   (a read `LockRect` of the weasel texture at `sprite+0x50`).
+2. Every reveal frame it generates a **composite texture**: the weasel RGB
+   **lerped toward white** by the reveal-frame t, plus the **suction streaks**
+   painted into the annulus just *outside* the weasel disk (so the weasel stays
+   1:1 and undistorted underneath them).
+3. It uploads that composite via `CreateTexture` + `LockRect`-write into a
+   scratch texture, binds it to a sprite `+0x50`, and **swaps that sprite into
+   `ctx+0x37C`** — the same slot the game's own medal renderer already draws.
+   The game's single `Sprite_DrawRect` then composites it.
 
-After the ~100-frame active cycle, a ~30-frame tail plays: no new streaks spawn,
-the weasel stays white, and any remaining streaks drift inward and fade to
-nothing. A single one-shot **whoosh** (`sounds\\whoosh`, via the mod's real-BASS
-layer) plays once when the vortex begins at the 55-frame mark — it is not
-looped — and the stream is freed when the cycle ends.
+Because **we control every pixel**, the white-out and the vortex happen together
+in one texture and one draw call. Streaks fade in at random angles/radii, pull
+straight inward (no swirl), cluster toward the center, and re-spawn over the
+`VORTEX_FRAMES` active window; a ~30-frame tail lets remaining streaks finish
+with no new spawns. Each streak fades out as its inner tip nears the trophy's
+center so it never sticks out past it. The composite keeps the weasel's original
+draw box (`+0xC8/+0xCC`), so it stays exactly where the real weasel was.
 
-The white trophy then **holds for another 55 frames** with no particles, before
-**reverting to its normal golden color.**
+The old white-out mechanisms (weasel material-diffuse ramp + device additive
+blend) are **subsumed** — they would double-tint the texture, so they no longer
+run during the reveal (restored defensively at +240 to avoid any leaked state).
+
+A single one-shot **whoosh** (`sounds\\whoosh`, via the mod's real-BASS layer)
+plays once when the vortex begins at the 55-frame mark — it is not looped — and
+the stream is freed when the cycle ends. The composite sprite/texture/capture
+are freed when the reveal finishes.
 
 ## How the diamond trophy renders (results screen)
 
@@ -392,17 +392,19 @@ one of them silently disappears:
 - `-DDIAMOND_VTABLE_OVERRIDE` → the results-screen diamond trophy reveal
   (patches award vtable slot[1]=0x4D6CF4) + the render-path sprite swap into
   `ctx+0x37C`.
-- `-DVORTEX_OFF` → the suction vortex is compiled out (its raw `DrawPrimitiveUP`
-  crashed d3d8 on real Windows; white-fade + diamond swap stay enabled).
+- *(optional)* `-DVORTEX_OFF` → compiles the procedural-composite vortex out
+  (white-fade + diamond swap stay enabled, but no vortex/white-lerp). The
+  consolidated vortex is safe (it draws through the game's own sprite
+  renderer, not raw D3D), so the normal build omits it.
 
-Use all three together — building only the VTABLE_OVERRIDE (without the TT
-wrapper) removes the TT-menu diamonds, and vice versa.
+Use both `TT_WRAPPER` + `VTABLE_OVERRIDE` together — building only one removes
+the corresponding feature.
 
 ```
 i686-w64-mingw32-gcc -shared -o bass.dll diamond_weasel_mod.c -lwinmm \
   -Wl,--enable-stdcall-fixup -O2 -static -static-libgcc \
   -Wl,--add-stdcall-alias -msse2 -mfpmath=sse \
-  -DDIAMOND_TT_WRAPPER -DDIAMOND_VTABLE_OVERRIDE -DVORTEX_OFF
+  -DDIAMOND_TT_WRAPPER -DDIAMOND_VTABLE_OVERRIDE
 ```
 
 ## Credit
