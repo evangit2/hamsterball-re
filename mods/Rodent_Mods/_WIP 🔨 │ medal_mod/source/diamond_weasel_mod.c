@@ -413,14 +413,20 @@ volatile int g_caveProbe = 0;        /* VEH-reading probe (0 = cave path untouch
 #define D3DPOOL_MANAGED         0x01
 #define D3DLOCK_READONLY        0x10
 #define VORTEX_TEX_MIN          64
-#define VORTEX_TEX_MAX          512
+#define VORTEX_TEX_MAX          1024
+/* The composite canvas is VORTEX_CANVAS_SCALE x the weasel's texture, with the
+ * weasel drawn 1:1 centered in it. The sprite box stays the weasel's original
+ * footprint (Sprite_DrawRect positions + maps the full canvas onto it), so the
+ * centered weasel lands exactly where it was and only the annulus grows. */
+#define VORTEX_CANVAS_SCALE     2.0f
 /* Texture-relative streak geometry (fractions of captured tex width). */
-#define VORTEX_TEX_STRETCH      0.20f
-#define VORTEX_TEX_CENTER_FADE  0.06f
-#define VORTEX_TEX_WEASEL_R     0.42f   /* weasel clear-disk radius (frac of w) */
+#define VORTEX_TEX_STRETCH      0.16f
+#define VORTEX_TEX_CENTER_FADE  0.04f
+#define VORTEX_TEX_WEASEL_R     0.26f   /* weasel clear-disk radius (frac of w) */
 static DWORD g_vortexDevice = 0;        /* device we created our texture with */
 static BYTE  *g_vortexCaptured = NULL;  /* weasel RGBA capture (w*h*4) */
-static int    g_vortexCaptW = 0, g_vortexCaptH = 0;
+static int    g_vortexCaptW = 0, g_vortexCaptH = 0;   /* canvas = weasel x VORTEX_CANVAS_SCALE */
+static int    g_vortexWeaselW = 0, g_vortexWeaselH = 0;/* real weasel texture pixel size */
 static DWORD  g_vortexTex = 0;          /* our scratch texture */
 static int    g_vortexTexW = 0, g_vortexTexH = 0;
 static DWORD  g_vortexSprite = 0;       /* our composite sprite */
@@ -432,6 +438,17 @@ static int    g_vortexSwapActive = 0;
 static DWORD  g_vortexSwapCtx = 0;
 static DWORD  g_vortexSwapOrig = 0;     /* orig sprite (weasel) at ctx+0x37C */
 static int    g_vortexSwapResults = 0;
+/* Anchor shift for the composite (see below). The medal draw pins the sprite
+ * at a fixed top-left (0x208,0x63) via two immediates at 0x44E132/0x44E134.
+ * To keep the FULL-SIZE centered weasel exactly in place while the canvas (and
+ * box) grow 2x around it, we shift the anchor by -origBox/2. These are pure
+ * constant reads in the render fn - a safe data write, restored on disarm
+ * BEFORE the diamond swap so the diamond isn't shifted too. */
+static int    g_vortexAnchorPatched = 0;
+#define ANCHOR_PATCH_X   0x44E134   /* push $0x208 (imm32) */
+#define ANCHOR_PATCH_Y   0x44E132   /* push $0x63 (imm8) */
+#define ANCHOR_ORIG_X    0x208
+#define ANCHOR_ORIG_Y    0x63
 /* The original weasel sprite's DRAW BOX (world units, +0xC8/+0xCC) — the
  * composite sprite copies these so it renders in the exact same spot/size.
  * Our texture (g_vortexCaptW x g_vortexCaptH) maps 0..1 UV onto this box. */
@@ -869,6 +886,7 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
 static void install_reveal_cave(void);   /* defined below (patch helpers) */
 static void install_skip_cave(void);     /* defined below (patch helpers) */
 static void diamond_set_add(DWORD results, float intens);   /* defined above */
+static void vortex_patch_anchor(int on);   /* defined in the procedural-composite block */
 /* patch-helper forward decls (defined in the patch-helpers section) */
 static void write_jmp(unsigned char *at, DWORD target);
 static void patch_bytes(void *addr, const void *data, DWORD size);
@@ -1592,10 +1610,10 @@ static int vortex_capture_weasel(DWORD device, DWORD weaselTex, int capW, int ca
         }
     }
     UnlockRect((void*)weaselTex, 0);
-    /* store */
+    /* store the REAL weasel pixels (canvas is derived = weasel x scale) */
     if (g_vortexCaptured) VirtualFree(g_vortexCaptured,0,MEM_RELEASE);
     g_vortexCaptured = buf;
-    g_vortexCaptW = capW; g_vortexCaptH = capH;
+    g_vortexWeaselW = capW; g_vortexWeaselH = capH;
     g_vortexOrigTex = weaselTex;
     trace_logf("[vortex] captured weasel %dx%d -> %08X (orig-tex %08X)",
                capW, capH, g_vortexCaptured, weaselTex);
@@ -1629,10 +1647,16 @@ static DWORD vortex_make_sprite(DWORD gfx, DWORD tex, float w, float h) {
 /* Call vortex_make_sprite using the ORIGINAL weasel's draw box so our
  * composite renders in exactly the weasel's spot/size. */
 static DWORD vortex_make_sprite_box(DWORD gfx, DWORD tex) {
-    float w = g_vortexBoxW, h = g_vortexBoxH;
-    if (w <= 0.0f || h <= 0.0f) {   /* fallback: texture pixels (1px=1unit approx) */
+    float w = g_vortexBoxW * VORTEX_CANVAS_SCALE, h = g_vortexBoxH * VORTEX_CANVAS_SCALE;
+    if (w <= 0.0f || h <= 0.0f) {   /* fallback: canvas pixels (1px=1unit approx) */
         w = (float)g_vortexCaptW; h = (float)g_vortexCaptH;
     }
+    /* Box = canvas = weasel x scale. The anchored top-left (0x208,0x63) stays,
+     * and the weasel is centered in the canvas => the weasel's on-screen center
+     * = anchor + box/2 = anchor + (origBox x scale)/2. With scale=2 the weasel
+     * maps to the full original footprint centered at the original center: the
+     * canvas grows symmetrically around the weasel, so it stays put with no
+     * anchor patch. */
     return vortex_make_sprite(gfx, tex, w, h);
 }
 
@@ -1643,25 +1667,35 @@ static void vortex_composite_render(DWORD results, float t, int frame) {
     float wr, wr2;
     BYTE *buf;
     if (!g_vortexCaptured || g_vortexCaptW<=0 || g_vortexCaptH<=0) return;
-    w = g_vortexCaptW; h = g_vortexCaptH;
+    w = g_vortexCaptW; h = g_vortexCaptH;   /* canvas */
     if (!vortex_ensure_scratch(g_vortexDevice, w, h)) return;
     buf = (BYTE*)VirtualAlloc(NULL, (size_t)w*h*4, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
     if (!buf) return;
+    memset(buf, 0, (size_t)w*h*4);           /* transparent canvas */
     cx = w/2; cy = h/2;
     wr  = VORTEX_TEX_WEASEL_R * (float)w;
     wr2 = wr*wr;
-    /* 1) weasel, lerped to white by t */
-    for (y = 0; y < h; y++) {
-        const BYTE *s = g_vortexCaptured + (size_t)y*w*4;
-        BYTE *d = buf + (size_t)y*w*4;
-        for (x = 0; x < w; x++) {
-            BYTE r=s[0], g=s[1], b=s[2], a=s[3];
-            if (a) {
-                int dr=(int)((255-r)*t), dg=(int)((255-g)*t), db=(int)((255-b)*t);
-                r=(BYTE)(r+dr); g=(BYTE)(g+dg); b=(BYTE)(b+db);
+    /* 1) weasel, lerped to white by t, drawn 1:1 CENTERED in the canvas.
+     *    offset = (canvas - weasel)/2 so the sprite box (which maps the full
+     *    canvas onto the weasel's footprint) centers the weasel in place. */
+    if (g_vortexWeaselW <= 0 || g_vortexWeaselH <= 0) { g_vortexWeaselW = w; g_vortexWeaselH = h; }
+    if (g_vortexWeaselW > w || g_vortexWeaselH > h)   { g_vortexWeaselW = w; g_vortexWeaselH = h; }
+    {
+        int ox = (w - g_vortexWeaselW) / 2, oy = (h - g_vortexWeaselH) / 2;
+        int y2;
+        for (y2 = 0; y2 < g_vortexWeaselH; y2++) {
+            int dstY = oy + y2;
+            const BYTE *s = g_vortexCaptured + (size_t)y2*g_vortexWeaselW*4;
+            BYTE *d = buf + ((size_t)dstY*w + ox)*4;
+            for (x = 0; x < g_vortexWeaselW; x++) {
+                BYTE r=s[0], g=s[1], b=s[2], a=s[3];
+                if (a) {
+                    int dr=(int)((255-r)*t), dg=(int)((255-g)*t), db=(int)((255-b)*t);
+                    r=(BYTE)(r+dr); g=(BYTE)(g+dg); b=(BYTE)(b+db);
+                }
+                d[0]=r; d[1]=g; d[2]=b; d[3]=a;
+                s+=4; d+=4;
             }
-            d[0]=r; d[1]=g; d[2]=b; d[3]=a;
-            s+=4; d+=4;
         }
     }
     /* 2) streaks in the annulus (outside weasel disk), alpha treated as
@@ -1738,6 +1772,7 @@ static void vortex_composite_render(DWORD results, float t, int frame) {
                     g_vortexSwapCtx = ctx;
                     g_vortexSwapResults = (int)results;
                     g_vortexSwapActive = 1;
+                    vortex_patch_anchor(1);   /* shift anchor so the full-size weasel stays put */
                     trace_logf("[vortex] SWAP-ARM ctx=%08X orig=%08X -> our-sprite=%08X frame=%d",
                                ctx, g_vortexSwapOrig, g_vortexSprite, frame);
                 }
@@ -1751,9 +1786,42 @@ static void vortex_composite_render(DWORD results, float t, int frame) {
     VirtualFree(buf, 0, MEM_RELEASE);
 }
 
+
+/* Shift (or restore) the medal-draw anchor for the composite window. When
+ * `on`, writes anchor = (ANCHOR_ORIG_X - origBoxW/2, ANCHOR_ORIG_Y - origBoxH/2)
+ * so the full-size centered weasel lands where the original was. When off,
+ * restores the original immediates (must happen BEFORE the diamond swap). */
+static void vortex_patch_anchor(int on) {
+    DWORD xa = EXE_BASE + (ANCHOR_PATCH_X - EXE_BASE);
+    DWORD ya = EXE_BASE + (ANCHOR_PATCH_Y - EXE_BASE);
+    if (g_vortexAnchorPatched == on) return;
+    if (on) {
+        int sx = (int)(g_vortexBoxW * 0.5f);
+        int sy = (int)(g_vortexBoxH * 0.5f);
+        int nx = ANCHOR_ORIG_X - sx;
+        int ny = ANCHOR_ORIG_Y - sy;
+        if (nx < 0) nx = 0; if (ny < 0) ny = 0;   /* defensive clamp */
+        if (nx > 0x7FFFFFFF) nx = 0x7FFFFFFF;
+        if (ny > 0x7F) ny = 0x7F;                  /* imm8 range */
+        patch_bytes((void*)xa, &(DWORD){ (DWORD)nx }, 4);   /* X imm32 */
+        patch_bytes((void*)ya, &(BYTE){ (BYTE)ny }, 1);     /* Y imm8 */
+        g_vortexAnchorPatched = 1;
+        trace_logf("[vortex] anchor-shift on: X %d->%d (%d) Y %d->%d (%d)",
+                   ANCHOR_ORIG_X, nx, ANCHOR_ORIG_X-nx, ANCHOR_ORIG_Y, ny, ANCHOR_ORIG_Y-(int)ny);
+    } else {
+        patch_bytes((void*)xa, &(DWORD){ (DWORD)ANCHOR_ORIG_X }, 4);
+        patch_bytes((void*)ya, &(BYTE){ (BYTE)ANCHOR_ORIG_Y }, 1);
+        g_vortexAnchorPatched = 0;
+        trace_logf("[vortex] anchor-shift off (restored 0x%X,0x%X)", ANCHOR_ORIG_X, ANCHOR_ORIG_Y);
+    }
+}
+
 /* Disarm the composite swap: restore the original weasel sprite at ctx+0x37C
- * and free our texture/sprite/capture. Called at reveal end (+240). */
+ * and free our texture/sprite/capture. Called at reveal end (+240). MUST
+ * restore the anchor BEFORE the diamond trophy swap so the diamond isn't
+ * shifted (the diamond draws at the same 0x208,0x63 anchor). */
 static void vortex_disarm(void) {
+    vortex_patch_anchor(0);   /* restore the medal draw anchor (BEFORE diamond swap) */
     if (g_vortexSwapActive && g_vortexSwapCtx && g_vortexSwapCtx > 0x10000) {
         if (!IsBadReadPtr((void*)(g_vortexSwapCtx + CTX_WEASEL), 4))
             *(volatile DWORD*)(g_vortexSwapCtx + CTX_WEASEL) = g_vortexSwapOrig;
@@ -1774,6 +1842,7 @@ static void vortex_disarm(void) {
     g_vortexTexW = g_vortexTexH = 0;
     if (g_vortexCaptured) { VirtualFree(g_vortexCaptured,0,MEM_RELEASE); g_vortexCaptured=NULL; }
     g_vortexCaptW = g_vortexCaptH = 0;
+    g_vortexWeaselW = g_vortexWeaselH = 0;
     g_vortexOrigTex = 0; g_vortexDevice = 0;
 }
 
@@ -1819,6 +1888,14 @@ static void vortex_start_cycle(DWORD gfx, DWORD sprite, DWORD results) {
         vortex_capture_weasel(device, weaselTex, capW, capH);
     else
         return;   /* no weasel texture -> can't composite; abort cycle */
+    /* The composite CANVAS is the weasel x VORTEX_CANVAS_SCALE (weasel drawn
+     * 1:1 centered in it). Cap at the texture max and clamp to powers of two. */
+    g_vortexCaptW = (int)((float)g_vortexWeaselW * VORTEX_CANVAS_SCALE);
+    g_vortexCaptH = (int)((float)g_vortexWeaselH * VORTEX_CANVAS_SCALE);
+    if (g_vortexCaptW < VORTEX_TEX_MIN) g_vortexCaptW = VORTEX_TEX_MIN;
+    if (g_vortexCaptH < VORTEX_TEX_MIN) g_vortexCaptH = VORTEX_TEX_MIN;
+    if (g_vortexCaptW > VORTEX_TEX_MAX) g_vortexCaptW = VORTEX_TEX_MAX;
+    if (g_vortexCaptH > VORTEX_TEX_MAX) g_vortexCaptH = VORTEX_TEX_MAX;
     g_vortexFrame = 0;
     g_vortexActive = 1;
     for (i = 0; i < VORTEX_MAX; i++) {
@@ -1927,7 +2004,11 @@ __attribute__((used)) void diamond_vortex_tick(DWORD results) {
                     p->active=1; p->born=0;
                     p->ax = vortex_frand() * 6.2832f;
                     p->ay = 0.0f;                    /* no curl */
-                    p->r  = (0.45f + vortex_frand()*0.35f) * (float)g_vortexCaptW;
+                    /* spawn in the visible annulus just outside the weasel disk,
+                     * within the canvas (max radius from center = 0.5*captW).
+                     * Canvas is 2x the weasel, so the weasel disk is 0.26*captW;
+                     * streaks fill 0.30..0.48 of the width and pull inward. */
+                    p->r  = (0.30f + vortex_frand()*0.18f) * (float)g_vortexCaptW;
                     p->vr = (4.4f + vortex_frand()*1.6f) * (1.0f/128.0f) * (float)g_vortexCaptW;
                     p->alpha = 0;
                 } else continue;
