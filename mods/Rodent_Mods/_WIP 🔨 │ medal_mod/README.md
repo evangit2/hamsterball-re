@@ -131,8 +131,16 @@ in one texture and one draw call. Streaks fade in at random angles/radii, pull
 straight inward (no swirl), cluster toward the center, and re-spawn over the
 `VORTEX_FRAMES` active window; a ~30-frame tail lets remaining streaks finish
 with no new spawns. Each streak fades out as its inner tip nears the trophy's
-center so it never sticks out past it. The composite keeps the weasel's original
-draw box (`+0xC8/+0xCC`), so it stays exactly where the real weasel was.
+center so it never sticks out past it.
+
+**Bigger canvas, same weasel spot:** the composite canvas is **2× the weasel's
+texture** with the weasel drawn 1:1 centered in it, giving a wide annulus for
+the streaks. To keep the **full-size weasel exactly where it was**, the sprite
+box is scaled 2× (so the centered weasel maps to the original footprint) and
+the medal-draw anchor (the two `push` immediates at `0x44E132`/`0x44E134`,
+`0x63`/`0x208`) is shifted by `-origBox/2`. The anchor is a pure constant read
+every frame — patched when the vortex swaps in and restored before the diamond
+trophy swap, so neither the weasel nor the diamond moves.
 
 The old white-out mechanisms (weasel material-diffuse ramp + device additive
 blend) are **subsumed** — they would double-tint the texture, so they no longer
