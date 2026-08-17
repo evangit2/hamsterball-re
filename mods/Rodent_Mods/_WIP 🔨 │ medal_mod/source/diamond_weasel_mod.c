@@ -1598,16 +1598,40 @@ static int vortex_capture_weasel(DWORD device, DWORD weaselTex, int capW, int ca
     UnlockRect = (PFN_TexUnlockRect)(*(void**)(vt + D3D_TEX_UNLOCKRECT));
     if (!LockRect || !UnlockRect) { VirtualFree(buf,0,MEM_RELEASE); return 0; }
     memset(&lr, 0, sizeof(lr));
-    /* Read-only lock of the source texture's level 0. */
+    /* Read the source texture's level 0.
+     *
+     * FIX (B, 2026-08-17): D3DLOCK_READONLY is only valid on D3DPOOL_SYSTEMMEM
+     * textures. The golden-weasel texture comes from D3DXCreateTextureFromFileEx
+     * (0x476770), which creates a D3DPOOL_MANAGED texture. Passing READONLY on a
+     * MANAGED texture is not universally honored and can fail or return garbage
+     * on some drivers (real-Windows-only, invisible to Wine) — which would
+     * capture a black/faded weasel and composite wrong pixels into the vortex.
+     * Try the READONLY lock first (cheap when it works), then fall back to a
+     * plain read lock (flags=0) if the driver rejects it. A MANAGED texture is
+     * CPU-readable, so flags=0 is safe. */
     if (LockRect((void*)weaselTex, 0, &lr, NULL, D3DLOCK_READONLY) != 0) {
-        VirtualFree(buf,0,MEM_RELEASE); return 0;
+        if (LockRect((void*)weaselTex, 0, &lr, NULL, 0) != 0) {
+            VirtualFree(buf,0,MEM_RELEASE); return 0;
+        }
     }
     if (lr.pBits) {
         const BYTE *s = (const BYTE*)lr.pBits;
+        size_t row_w = ((size_t)capW) < lr.pitch ? (size_t)capW*4 : (size_t)lr.pitch;
+        int   anyAlpha = 0;
         for (y = 0; y < capH; y++) {
-            memcpy(buf + (size_t)y*capW*4, s, (size_t)capW*4);
+            /* If the source row is narrower than the pitch (format/pad), copy
+             * the row's actual bytes; never read past the locked region. */
+            memcpy(buf + (size_t)y*capW*4, s, row_w);
             s += lr.pitch;
         }
+        /* Validate the capture actually landed: if every pixel is fully
+         * transparent, the read lock failed silently (returned empty) — treat
+         * as a failed capture and degrade to the safe default instead of
+         * compositing transparent garbage over the weasel/near-black streaks. */
+        {   const BYTE *p = buf; int n = capW*capH;
+            for (x = 0; x < n; x++, p += 4) if (p[3] != 0) { anyAlpha = 1; break; }
+        }
+        if (!anyAlpha) { VirtualFree(buf,0,MEM_RELEASE); return 0; }
     }
     UnlockRect((void*)weaselTex, 0);
     /* store the REAL weasel pixels (canvas is derived = weasel x scale) */
@@ -1618,6 +1642,14 @@ static int vortex_capture_weasel(DWORD device, DWORD weaselTex, int capW, int ca
     trace_logf("[vortex] captured weasel %dx%d -> %08X (orig-tex %08X)",
                capW, capH, g_vortexCaptured, weaselTex);
     return 1;
+}
+
+/* Smallest power of two >= n (D3D8 texture dims must be a power of two).
+ * Returns VORTEX_TEX_MIN if n <= 0. */
+static int vortex_next_pot(int n) {
+    unsigned v = (unsigned)(n > 0 ? n : 1);
+    v--; v |= v >> 1; v |= v >> 2; v |= v >> 4; v |= v >> 8; v |= v >> 16; v++;
+    return (int)v;
 }
 
 /* Build a minimal sprite (0xD4 buffer) the renderer draws with +0x50=tex.
@@ -1645,9 +1677,31 @@ static DWORD vortex_make_sprite(DWORD gfx, DWORD tex, float w, float h) {
     return (DWORD)sp;
 }
 /* Call vortex_make_sprite using the ORIGINAL weasel's draw box so our
- * composite renders in exactly the weasel's spot/size. */
+ * composite renders in exactly the weasel's spot/size.
+ *
+ * FIX (C, 2026-08-17): derive the sprite box from the ACTUAL canvas↔weasel
+ * pixel ratio, not from `weaselBox x scale`. The canvas texture (g_vortexCaptW
+ * / g_vortexCaptH) is POT-rounded in vortex_start_cycle, so it can be slightly
+ * larger than `weaselW x scale`. If we sized the box by `weaselBox x scale`
+ * while the texture held more pixels, the renderer (which maps the whole
+ * texture over the whole box) would stretch the extra padding across the
+ * original footprint — drifting the centered weasel away from the anchor by
+ * the padding fraction. The correct box makes `weaselW` pixels map to exactly
+ * `weaselBoxW` world units, centering the weasel precisely on the original
+ * footprint regardless of POT padding:
+ *     box_w = captW * (weaselBoxW / weaselW)
+ * and the anchor (shifted by weaselBoxW/2 in vortex_patch_anchor) then lands
+ * the weasel exactly. */
 static DWORD vortex_make_sprite_box(DWORD gfx, DWORD tex) {
-    float w = g_vortexBoxW * VORTEX_CANVAS_SCALE, h = g_vortexBoxH * VORTEX_CANVAS_SCALE;
+    float w, h;
+    if (g_vortexWeaselW > 0 && g_vortexCaptW > 0 && g_vortexBoxW > 0.0f)
+        w = (float)g_vortexCaptW * (g_vortexBoxW / (float)g_vortexWeaselW);
+    else
+        w = g_vortexBoxW * VORTEX_CANVAS_SCALE;
+    if (g_vortexWeaselH > 0 && g_vortexCaptH > 0 && g_vortexBoxH > 0.0f)
+        h = (float)g_vortexCaptH * (g_vortexBoxH / (float)g_vortexWeaselH);
+    else
+        h = g_vortexBoxH * VORTEX_CANVAS_SCALE;
     if (w <= 0.0f || h <= 0.0f) {   /* fallback: canvas pixels (1px=1unit approx) */
         w = (float)g_vortexCaptW; h = (float)g_vortexCaptH;
     }
@@ -1889,11 +1943,28 @@ static void vortex_start_cycle(DWORD gfx, DWORD sprite, DWORD results) {
     else
         return;   /* no weasel texture -> can't composite; abort cycle */
     /* The composite CANVAS is the weasel x VORTEX_CANVAS_SCALE (weasel drawn
-     * 1:1 centered in it). Cap at the texture max and clamp to powers of two. */
+     * 1:1 centered in it). Cap at the texture max and clamp to powers of two.
+     *
+     * FIX (C, 2026-08-17): D3D8 textures MUST be power-of-two (except the
+     * strict-NPOT support rarely present on D3D8-era GPUs). The old code only
+     * clamped to [VORTEX_TEX_MIN, VORTEX_TEX_MAX]; a canvas that wasn't a
+     * power of two (e.g. weaselW=180 -> canvas=360) made CreateTexture fail
+     * or the driver round it up, so the canvas texture pixel count (what the
+     * renderer maps over the box) disagreed with the box we derived from the
+     * weasel — drifting the centered weasel off-anchor. Round W and H up to
+     * the next power of two here, and let vortex_make_sprite_box derive the
+     * box from the ACTUAL (POT) canvas dims so the weasel still maps 1:1 onto
+     * the original footprint. */
     g_vortexCaptW = (int)((float)g_vortexWeaselW * VORTEX_CANVAS_SCALE);
     g_vortexCaptH = (int)((float)g_vortexWeaselH * VORTEX_CANVAS_SCALE);
+    if (g_vortexCaptW > VORTEX_TEX_MAX) g_vortexCaptW = VORTEX_TEX_MAX;
+    if (g_vortexCaptH > VORTEX_TEX_MAX) g_vortexCaptH = VORTEX_TEX_MAX;
+    g_vortexCaptW = vortex_next_pot(g_vortexCaptW);
+    g_vortexCaptH = vortex_next_pot(g_vortexCaptH);
     if (g_vortexCaptW < VORTEX_TEX_MIN) g_vortexCaptW = VORTEX_TEX_MIN;
     if (g_vortexCaptH < VORTEX_TEX_MIN) g_vortexCaptH = VORTEX_TEX_MIN;
+    /* guard against an oversized weasel texture overflowing the 16-bit pixel
+     * index used internally for the canvas buffer. */
     if (g_vortexCaptW > VORTEX_TEX_MAX) g_vortexCaptW = VORTEX_TEX_MAX;
     if (g_vortexCaptH > VORTEX_TEX_MAX) g_vortexCaptH = VORTEX_TEX_MAX;
     g_vortexFrame = 0;
@@ -2872,7 +2943,20 @@ static void __thiscall diamond_reveal_update(void *self) {
 #endif
         if (diamond_seq_frame(results) >= WEASEL_WHITE_TOTAL) {
             /* reveal done: disarm composite (restore ctx+0x37C + free our
-             * texture/sprite), then swap in the diamond trophy. */
+             * texture/sprite), then swap in the diamond trophy.
+             *
+             * FIX (A, 2026-08-17): do NOT set g_revealArmedVtbl=0 here. That
+             * permanently latched the reveal OFF after the FIRST earn, so every
+             * subsequent race's diamond (and every replay) never revealed —
+             * the vtable wrapper stayed installed but the reveal block was
+             * gated off forever. All the per-call guards below (diamond_first_
+             * earn for the vortex, and diamond_trophy_swap's own frame /
+             * threshold / cross-screen checks) already make it safe for the
+             * reveal to run every frame the shared vtable is reached. The
+             * vortex re-inits on each fresh results object (results change
+             * teardown in diamond_vortex_tick) and the trophy swap is
+             * bound-by-object, so re-arming naturally per screen. Keep the
+             * wrapper armed for the life of the session. */
 #ifndef VORTEX_OFF
             vortex_disarm();
 #endif
@@ -2882,7 +2966,6 @@ static void __thiscall diamond_reveal_update(void *self) {
              * mult + default blend so no state leaks to the next frame). */
             diamond_weasel_mult_clear(results);
             diamond_set_add(results, 0.0f);
-            g_revealArmedVtbl = 0;
         }
     }
 }
