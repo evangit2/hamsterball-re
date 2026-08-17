@@ -1374,28 +1374,35 @@ static DWORD g_overlayCtx  = 0;     /* ctx (results+0xC) whose weasel to overdra
 static float g_overlayAlpha = 0.0f; /* 0..1 fade-in intensity for this frame */
 static int   g_presentDiag = 1;     /* one-shot: log when the overlay tick first fires */
 static int   g_overlayDiag = 1;     /* one-shot: log the computed overlay rect */
+static int   g_ovGuardLog = 0;      /* -1 = unspecified; else counts guard-fails */
+__attribute__((used)) static void ov_guard(int id, DWORD a, DWORD b) {
+    if (g_ovGuardLog < 2) {
+        g_ovGuardLog++;
+        trace_logf("[diamond] overlay GUARD bail id=%d a=%08X b=%08X", id, a, b);
+    }
+}
 static void diamond_white_overlay_draw(DWORD gfx, DWORD ctx, float alpha) {
     DWORD device, vt, weasel, tex;
     Diamond_TLVTex verts[4];
     float cx, cy, w, h;
     DWORD col;
     if (!gfx || !ctx || alpha <= 0.001f) return;
-    if (IsBadReadPtr((void*)(ctx + CTX_WEASEL), 4)) return;
+    if (IsBadReadPtr((void*)(ctx + CTX_WEASEL), 4)) { ov_guard(1, ctx, 0); return; }
     weasel = *(DWORD*)(ctx + CTX_WEASEL);
-    if (!weasel || weasel < 0x10000 || IsBadReadPtr((void*)(weasel + 0x50), 4)) return;
+    if (!weasel || weasel < 0x10000 || IsBadReadPtr((void*)(weasel + 0x50), 4)) { ov_guard(2, weasel, 0); return; }
     tex = *(DWORD*)(weasel + 0x50);                       /* sprite texture */
-    if (!tex || tex < 0x10000) return;
+    if (!tex || tex < 0x10000) { ov_guard(3, tex, weasel); return; }
     /* trophy draws at world top-left (0x208,0x63), sized [sprite+0xC8]x[+0xCC] */
-    if (IsBadReadPtr((void*)(weasel + 0xC8), 8)) return;
+    if (IsBadReadPtr((void*)(weasel + 0xC8), 8)) { ov_guard(4, weasel, 0); return; }
     w = *(float*)(weasel + 0xC8); h = *(float*)(weasel + 0xCC);
-    if (w <= 1.0f || h <= 1.0f) return;
+    if (w <= 1.0f || h <= 1.0f) { ov_guard(5, weasel, (DWORD)w); return; }
     /* replicate Gfx_TransformX/Y (0x453e90/0x453eb0): screen = world*scale + off */
     {
         DWORD sc = 0; float sx, sy;
         float sX=1.0f, sY=1.0f, oX=0.0f, oY=0.0f;
-        if (!IsBadReadPtr((void*)(gfx + 0x5C), 4)) return;
+        if (IsBadReadPtr((void*)(gfx + 0x5C), 4)) { ov_guard(6, gfx, 0); return; }
         sc = *(DWORD*)(gfx + 0x5C);
-        if (!sc || IsBadReadPtr((void*)(sc + 0x1F8), 8)) return;
+        if (!sc || IsBadReadPtr((void*)(sc + 0x1F8), 8)) { ov_guard(7, sc, 0); return; }
         sX = *(float*)(sc + 0x1F8); sY = *(float*)(sc + 0x1FC);
         oX = (float)(*(int*)(gfx + 0x798)); oY = (float)(*(int*)(gfx + 0x79C));
         sx = 0x208 * sX + oX;
