@@ -1,9 +1,12 @@
 # Vortex — architecture, findings & plan (Option A)
 
-Status: **OPTION A BUILT (2026-08-17).** The consolidated procedural-composite
-vortex is implemented, compiles clean, and passes the hbtestd crash test. This
-doc records the design, the verified D3D8 slots, and the state of the build so
-the work can be resumed/verified across sessions.
+Status: **OPTION A BUILT AND ENABLED (2026-08-17).** The consolidated
+procedural-composite vortex is implemented, compiles clean, passes the
+hbtestd crash test, and is **live in the current shipping DLL** (verified:
+the shipped `bass.dll` calls `diamond_vortex_tick` from the reveal driver —
+`VORTEX_OFF` is NOT defined in this build). This doc records the design, the
+verified D3D8 slots, and the state of the build so the work can be
+resumed/verified across sessions.
 
 Date: 2026-08-17 — written after a long investigation session (thread
 `1529299247516749886`), following a real-Windows crash discovering the
@@ -14,22 +17,25 @@ the Option-A composite-vortex implementation.
 
 ## TL;DR
 
-The current vortex ships **compiled out** (`VORTEX_OFF`) because the raw
-`DrawPrimitiveUP` D3D8 draw it used **crashed real Windows** at frame ~57
-(`eax=0` inside `d3d8.dll`). The white-fade and diamond-trophy swap (which do
-NOT touch the D3D device) were kept and are stable.
-
-RodentRacer chose to **rebuild the vortex on the game's own sprite system**
-(`Sprite_ctor` + the proven `ctx+0x37C` swap), and further chose **Option A**:
-generate the vortex image **procedurally at runtime into an in-memory D3D
-texture — no PNG file, no disk write, no encoder, no SEH cave.**
+The vortex is **built and enabled** in the current shipping DLL. The earlier
+raw-`DrawPrimitiveUP` D3D8 version **crashed real Windows** at frame ~57
+(`eax=0` inside `d3d8.dll`) and was temporarily `VORTEX_OFF`. RodentRacer then
+chose to **rebuild the vortex on the game's own sprite system** (`Sprite_ctor`
++ the proven `ctx+0x37C` swap), **Option A**: generate the vortex image
+**procedurally at runtime into an in-memory D3D texture — no PNG file, no disk
+write, no encoder, no SEH cave.** The raw-D3D version stayed disabled; the
+procedural-composite rebuild is what ships live.
 
 This doc records the verified decompilation that makes Option A safe and
-concrete, plus the two things still to verify before any build.
+concrete, plus the resulting build state.
 
 ---
 
-## 1. Why the vortex is currently `VORTEX_OFF`
+## 1. Why the vortex was briefly `VORTEX_OFF` (historical — raw-D3D version)
+
+> **Update (2026-08-17): the shipped build has the procedural-composite vortex
+> LIVE (`VORTEX_OFF` not defined). The `VORTEX_OFF` disable below applied only
+> to the earlier raw-`DrawPrimitiveUP` version, which has been replaced.**
 
 Commit `8d0d0aca` — "OPTION-1 — disable vortex raw-D3D draw (`VORTEX_OFF`)".
 
@@ -212,18 +218,25 @@ data write, matching the proven diamond-swap pattern.
 
 ## 7. Current build state (this session's shipping DLL)
 
-Shipped last: `diamond_weasel_bass_c6f1probe.dll` (commit `75f6b0b2`) — the
-**C6F1 probe** build (proves whether `0x46C1F1` fires while a reveal is armed),
-under flag `DIAMOND_C6F1_PROBE`. It has the white-fade + diamond-swap stable and
-a pure-log probe at the `0x46C1F1` epilogue; no vortex (`VORTEX_OFF`).
+**Shipped (2026-08-17):** `bass.dll` from commit `aea9b030` ("2x canvas vortex +
+medal-anchor shift") — the **procedural-composite vortex is LIVE** in this
+build (`diamond_vortex_tick` is called from the reveal driver; `VORTEX_OFF` is
+**not** defined). The raw-`DrawPrimitiveUP` vortex version (which crashed real
+Windows) is gone; the composite draws through the game's own sprite renderer,
+so it is safe and is what ships.
 
-Normal build flags (already-defined feature set):
+Normal build flags (already-defined feature set — the current shipped build):
 ```
--DDIAMOND_VTABLE_OVERRIDE -DVORTEX_OFF -DDIAMOND_TT_WRAPPER
+-DDIAMOND_VTABLE_OVERRIDE -DDIAMOND_TT_WRAPPER
 ```
-Probe build adds `-DDIAMOND_C6F1_PROBE`.
+Add `-DVORTEX_OFF` only to compile the composite vortex out (white-fade +
+diamond swap stay enabled, no vortex/white-lerp).
 
-Vortex-related existing constels/state (for when we re-enable):
+Earlier probe builds (historical, superseded): `diamond_weasel_bass_c6f1probe.dll`
+(commit `75f6b0b2`, the `DIAMOND_C6F1_PROBE` probe) and the `DIAMOND_CB90_PROBE`
+build had no vortex.
+
+Vortex state/constants (valid for the current live build):
 ```
 VORTEX_MAX      20   streaks at a time
 VORTEX_FRAMES   100  active cycle (result-frames)
@@ -234,8 +247,8 @@ VORTEX_CENTER_FADE 12.0 alpha-fade as inner tip nears center
 Trophy world pos: (0x208, 0x63); center via sprite +0xC8/+0xCC; Gfx_TransformX/Y
   replicated in C (vortex_compute_center) — no inline-asm FPU.
 Vortex tick: `diamond_vortex_tick(results)`, called from the reveal driver
-  behind `#ifndef VORTEX_OFF`. Written and ready; only its raw-D3D draw needs the
-  Option-A texture-swap replacement.
+  behind `#ifndef VORTEX_OFF`. The Option-A composite (runtime procedural
+  texture + `ctx+0x37C` swap) is implemented and live in the shipped build.
 ```
 
 ---
