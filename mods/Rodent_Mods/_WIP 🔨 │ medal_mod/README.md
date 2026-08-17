@@ -389,6 +389,16 @@ The unlock flag is persisted as the `DiamondMedals` registry value (15 bytes,
 one flag per race) in `HKCU\Software\Raptisoft\Hamsterball`, written at the
 same moment the PNG assets are created.
 
+> **2026-08-17 hardening (A/B/C):** three fixes shipped in the current build —
+> **(A)** the shared-vtable reveal is no longer latched off after the first earn
+> (previously `g_revealArmedVtbl=0` after race A's reveal silently disabled every
+> later race's diamond reveal); **(B)** the vortex weasel-texture capture now falls
+> back from `D3DLOCK_READONLY` to a plain lock and detects a blank/all-transparent
+> capture so a driver that rejects the read-only lock can't composite garbage;
+> **(C)** the composite canvas is rounded to a power of two and the sprite box is
+> derived from the actual canvas↔weasel pixel ratio, keeping the centered weasel
+> pinned to the anchor regardless of POT padding. Crash-tested OK (38.9s).
+
 ## Build
 
 **IMPORTANT:** the results-screen trophy and the TT-menu mini icon are two

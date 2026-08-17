@@ -2,11 +2,17 @@
 
 Status: **OPTION A BUILT AND ENABLED (2026-08-17).** The consolidated
 procedural-composite vortex is implemented, compiles clean, passes the
-hbtestd crash test, and is **live in the current shipping DLL** (verified:
-the shipped `bass.dll` calls `diamond_vortex_tick` from the reveal driver —
-`VORTEX_OFF` is NOT defined in this build). This doc records the design, the
-verified D3D8 slots, and the state of the build so the work can be
-resumed/verified across sessions.
+hbtestd crash test, and is **live in the current shipping DLL**. Added the
+A/B/C hardening fixes on 2026-08-17 (same build): (A) the shared-vtable reveal
+is no longer latched off after the first earn (bug: `g_revealArmedVtbl=0`
+after race A's reveal killed every later race's diamond), (B) the weasel
+texture capture now try-reads `D3DLOCK_READONLY` then falls back to a plain
+lock and detects a blank (all-transparent) capture, and (C) the composite
+canvas is power-of-two rounded and the sprite box is derived from the actual
+canvas↔weasel pixel ratio so the centered weasel stays exactly on the anchor
+regardless of POT padding. This doc records the design, the verified D3D8
+slots, and the state of the build so the work can be resumed/verified across
+sessions.
 
 Date: 2026-08-17 — written after a long investigation session (thread
 `1529299247516749886`), following a real-Windows crash discovering the
