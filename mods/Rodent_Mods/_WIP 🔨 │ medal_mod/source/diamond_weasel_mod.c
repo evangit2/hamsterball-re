@@ -2775,12 +2775,51 @@ static DWORD g_presentCave    = 0;      /* VirtualAlloc cave (built once) */
 static int   g_presentApplied = 0;      /* is the 0x46C1F1 JMP currently live? */
 static unsigned char g_presentOrig[5] = {0x5E,0x83,0xC4,0x08,0xC3};
 static DWORD g_presentEntry = 0;
+/* The overlay tick — restored to the OLD tick discipline (pre-620e9571).
+ *
+ * The crashing build gated ONLY on the module globals g_overlayCtx/
+ * g_overlayAlpha (set by the vtable-override reveal driver) and then ran
+ * get_app()/app+APP_GFX + raw DrawPrimitiveUP inline at the epilogue whenever
+ * those globals were nonzero. Because the cave was installed at boot, a
+ * nonzero global could fire heavy D3D work during the LoadingScreen — the
+ * real-Windows boot crash (heap EIP, C0000005, RUNTIME 00:00:01).
+ *
+ * Restored discipline (matches the proven present_reveal_handler of 619ea2f9):
+ * FIRST gate on actual board results-screen EXISTENCE — board != NULL and a
+ * genuine medal-award results object (award vtable 0x4D6CF0) is live in the
+ * board's results list (scene+0x8B8). Only a real results screen can ever have
+ * an overlay to draw, so this tick is boot-safe BY CONSTRUCTION: at the
+ * LoadingScreen and during normal play there is no results list, the award
+ * vtable is not present, and the function returns before ANY game read or D3D
+ * call. The module-global check is kept as a secondary, additional gate. */
 __attribute__((used)) static void diamond_present_tick(void) {
-    DWORD app, gfx;
-    /* cheap gate BEFORE any game read / device work. */
+    DWORD app, board, gfx, vt, results;
+    DWORD *items;
+    int listCount;
+    /* gate 1 (cheapest, no game read): a live overlay state is required. */
     if (!g_overlayCtx || g_overlayAlpha <= 0.001f) return;
+    /* gate 2 (old discipline): real results-screen existence BEFORE any D3D. */
     app = get_app();
     if (!app) return;
+    if (IsBadReadPtr((void*)(app + APP_BOARD), 4)) return;
+    board = *(DWORD*)(app + APP_BOARD);
+    if (!board) return;
+    /* results list at scene+0x8B8 (AthenaList: count at +0x04, items +0x40C) */
+    if (IsBadReadPtr((void*)(board + SCENE_RESULTS_LIST + SCENE_LIST_COUNT), 4)) return;
+    listCount = *(int*)(board + SCENE_RESULTS_LIST + SCENE_LIST_COUNT);
+    if (listCount <= 0 || listCount > 4) return;
+    if (IsBadReadPtr((void*)(board + SCENE_RESULTS_LIST + SCENE_LIST_ITEMS), 4)) return;
+    items = *(DWORD**)(board + SCENE_RESULTS_LIST + SCENE_LIST_ITEMS);
+    if (!items) return;
+    if (IsBadReadPtr(items, 4)) return;
+    results = items[0];
+    if (!results) return;
+    if (IsBadReadPtr((void*)results, 4)) return;
+    vt = *(DWORD*)results;
+    /* Must be a genuine results/award-screen object (award vtable 0x4D6CF0).
+     * (Complete list kept in sync with the reveal driver's identification.) */
+    if (vt != RESULTS_VTABLE_AWARD) return;
+    /* gate 3: gfx must be resolvable before any draw. */
     if (IsBadReadPtr((void*)(app + APP_GFX), 4)) return;
     gfx = *(DWORD*)(app + APP_GFX);
     if (!gfx || gfx < 0x10000 || IsBadReadPtr((void*)gfx, 4)) return;
@@ -2788,7 +2827,7 @@ __attribute__((used)) static void diamond_present_tick(void) {
      * (a missing log = the epilogue isn't running while the award screen is up,
      * which would explain "no white fade"). */
     if (g_presentDiag) {
-        trace_logf("[diamond] present-tick FIRES overlay draw alpha=%.2f ctx=%08X", g_overlayAlpha, g_overlayCtx);
+        trace_logf("[diamond] present-tick FIRES overlay draw alpha=%.2f ctx=%08X results=%08X", g_overlayAlpha, g_overlayCtx, results);
         g_presentDiag = 0;
     }
     diamond_white_overlay_draw(gfx, g_overlayCtx, g_overlayAlpha);

@@ -347,20 +347,28 @@ lock crashes real Windows at RUNTIME 0-1s).
 > **Why no always-live present/per-frame hook?** The white-weasel overlay that
 > layers the fade-in over the gold trophy needs a once-per-frame post-render
 > draw. Earlier builds drove it from a `GameUpdate` frame-epilogue hook
-> (`0x46C1F1`) or `Graphics_PresentOrEnd` (`0x455A90`) entry. The fatal mistake
-> was installing that JMP->heap redirect **at boot** — those addresses fire
-> every frame including the bootstrap LoadingScreen, so a live boot hook
-> crashed real Windows at RUNTIME 0-2s (heap-execution faults during
-> `fonts\\showcardgothic28` / LoadingScreen; `CRASH_ADDRESS 0001:0000284F`,
-> primary EIP=heap C0000005). Wine tolerates this; real Windows does not — a
-> real-Windows-only trap. **Fix: apply-on-arm / remove-on-disarm.** The
-> `0x46C1F1` cave is only a VirtualAlloc allocation at init (no patch); the
-> reveal driver's `diamond_present_sync()` writes the 5-byte JMP only while a
-> diamond-weasel overlay is live (`g_overlayCtx && alpha>0`) and restores the
-> pristine `5E 83 C4 08 C3` the instant the reveal disarms. During boot and all
-> normal gameplay the site is byte-for-byte original — zero boot/ingame crash
-> vector. The game's own award-screen code paths run at boot too, so the
-> results-only inline caves never fire during LoadingScreen.
+> (`0x46C1F1`) or `Graphics_PresentOrEnd` (`0x455A90`) entry. Two things made
+> that unsafe and were both fixed:
+>
+> 1. **Tick content (the true root cause).** The crashing tick gated ONLY on
+>    the module globals `g_overlayCtx`/`g_overlayAlpha` and then ran
+>    `get_app()`/`app+APP_GFX` + a raw `DrawPrimitiveUP` at the epilogue whenever
+>    those were nonzero. Because the cave was live from boot, a nonzero global
+>    could fire heavy D3D work during the LoadingScreen → heap-execution fault
+>    at RUNTIME 00:00:01 (`fonts\\\\showcardgothic28` / `CRASH_ADDRESS
+>    0001:0000284F`, primary EIP=heap C0000005). Wine tolerates this; real
+>    Windows does not. **Restored the old tick discipline:** the tick now FIRST
+>    gates on real results-screen existence (board→results list at scene+0x8B8
+>    → award vtable 0x4D6CF0), exactly like the proven `present_reveal_handler`
+>    that was safe at boot — so it returns before ANY game read or D3D call
+>    unless a genuine medal-award screen is live.
+> 2. **Install timing (belt-and-suspenders).** `diamond_present_sync()` only
+>    writes the 5-byte JMP at `0x46C1F1` while an overlay is live
+>    (`g_overlayCtx && alpha>0`) and restores the pristine `5E 83 C4 08 C3`
+>    the instant the reveal disarms. During boot and all normal gameplay the
+>    site is byte-for-byte original. The game's own award-screen code paths run
+>    at boot too, so the results-only inline caves never fire during
+>    LoadingScreen.
 
 The unlock flag is persisted as the `DiamondMedals` registry value (15 bytes,
 one flag per race) in `HKCU\Software\Raptisoft\Hamsterball`, written at the
