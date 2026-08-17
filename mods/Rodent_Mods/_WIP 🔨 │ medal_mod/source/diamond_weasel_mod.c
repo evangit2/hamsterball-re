@@ -427,6 +427,10 @@ static DWORD g_vortexDevice = 0;        /* device we created our texture with */
 static BYTE  *g_vortexCaptured = NULL;  /* weasel RGBA capture (w*h*4) */
 static int    g_vortexCaptW = 0, g_vortexCaptH = 0;   /* canvas = weasel x VORTEX_CANVAS_SCALE */
 static int    g_vortexWeaselW = 0, g_vortexWeaselH = 0;/* real weasel texture pixel size */
+static BYTE  *g_vortexBuf = NULL;       /* persistent composite buffer (max used canvas), reused
+                                           across frames so the SEH-frame draw path does ZERO
+                                           per-frame VirtualAlloc/VirtualFree (D, 2026-08-17) */
+static int    g_vortexBufCap = 0;       /* allocated byte capacity of g_vortexBuf */
 static DWORD  g_vortexTex = 0;          /* our scratch texture */
 static int    g_vortexTexW = 0, g_vortexTexH = 0;
 static DWORD  g_vortexSprite = 0;       /* our composite sprite */
@@ -1723,7 +1727,22 @@ static void vortex_composite_render(DWORD results, float t, int frame) {
     if (!g_vortexCaptured || g_vortexCaptW<=0 || g_vortexCaptH<=0) return;
     w = g_vortexCaptW; h = g_vortexCaptH;   /* canvas */
     if (!vortex_ensure_scratch(g_vortexDevice, w, h)) return;
-    buf = (BYTE*)VirtualAlloc(NULL, (size_t)w*h*4, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    /* FIX (D, 2026-08-17): reuse a PERSISTENT composite buffer instead of
+     * VirtualAlloc/VirtualFree per frame. The draw path runs inside the
+     * award-screen SEH frame; a fresh up-to-4MB alloc+zero+free every frame for
+     * ~20+ reveal frames is pure churn and allocates in the draw path for no
+     * reason. Grab one buffer sized to the max canvas and reuse it across all
+     * frames of the cycle (grow only if a later canvas is larger); it's freed
+     * once in vortex_disarm. No per-frame allocation here any more. */
+    {
+        size_t need = (size_t)w * (size_t)h * 4;
+        if (need > (size_t)g_vortexBufCap) {
+            if (g_vortexBuf) VirtualFree(g_vortexBuf, 0, MEM_RELEASE);
+            g_vortexBuf = (BYTE*)VirtualAlloc(NULL, need, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+            g_vortexBufCap = g_vortexBuf ? (int)need : 0;
+        }
+    }
+    buf = g_vortexBuf;
     if (!buf) return;
     memset(buf, 0, (size_t)w*h*4);           /* transparent canvas */
     cx = w/2; cy = h/2;
@@ -1837,7 +1856,9 @@ static void vortex_composite_render(DWORD results, float t, int frame) {
             }
         }
     }
-    VirtualFree(buf, 0, MEM_RELEASE);
+    /* NOTE (D): do NOT VirtualFree(buf) here — buf is the persistent
+     * g_vortexBuf reused across frames; it is released once in vortex_disarm.
+     * A per-frame free here would release the shared buffer mid-cycle. */
 }
 
 
@@ -1895,6 +1916,10 @@ static void vortex_disarm(void) {
     }
     g_vortexTexW = g_vortexTexH = 0;
     if (g_vortexCaptured) { VirtualFree(g_vortexCaptured,0,MEM_RELEASE); g_vortexCaptured=NULL; }
+    /* D: release the persistent composite buffer too (validated above that we
+     * are done with the reveal before freeing shared state). */
+    if (g_vortexBuf) { VirtualFree(g_vortexBuf,0,MEM_RELEASE); g_vortexBuf=NULL; }
+    g_vortexBufCap = 0;
     g_vortexCaptW = g_vortexCaptH = 0;
     g_vortexWeaselW = g_vortexWeaselH = 0;
     g_vortexOrigTex = 0; g_vortexDevice = 0;
