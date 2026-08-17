@@ -823,7 +823,8 @@ static void install_reveal_cave(void);   /* defined below (patch helpers) */
 static void install_skip_cave(void);     /* defined below (patch helpers) */
 static void diamond_set_add(DWORD results, float intens);   /* defined above */
 static void diamond_white_overlay_draw(DWORD gfx, DWORD ctx, float alpha); /* above */
-static void install_present_cave(void);   /* defined below (present hook) */
+static void present_cave_init(void);      /* defined below (present hook) */
+static void diamond_present_sync(void);   /* defined below (present hook) */
 /* patch-helper forward decls (defined in the patch-helpers section) */
 static void write_jmp(unsigned char *at, DWORD target);
 static void patch_bytes(void *addr, const void *data, DWORD size);
@@ -2736,26 +2737,44 @@ static void __thiscall diamond_reveal_update(void *self) {
             g_revealArmedVtbl = 0;
         }
     }
+    /* Apply/remove the 0x46C1F1 present cave to match whether a reveal is
+     * live. While g_revealArmedVtbl=1 (reveal in progress, seq<WHITE_TOTAL
+     * this frame) we APPLY the cave so the white overlay post-render draw runs;
+     * the moment seq reaches WHITE_TOTAL above, g_revealArmedVtbl goes 0 and
+     * this REMOVES the cave (restores pristine bytes). On a non-reveal results
+     * frame g_revealArmedVtbl stays 1 only if the reveal isn't yet done — which
+     * is exactly when we want it applied. This is the ONLY place the 0x46C1F1
+     * patch toggles, and it can never be live during boot/normal play. */
+    diamond_present_sync();
 }
 
 /* ---- White-weasel overlay PRESENT hook (post-render frame epilogue) ----
  * The reveal's white overlay must be drawn AFTER the native gold so it layers
  * on top. We hook the GameUpdate FRAME EPILOGUE at 0x46C1F1 (pop esi; add
- * esp,8; ret) — the documented COLD-boot-safe per-frame post-render boundary
- * (fires once per frame after all game logic + rendering, right before the
- * frame is presented). This is the SAFE present host: 0x455A90 (Graphics_
- * PresentOrEnd) is the loader-wrap present that crashes real Windows at boot
- * RUNTIME 0-2s even when installed cold-synchronously (proven this session:
- * install present cave at 0x455A90 => real-Windows boot crash at Initialize/26,
- * LoadingScreen; Wine tolerated it but real Windows did not).
+ * esp,8; ret) — a per-frame post-render boundary (fires once per frame after
+ * all game logic + rendering, right before the frame is presented).
  *
- * The tick is a minimal early-return gate: unless the reveal host set
- * g_overlayCtx/g_overlayAlpha (a diamond weasel just earned), it returns
- * immediately — a near-free hot path. Heavy D3D8 overlay draw runs only behind
- * the gate, during the reveal window. Installed COLD-synchronously from DllMain
- * (before the frame loop) so the 5-byte patch can never tear an in-flight
- * instruction. */
-static DWORD g_presentCave = 0;
+ * REAL-WINDOWS BOOT-CRASH LESSON (re-entered 2026-08-17): this site must NOT
+ * be patched cold from DllMain. The earlier "0x46C1F1 is the cold-boot-safe
+ * present host" note was WRONG — installing the present cave synchronously at
+ * boot crashes real Windows at the LoadingScreen (RUNTIME 00:00:01,
+ * CURRENTOBJECT: LoadingScreen Gadget, primary EIP=heap C0000005). Wine
+ * tolerates it; real Windows does not (the identical 0x455A90 saga). The crash
+ * is in the 5-byte JMP->heap redirect running during boot — the tick's
+ * g_overlayCtx early-return gate does NOT help, because the patch bytes
+ * themselves execute before any feature gate can matter.
+ *
+ * FIX = apply-on-arm / remove-on-disarm (the documented screen-scoped-feature
+ * pattern): NEVER install the JMP at boot. Apply it only while a diamond-weasel
+ * reveal is LIVE (g_revealArmedVtbl), and remove it (restore the pristine
+ * '5E 83 C4 08 C3') the instant the reveal disarms. During the LoadingScreen
+ * and all normal gameplay the site is byte-for-byte original — zero possible
+ * boot/ingame crash vector. The vtable-override reveal driver calls
+ * diamond_present_sync() each results frame to apply/remove as needed. */
+static DWORD g_presentCave    = 0;      /* VirtualAlloc cave (built once) */
+static int   g_presentApplied = 0;      /* is the 0x46C1F1 JMP currently live? */
+static unsigned char g_presentOrig[5] = {0x5E,0x83,0xC4,0x08,0xC3};
+static DWORD g_presentEntry = 0;
 __attribute__((used)) static void diamond_present_tick(void) {
     DWORD app, gfx;
     /* cheap gate BEFORE any game read / device work. */
@@ -2774,15 +2793,14 @@ __attribute__((used)) static void diamond_present_tick(void) {
     }
     diamond_white_overlay_draw(gfx, g_overlayCtx, g_overlayAlpha);
 }
-static void install_present_cave(void) {
-    /* Target 0x46C1F1 (GameUpdate epilogue: pop esi; add esp,8; ret = 5 bytes).
-     * cave: pushad; call diamond_present_tick(); popad;
-     * re-emit '5E 83 C4 08 C3' (pop esi; add esp,8; ret); done. */
-    const DWORD EPI = 0x46C1F1;
-    DWORD entry = EXE_BASE + (EPI - EXE_BASE);
+/* Build the cave once (allocation only, no game patch). Called from the safe
+ * init thread. */
+static void present_cave_init(void) {
+    if (g_presentCave) return;
     g_presentCave = (DWORD)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
                                         PAGE_EXECUTE_READWRITE);
     if (!g_presentCave) return;
+    g_presentEntry = EXE_BASE + (0x46C1F1 - EXE_BASE);
     unsigned char *p = (unsigned char*)g_presentCave;
     *p++ = 0x60;                               /* pushad */
     {   DWORD a = (DWORD)diamond_present_tick;
@@ -2794,11 +2812,36 @@ static void install_present_cave(void) {
     *p++ = 0x83; *p++ = 0xC4; *p++ = 0x08;     /* add esp,8 */
     *p++ = 0xC3;                               /* ret */
     FlushInstructionCache(GetCurrentProcess(), (void*)g_presentCave, 64);
-    /* 5-byte JMP at entry (0x46C1F1) to cave. */
+}
+/* Apply the 0x46C1F1 JMP (idempotent). Save the pristine original bytes on
+ * first apply so remove can always restore exactly. */
+static void present_cave_apply(void) {
+    if (g_presentApplied) return;
+    if (!g_presentCave || !g_presentEntry) return;
+    memcpy(g_presentOrig, (void*)g_presentEntry, 5);
     unsigned char jmp[5] = {0xE9,0,0,0,0};
-    *(DWORD*)(jmp+1) = g_presentCave - entry - 5;
-    patch_bytes((void*)entry, jmp, 5);
-    diag_log("[diamond] present cave installed at 0x46C1F1 (frame epilogue, white-weasel overlay)");
+    *(DWORD*)(jmp+1) = g_presentCave - g_presentEntry - 5;
+    patch_bytes((void*)g_presentEntry, jmp, 5);
+    g_presentApplied = 1;
+    diag_log("[diamond] present cave APPLIED at 0x46C1F1 (reveal live)");
+}
+/* Remove the 0x46C1F1 JMP, restoring the pristine bytes (idempotent). */
+static void present_cave_remove(void) {
+    if (!g_presentApplied) return;
+    if (g_presentEntry) patch_bytes((void*)g_presentEntry, g_presentOrig, 5);
+    g_presentApplied = 0;
+    diag_log("[diamond] present cave REMOVED at 0x46C1F1 (reveal done)");
+}
+/* Called every results frame from diamond_reveal_update: apply/remove to
+ * reflect whether a reveal is live. Gated on the SAME cheap condition the
+ * present tick draws on (g_overlayCtx + alpha>0) — that is the precise
+ * "a diamond weasel overlay must be drawn post-render THIS frame" signal. On
+ * frames with no live overlay (non-diamond results, boot, gameplay) we REMOVE
+ * the cave so the 0x46C1F1 site is byte-for-byte original. This is the only
+ * place the 0x46C1F1 patch toggles. */
+static void diamond_present_sync(void) {
+    if (g_overlayCtx && g_overlayAlpha > 0.001f) present_cave_apply();
+    else                                         present_cave_remove();
 }
 
 /* Patch the SHARED vtable slot from the safe init thread (no SEH frame). */
@@ -2828,6 +2871,10 @@ static void install_hooks(void) {
     install_vtable_override();
     install_skip_cave();                     /* block skip so the gold+240 reveal plays */
     diag_log("[diamond] hooks installed (VTABLE OVERRIDE: slot[1]=reveal+orig, per-object copy)");
+    /* Build (allocate only, NO game patch) the 0x46C1F1 present cave. It is
+     * applied on-arm / removed on-disarm from diamond_present_sync() in the
+     * reveal driver — never live at boot. */
+    present_cave_init();
 #elif defined(DIAMOND_CB90_PROBE)
     /* PATH-1 PROBE: hook the untested non-SEH results fn 0x44CB90.
      * Logs entry/frame counters; reveals whether it fires per-frame. */
@@ -2965,14 +3012,14 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
         AddVectoredExceptionHandler(1, diamond_veh);
         init_thresholds();
         load_unlocks();
-        /* Install the tiny present-hook cold (synchronously, BEFORE the frame
-         * loop) so the 7-byte JMP at 0x455A90 can never tear an in-flight
-         * instruction — the race that crashed real Windows (crash #6). The tick
-         * is a minimal self-arm gate (early-returns unless a diamond weasel was
-         * just earned), so it's a near-free hot path. Rest of .text patching is
-         * deferred to the init thread. */
-        install_present_cave();
-        /* Defer ALL other .text patching to a background thread (Sleep 2s) so we
+        /* NOTE: the 0x46C1F1 present cave is NOT installed here. The original
+         * build installed it cold from DllMain, which crashed real Windows at
+         * the LoadingScreen (RUNTIME 00:00:01, C0000005, heap EIP) — installing
+         * ANY JMP->heap redirect at boot is the vector, regardless of the
+         * tick's early-return gate (Wine tolerates it, real Windows does not).
+         * The cave is now built + applied only on-arm / removed on-disarm from
+         * the reveal driver (see present_cave_init / diamond_present_sync). */
+        /* Defer ALL .text patching to a background thread (Sleep 2s) so we
          * never run VirtualAlloc/VirtualProtect under the loader lock. */
         CreateThread(NULL, 0, diamond_init_thread, NULL, 0, NULL);
     }

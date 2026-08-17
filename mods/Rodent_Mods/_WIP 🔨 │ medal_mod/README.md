@@ -344,16 +344,23 @@ lock crashes real Windows at RUNTIME 0-1s).
 > Removed it entirely; the reveal needs no arming signal because it reads
 > `diamond_first_earn` directly from the results object on the award screen.
 
-> **Why no present/per-frame hook?** Earlier builds drove the reveal from a
-> `GameUpdate` frame-epilogue hook (`0x46C1F1`) or the `Graphics_PresentOrEnd`
-> (`0x455A90`) entry. Those addresses fire **every frame including the boot
-> loading screen**, so having the hook live at boot — and reading game state
-> / calling D3D through it once armed — crashed real Windows at RUNTIME 0-2s
-> (heap-execution faults during `Levels\Secret` / `fonts\showcardgothic28` /
-> `textures\hammy3.png` load). Wine tolerates this; real Windows does not —
-> a real-Windows-only trap that cost many versions to pin down. The inline
-> `0x44E139` reveal cave avoids it entirely because that code path only ever
-> runs on the award screen, never at boot.
+> **Why no always-live present/per-frame hook?** The white-weasel overlay that
+> layers the fade-in over the gold trophy needs a once-per-frame post-render
+> draw. Earlier builds drove it from a `GameUpdate` frame-epilogue hook
+> (`0x46C1F1`) or `Graphics_PresentOrEnd` (`0x455A90`) entry. The fatal mistake
+> was installing that JMP->heap redirect **at boot** — those addresses fire
+> every frame including the bootstrap LoadingScreen, so a live boot hook
+> crashed real Windows at RUNTIME 0-2s (heap-execution faults during
+> `fonts\\showcardgothic28` / LoadingScreen; `CRASH_ADDRESS 0001:0000284F`,
+> primary EIP=heap C0000005). Wine tolerates this; real Windows does not — a
+> real-Windows-only trap. **Fix: apply-on-arm / remove-on-disarm.** The
+> `0x46C1F1` cave is only a VirtualAlloc allocation at init (no patch); the
+> reveal driver's `diamond_present_sync()` writes the 5-byte JMP only while a
+> diamond-weasel overlay is live (`g_overlayCtx && alpha>0`) and restores the
+> pristine `5E 83 C4 08 C3` the instant the reveal disarms. During boot and all
+> normal gameplay the site is byte-for-byte original — zero boot/ingame crash
+> vector. The game's own award-screen code paths run at boot too, so the
+> results-only inline caves never fire during LoadingScreen.
 
 The unlock flag is persisted as the `DiamondMedals` registry value (15 bytes,
 one flag per race) in `HKCU\Software\Raptisoft\Hamsterball`, written at the
