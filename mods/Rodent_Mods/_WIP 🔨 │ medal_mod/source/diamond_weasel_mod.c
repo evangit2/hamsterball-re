@@ -996,7 +996,11 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
         if (w > 1.0f && h > 1.0f) {
             g_ringCx = 0x208 + w * 0.5f;
             g_ringCy = 0x63  + h * 0.5f;
-            diag_logf("[diamond] ring center from sprite: w=%.1f h=%.1f -> (%.1f, %.1f)",
+            /* SEH-safe: this runs in the frame path (called from
+             * diamond_trophy_swap on the reveal frame). Use the in-memory
+             * trace ring, NOT diag_logf (direct fopen/fflush inside the award
+             * frame is a real-Windows C0000005 — mod docs lines 545-552). */
+            trace_logf("[diamond] ring center from sprite: w=%.1f h=%.1f -> (%.1f, %.1f)",
                       w, h, g_ringCx, g_ringCy);
         }
     }
@@ -1076,7 +1080,10 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
             : : "r"((void*)0x453810), "r"(part), "r"(plist)
             : "eax", "ecx", "edx", "memory");
     }
-    diag_logf("[diamond] medal effects spawned (pop + %d star particles)", i);
+    /* SEH-safe (frame path): use the trace ring, not diag_logf (direct
+     * fopen/fflush inside the award screen's live SEH frame is a real-Windows
+     * C0000005 — mod docs lines 545-552). */
+    trace_logf("[diamond] medal effects spawned (pop + %d star particles)", i);
 }
 
 /* RESULT_OBJ offsets used by the weasel white-fade + diamond 5th-medal. */
@@ -2201,8 +2208,9 @@ __attribute__((used)) int diamond_trophy_swap(DWORD results) {
                 g_iconLoaded = 1;
             }
         }
-        diag_logf("[diamond] sprite_ctor gfx=%08X -> g_diamondSprite=%08X loaded=%d",
-                  gfx, g_diamondSprite, g_iconLoaded);
+        /* SEH-safe (frame path): use the trace ring, not diag_logf. */
+        trace_logf("[diamond] sprite_ctor gfx=%08X -> g_diamondSprite=%08X loaded=%d",
+                   gfx, g_diamondSprite, g_iconLoaded);
     }
     if (!g_diamondSprite) return 0;                  /* not loadable -> gold stays */
     /* REDIRECT the game's own renderer instead of drawing here.
