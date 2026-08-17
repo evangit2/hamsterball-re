@@ -524,7 +524,7 @@ A comprehensive reference of every useful function for modders, extracted from G
   - `Profile+0x95` (1 byte) — rollback flag
   - `App+0x236` (1 byte) — mirror mode
   - `App+0x23C` (4 bytes) — race active
-  - `App+0x5E8` (4 bytes) — time remaining (int, countdown from par time, -1/frame)
+  - `App+0x5E8` (4 bytes, P1) — current race time (int centiseconds, counts UP from 0 for the duration of the race; frozen at N:GOAL as the finish time). This is NOT a countdown from par. (P1 occupies `+0x5E8`, P2 `+0x688`, P3 `+0x728`, P4 `+0x7C8`, stride 0xA0.)
   - `App+0x5E4` (4 bytes) — score (float, accumulated by E:ACTION events, determines rank)
   - `App+0x5F4` (4 bytes)
 
@@ -889,7 +889,7 @@ Each level has a custom `BoardLevel` subclass with constructor and destructor:
 | `+0x558` | void* | gameMode3 | 4-player mode |
 | `+0x55C` | void* | gameMode4 | Tournament mode |
 | `+0x5D8` | bool | p1_active | Player 1 active |
-| `+0x5E8` | int | p1_time_remaining | P1 time remaining (countdown from par) |
+| `+0x5E8` | int | p1_race_time | P1 current race time (int centiseconds, counts UP from 0; frozen at N:GOAL as finish time — not a countdown from par) |
 | `+0x5E4` | float | p1_score | P1 score (accumulated by E:ACTION, determines rank) |
 | `+0x5EC` | int | p1_extra_time | P1 bonus time |
 | `+0x60C` | int | p1_race_index | P1 race slot |

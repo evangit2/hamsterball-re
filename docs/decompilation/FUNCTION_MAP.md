@@ -488,7 +488,7 @@ Offset | Field | Description
 | 16 | +0x40 | 0x419740 | Scene_SetDestroyed | Set +0x2C=1 destroyed flag |
 | 17 | +0x44 | 0x4692B0 | Scene_SaveAndCleanup | Calls FUN_469AC0 (save + cleanup) |
 | 18 | +0x48 | 0x40B090 | Level_InitScene | Level scene initialization |
-| 19 | +0x4C | 0x41B130 | Scene_HandleRaceEnd | Fade alpha decrement (board+0x3624 -0.02/frame), per-player timer countdown (App+PID*0xA0+0x5E8 -1/frame), Game Over popup, RaceResultPopup |
+| 19 | +0x4C | 0x41B130 | Scene_HandleRaceEnd | Fade alpha decrement (board+0x3624 -0.02/frame), per-player race-clock countdown (obj+0x1C on the per-player timer object, NOT the App+0x5E8 elapsed-time slot), Game Over popup, RaceResultPopup |
 | 20 | +0x50 | 0x41B540 | Scene_UpdateBallsAndState | Iterate ball lists, SetCamera, Ball_Update, destroy finished balls |
 | 21 | +0x54 | 0x40A040 | NoOp | Empty (58 xrefs) |
 | 22 | +0x58 | 0x41A540 | Scene_ProcessRaceEnd | Race-end transition: checks all players finished, fade-out via board+0x3624 (+0.025/frame), scene transition on fade complete |
