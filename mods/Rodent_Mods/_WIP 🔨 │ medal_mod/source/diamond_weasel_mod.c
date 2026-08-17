@@ -332,9 +332,16 @@ static void load_real_bass(void) {
 #define D3DTSS_ALPHAARG2           5
 #define D3DTOP_SELECTARG2          3
 #define D3DTA_DIFFUSE              0
+#define D3DTA_TEXTURE              2
+#define D3DTOP_SELECTARG1          2
+#define D3DTSS_COLOROP             0
+#define D3DTSS_COLORARG1           1
+#define D3D_DEV_SETTEXTURE         0xF4   /* vtable[61] SetTexture(dev, stage, tex) */
 #define D3DFVF_XYZRHW              0x001
 #define D3DFVF_DIFFUSE             0x040
+#define D3DFVF_TEX1                0x100
 #define D3DFVF_TLVERTEX            (D3DFVF_XYZRHW | D3DFVF_DIFFUSE)
+#define D3DFVF_TLVERTEX_TEX1       (D3DFVF_XYZRHW | D3DFVF_DIFFUSE | D3DFVF_TEX1)
 
 /* Screen-space transformed vertex (D3DFVF_TLVERTEX) — 20 bytes. */
 typedef struct {
@@ -393,7 +400,6 @@ static DWORD g_diamondMiniSprite = 0;
  * never depends on hardcoded/guessed coordinates. Defaults to the draw top-left
  * (0x208,0x63) + half the sprite's live width/height (sprite+0xC8/+0xCC). */
 static float g_ringCx = 0.0f, g_ringCy = 0.0f;
-
 /* ---- RESULTS-SCREEN BIG DIAMOND TROPHY (render-path fix, 2026-08-16) ----
  * The golden-weasel medal is composited by the game's RENDER fn (award vtable
  * slot[2]=0x44DF70, draw at 0x44E12C):  mov ecx,[ctx+0x37C]; Sprite_DrawRect
@@ -814,6 +820,8 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
 static void install_reveal_cave(void);   /* defined below (patch helpers) */
 static void install_skip_cave(void);     /* defined below (patch helpers) */
 static void diamond_set_add(DWORD results, float intens);   /* defined above */
+static void diamond_white_overlay_draw(DWORD gfx, DWORD ctx, float alpha); /* above */
+static void install_present_cave(void);   /* defined below (present hook) */
 /* patch-helper forward decls (defined in the patch-helpers section) */
 static void write_jmp(unsigned char *at, DWORD target);
 static void patch_bytes(void *addr, const void *data, DWORD size);
@@ -1336,6 +1344,124 @@ static void diamond_set_add(DWORD results, float intens) {
             g_blendSaved = 0;      /* invalidate cache so a later reveal re-reads */
             g_lastBlendDev = 0;
         }
+    }
+}
+
+/* ---- WHITE-WEASEL FADE-IN OVERLAY (2026-08-16, user's "fade a white trophy
+ * in over the gold" idea) ----
+ * We cannot tint the baked-gold texture OR whiten it via MODULATE (both dead,
+ * field-verified). Instead we draw a WHITE FILL of the weasel's own shape ON
+ * TOP of the gold weasel, fading its alpha in across the reveal. The gold's
+ * texture (goldenweasel.png) HAS an alpha channel defining the silhouette, so
+ * we reuse its alpha as a MASK and fill the color with vertex-white:
+ *   COLOROP=SELECTARG1 (DIFFUSE = white vertex), ALPHAOP=SELECTARG2 (TEXTURE
+ *   alpha = the weasel shape). Per-vertex ARGB alpha ramps 0..255 -> the white
+ * weasel silhouette fades in over the gold, making the gold LOOK like it's
+ * turning white, then the diamond swap happens as usual.
+ *
+ * Runs from a COLD-installed present hook (0x455A90, installed synchronously
+ * from DllMain to avoid the non-atomic hot-patch race) + arm-gate self-arm via
+ * find_results_object (drawn only while a live medal screen is present, never
+ * at boot). Draws AFTER the native gold -> layers over it. */
+typedef struct { float x,y,z,rhw; DWORD color; float u,v; } Diamond_TLVTex;
+/* Global state linking the (safe, pre-render) reveal host to the (post-render)
+ * present host: the reveal host sets currCtx + fadeAlpha each reveal frame; the
+ * present hook draws the white overlay using them. guarded so present never
+ * acts at boot. */
+static DWORD g_overlayCtx  = 0;     /* ctx (results+0xC) whose weasel to overdraw */
+static float g_overlayAlpha = 0.0f; /* 0..1 fade-in intensity for this frame */
+static void diamond_white_overlay_draw(DWORD gfx, DWORD ctx, float alpha) {
+    DWORD device, vt, weasel, tex;
+    Diamond_TLVTex verts[4];
+    float cx, cy, w, h;
+    DWORD col;
+    if (!gfx || !ctx || alpha <= 0.001f) return;
+    if (IsBadReadPtr((void*)(ctx + CTX_WEASEL), 4)) return;
+    weasel = *(DWORD*)(ctx + CTX_WEASEL);
+    if (!weasel || weasel < 0x10000 || IsBadReadPtr((void*)(weasel + 0x50), 4)) return;
+    tex = *(DWORD*)(weasel + 0x50);                       /* sprite texture */
+    if (!tex || tex < 0x10000) return;
+    /* trophy draws at world top-left (0x208,0x63), sized [sprite+0xC8]x[+0xCC] */
+    if (IsBadReadPtr((void*)(weasel + 0xC8), 8)) return;
+    w = *(float*)(weasel + 0xC8); h = *(float*)(weasel + 0xCC);
+    if (w <= 1.0f || h <= 1.0f) return;
+    /* replicate Gfx_TransformX/Y (0x453e90/0x453eb0): screen = world*scale + off */
+    {
+        DWORD sc = 0; float sx, sy;
+        if (!IsBadReadPtr((void*)(gfx + 0x5C), 4)) return;
+        sc = *(DWORD*)(gfx + 0x5C);
+        if (!sc || IsBadReadPtr((void*)(sc + 0x1F8), 8)) return;
+        sx = 0x208 * *(float*)(sc + 0x1F8) + (float)(*(int*)(gfx + 0x798));
+        sy = 0x63  * *(float*)(sc + 0x1FC) + (float)(*(int*)(gfx + 0x79C));
+        /* screen-space w/h (world dims through the same scale factor) */
+        w = w * *(float*)(sc + 0x1F8);
+        h = h * *(float*)(sc + 0x1FC);
+        cx = sx; cy = sy;
+    }
+    /* per-vertex ARGB: white fill, alpha ramp */
+    {
+        unsigned a = (unsigned)(alpha * 255.0f); if (a > 255) a = 255;
+        col = (a << 24) | 0x00FFFFFF;
+    }
+    if (!IsBadReadPtr((void*)(gfx + GFX_DEV_OFFSET), 4)) return;
+    device = *(DWORD*)(gfx + GFX_DEV_OFFSET);
+    if (!device || IsBadReadPtr((void*)device, 4)) return;
+    vt = *(DWORD*)device;
+    if (!vt || IsBadReadPtr((void*)(vt + D3D_DEV_DRAWPRIMITIVEUP), 4)) return;
+    {
+        typedef HRESULT (__stdcall *PFN_SetRenderState)(void*,int,DWORD);
+        typedef HRESULT (__stdcall *PFN_SetTextureStageState)(void*,int,int,DWORD);
+        typedef HRESULT (__stdcall *PFN_SetTexture)(void*,DWORD,void*);
+        typedef HRESULT (__stdcall *PFN_DrawPrimitiveUP)(void*,DWORD,DWORD,const void*,DWORD);
+        typedef HRESULT (__stdcall *PFN_GetTextureStageState)(void*,int,int,DWORD*);
+        PFN_SetRenderState       SetRenderState = (PFN_SetRenderState)(*(void**)(vt + D3D_DEV_SETRENDERSTATE));
+        PFN_SetTextureStageState SetTextureStageState = (PFN_SetTextureStageState)(*(void**)(vt + D3D_DEV_SETTEXTURESTAGE));
+        PFN_SetTexture          SetTexture = (PFN_SetTexture)(*(void**)(vt + D3D_DEV_SETTEXTURE));
+        PFN_DrawPrimitiveUP      DrawPrimitiveUP = (PFN_DrawPrimitiveUP)(*(void**)(vt + D3D_DEV_DRAWPRIMITIVEUP));
+        PFN_GetTextureStageState GetTextureStageState = (PFN_GetTextureStageState)(*(void**)(vt + 0x100));
+        void *dev = (void*)device;
+        DWORD savedColorOp=0, savedAlphaOp=0, savedColorArg1=0, savedAlphaArg2=0;
+        if (!SetRenderState || !SetTextureStageState || !SetTexture || !DrawPrimitiveUP) return;
+        /* save stage states we mutate */
+        if (GetTextureStageState) {
+            GetTextureStageState(dev, 0, D3DTSS_COLOROP,   &savedColorOp);
+            GetTextureStageState(dev, 0, D3DTSS_ALPHAOP,   &savedAlphaOp);
+            GetTextureStageState(dev, 0, D3DTSS_COLORARG1, &savedColorArg1);
+            GetTextureStageState(dev, 0, D3DTSS_ALPHAARG2, &savedAlphaArg2);
+        }
+        /* bind the gold weasel texture (its alpha = our silhouette mask) */
+        SetTexture(dev, 0, (void*)tex);
+        /* alpha blend on (SRCALPHA/INVSRCALPHA), fog off */
+        SetRenderState(dev, D3DRS_ALPHABLENDENABLE, 1);
+        SetRenderState(dev, D3DRS_SRCBLEND,  D3DBLEND_SRCALPHA);
+        SetRenderState(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+        SetRenderState(dev, D3DRS_FOGENABLE, 0);
+        /* white fill, alpha from texture: COLOR=SELECTARG1(diffuse=white),
+         * ALPHA=SELECTARG2(texture alpha) */
+        SetTextureStageState(dev, 0, D3DTSS_COLOROP,   D3DTOP_SELECTARG1);
+        SetTextureStageState(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+        SetTextureStageState(dev, 0, D3DTSS_ALPHAOP,   D3DTOP_SELECTARG2);
+        SetTextureStageState(dev, 0, D3DTSS_ALPHAARG2, D3DTA_TEXTURE);
+        /* quad at the trophy's screen box, white per-vertex alpha */
+        verts[0].x=cx;      verts[0].y=cy;      verts[0].z=0; verts[0].rhw=1;
+        verts[0].color=col; verts[0].u=0; verts[0].v=0;
+        verts[1].x=cx+w;    verts[1].y=cy;      verts[1].z=0; verts[1].rhw=1;
+        verts[1].color=col; verts[1].u=1; verts[1].v=0;
+        verts[2].x=cx+w;    verts[2].y=cy+h;    verts[2].z=0; verts[2].rhw=1;
+        verts[2].color=col; verts[2].u=1; verts[2].v=1;
+        verts[3].x=cx;      verts[3].y=cy+h;    verts[3].z=0; verts[3].rhw=1;
+        verts[3].color=col; verts[3].u=0; verts[3].v=1;
+        DrawPrimitiveUP(dev, 4 /*TRIANGLELIST*/, 2, verts, sizeof(Diamond_TLVTex));
+        /* restore stage states + blend + fog */
+        SetRenderState(dev, D3DRS_ALPHABLENDENABLE, 0);
+        SetRenderState(dev, D3DRS_FOGENABLE, 1);
+        if (GetTextureStageState) {
+            SetTextureStageState(dev, 0, D3DTSS_COLOROP,   savedColorOp);
+            SetTextureStageState(dev, 0, D3DTSS_ALPHAOP,   savedAlphaOp);
+            SetTextureStageState(dev, 0, D3DTSS_COLORARG1, savedColorArg1);
+            SetTextureStageState(dev, 0, D3DTSS_ALPHAARG2, savedAlphaArg2);
+        }
+        /* note: leave SetTexture(0) as-is; the game re-binds its own each draw */
     }
 }
 
@@ -2545,21 +2671,79 @@ static void __thiscall diamond_reveal_update(void *self) {
         diamond_vortex_tick(results);
 #endif
         diamond_weasel_mult(results);
-        /* SEH-SAFE additive white-out: after weasel_mult computes g_weaselIntens
-         * (0..1 fade), apply the device ADD blend so this frame's medal screen
-         * (2D-only render 0x44DF70) draws additively toward white. The level
-         * behind is untouched. Runs BEFORE the render fn each frame. */
-        diamond_set_add(results, g_weaselIntens);
+        /* WHITE-WEASEL FADE-IN (replaces the device-global additive white-out,
+         * which whitened the WHOLE results panel, not just the trophy). Set the
+         * overlay state the PRESENT hook draws: fade a white weasel silhouette
+         * (using the gold texture's own alpha as mask) over the gold trophy.
+         * g_overlayAlpha ramps 0..1 over WEASEL_WHITE_START..WEASEL_WHITE_END,
+         * then the diamond swap takes over at WEASEL_WHITE_TOTAL. The present
+         * hook draws it AFTER the native gold -> layered over ONLY the trophy.
+         * Computed here (in the safe pre-render update host) so the post-render
+         * present host has the state ready without re-reading game objects. */
+        if (diamond_first_earn(results)) {
+            DWORD ctx = 0;
+            if (!IsBadReadPtr((void*)(results + RESULT_APP), 4))
+                ctx = *(DWORD*)(results + RESULT_APP);   /* results+0xC = ctx */
+            g_overlayCtx  = ctx;
+            g_overlayAlpha = g_weaselIntens;             /* 0..1 across the fade */
+            if (g_overlayCtx == 0) g_overlayAlpha = 0.0f;
+        } else {
+            g_overlayCtx  = 0;
+            g_overlayAlpha = 0.0f;
+        }
         if (diamond_seq_frame(results) >= WEASEL_WHITE_TOTAL) {
-            /* reveal done: restore the shared color-multiplier FIRST (leaving
-             * it set bleaches the whole race + corrupts the next screen/TT
-             * menu), restore the ADD blend, then swap in the diamond + disarm. */
+            /* reveal done: restore multiplier, clear overlay, swap in diamond. */
             diamond_weasel_mult_clear(results);
-            diamond_set_add(results, 0.0f);      /* back to normal blend */
+            g_overlayCtx = 0; g_overlayAlpha = 0.0f;
             diamond_trophy_swap(results);
             g_revealArmedVtbl = 0;
         }
     }
+}
+
+/* ---- White-weasel overlay PRESENT hook ----
+ * Installed COLD (synchronously from DllMain, before the frame loop) at
+ * 0x455A90 (Graphics_PresentOrEnd, __thiscall(ecx=gfx, arg=endFlag)) to avoid
+ * the non-atomic hot-patch race that crashed real Windows. The tick draws the
+ * white overlay ONLY when the reveal state (g_overlayCtx/Alpha, set by the
+ * pre-render reveal host) is live — a strict early-return gate so it never
+ * acts at boot / between results screens. */
+static DWORD g_presentCave = 0;
+__attribute__((used)) static void diamond_present_tick(DWORD gfx) {
+    /* cheap gate BEFORE any game read / device work. */
+    if (!g_overlayCtx || g_overlayAlpha <= 0.001f) return;
+    if (!gfx || gfx < 0x10000 || IsBadReadPtr((void*)gfx, 4)) return;
+    diamond_white_overlay_draw(gfx, g_overlayCtx, g_overlayAlpha);
+}
+static void install_present_cave(void) {
+    /* cave: pushad; call diamond_present_tick(gfx=ecx); popad;
+     * re-emit 'mov al,[esp+4]; sub esp,0x20' (8 bytes); jmp 0x455A97 */
+    g_presentCave = (DWORD)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
+                                        PAGE_EXECUTE_READWRITE);
+    if (!g_presentCave) return;
+    unsigned char *p = (unsigned char*)g_presentCave;
+    DWORD entry = EXE_BASE + (0x455A90 - EXE_BASE);
+    /* pushad (0x60) ... but MOV [gfx] needs ecx saved; use gfx as arg: the tick
+     * takes gfx. pushad saves ecx. After popad ecx restored. We pass ecx as the
+     * arg on the stack (cdecl): push ecx; call; add esp,4. */
+    *p++ = 0x60;                               /* pushad */
+    *p++ = 0x51;                               /* push ecx (arg: gfx) */
+    {   DWORD a = (DWORD)diamond_present_tick;
+        *p++ = 0xE8; *(DWORD*)p = a - (DWORD)(p+1) - 4; p += 4;  /* call */
+    }
+    *p++ = 0x83; *p++ = 0xC4; *p++ = 0x04;     /* add esp,4 */
+    *p++ = 0x61;                               /* popad */
+    /* re-emit mov al,[esp+4]; sub esp,0x20 */
+    *p++ = 0x8A; *p++ = 0x44; *p++ = 0x24; *p++ = 0x04;   /* mov al,[esp+4] */
+    *p++ = 0x83; *p++ = 0xEC; *p++ = 0x20;                 /* sub esp,0x20 */
+    /* jmp back to 0x455A97 */
+    *p++ = 0xE9; *(DWORD*)p = (entry + 7) - (DWORD)(p+1) - 4; p += 4;
+    FlushInstructionCache(GetCurrentProcess(), (void*)g_presentCave, 128);
+    /* 5-byte JMP at entry (0x455A90) to cave. */
+    unsigned char jmp[5] = {0xE9,0,0,0,0};
+    *(DWORD*)(jmp+1) = g_presentCave - entry - 5;
+    patch_bytes((void*)entry, jmp, 5);
+    diag_log("[diamond] present cave installed at 0x455A90 (white-weasel overlay)");
 }
 
 /* Patch the SHARED vtable slot from the safe init thread (no SEH frame). */
@@ -2726,7 +2910,14 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
         AddVectoredExceptionHandler(1, diamond_veh);
         init_thresholds();
         load_unlocks();
-        /* Defer ALL .text patching to a background thread (Sleep 2s) so we
+        /* Install the tiny present-hook cold (synchronously, BEFORE the frame
+         * loop) so the 7-byte JMP at 0x455A90 can never tear an in-flight
+         * instruction — the race that crashed real Windows (crash #6). The tick
+         * is a minimal self-arm gate (early-returns unless a diamond weasel was
+         * just earned), so it's a near-free hot path. Rest of .text patching is
+         * deferred to the init thread. */
+        install_present_cave();
+        /* Defer ALL other .text patching to a background thread (Sleep 2s) so we
          * never run VirtualAlloc/VirtualProtect under the loader lock. */
         CreateThread(NULL, 0, diamond_init_thread, NULL, 0, NULL);
     }
