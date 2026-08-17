@@ -2493,6 +2493,7 @@ static void install_cb90_probe(void) {
 }
 #endif /* DIAMOND_CB90_PROBE */
 
+
 /* APPROACH-D VTABLE OVERRIDE — shared-slot version (DIAMOND_VTABLE_OVERRIDE).
  *
  * Insight: board collision handlers hook fine (board vtable slot 0x1D =
@@ -2596,6 +2597,54 @@ static void install_vtable_override(void) {
 }
 #endif /* DIAMOND_VTABLE_OVERRIDE */
 
+/* ---- 0x46C1F1 frame-epilogue PROBE (DIAMOND_C6F1_PROBE) ----
+ * Answers a single question on real Windows: does the GameUpdate frame
+ * epilogue (0x46C1F1: pop esi; add esp,8; ret = 5E 83 C4 08 C3) fire while the
+ * medal-award screen is live with a diamond reveal armed? Establishes whether a
+ * present-hook white overlay is even viable (the earlier "zero present-tick
+ * FIRES" could mean the host doesn't run on that screen, OR that my gates bailed
+ * — this resolves it).
+ *
+ * The site is a NON-SEH epilogue (fn 0x46c170: sub esp,8; push esi; ...; ret),
+ * so a 5-byte JMP there is a legitimate non-SEH host. Installed from the init
+ * thread (NOT DllMain) so no boot redirect. The tick is pure-log: reads
+ * g_revealArmedVtbl (set by the reveal driver) + a reversed one-shot, logs
+ * exactly one line per reveal if the epilogue actually runs while armed. No
+ * D3D, no game-state reads beyond the flag. */
+#ifdef DIAMOND_C6F1_PROBE
+#define C6F1_EPI   0x46C1F1   /* pop esi; add esp,8; ret (5E 83 C4 08 C3) */
+static int g_c6f1Logged = 0;  /* one-shot per session */
+static void c6f1_probe(void) {
+    /* Only care while a reveal is armed — the window where an overlay draw
+     * would happen. Gate on the same flag the reveal driver uses. */
+    if (!g_revealArmedVtbl) return;
+    if (g_c6f1Logged) return;
+    g_c6f1Logged = 1;
+    trace_logf("[C6F1] frame-epilogue FIRES while reveal armed (present-hook host viable)");
+}
+static void install_c6f1_probe(void) {
+    DWORD addr = EXE_BASE + (C6F1_EPI - EXE_BASE);
+    unsigned char *stub = (unsigned char*)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
+                                                       PAGE_EXECUTE_READWRITE);
+    if (!stub) return;
+    unsigned char *p = stub;
+    p[0]=0x60; p+=1;                              /* pushad */
+    p[0]=0x9C; p+=1;                              /* pushfd */
+    p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)c6f1_probe-(DWORD)(p+5); p+=5; /* call */
+    p[0]=0x9D; p+=1;                              /* popfd */
+    p[0]=0x61; p+=1;                              /* popad */
+    /* re-emit epilogue: pop esi; add esp,8; ret */
+    p[0]=0x5E; p+=1;
+    p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;
+    p[0]=0xC3; p+=1;
+    unsigned char patch[5];
+    write_jmp(patch, (DWORD)stub);
+    patch_bytes((void*)addr, patch, 5);
+    diag_log("[diamond] C6F1 PROBE: epilogue trampoline at 0x46C1F1 (non-SEH, installed from init thread)");
+}
+#endif /* DIAMOND_C6F1_PROBE */
+
+
 static void install_hooks(void) {
     install_icon_cave();     /* no-op */
 #ifdef DIAMOND_TT_WRAPPER
@@ -2607,6 +2656,9 @@ static void install_hooks(void) {
 #ifdef DIAMOND_VTABLE_OVERRIDE
     install_vtable_override();
     install_skip_cave();                     /* block skip so the gold+240 reveal plays */
+#ifdef DIAMOND_C6F1_PROBE
+    install_c6f1_probe();                    /* probe: does 0x46C1F1 fire while reveal armed? */
+#endif
     diag_log("[diamond] hooks installed (VTABLE OVERRIDE: slot[1]=reveal+orig, per-object copy)");
 #elif defined(DIAMOND_CB90_PROBE)
     /* PATH-1 PROBE: hook the untested non-SEH results fn 0x44CB90.
