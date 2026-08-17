@@ -100,13 +100,22 @@ gold when the results frame counter reaches the gold gate (`results+0x4c`, frame
 instant (`results+0x10 − results+0x4c`), so the whole reveal plays off gold:
 
 - **55 frames after gold** — the golden weasel starts turning white
-- **150 frames after gold** — it is fully white (saturating multiplier 4.0)
+- **150 frames after gold** — it is fully white (saturating additive blend)
 - **240 frames after gold** — the diamond trophy reveal
 
-The white-fade drives the game's native color-multiplier
-(`Graphics_SetColorMultiplier` + gfx+0x7A8) up to a saturating 4.0, so the
-sprite blows out to pure white. Applied only around the weasel draw and cleared
-immediately after, so no other on-screen draw is tinted.
+The white-fade **whitens the golden-weasel sprite itself** from the award-screen
+update host (`0x44D760`, vtable[1] — the only place that actually renders on the
+award screen). Two complementary pushes, both from that safe host (no code cave,
+no present hook):
+1. `diamond_weasel_mult` ramps the sprite's own material diffuse whiter
+   (`m: 1.0 → 2.0`) so the gold resolves toward white.
+2. `diamond_set_add` flips the device SRC/DST blend to **additive** (ONE/ONE)
+   so the whiter sprite genuinely blows out to white instead of clamping at the
+   texture's max. Additive affects only the medal panel's own sprites during
+   the award (that render path draws only sprites/text).
+
+Both are restored to the game's defaults (diffuse 1,1,1,1 / blend SRCALPHA) the
+moment the reveal finishes at gold+240.
 
 **Golden-weasel suction vortex** (first earn only)
 
@@ -344,31 +353,29 @@ lock crashes real Windows at RUNTIME 0-1s).
 > Removed it entirely; the reveal needs no arming signal because it reads
 > `diamond_first_earn` directly from the results object on the award screen.
 
-> **Why no always-live present/per-frame hook?** The white-weasel overlay that
-> layers the fade-in over the gold trophy needs a once-per-frame post-render
-> draw. Earlier builds drove it from a `GameUpdate` frame-epilogue hook
-> (`0x46C1F1`) or `Graphics_PresentOrEnd` (`0x455A90`) entry. Two things made
-> that unsafe and were both fixed:
+> **Why no present/per-frame hook at all?** The white-fade needs a draw on the
+> award screen. Earlier builds drove it from a `Graphics_PresentOrEnd`
+> (`0x455A90`) or `GameUpdate` frame-epilogue (`0x46C1F1`) hook, installed cold
+> from DllMain. Two independent problems killed that approach, and it has been
+> **removed from the mod entirely**:
 >
-> 1. **Tick content (the true root cause).** The crashing tick gated ONLY on
->    the module globals `g_overlayCtx`/`g_overlayAlpha` and then ran
->    `get_app()`/`app+APP_GFX` + a raw `DrawPrimitiveUP` at the epilogue whenever
->    those were nonzero. Because the cave was live from boot, a nonzero global
->    could fire heavy D3D work during the LoadingScreen → heap-execution fault
->    at RUNTIME 00:00:01 (`fonts\\\\showcardgothic28` / `CRASH_ADDRESS
->    0001:0000284F`, primary EIP=heap C0000005). Wine tolerates this; real
->    Windows does not. **Restored the old tick discipline:** the tick now FIRST
->    gates on real results-screen existence (board→results list at scene+0x8B8
->    → award vtable 0x4D6CF0), exactly like the proven `present_reveal_handler`
->    that was safe at boot — so it returns before ANY game read or D3D call
->    unless a genuine medal-award screen is live.
-> 2. **Install timing (belt-and-suspenders).** `diamond_present_sync()` only
->    writes the 5-byte JMP at `0x46C1F1` while an overlay is live
->    (`g_overlayCtx && alpha>0`) and restores the pristine `5E 83 C4 08 C3`
->    the instant the reveal disarms. During boot and all normal gameplay the
->    site is byte-for-byte original. The game's own award-screen code paths run
->    at boot too, so the results-only inline caves never fire during
->    LoadingScreen.
+> 1. **Boot crash.** Installing a JMP→heap redirect at boot fires during the
+>    LoadingScreen (RUNTIME 00:00:01, `fonts\\\\showcardgothic28`, `CRASH_ADDRESS
+>    0001:0000284F`, primary EIP=heap C0000005). Wine tolerates it; real Windows
+>    does not. No amount of gate-on-globals or gate-on-flag in the tick changes
+>    that — the redirect itself executing during boot is the vector.
+> 2. **The award screen doesn't run the GameUpdate epilogue.** The medal-award
+>    screen is a modal object driven by its own vtable[1] update (`0x44D760`)
+>    and draw (`0x44DF70`); the GameUpdate frame epilogue where `0x46C1F1` lives
+>    is **not** on that screen's loop. A present-hook overlay therefore could
+>    never draw during the award — the `0x455A90`/`0x46C1F1` tick simply never
+>    fired there (verified: zero `present-tick FIRES` for a full reveal).
+>
+> The white-fade instead runs from the **award-update host that actually
+> renders** (`diamond_weasel_mult` + `diamond_set_add`, both called from the
+> `0x44D760` vtable[1] override) — a safe, already-proven host, no code cave, no
+> boot-resident redirect. This is strictly better: it removes the boot crash
+> vector permanently AND actually draws on the screen that matters.
 
 The unlock flag is persisted as the `DiamondMedals` registry value (15 bytes,
 one flag per race) in `HKCU\Software\Raptisoft\Hamsterball`, written at the
