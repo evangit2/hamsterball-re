@@ -1373,6 +1373,7 @@ typedef struct { float x,y,z,rhw; DWORD color; float u,v; } Diamond_TLVTex;
 static DWORD g_overlayCtx  = 0;     /* ctx (results+0xC) whose weasel to overdraw */
 static float g_overlayAlpha = 0.0f; /* 0..1 fade-in intensity for this frame */
 static int   g_presentDiag = 1;     /* one-shot: log when the overlay tick first fires */
+static int   g_overlayDiag = 1;     /* one-shot: log the computed overlay rect */
 static void diamond_white_overlay_draw(DWORD gfx, DWORD ctx, float alpha) {
     DWORD device, vt, weasel, tex;
     Diamond_TLVTex verts[4];
@@ -1391,16 +1392,26 @@ static void diamond_white_overlay_draw(DWORD gfx, DWORD ctx, float alpha) {
     /* replicate Gfx_TransformX/Y (0x453e90/0x453eb0): screen = world*scale + off */
     {
         DWORD sc = 0; float sx, sy;
+        float sX=1.0f, sY=1.0f, oX=0.0f, oY=0.0f;
         if (!IsBadReadPtr((void*)(gfx + 0x5C), 4)) return;
         sc = *(DWORD*)(gfx + 0x5C);
         if (!sc || IsBadReadPtr((void*)(sc + 0x1F8), 8)) return;
-        sx = 0x208 * *(float*)(sc + 0x1F8) + (float)(*(int*)(gfx + 0x798));
-        sy = 0x63  * *(float*)(sc + 0x1FC) + (float)(*(int*)(gfx + 0x79C));
+        sX = *(float*)(sc + 0x1F8); sY = *(float*)(sc + 0x1FC);
+        oX = (float)(*(int*)(gfx + 0x798)); oY = (float)(*(int*)(gfx + 0x79C));
+        sx = 0x208 * sX + oX;
+        sy = 0x63  * sY + oY;
         /* screen-space w/h (world dims through the same scale factor) */
-        w = w * *(float*)(sc + 0x1F8);
-        h = h * *(float*)(sc + 0x1FC);
+        w = w * sX;
+        h = h * sY;
         cx = sx; cy = sy;
+        /* one-shot diag: WHERE does the overlay quad land? */
+        if (g_overlayDiag) {
+            g_overlayDiag = 0;
+            trace_logf("[diamond] overlay rect: (%.0f,%.0f) %.0fx%.0f  [scale=(%.3f,%.3f) off=(%.0f,%.0f) tex=%08X]",
+                       cx, cy, w, h, sX, sY, oX, oY, tex);
+        }
     }
+
     /* per-vertex ARGB: white fill, alpha ramp */
     {
         unsigned a = (unsigned)(alpha * 255.0f); if (a > 255) a = 255;
