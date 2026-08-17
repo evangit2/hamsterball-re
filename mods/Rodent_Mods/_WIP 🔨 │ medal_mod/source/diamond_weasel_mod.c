@@ -334,8 +334,10 @@ static void load_real_bass(void) {
 #define D3DTA_DIFFUSE              0
 #define D3DTA_TEXTURE              2
 #define D3DTOP_SELECTARG1          2
+#define D3DTOP_MODULATE            4
 #define D3DTSS_COLOROP             0
 #define D3DTSS_COLORARG1           1
+#define D3DTSS_ALPHAARG1           4
 #define D3D_DEV_SETTEXTURE         0xF4   /* vtable[61] SetTexture(dev, stage, tex) */
 #define D3DFVF_XYZRHW              0x001
 #define D3DFVF_DIFFUSE             0x040
@@ -1370,6 +1372,7 @@ typedef struct { float x,y,z,rhw; DWORD color; float u,v; } Diamond_TLVTex;
  * acts at boot. */
 static DWORD g_overlayCtx  = 0;     /* ctx (results+0xC) whose weasel to overdraw */
 static float g_overlayAlpha = 0.0f; /* 0..1 fade-in intensity for this frame */
+static int   g_presentDiag = 1;     /* one-shot: log when the overlay tick first fires */
 static void diamond_white_overlay_draw(DWORD gfx, DWORD ctx, float alpha) {
     DWORD device, vt, weasel, tex;
     Diamond_TLVTex verts[4];
@@ -1420,13 +1423,14 @@ static void diamond_white_overlay_draw(DWORD gfx, DWORD ctx, float alpha) {
         PFN_DrawPrimitiveUP      DrawPrimitiveUP = (PFN_DrawPrimitiveUP)(*(void**)(vt + D3D_DEV_DRAWPRIMITIVEUP));
         PFN_GetTextureStageState GetTextureStageState = (PFN_GetTextureStageState)(*(void**)(vt + 0x100));
         void *dev = (void*)device;
-        DWORD savedColorOp=0, savedAlphaOp=0, savedColorArg1=0, savedAlphaArg2=0;
+        DWORD savedColorOp=0, savedAlphaOp=0, savedColorArg1=0, savedAlphaArg2=0, savedAlphaArg1=0;
         if (!SetRenderState || !SetTextureStageState || !SetTexture || !DrawPrimitiveUP) return;
         /* save stage states we mutate */
         if (GetTextureStageState) {
             GetTextureStageState(dev, 0, D3DTSS_COLOROP,   &savedColorOp);
             GetTextureStageState(dev, 0, D3DTSS_ALPHAOP,   &savedAlphaOp);
             GetTextureStageState(dev, 0, D3DTSS_COLORARG1, &savedColorArg1);
+            GetTextureStageState(dev, 0, D3DTSS_ALPHAARG1, &savedAlphaArg1);
             GetTextureStageState(dev, 0, D3DTSS_ALPHAARG2, &savedAlphaArg2);
         }
         /* bind the gold weasel texture (its alpha = our silhouette mask) */
@@ -1440,7 +1444,12 @@ static void diamond_white_overlay_draw(DWORD gfx, DWORD ctx, float alpha) {
          * ALPHA=SELECTARG2(texture alpha) */
         SetTextureStageState(dev, 0, D3DTSS_COLOROP,   D3DTOP_SELECTARG1);
         SetTextureStageState(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
-        SetTextureStageState(dev, 0, D3DTSS_ALPHAOP,   D3DTOP_SELECTARG2);
+        /* ALPHA = vertex-fade (DIFFUSE alpha) x texture-alpha (silhouette mask).
+         * FLAT SELECTARG2(TEXTURE) earlier ignored the vertex fade entirely ->
+         * the white weasel rendered at full alpha for every fade frame (no
+         * visible fade-in). MODULATE folds both in. */
+        SetTextureStageState(dev, 0, D3DTSS_ALPHAOP,   D3DTOP_MODULATE);
+        SetTextureStageState(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
         SetTextureStageState(dev, 0, D3DTSS_ALPHAARG2, D3DTA_TEXTURE);
         /* quad at the trophy's screen box, white per-vertex alpha */
         verts[0].x=cx;      verts[0].y=cy;      verts[0].z=0; verts[0].rhw=1;
@@ -1459,6 +1468,7 @@ static void diamond_white_overlay_draw(DWORD gfx, DWORD ctx, float alpha) {
             SetTextureStageState(dev, 0, D3DTSS_COLOROP,   savedColorOp);
             SetTextureStageState(dev, 0, D3DTSS_ALPHAOP,   savedAlphaOp);
             SetTextureStageState(dev, 0, D3DTSS_COLORARG1, savedColorArg1);
+            SetTextureStageState(dev, 0, D3DTSS_ALPHAARG1, savedAlphaArg1);
             SetTextureStageState(dev, 0, D3DTSS_ALPHAARG2, savedAlphaArg2);
         }
         /* note: leave SetTexture(0) as-is; the game re-binds its own each draw */
@@ -2728,6 +2738,13 @@ __attribute__((used)) static void diamond_present_tick(void) {
     if (IsBadReadPtr((void*)(app + APP_GFX), 4)) return;
     gfx = *(DWORD*)(app + APP_GFX);
     if (!gfx || gfx < 0x10000 || IsBadReadPtr((void*)gfx, 4)) return;
+    /* one-shot diag: confirm the post-render tick fires during the reveal
+     * (a missing log = the epilogue isn't running while the award screen is up,
+     * which would explain "no white fade"). */
+    if (g_presentDiag) {
+        trace_logf("[diamond] present-tick FIRES overlay draw alpha=%.2f ctx=%08X", g_overlayAlpha, g_overlayCtx);
+        g_presentDiag = 0;
+    }
     diamond_white_overlay_draw(gfx, g_overlayCtx, g_overlayAlpha);
 }
 static void install_present_cave(void) {
