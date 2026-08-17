@@ -822,9 +822,6 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
 static void install_reveal_cave(void);   /* defined below (patch helpers) */
 static void install_skip_cave(void);     /* defined below (patch helpers) */
 static void diamond_set_add(DWORD results, float intens);   /* defined above */
-static void diamond_white_overlay_draw(DWORD gfx, DWORD ctx, float alpha); /* above */
-static void present_cave_init(void);      /* defined below (present hook) */
-static void diamond_present_sync(void);   /* defined below (present hook) */
 /* patch-helper forward decls (defined in the patch-helpers section) */
 static void write_jmp(unsigned char *at, DWORD target);
 static void patch_bytes(void *addr, const void *data, DWORD size);
@@ -1347,159 +1344,6 @@ static void diamond_set_add(DWORD results, float intens) {
             g_blendSaved = 0;      /* invalidate cache so a later reveal re-reads */
             g_lastBlendDev = 0;
         }
-    }
-}
-
-/* ---- WHITE-WEASEL FADE-IN OVERLAY (2026-08-16, user's "fade a white trophy
- * in over the gold" idea) ----
- * We cannot tint the baked-gold texture OR whiten it via MODULATE (both dead,
- * field-verified). Instead we draw a WHITE FILL of the weasel's own shape ON
- * TOP of the gold weasel, fading its alpha in across the reveal. The gold's
- * texture (goldenweasel.png) HAS an alpha channel defining the silhouette, so
- * we reuse its alpha as a MASK and fill the color with vertex-white:
- *   COLOROP=SELECTARG1 (DIFFUSE = white vertex), ALPHAOP=SELECTARG2 (TEXTURE
- *   alpha = the weasel shape). Per-vertex ARGB alpha ramps 0..255 -> the white
- * weasel silhouette fades in over the gold, making the gold LOOK like it's
- * turning white, then the diamond swap happens as usual.
- *
- * Runs from a COLD-installed present hook (0x455A90, installed synchronously
- * from DllMain to avoid the non-atomic hot-patch race) + arm-gate self-arm via
- * find_results_object (drawn only while a live medal screen is present, never
- * at boot). Draws AFTER the native gold -> layers over it. */
-typedef struct { float x,y,z,rhw; DWORD color; float u,v; } Diamond_TLVTex;
-/* Global state linking the (safe, pre-render) reveal host to the (post-render)
- * present host: the reveal host sets currCtx + fadeAlpha each reveal frame; the
- * present hook draws the white overlay using them. guarded so present never
- * acts at boot. */
-static DWORD g_overlayCtx  = 0;     /* ctx (results+0xC) whose weasel to overdraw */
-static float g_overlayAlpha = 0.0f; /* 0..1 fade-in intensity for this frame */
-static int   g_presentDiag = 1;     /* one-shot: log when the overlay tick first fires */
-static int   g_overlayDiag = 1;     /* one-shot: log the computed overlay rect */
-static int   g_ovGuardLog = 0;      /* -1 = unspecified; else counts guard-fails */
-__attribute__((used)) static void ov_guard(int id, DWORD a, DWORD b) {
-    if (g_ovGuardLog < 2) {
-        g_ovGuardLog++;
-        trace_logf("[diamond] overlay GUARD bail id=%d a=%08X b=%08X", id, a, b);
-    }
-}
-static void diamond_white_overlay_draw(DWORD gfx, DWORD ctx, float alpha) {
-    DWORD device, vt, weasel, tex;
-    Diamond_TLVTex verts[4];
-    float cx, cy, w, h;
-    DWORD col;
-    if (!gfx || !ctx || alpha <= 0.001f) return;
-    if (IsBadReadPtr((void*)(ctx + CTX_WEASEL), 4)) { ov_guard(1, ctx, 0); return; }
-    weasel = *(DWORD*)(ctx + CTX_WEASEL);
-    if (!weasel || weasel < 0x10000 || IsBadReadPtr((void*)(weasel + 0x50), 4)) { ov_guard(2, weasel, 0); return; }
-    tex = *(DWORD*)(weasel + 0x50);                       /* sprite texture */
-    if (!tex || tex < 0x10000) { ov_guard(3, tex, weasel); return; }
-    /* trophy draws at world top-left (0x208,0x63), sized [sprite+0xC8]x[+0xCC]
-     * The native gold weasel has +0xC8/+0xCC = 0 during the reveal (guard-bail
-     * id=5 seen in logs), so FALL BACK to a fixed world box matching the
-     * trophy's rendered ~2:3 area (the gold draws at 0x208,0x63; the trophy is
-     * ~256 wide x ~384 tall world units). A too-small box would make the white
-     * under-cover the trophy. */
-    if (!IsBadReadPtr((void*)(weasel + 0xC8), 8)) {
-        w = *(float*)(weasel + 0xC8); h = *(float*)(weasel + 0xCC);
-        if (w <= 1.0f || h <= 1.0f) { w = 256.0f; h = 384.0f; }
-    } else {
-        w = 256.0f; h = 384.0f;
-    }
-    /* world top-left (fixed: the award render draws the weasel at 0x208,0x63) */
-    {
-        const float WTX = 0x208, WTY = 0x63;
-        DWORD sc = 0; float sx, sy;
-        float sX=1.0f, sY=1.0f, oX=0.0f, oY=0.0f;
-        if (IsBadReadPtr((void*)(gfx + 0x5C), 4)) { ov_guard(6, gfx, 0); return; }
-        sc = *(DWORD*)(gfx + 0x5C);
-        if (!sc || IsBadReadPtr((void*)(sc + 0x1F8), 8)) { ov_guard(7, sc, 0); return; }
-        sX = *(float*)(sc + 0x1F8); sY = *(float*)(sc + 0x1FC);
-        oX = (float)(*(int*)(gfx + 0x798)); oY = (float)(*(int*)(gfx + 0x79C));
-        sx = WTX * sX + oX;
-        sy = WTY * sY + oY;
-        /* screen-space w/h (world dims through the same scale factor) */
-        w = w * sX;
-        h = h * sY;
-        cx = sx; cy = sy;
-        /* one-shot diag: WHERE does the overlay quad land? */
-        if (g_overlayDiag) {
-            g_overlayDiag = 0;
-            trace_logf("[diamond] overlay rect: (%.0f,%.0f) %.0fx%.0f  [scale=(%.3f,%.3f) off=(%.0f,%.0f) tex=%08X]",
-                       cx, cy, w, h, sX, sY, oX, oY, tex);
-        }
-    }
-
-    /* per-vertex ARGB: white fill, alpha ramp */
-    {
-        unsigned a = (unsigned)(alpha * 255.0f); if (a > 255) a = 255;
-        col = (a << 24) | 0x00FFFFFF;
-    }
-    if (!IsBadReadPtr((void*)(gfx + GFX_DEV_OFFSET), 4)) return;
-    device = *(DWORD*)(gfx + GFX_DEV_OFFSET);
-    if (!device || IsBadReadPtr((void*)device, 4)) return;
-    vt = *(DWORD*)device;
-    if (!vt || IsBadReadPtr((void*)(vt + D3D_DEV_DRAWPRIMITIVEUP), 4)) return;
-    {
-        typedef HRESULT (__stdcall *PFN_SetRenderState)(void*,int,DWORD);
-        typedef HRESULT (__stdcall *PFN_SetTextureStageState)(void*,int,int,DWORD);
-        typedef HRESULT (__stdcall *PFN_SetTexture)(void*,DWORD,void*);
-        typedef HRESULT (__stdcall *PFN_DrawPrimitiveUP)(void*,DWORD,DWORD,const void*,DWORD);
-        typedef HRESULT (__stdcall *PFN_GetTextureStageState)(void*,int,int,DWORD*);
-        PFN_SetRenderState       SetRenderState = (PFN_SetRenderState)(*(void**)(vt + D3D_DEV_SETRENDERSTATE));
-        PFN_SetTextureStageState SetTextureStageState = (PFN_SetTextureStageState)(*(void**)(vt + D3D_DEV_SETTEXTURESTAGE));
-        PFN_SetTexture          SetTexture = (PFN_SetTexture)(*(void**)(vt + D3D_DEV_SETTEXTURE));
-        PFN_DrawPrimitiveUP      DrawPrimitiveUP = (PFN_DrawPrimitiveUP)(*(void**)(vt + D3D_DEV_DRAWPRIMITIVEUP));
-        PFN_GetTextureStageState GetTextureStageState = (PFN_GetTextureStageState)(*(void**)(vt + 0x100));
-        void *dev = (void*)device;
-        DWORD savedColorOp=0, savedAlphaOp=0, savedColorArg1=0, savedAlphaArg2=0, savedAlphaArg1=0;
-        if (!SetRenderState || !SetTextureStageState || !SetTexture || !DrawPrimitiveUP) return;
-        /* save stage states we mutate */
-        if (GetTextureStageState) {
-            GetTextureStageState(dev, 0, D3DTSS_COLOROP,   &savedColorOp);
-            GetTextureStageState(dev, 0, D3DTSS_ALPHAOP,   &savedAlphaOp);
-            GetTextureStageState(dev, 0, D3DTSS_COLORARG1, &savedColorArg1);
-            GetTextureStageState(dev, 0, D3DTSS_ALPHAARG1, &savedAlphaArg1);
-            GetTextureStageState(dev, 0, D3DTSS_ALPHAARG2, &savedAlphaArg2);
-        }
-        /* bind the gold weasel texture (its alpha = our silhouette mask) */
-        SetTexture(dev, 0, (void*)tex);
-        /* alpha blend on (SRCALPHA/INVSRCALPHA), fog off */
-        SetRenderState(dev, D3DRS_ALPHABLENDENABLE, 1);
-        SetRenderState(dev, D3DRS_SRCBLEND,  D3DBLEND_SRCALPHA);
-        SetRenderState(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-        SetRenderState(dev, D3DRS_FOGENABLE, 0);
-        /* white fill, alpha from texture: COLOR=SELECTARG1(diffuse=white),
-         * ALPHA=SELECTARG2(texture alpha) */
-        SetTextureStageState(dev, 0, D3DTSS_COLOROP,   D3DTOP_SELECTARG1);
-        SetTextureStageState(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
-        /* ALPHA = vertex-fade (DIFFUSE alpha) x texture-alpha (silhouette mask).
-         * FLAT SELECTARG2(TEXTURE) earlier ignored the vertex fade entirely ->
-         * the white weasel rendered at full alpha for every fade frame (no
-         * visible fade-in). MODULATE folds both in. */
-        SetTextureStageState(dev, 0, D3DTSS_ALPHAOP,   D3DTOP_MODULATE);
-        SetTextureStageState(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
-        SetTextureStageState(dev, 0, D3DTSS_ALPHAARG2, D3DTA_TEXTURE);
-        /* quad at the trophy's screen box, white per-vertex alpha */
-        verts[0].x=cx;      verts[0].y=cy;      verts[0].z=0; verts[0].rhw=1;
-        verts[0].color=col; verts[0].u=0; verts[0].v=0;
-        verts[1].x=cx+w;    verts[1].y=cy;      verts[1].z=0; verts[1].rhw=1;
-        verts[1].color=col; verts[1].u=1; verts[1].v=0;
-        verts[2].x=cx+w;    verts[2].y=cy+h;    verts[2].z=0; verts[2].rhw=1;
-        verts[2].color=col; verts[2].u=1; verts[2].v=1;
-        verts[3].x=cx;      verts[3].y=cy+h;    verts[3].z=0; verts[3].rhw=1;
-        verts[3].color=col; verts[3].u=0; verts[3].v=1;
-        DrawPrimitiveUP(dev, 4 /*TRIANGLELIST*/, 2, verts, sizeof(Diamond_TLVTex));
-        /* restore stage states + blend + fog */
-        SetRenderState(dev, D3DRS_ALPHABLENDENABLE, 0);
-        SetRenderState(dev, D3DRS_FOGENABLE, 1);
-        if (GetTextureStageState) {
-            SetTextureStageState(dev, 0, D3DTSS_COLOROP,   savedColorOp);
-            SetTextureStageState(dev, 0, D3DTSS_ALPHAOP,   savedAlphaOp);
-            SetTextureStageState(dev, 0, D3DTSS_COLORARG1, savedColorArg1);
-            SetTextureStageState(dev, 0, D3DTSS_ALPHAARG1, savedAlphaArg1);
-            SetTextureStageState(dev, 0, D3DTSS_ALPHAARG2, savedAlphaArg2);
-        }
-        /* note: leave SetTexture(0) as-is; the game re-binds its own each draw */
     }
 }
 
@@ -2709,178 +2553,32 @@ static void __thiscall diamond_reveal_update(void *self) {
         diamond_vortex_tick(results);
 #endif
         diamond_weasel_mult(results);
-        /* WHITE-WEASEL FADE-IN (replaces the device-global additive white-out,
-         * which whitened the WHOLE results panel, not just the trophy). Set the
-         * overlay state the PRESENT hook draws: fade a white weasel silhouette
-         * (using the gold texture's own alpha as mask) over the gold trophy.
-         * g_overlayAlpha ramps 0..1 over WEASEL_WHITE_START..WEASEL_WHITE_END,
-         * then the diamond swap takes over at WEASEL_WHITE_TOTAL. The present
-         * hook draws it AFTER the native gold -> layered over ONLY the trophy.
-         * Computed here (in the safe pre-render update host) so the post-render
-         * present host has the state ready without re-reading game objects. */
-        if (diamond_first_earn(results)) {
-            DWORD ctx = 0;
-            if (!IsBadReadPtr((void*)(results + RESULT_APP), 4))
-                ctx = *(DWORD*)(results + RESULT_APP);   /* results+0xC = ctx */
-            g_overlayCtx  = ctx;
-            g_overlayAlpha = g_weaselIntens;             /* 0..1 across the fade */
-            if (g_overlayCtx == 0) g_overlayAlpha = 0.0f;
-        } else {
-            g_overlayCtx  = 0;
-            g_overlayAlpha = 0.0f;
-        }
+        /* White-fade toward a white WEASEL on the award screen, driven from
+         * THIS SAFE UPDATE HOST (the only place that actually renders on the
+         * award screen — the GameUpdate 0x46C1F1 present hook does NOT run
+         * while a modal results/award screen is up, which is why the earlier
+         * present-hook overlay never drew and only risked the boot crash).
+         *
+         * Two complementary pushes, both from this host (no present hook):
+         *  - diamond_weasel_mult(): ramps the sprite's own material diffuse
+         *    whiter (m 1.0 -> 2.0) so the gold resolves toward white.
+         *  - diamond_set_add(): flips the device SRC/DST blend to ADDITIVE so
+         *    the whiter sprite actually BLOWS OUT to white instead of clamping
+         *    at the texture's max. Additive affects only the medal panel's own
+         *    sprites (0x44DF70 renders only sprites/text during award).
+         *    g_weaselIntens 0..1 across the fade.
+         *  - diamond_weasel_mult_clear() at WEASEL_WHITE_TOTAL restores both
+         *    the sprite diffuse (1,1,1,1), the +0x4C blend flag, and calls
+         *    diamond_set_add(...,0) to restore the game's default blend. */
+        diamond_set_add(results, g_weaselIntens);
         if (diamond_seq_frame(results) >= WEASEL_WHITE_TOTAL) {
-            /* reveal done: restore multiplier, clear overlay, swap in diamond. */
+            /* reveal done: restore multiplier/blend, clear overlay, swap in diamond. */
             diamond_weasel_mult_clear(results);
-            g_overlayCtx = 0; g_overlayAlpha = 0.0f;
+            diamond_set_add(results, 0.0f);              /* restore default blend */
             diamond_trophy_swap(results);
             g_revealArmedVtbl = 0;
         }
     }
-    /* Apply/remove the 0x46C1F1 present cave to match whether a reveal is
-     * live. While g_revealArmedVtbl=1 (reveal in progress, seq<WHITE_TOTAL
-     * this frame) we APPLY the cave so the white overlay post-render draw runs;
-     * the moment seq reaches WHITE_TOTAL above, g_revealArmedVtbl goes 0 and
-     * this REMOVES the cave (restores pristine bytes). On a non-reveal results
-     * frame g_revealArmedVtbl stays 1 only if the reveal isn't yet done — which
-     * is exactly when we want it applied. This is the ONLY place the 0x46C1F1
-     * patch toggles, and it can never be live during boot/normal play. */
-    diamond_present_sync();
-}
-
-/* ---- White-weasel overlay PRESENT hook (post-render frame epilogue) ----
- * The reveal's white overlay must be drawn AFTER the native gold so it layers
- * on top. We hook the GameUpdate FRAME EPILOGUE at 0x46C1F1 (pop esi; add
- * esp,8; ret) — a per-frame post-render boundary (fires once per frame after
- * all game logic + rendering, right before the frame is presented).
- *
- * REAL-WINDOWS BOOT-CRASH LESSON (re-entered 2026-08-17): this site must NOT
- * be patched cold from DllMain. The earlier "0x46C1F1 is the cold-boot-safe
- * present host" note was WRONG — installing the present cave synchronously at
- * boot crashes real Windows at the LoadingScreen (RUNTIME 00:00:01,
- * CURRENTOBJECT: LoadingScreen Gadget, primary EIP=heap C0000005). Wine
- * tolerates it; real Windows does not (the identical 0x455A90 saga). The crash
- * is in the 5-byte JMP->heap redirect running during boot — the tick's
- * g_overlayCtx early-return gate does NOT help, because the patch bytes
- * themselves execute before any feature gate can matter.
- *
- * FIX = apply-on-arm / remove-on-disarm (the documented screen-scoped-feature
- * pattern): NEVER install the JMP at boot. Apply it only while a diamond-weasel
- * reveal is LIVE (g_revealArmedVtbl), and remove it (restore the pristine
- * '5E 83 C4 08 C3') the instant the reveal disarms. During the LoadingScreen
- * and all normal gameplay the site is byte-for-byte original — zero possible
- * boot/ingame crash vector. The vtable-override reveal driver calls
- * diamond_present_sync() each results frame to apply/remove as needed. */
-static DWORD g_presentCave    = 0;      /* VirtualAlloc cave (built once) */
-static int   g_presentApplied = 0;      /* is the 0x46C1F1 JMP currently live? */
-static unsigned char g_presentOrig[5] = {0x5E,0x83,0xC4,0x08,0xC3};
-static DWORD g_presentEntry = 0;
-/* The overlay tick — restored to the OLD tick discipline (pre-620e9571).
- *
- * The crashing build gated ONLY on the module globals g_overlayCtx/
- * g_overlayAlpha (set by the vtable-override reveal driver) and then ran
- * get_app()/app+APP_GFX + raw DrawPrimitiveUP inline at the epilogue whenever
- * those globals were nonzero. Because the cave was installed at boot, a
- * nonzero global could fire heavy D3D work during the LoadingScreen — the
- * real-Windows boot crash (heap EIP, C0000005, RUNTIME 00:00:01).
- *
- * Restored discipline (matches the proven present_reveal_handler of 619ea2f9):
- * FIRST gate on actual board results-screen EXISTENCE — board != NULL and a
- * genuine medal-award results object (award vtable 0x4D6CF0) is live in the
- * board's results list (scene+0x8B8). Only a real results screen can ever have
- * an overlay to draw, so this tick is boot-safe BY CONSTRUCTION: at the
- * LoadingScreen and during normal play there is no results list, the award
- * vtable is not present, and the function returns before ANY game read or D3D
- * call. The module-global check is kept as a secondary, additional gate. */
-__attribute__((used)) static void diamond_present_tick(void) {
-    DWORD app, board, gfx, vt, results;
-    DWORD *items;
-    int listCount;
-    /* gate 1 (cheapest, no game read): a live overlay state is required. */
-    if (!g_overlayCtx || g_overlayAlpha <= 0.001f) return;
-    /* gate 2 (old discipline): real results-screen existence BEFORE any D3D. */
-    app = get_app();
-    if (!app) return;
-    if (IsBadReadPtr((void*)(app + APP_BOARD), 4)) return;
-    board = *(DWORD*)(app + APP_BOARD);
-    if (!board) return;
-    /* results list at scene+0x8B8 (AthenaList: count at +0x04, items +0x40C) */
-    if (IsBadReadPtr((void*)(board + SCENE_RESULTS_LIST + SCENE_LIST_COUNT), 4)) return;
-    listCount = *(int*)(board + SCENE_RESULTS_LIST + SCENE_LIST_COUNT);
-    if (listCount <= 0 || listCount > 4) return;
-    if (IsBadReadPtr((void*)(board + SCENE_RESULTS_LIST + SCENE_LIST_ITEMS), 4)) return;
-    items = *(DWORD**)(board + SCENE_RESULTS_LIST + SCENE_LIST_ITEMS);
-    if (!items) return;
-    if (IsBadReadPtr(items, 4)) return;
-    results = items[0];
-    if (!results) return;
-    if (IsBadReadPtr((void*)results, 4)) return;
-    vt = *(DWORD*)results;
-    /* Must be a genuine results/award-screen object (award vtable 0x4D6CF0).
-     * (Complete list kept in sync with the reveal driver's identification.) */
-    if (vt != RESULTS_VTABLE_AWARD) return;
-    /* gate 3: gfx must be resolvable before any draw. */
-    if (IsBadReadPtr((void*)(app + APP_GFX), 4)) return;
-    gfx = *(DWORD*)(app + APP_GFX);
-    if (!gfx || gfx < 0x10000 || IsBadReadPtr((void*)gfx, 4)) return;
-    /* one-shot diag: confirm the post-render tick fires during the reveal
-     * (a missing log = the epilogue isn't running while the award screen is up,
-     * which would explain "no white fade"). */
-    if (g_presentDiag) {
-        trace_logf("[diamond] present-tick FIRES overlay draw alpha=%.2f ctx=%08X results=%08X", g_overlayAlpha, g_overlayCtx, results);
-        g_presentDiag = 0;
-    }
-    diamond_white_overlay_draw(gfx, g_overlayCtx, g_overlayAlpha);
-}
-/* Build the cave once (allocation only, no game patch). Called from the safe
- * init thread. */
-static void present_cave_init(void) {
-    if (g_presentCave) return;
-    g_presentCave = (DWORD)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
-                                        PAGE_EXECUTE_READWRITE);
-    if (!g_presentCave) return;
-    g_presentEntry = EXE_BASE + (0x46C1F1 - EXE_BASE);
-    unsigned char *p = (unsigned char*)g_presentCave;
-    *p++ = 0x60;                               /* pushad */
-    {   DWORD a = (DWORD)diamond_present_tick;
-        *p++ = 0xE8; *(DWORD*)p = a - (DWORD)(p+1) - 4; p += 4;  /* call tick */
-    }
-    *p++ = 0x61;                               /* popad */
-    /* re-emit the epilogue: pop esi; add esp,8; ret */
-    *p++ = 0x5E;                               /* pop esi */
-    *p++ = 0x83; *p++ = 0xC4; *p++ = 0x08;     /* add esp,8 */
-    *p++ = 0xC3;                               /* ret */
-    FlushInstructionCache(GetCurrentProcess(), (void*)g_presentCave, 64);
-}
-/* Apply the 0x46C1F1 JMP (idempotent). Save the pristine original bytes on
- * first apply so remove can always restore exactly. */
-static void present_cave_apply(void) {
-    if (g_presentApplied) return;
-    if (!g_presentCave || !g_presentEntry) return;
-    memcpy(g_presentOrig, (void*)g_presentEntry, 5);
-    unsigned char jmp[5] = {0xE9,0,0,0,0};
-    *(DWORD*)(jmp+1) = g_presentCave - g_presentEntry - 5;
-    patch_bytes((void*)g_presentEntry, jmp, 5);
-    g_presentApplied = 1;
-    diag_log("[diamond] present cave APPLIED at 0x46C1F1 (reveal live)");
-}
-/* Remove the 0x46C1F1 JMP, restoring the pristine bytes (idempotent). */
-static void present_cave_remove(void) {
-    if (!g_presentApplied) return;
-    if (g_presentEntry) patch_bytes((void*)g_presentEntry, g_presentOrig, 5);
-    g_presentApplied = 0;
-    diag_log("[diamond] present cave REMOVED at 0x46C1F1 (reveal done)");
-}
-/* Called every results frame from diamond_reveal_update: apply/remove to
- * reflect whether a reveal is live. Gated on the SAME cheap condition the
- * present tick draws on (g_overlayCtx + alpha>0) — that is the precise
- * "a diamond weasel overlay must be drawn post-render THIS frame" signal. On
- * frames with no live overlay (non-diamond results, boot, gameplay) we REMOVE
- * the cave so the 0x46C1F1 site is byte-for-byte original. This is the only
- * place the 0x46C1F1 patch toggles. */
-static void diamond_present_sync(void) {
-    if (g_overlayCtx && g_overlayAlpha > 0.001f) present_cave_apply();
-    else                                         present_cave_remove();
 }
 
 /* Patch the SHARED vtable slot from the safe init thread (no SEH frame). */
@@ -2910,10 +2608,6 @@ static void install_hooks(void) {
     install_vtable_override();
     install_skip_cave();                     /* block skip so the gold+240 reveal plays */
     diag_log("[diamond] hooks installed (VTABLE OVERRIDE: slot[1]=reveal+orig, per-object copy)");
-    /* Build (allocate only, NO game patch) the 0x46C1F1 present cave. It is
-     * applied on-arm / removed on-disarm from diamond_present_sync() in the
-     * reveal driver — never live at boot. */
-    present_cave_init();
 #elif defined(DIAMOND_CB90_PROBE)
     /* PATH-1 PROBE: hook the untested non-SEH results fn 0x44CB90.
      * Logs entry/frame counters; reveals whether it fires per-frame. */
@@ -3051,13 +2745,15 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
         AddVectoredExceptionHandler(1, diamond_veh);
         init_thresholds();
         load_unlocks();
-        /* NOTE: the 0x46C1F1 present cave is NOT installed here. The original
-         * build installed it cold from DllMain, which crashed real Windows at
-         * the LoadingScreen (RUNTIME 00:00:01, C0000005, heap EIP) — installing
-         * ANY JMP->heap redirect at boot is the vector, regardless of the
-         * tick's early-return gate (Wine tolerates it, real Windows does not).
-         * The cave is now built + applied only on-arm / removed on-disarm from
-         * the reveal driver (see present_cave_init / diamond_present_sync). */
+        /* NOTE: the 0x46C1F1 present hook is NOT installed here, and has been
+         * REMOVED from the mod entirely. The white-fade is driven from the
+         * award-screen vtable-update host (diamond_set_add + weasel_mult),
+         * which is the only place that actually renders during the award
+         * screen. Installing any JMP->heap redirect at boot is a real-Windows
+         * LoadingScreen crash (RUNTIME 00:00:01, C0000005, heap EIP) — and the
+         * GameUpdate epilogue doesn't even run while a modal award screen is
+         * up, so the present-hook overlay could never have drawn there. Wine
+         * tolerates the boot redirect; real Windows does not. */
         /* Defer ALL .text patching to a background thread (Sleep 2s) so we
          * never run VirtualAlloc/VirtualProtect under the loader lock. */
         CreateThread(NULL, 0, diamond_init_thread, NULL, 0, NULL);
