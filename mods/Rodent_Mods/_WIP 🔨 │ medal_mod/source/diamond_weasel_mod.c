@@ -2701,49 +2701,60 @@ static void __thiscall diamond_reveal_update(void *self) {
     }
 }
 
-/* ---- White-weasel overlay PRESENT hook ----
- * Installed COLD (synchronously from DllMain, before the frame loop) at
- * 0x455A90 (Graphics_PresentOrEnd, __thiscall(ecx=gfx, arg=endFlag)) to avoid
- * the non-atomic hot-patch race that crashed real Windows. The tick draws the
- * white overlay ONLY when the reveal state (g_overlayCtx/Alpha, set by the
- * pre-render reveal host) is live — a strict early-return gate so it never
- * acts at boot / between results screens. */
+/* ---- White-weasel overlay PRESENT hook (post-render frame epilogue) ----
+ * The reveal's white overlay must be drawn AFTER the native gold so it layers
+ * on top. We hook the GameUpdate FRAME EPILOGUE at 0x46C1F1 (pop esi; add
+ * esp,8; ret) — the documented COLD-boot-safe per-frame post-render boundary
+ * (fires once per frame after all game logic + rendering, right before the
+ * frame is presented). This is the SAFE present host: 0x455A90 (Graphics_
+ * PresentOrEnd) is the loader-wrap present that crashes real Windows at boot
+ * RUNTIME 0-2s even when installed cold-synchronously (proven this session:
+ * install present cave at 0x455A90 => real-Windows boot crash at Initialize/26,
+ * LoadingScreen; Wine tolerated it but real Windows did not).
+ *
+ * The tick is a minimal early-return gate: unless the reveal host set
+ * g_overlayCtx/g_overlayAlpha (a diamond weasel just earned), it returns
+ * immediately — a near-free hot path. Heavy D3D8 overlay draw runs only behind
+ * the gate, during the reveal window. Installed COLD-synchronously from DllMain
+ * (before the frame loop) so the 5-byte patch can never tear an in-flight
+ * instruction. */
 static DWORD g_presentCave = 0;
-__attribute__((used)) static void diamond_present_tick(DWORD gfx) {
+__attribute__((used)) static void diamond_present_tick(void) {
+    DWORD app, gfx;
     /* cheap gate BEFORE any game read / device work. */
     if (!g_overlayCtx || g_overlayAlpha <= 0.001f) return;
+    app = get_app();
+    if (!app) return;
+    if (IsBadReadPtr((void*)(app + APP_GFX), 4)) return;
+    gfx = *(DWORD*)(app + APP_GFX);
     if (!gfx || gfx < 0x10000 || IsBadReadPtr((void*)gfx, 4)) return;
     diamond_white_overlay_draw(gfx, g_overlayCtx, g_overlayAlpha);
 }
 static void install_present_cave(void) {
-    /* cave: pushad; call diamond_present_tick(gfx=ecx); popad;
-     * re-emit 'mov al,[esp+4]; sub esp,0x20' (8 bytes); jmp 0x455A97 */
+    /* Target 0x46C1F1 (GameUpdate epilogue: pop esi; add esp,8; ret = 5 bytes).
+     * cave: pushad; call diamond_present_tick(); popad;
+     * re-emit '5E 83 C4 08 C3' (pop esi; add esp,8; ret); done. */
+    const DWORD EPI = 0x46C1F1;
+    DWORD entry = EXE_BASE + (EPI - EXE_BASE);
     g_presentCave = (DWORD)VirtualAlloc(NULL, 128, MEM_COMMIT|MEM_RESERVE,
                                         PAGE_EXECUTE_READWRITE);
     if (!g_presentCave) return;
     unsigned char *p = (unsigned char*)g_presentCave;
-    DWORD entry = EXE_BASE + (0x455A90 - EXE_BASE);
-    /* pushad (0x60) ... but MOV [gfx] needs ecx saved; use gfx as arg: the tick
-     * takes gfx. pushad saves ecx. After popad ecx restored. We pass ecx as the
-     * arg on the stack (cdecl): push ecx; call; add esp,4. */
     *p++ = 0x60;                               /* pushad */
-    *p++ = 0x51;                               /* push ecx (arg: gfx) */
     {   DWORD a = (DWORD)diamond_present_tick;
-        *p++ = 0xE8; *(DWORD*)p = a - (DWORD)(p+1) - 4; p += 4;  /* call */
+        *p++ = 0xE8; *(DWORD*)p = a - (DWORD)(p+1) - 4; p += 4;  /* call tick */
     }
-    *p++ = 0x83; *p++ = 0xC4; *p++ = 0x04;     /* add esp,4 */
     *p++ = 0x61;                               /* popad */
-    /* re-emit mov al,[esp+4]; sub esp,0x20 */
-    *p++ = 0x8A; *p++ = 0x44; *p++ = 0x24; *p++ = 0x04;   /* mov al,[esp+4] */
-    *p++ = 0x83; *p++ = 0xEC; *p++ = 0x20;                 /* sub esp,0x20 */
-    /* jmp back to 0x455A97 */
-    *p++ = 0xE9; *(DWORD*)p = (entry + 7) - (DWORD)(p+1) - 4; p += 4;
-    FlushInstructionCache(GetCurrentProcess(), (void*)g_presentCave, 128);
-    /* 5-byte JMP at entry (0x455A90) to cave. */
+    /* re-emit the epilogue: pop esi; add esp,8; ret */
+    *p++ = 0x5E;                               /* pop esi */
+    *p++ = 0x83; *p++ = 0xC4; *p++ = 0x08;     /* add esp,8 */
+    *p++ = 0xC3;                               /* ret */
+    FlushInstructionCache(GetCurrentProcess(), (void*)g_presentCave, 64);
+    /* 5-byte JMP at entry (0x46C1F1) to cave. */
     unsigned char jmp[5] = {0xE9,0,0,0,0};
     *(DWORD*)(jmp+1) = g_presentCave - entry - 5;
     patch_bytes((void*)entry, jmp, 5);
-    diag_log("[diamond] present cave installed at 0x455A90 (white-weasel overlay)");
+    diag_log("[diamond] present cave installed at 0x46C1F1 (frame epilogue, white-weasel overlay)");
 }
 
 /* Patch the SHARED vtable slot from the safe init thread (no SEH frame). */
