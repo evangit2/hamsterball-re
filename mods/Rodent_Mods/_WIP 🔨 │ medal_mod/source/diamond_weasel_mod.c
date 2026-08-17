@@ -1392,12 +1392,21 @@ static void diamond_white_overlay_draw(DWORD gfx, DWORD ctx, float alpha) {
     if (!weasel || weasel < 0x10000 || IsBadReadPtr((void*)(weasel + 0x50), 4)) { ov_guard(2, weasel, 0); return; }
     tex = *(DWORD*)(weasel + 0x50);                       /* sprite texture */
     if (!tex || tex < 0x10000) { ov_guard(3, tex, weasel); return; }
-    /* trophy draws at world top-left (0x208,0x63), sized [sprite+0xC8]x[+0xCC] */
-    if (IsBadReadPtr((void*)(weasel + 0xC8), 8)) { ov_guard(4, weasel, 0); return; }
-    w = *(float*)(weasel + 0xC8); h = *(float*)(weasel + 0xCC);
-    if (w <= 1.0f || h <= 1.0f) { ov_guard(5, weasel, (DWORD)w); return; }
-    /* replicate Gfx_TransformX/Y (0x453e90/0x453eb0): screen = world*scale + off */
+    /* trophy draws at world top-left (0x208,0x63), sized [sprite+0xC8]x[+0xCC]
+     * The native gold weasel has +0xC8/+0xCC = 0 during the reveal (guard-bail
+     * id=5 seen in logs), so FALL BACK to a fixed world box matching the
+     * trophy's rendered ~2:3 area (the gold draws at 0x208,0x63; the trophy is
+     * ~256 wide x ~384 tall world units). A too-small box would make the white
+     * under-cover the trophy. */
+    if (!IsBadReadPtr((void*)(weasel + 0xC8), 8)) {
+        w = *(float*)(weasel + 0xC8); h = *(float*)(weasel + 0xCC);
+        if (w <= 1.0f || h <= 1.0f) { w = 256.0f; h = 384.0f; }
+    } else {
+        w = 256.0f; h = 384.0f;
+    }
+    /* world top-left (fixed: the award render draws the weasel at 0x208,0x63) */
     {
+        const float WTX = 0x208, WTY = 0x63;
         DWORD sc = 0; float sx, sy;
         float sX=1.0f, sY=1.0f, oX=0.0f, oY=0.0f;
         if (IsBadReadPtr((void*)(gfx + 0x5C), 4)) { ov_guard(6, gfx, 0); return; }
@@ -1405,8 +1414,8 @@ static void diamond_white_overlay_draw(DWORD gfx, DWORD ctx, float alpha) {
         if (!sc || IsBadReadPtr((void*)(sc + 0x1F8), 8)) { ov_guard(7, sc, 0); return; }
         sX = *(float*)(sc + 0x1F8); sY = *(float*)(sc + 0x1FC);
         oX = (float)(*(int*)(gfx + 0x798)); oY = (float)(*(int*)(gfx + 0x79C));
-        sx = 0x208 * sX + oX;
-        sy = 0x63  * sY + oY;
+        sx = WTX * sX + oX;
+        sy = WTY * sY + oY;
         /* screen-space w/h (world dims through the same scale factor) */
         w = w * sX;
         h = h * sY;
