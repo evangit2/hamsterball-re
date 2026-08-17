@@ -400,7 +400,11 @@ same moment the PNG assets are created.
 > pinned to the anchor regardless of POT padding; **(D)** the composite draw now
 > reuses a **persistent buffer** instead of allocating+freed a fresh up-to-4 MB
 > chunk every frame (~20+ per reveal) inside the award-screen SEH frame — the
-> per-frame draw path now allocates nothing. Crash-tested OK (38.5s).
+> per-frame draw path now allocates nothing. **(E)** three frame-path log calls in
+> the first-earn reveal (medal-effects `/` sprite-ctor) were direct file I/O
+> (`diag_logf`); converted to the SEH-safe in-memory trace ring so the reveal
+> never does `fopen`/`fflush` inside the award frame (real-Windows `C0000005`
+> risk on the untested build). Crash-tested OK (38.6s).
 
 ## Build
 

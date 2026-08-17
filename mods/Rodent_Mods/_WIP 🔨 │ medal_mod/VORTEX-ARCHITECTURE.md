@@ -13,9 +13,12 @@ canvas↔weasel pixel ratio so the centered weasel stays exactly on the anchor
 regardless of POT padding, and (D) the composite draw uses a **persistent
 reused buffer** instead of `VirtualAlloc`/`VirtualFree` every frame — the
 SEH-frame draw path now does zero per-frame allocation (previously up to a
-4 MB alloc+zero+free per frame for ~20+ reveal frames). This doc records the
-design, the verified D3D8 slots, and the state of the build so the work can
-be resumed/verified across sessions.
+4 MB alloc+zero+free per frame for ~20+ reveal frames), and (E) three
+frame-path log calls in the first-earn reveal (medal-effects + sprite-ctor)
+were converted from direct `diag_logf` file I/O to the SEH-safe in-memory
+trace ring so the reveal never does `fopen`/`fflush` inside the award frame.
+This doc records the design, the verified D3D8 slots, and the state of the
+build so the work can be resumed/verified across sessions.
 
 Date: 2026-08-17 — written after a long investigation session (thread
 `1529299247516749886`), following a real-Windows crash discovering the
