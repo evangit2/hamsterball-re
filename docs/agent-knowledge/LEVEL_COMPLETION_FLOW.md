@@ -238,9 +238,9 @@ Called every frame by 6 Board vtable methods. This is the master race state mach
 
 **Finish detection** (when `+0x3A4C != 0`, race active):
 - Iterates finish-line trigger objects at `+0x3A38`
-- For each trigger object (which are pointers into App player slots at `App+PID*0xA0+0x5CC`):
+- For each trigger object (the per-player race-clock objects tracked in board lists like `+0x362C`; each has a ball pointer `+0x10`, finished flag `+0x0A`, timer `+0x1C`):
   - If `obj+0x0A == 0` (not yet finished, = `App+PID*0xA0+0x5D6`):
-    - **Single-player**: decrements `obj+0x1C` (time remaining, = `App+PID*0xA0+0x5E8`). When `< 0` AND `obj+0x20 < 1`:
+    - **Single-player**: decrements `obj+0x1C` (per-player race-clock countdown). When `< 0` AND `obj+0x20 < 1`:
       - Sets `obj+0x1C = 0`, `obj+0x0A = 1` (finished)
       - Sets ball `+0x14C = 1` (ball finished flag)
       - Calls `Scene_UpdateChildren(scene+0x178)`
@@ -255,11 +255,17 @@ Called every frame by 6 Board vtable methods. This is the master race state mach
 If set to 1 (by N:GOAL or by timer expiry), the `DEC obj+0x1C` instruction is skipped via `JNZ` at `0x41B3E5`.
 The flag is set by N:GOAL in `DispatchCollisionEvents` (0x40C5D0).
 
+> **Note on timer structs:** the countdown `obj+0x1C` here is the race-clock counter on the
+> per-player timer object (an entry in the board's timer list at `board+0x362C`, decremented at
+> `0x41B3E5`, expires the race when it passes 0). It is a **different** counter from
+> `App+PID*0xA0+0x5E8`, which is the elapsed race time (counts up from 0, frozen at N:GOAL as the
+> finish time). Do not equate the two.
+
 **Score vs Time**: `obj+0x18` (= `App+PID*0xA0+0x5E4`) is the **score** (float, accumulated by E:ACTION
-collision events). `obj+0x1C` (= `App+PID*0xA0+0x5E8`) is the **time remaining** (int, countdown from
-par time). The rank threshold table at `0x4F710C` contains DWORD score thresholds (6000→350000),
-not time values. RaceResultPopup_ctor reads the score as a float and compares against these
-thresholds to pick the rank image (`textures\ranks\N.jpg`).
+collision events). `RaceResultPopup` reads the score as a float and compares against the rank
+threshold table at `0x4F710C` (DWORD score thresholds 6000→350000) to pick the rank image
+(`textures\ranks\N.jpg`). The per-player `obj+0x1C` is the countdown race clock; the elapsed finish
+time lives at `App+PID*0xA0+0x5E8`.
 
 ### 1b. `RaceResultPopup` (ctor at 0x44C260)
 
