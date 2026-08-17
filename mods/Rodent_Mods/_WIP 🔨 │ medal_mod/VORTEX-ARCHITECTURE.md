@@ -1,12 +1,14 @@
 # Vortex — architecture, findings & plan (Option A)
 
-Status: **THEORY / DESIGN ONLY.** No build, no gameplay change is implied by this
-doc. It captures everything established about the golden-weasel **suction vortex**
-so the work can be resumed cleanly across sessions.
+Status: **OPTION A BUILT (2026-08-17).** The consolidated procedural-composite
+vortex is implemented, compiles clean, and passes the hbtestd crash test. This
+doc records the design, the verified D3D8 slots, and the state of the build so
+the work can be resumed/verified across sessions.
 
 Date: 2026-08-17 — written after a long investigation session (thread
 `1529299247516749886`), following a real-Windows crash discovering the
-`0x46C1F1` present-hook wasn't the root cause. See the full history below.
+`0x46C1F1` present-hook wasn't the root cause. Updated to status BUILT after
+the Option-A composite-vortex implementation.
 
 ---
 
@@ -183,27 +185,28 @@ exactly like the diamond swap. No PNG, no disk, no encoder, no SEH cave.
 
 ---
 
-## 6. Still to verify BEFORE any build (pure theory — no building yet)
+## 6. Verified D3D8 slots (resolved 2026-08-17 — from MinGW d3d8.h)
 
-1. **D3D8 interface vtable slots** — confirm against the actual `d3d8.dll`
-   interface (or the skill's verified D3D8 display table from memory note
-   `d3d8-render-pipeline` supersets):
-   - `IDirect3DDevice8::CreateTexture` = slot 39 / offset `0x9C`
-   - `IDirect3DTexture8::LockRect` = slot 11 / offset `0x54`
-   - `IDirect3DTexture8::UnlockRect` offset
-   - `IDirect3DTexture8::GetLevelDesc` offset if needed
-   These are **standard D3D8**, but the whole saga turned on confirming slots
-   before use (`9efc2403`). Read them out of the actual D3D8 interface, not
-   assumption.
-2. **Device pointer chain** — confirm `gfx` is reachable the way the mod already
-   gets it for the weasel sprite (`app→APP_GFX`→`gfx`), and that `gfx+0x154` is
-   the `IDirect3DDevice8*` (used at `0x45d40f`). Verify against the skill's
-   `gfx+0x154` note.
+Both open items are RESOLVED by reading the authoritative `d3d8.h`
+(`/usr/i686-w64-mingw32/include/d3d8.h`):
 
-Also decide: **bind via `Sprite_ctor` (file path, then overwrite `+0x50`) vs
-allocate a minimal sprite struct manually.** `Sprite_ctor` is simpler/lower-risk
-for init; overwriting `+0x50` is the one extra step. Recommend `Sprite_ctor` for
-the base then overwrite `+0x50`.
+1. **D3D8 interface vtable slots (CORRECTED — the doc's original guesses were
+   wrong, and this is likely what sank the raw-D3D vortex):**
+   - `IDirect3DDevice8::CreateTexture` = **slot 20 / offset `0x50`**
+     (the doc guessed slot 39 / `0x9C`; `0x9C` is actually `MultiplyTransform`)
+   - `IDirect3DTexture8::LockRect` = **slot 16 / offset `0x40`**
+   - `IDirect3DTexture8::UnlockRect` = **slot 17 / offset `0x44`**
+   - `IDirect3DTexture8::GetLevelDesc` = **slot 14 / offset `0x38`**
+2. **Device pointer chain** — confirmed: `app(+0x174)→gfx→gfx+0x154` is the
+   `IDirect3DDevice8*` (used everywhere, e.g. `0x45d40f`). The sprite stores its
+   own `gfx` at `sprite+4`, and `Graphics_ApplyMaterialAndDraw` reads
+   `+0x154` → device.
+
+Resolution of the bind question: the build allocates a **minimal sprite**
+(0xD4 buffer) with vtable `0x4D8F84`, `+0x50` = our texture, `+0xC8/+0xCC` =
+the weasel's original draw box, and material defaults — then swaps it into
+`ctx+0x37C`. This avoids the `Sprite_ctor` FILE loader entirely and is purely a
+data write, matching the proven diamond-swap pattern.
 
 ---
 

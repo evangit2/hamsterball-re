@@ -390,6 +390,53 @@ static DWORD g_vortexResults = 0;    /* results obj of the CURRENT vortex sessio
                                         mid-cycle (frame never reaches the tail). */
 volatile int g_caveProbe = 0;        /* VEH-reading probe (0 = cave path untouched) */
 
+/* ---- CONSOLIDATED PROCEDURAL-COMPOSITE VORTEX (Option A, 2026-08-17) ----
+ * Replaces the raw-DrawPrimitiveUP vortex AND the separate white-out
+ * mechanisms with a SINGLE procedurally-generated texture: we capture the
+ * golden weasel's real pixels once, then each reveal frame build a composite
+ * (weasel lerped to white + suction streaks in the annulus), upload it to a
+ * CreateTexture'd scratch, bind it to a sprite +0x50, and swap that sprite
+ * into ctx+0x37C so the game's own renderer draws it (ONE draw call).
+ *
+ * D3D8 slot constants (VERIFIED vs MinGW d3d8.h):
+ *   IDirect3DDevice8::CreateTexture  = slot 20 / 0x50
+ *   IDirect3DTexture8::GetLevelDesc  = slot 14 / 0x38
+ *   IDirect3DTexture8::LockRect      = slot 16 / 0x40
+ *   IDirect3DTexture8::UnlockRect    = slot 17 / 0x44
+ */
+#define D3D_DEV_CREATETEXTURE   0x50
+#define D3D_TEX_GETLEVELDESC    0x38
+#define D3D_TEX_LOCKRECT        0x40
+#define D3D_TEX_UNLOCKRECT      0x44
+#define D3DFMT_A8R8G8B8         0x15
+#define D3DFMT_X8R8G8B8         0x16
+#define D3DPOOL_MANAGED         0x01
+#define D3DLOCK_READONLY        0x10
+#define VORTEX_TEX_MIN          64
+#define VORTEX_TEX_MAX          512
+/* Texture-relative streak geometry (fractions of captured tex width). */
+#define VORTEX_TEX_STRETCH      0.20f
+#define VORTEX_TEX_CENTER_FADE  0.06f
+#define VORTEX_TEX_WEASEL_R     0.42f   /* weasel clear-disk radius (frac of w) */
+static DWORD g_vortexDevice = 0;        /* device we created our texture with */
+static BYTE  *g_vortexCaptured = NULL;  /* weasel RGBA capture (w*h*4) */
+static int    g_vortexCaptW = 0, g_vortexCaptH = 0;
+static DWORD  g_vortexTex = 0;          /* our scratch texture */
+static int    g_vortexTexW = 0, g_vortexTexH = 0;
+static DWORD  g_vortexSprite = 0;       /* our composite sprite */
+static DWORD  g_vortexOrigTex = 0;      /* the weasel texture we captured */
+/* ctx+0x37C swap state for the composite vortex (SEPARATE from the trophy
+ * swap so the two don't fight: trophy swap is the glassy/swap at +240; this
+ * is the during-white window). */
+static int    g_vortexSwapActive = 0;
+static DWORD  g_vortexSwapCtx = 0;
+static DWORD  g_vortexSwapOrig = 0;     /* orig sprite (weasel) at ctx+0x37C */
+static int    g_vortexSwapResults = 0;
+/* The original weasel sprite's DRAW BOX (world units, +0xC8/+0xCC) — the
+ * composite sprite copies these so it renders in the exact same spot/size.
+ * Our texture (g_vortexCaptW x g_vortexCaptH) maps 0..1 UV onto this box. */
+static float  g_vortexBoxW = 0.0f, g_vortexBoxH = 0.0f;
+
 /* ================================================================
  * Mod globals
  * ================================================================ */
@@ -833,6 +880,7 @@ __attribute__((used)) void diamond_weasel_mult(DWORD results);
 __attribute__((used)) void diamond_weasel_mult_clear(DWORD results);
 __attribute__((used)) int  diamond_trophy_swap(DWORD results);
 __attribute__((used)) void diamond_trophy_restore(DWORD results);
+static void vortex_disarm(void);   /* defined in the procedural-composite block */
 
 /* BLOCK the results-screen click/keypress skip when the diamond time was
  * achieved for the current race. The skip latch (results+0x25) drives the
@@ -1087,11 +1135,12 @@ __attribute__((used)) int diamond_reveal_draw(DWORD results) {
     if (!diamond_first_earn(results)) return 0;   /* no reveal -> plain gold */
     frame = diamond_seq_frame(results);
     if (frame < WEASEL_WHITE_TOTAL) {
-        /* reveal in progress: vortex + white-out, but gold still drawn (swap
-         * happens at WEASEL_WHITE_TOTAL, i.e. the trophy swap frame) */
+        /* reveal in progress: the procedural-composite vortex (diamond_vortex_tick)
+         * does white-lerp + streaks in ONE texture swapped into ctx+0x37C. The
+         * game's render draws it. Gold is still drawn (swap happens at
+         * WEASEL_WHITE_TOTAL, i.e. the trophy swap frame). */
         diamond_vortex_tick(results);
-        diamond_weasel_mult(results);   /* fade to white by frame */
-        return 0;                        /* draw gold (white-faded under it) */
+        return 0;                        /* draw gold (composite shown over it) */
     }
     /* paste the hold end -> swap to diamond */
     return diamond_trophy_swap(results);  /* draws diamond + returns 1 to skip gold */
@@ -1412,14 +1461,364 @@ static void vortex_compute_center(DWORD gfx, DWORD sprite) {
     }
 }
 
+/* ==================================================================
+ * PROCEDURAL-COMPOSITE VORTEX (Option A)
+ * We control every pixel, so instead of issuing raw DrawPrimitiveUP calls
+ * (which crashed real Windows on a mis-slot) we generate RGBA and let the
+ * game's own sprite renderer draw it:
+ *   1) Once per reveal: read-capture the golden weasel's real pixels
+ *      (LockRect of the weasel texture at sprite+0x50).
+ *   2) Each frame: lerp the weasel toward white by reveal-frame t, and paint
+ *      the suction streaks into the annulus OUTSIDE the weasel disk.
+ *   3) Upload via CreateTexture+LockRect-write into a scratch texture.
+ *   4) Bind to our sprite +0x50, swap into ctx+0x37C; the render fn draws it
+ *      with its existing single Sprite_DrawRect. No raw D3D in the draw.
+ * ================================================================== */
+typedef struct { int w, h; DWORD pitch; BYTE *pBits; } Vortex_Locked;
+typedef HRESULT (__stdcall *PFN_CreateTexture)(void*, UINT,UINT,UINT,DWORD,DWORD,DWORD,void**);
+typedef HRESULT (__stdcall *PFN_TexLockRect)(void*, UINT, Vortex_Locked*, const RECT*, DWORD);
+typedef HRESULT (__stdcall *PFN_TexUnlockRect)(void*, UINT);
+typedef HRESULT (__stdcall *PFN_TexGetLevelDesc)(void*, UINT, void*);
+
+/* Read the weasel's pixel dims from its texture via GetLevelDesc. Returns
+ * something sane (w,h scaled to texture-relative coords) or (0,0). */
+static void vortex_weasel_size(DWORD weaselTex, int *outW, int *outH) {
+    DWORD vt;
+    PFN_TexGetLevelDesc GetLevelDesc;
+    unsigned char desc[0x20];
+    *outW = 0; *outH = 0;
+    if (!weaselTex || IsBadReadPtr((void*)weaselTex, 4)) return;
+    vt = *(DWORD*)weaselTex;
+    if (!vt || IsBadReadPtr((void*)(vt + D3D_TEX_GETLEVELDESC), 4)) return;
+    GetLevelDesc = (PFN_TexGetLevelDesc)(*(void**)(vt + D3D_TEX_GETLEVELDESC));
+    if (!GetLevelDesc) return;
+    memset(desc, 0, sizeof(desc));
+    /* D3DSURFACE_DESC (MinGW d3d8.h): Format(+0) Type(+4) Usage(+8) Pool(+0xC)
+     * Size(+0x10) MultiSampleType(+0x14) Width(+0x18) Height(+0x1C). */
+    if (GetLevelDesc((void*)weaselTex, 0, desc) == 0 /*S_OK*/) {
+        int w = (int)*(DWORD*)(desc + 0x18);
+        int h = (int)*(DWORD*)(desc + 0x1C);
+        /* Accept any 32-bit or masked format; we read texels as 4-byte ARGB.
+         * Even if the format is 16-bit, GetLevelDesc still gives us the true
+         * dims (which is all we need for the in-bounds capture buffer). */
+        if (w > 0 && h > 0) { *outW = w; *outH = h; }
+    }
+}
+
+/* Create the scratch texture (recreated if size changed). */
+static DWORD vortex_ensure_scratch(DWORD device, int w, int h) {
+    DWORD vt;
+    PFN_CreateTexture CreateTexture;
+    if (g_vortexTex && g_vortexTexW == w && g_vortexTexH == h) return g_vortexTex;
+    if (!device || IsBadReadPtr((void*)device, 4)) return 0;
+    vt = *(DWORD*)device;
+    if (!vt || IsBadReadPtr((void*)(vt + D3D_DEV_CREATETEXTURE), 4)) return 0;
+    CreateTexture = (PFN_CreateTexture)(*(void**)(vt + D3D_DEV_CREATETEXTURE));
+    if (!CreateTexture) return 0;
+    if (g_vortexTex) {   /* release old scratch (Release = slot 2) */
+        DWORD *rvt = *(DWORD**)g_vortexTex;
+        if (rvt && IsBadReadPtr((void*)(rvt + 0x08), 4)) {
+            typedef ULONG (__stdcall *PFN_Release)(void*);
+            PFN_Release rel = (PFN_Release)(*(void**)(rvt + 0x08));
+            if (rel) rel((void*)g_vortexTex);
+        }
+        g_vortexTex = 0;
+    }
+    {
+        void *out = NULL;
+        HRESULT hr = CreateTexture((void*)device, (UINT)w, (UINT)h,
+                                   1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &out);
+        if (hr != 0 || !out) return 0;
+        g_vortexTex = (DWORD)out;
+        g_vortexTexW = w; g_vortexTexH = h;
+        trace_logf("[vortex] scratch %dx%d -> %08X", w, h, g_vortexTex);
+    }
+    return g_vortexTex;
+}
+
+/* Upload `w*h*4` RGBA into the scratch texture (LockRect write). */
+static int vortex_upload(DWORD tex, int w, int h, const BYTE *rgba) {
+    DWORD vt;
+    PFN_TexLockRect LockRect; PFN_TexUnlockRect UnlockRect;
+    Vortex_Locked lr;
+    if (!tex || !rgba || IsBadReadPtr((void*)tex, 4)) return 0;
+    vt = *(DWORD*)tex;
+    if (!vt || IsBadReadPtr((void*)(vt + D3D_TEX_LOCKRECT), 8)) return 0;
+    LockRect = (PFN_TexLockRect)(*(void**)(vt + D3D_TEX_LOCKRECT));
+    UnlockRect = (PFN_TexUnlockRect)(*(void**)(vt + D3D_TEX_UNLOCKRECT));
+    if (!LockRect || !UnlockRect) return 0;
+    memset(&lr, 0, sizeof(lr));
+    if (LockRect((void*)tex, 0, &lr, NULL, 0) != 0) return 0;
+    if (lr.pBits) {
+        int y; const BYTE *s = rgba; BYTE *d = (BYTE*)lr.pBits;
+        for (y = 0; y < h; y++) {
+            memcpy(d, s, (size_t)w * 4);
+            s += (size_t)w * 4; d += lr.pitch;
+        }
+    }
+    UnlockRect((void*)tex, 0);
+    return 1;
+}
+
+/* Capture the weasel's current texture into g_vortexCaptured (RGBA, w*h*4).
+ * Returns 1 on success. */
+static int vortex_capture_weasel(DWORD device, DWORD weaselTex, int capW, int capH) {
+    DWORD vt;
+    PFN_TexLockRect LockRect; PFN_TexUnlockRect UnlockRect;
+    Vortex_Locked lr;
+    BYTE *buf;
+    int x, y;
+    if (!device || !weaselTex || !capW || !capH) return 0;
+    if (capW > VORTEX_TEX_MAX || capH > VORTEX_TEX_MAX || capW < VORTEX_TEX_MIN || capH < VORTEX_TEX_MIN)
+        capW = capH = 128;   /* fall back to a sane square */
+    buf = (BYTE*)VirtualAlloc(NULL, (size_t)capW*capH*4, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    if (!buf) return 0;
+    if (IsBadReadPtr((void*)weaselTex, 4)) { VirtualFree(buf,0,MEM_RELEASE); return 0; }
+    vt = *(DWORD*)weaselTex;
+    if (!vt || IsBadReadPtr((void*)(vt + D3D_TEX_LOCKRECT), 8)) { VirtualFree(buf,0,MEM_RELEASE); return 0; }
+    LockRect = (PFN_TexLockRect)(*(void**)(vt + D3D_TEX_LOCKRECT));
+    UnlockRect = (PFN_TexUnlockRect)(*(void**)(vt + D3D_TEX_UNLOCKRECT));
+    if (!LockRect || !UnlockRect) { VirtualFree(buf,0,MEM_RELEASE); return 0; }
+    memset(&lr, 0, sizeof(lr));
+    /* Read-only lock of the source texture's level 0. */
+    if (LockRect((void*)weaselTex, 0, &lr, NULL, D3DLOCK_READONLY) != 0) {
+        VirtualFree(buf,0,MEM_RELEASE); return 0;
+    }
+    if (lr.pBits) {
+        const BYTE *s = (const BYTE*)lr.pBits;
+        for (y = 0; y < capH; y++) {
+            memcpy(buf + (size_t)y*capW*4, s, (size_t)capW*4);
+            s += lr.pitch;
+        }
+    }
+    UnlockRect((void*)weaselTex, 0);
+    /* store */
+    if (g_vortexCaptured) VirtualFree(g_vortexCaptured,0,MEM_RELEASE);
+    g_vortexCaptured = buf;
+    g_vortexCaptW = capW; g_vortexCaptH = capH;
+    g_vortexOrigTex = weaselTex;
+    trace_logf("[vortex] captured weasel %dx%d -> %08X (orig-tex %08X)",
+               capW, capH, g_vortexCaptured, weaselTex);
+    return 1;
+}
+
+/* Build a minimal sprite (0xD4 buffer) the renderer draws with +0x50=tex.
+ * vtable 0x4D8F84 (all-menu sprite vtable) + defaults Sprite_ctor sets. */
+static DWORD vortex_make_sprite(DWORD gfx, DWORD tex, float w, float h) {
+    unsigned char *sp;
+    if (!gfx || !tex || gfx <= 0x10000) return 0;
+    sp = (unsigned char*)VirtualAlloc(NULL, 0xD4, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    if (!sp) return 0;
+    memset(sp, 0, 0xD4);
+    *(DWORD*)(sp + 0x00) = 0x4D8F84;   /* vtable */
+    *(DWORD*)(sp + 0x04) = gfx;        /* +0x04 gfx */
+    *(float*)(sp + 0x0C) = 1.0f; *(float*)(sp + 0x10) = 1.0f;  /* diffuse */
+    *(float*)(sp + 0x14) = 1.0f; *(float*)(sp + 0x18) = 1.0f;
+    *(float*)(sp + 0x1C) = 1.0f; *(float*)(sp + 0x20) = 1.0f;  /* ambient */
+    *(float*)(sp + 0x24) = 1.0f; *(float*)(sp + 0x28) = 1.0f;
+    *(float*)(sp + 0x2C) = 1.0f; *(float*)(sp + 0x30) = 1.0f;  /* specular */
+    *(float*)(sp + 0x34) = 1.0f; *(float*)(sp + 0x38) = 1.0f;
+    *(float*)(sp + 0x3C) = 0.0f; *(float*)(sp + 0x40) = 0.0f;  /* emissive */
+    *(volatile unsigned char*)(sp + 0x4C) = 0;                 /* blend flag */
+    *(volatile unsigned char*)(sp + 0x4D) = 0;                 /* alpha flag */
+    *(DWORD*)(sp + 0x50) = tex;                                /* texture */
+    *(float*)(sp + 0xC8) = w;                                  /* box w */
+    *(float*)(sp + 0xCC) = h;                                  /* box h */
+    return (DWORD)sp;
+}
+/* Call vortex_make_sprite using the ORIGINAL weasel's draw box so our
+ * composite renders in exactly the weasel's spot/size. */
+static DWORD vortex_make_sprite_box(DWORD gfx, DWORD tex) {
+    float w = g_vortexBoxW, h = g_vortexBoxH;
+    if (w <= 0.0f || h <= 0.0f) {   /* fallback: texture pixels (1px=1unit approx) */
+        w = (float)g_vortexCaptW; h = (float)g_vortexCaptH;
+    }
+    return vortex_make_sprite(gfx, tex, w, h);
+}
+
+/* Composite the current reveal frame into the scratch, then ensure our
+ * sprite is swapped into ctx+0x37C. white t in [0,1]. */
+static void vortex_composite_render(DWORD results, float t, int frame) {
+    int w, h, x, y, cx, cy, i;
+    float wr, wr2;
+    BYTE *buf;
+    if (!g_vortexCaptured || g_vortexCaptW<=0 || g_vortexCaptH<=0) return;
+    w = g_vortexCaptW; h = g_vortexCaptH;
+    if (!vortex_ensure_scratch(g_vortexDevice, w, h)) return;
+    buf = (BYTE*)VirtualAlloc(NULL, (size_t)w*h*4, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    if (!buf) return;
+    cx = w/2; cy = h/2;
+    wr  = VORTEX_TEX_WEASEL_R * (float)w;
+    wr2 = wr*wr;
+    /* 1) weasel, lerped to white by t */
+    for (y = 0; y < h; y++) {
+        const BYTE *s = g_vortexCaptured + (size_t)y*w*4;
+        BYTE *d = buf + (size_t)y*w*4;
+        for (x = 0; x < w; x++) {
+            BYTE r=s[0], g=s[1], b=s[2], a=s[3];
+            if (a) {
+                int dr=(int)((255-r)*t), dg=(int)((255-g)*t), db=(int)((255-b)*t);
+                r=(BYTE)(r+dr); g=(BYTE)(g+dg); b=(BYTE)(b+db);
+            }
+            d[0]=r; d[1]=g; d[2]=b; d[3]=a;
+            s+=4; d+=4;
+        }
+    }
+    /* 2) streaks in the annulus (outside weasel disk), alpha treated as
+     *    white additive on top of the base (already-white-lerped) pixels */
+    for (i = 0; i < VORTEX_MAX; i++) {
+        Diamond_VortexP *p = &g_vortex[i];
+        float L, ca, sa, ang;
+        int seg;
+        if (!p->active || p->alpha == 0) continue;
+        L  = VORTEX_TEX_STRETCH * (float)w;
+        ang = p->ax + p->ay * p->born;
+        ca = (float)cos(ang); sa = (float)sin(ang);
+        for (seg = 0; seg < VORTEX_SEGS; seg++) {
+            float t0=(float)seg/(float)VORTEX_SEGS, t1=(float)(seg+1)/(float)VORTEX_SEGS;
+            float r0 = p->r - L*t0;
+            float r1 = p->r - L*t1;
+            float mid=0.5f;
+            float f0=(t0<=mid)?(t0/mid):((1.0f-t0)/(1.0f-mid));
+            float f1=(t1<=mid)?(t1/mid):((1.0f-t1)/(1.0f-mid));
+            int a0=(int)(p->alpha*(f0*f0)), a1=(int)(p->alpha*(f1*f1));
+            float x0=(float)cx+ca*r0, y0=(float)cy+sa*r0;
+            float x1=(float)cx+ca*r1, y1=(float)cy+sa*r1;
+            int steps=6, k, ox, oy;
+            if (r0 < wr && r1 < wr) continue;   /* fully inside weasel -> skip */
+            for (k=0;k<=steps;k++){
+                float tt=(float)k/(float)steps;
+                float lx=x0+(x1-x0)*tt, ly=y0+(y1-y0)*tt;
+                int a=(k<=steps/2)?a0:a1;
+                if (a<=0) continue;
+                {
+                    int ix=(int)lx, iy=(int)ly;
+                    for(oy=-1;oy<=1;oy++) for(ox=-1;ox<=1;ox++){
+                        int px=ix+ox, py=iy+oy; BYTE *pix;
+                        if(px<0||py<0||px>=w||py>=h) continue;
+                        /* skip the weasel disk entirely (no streaks over it) */
+                        {
+                            float dx=(float)(px-cx), dy=(float)(py-cy);
+                            if (dx*dx+dy*dy < wr2) continue;
+                        }
+                        pix = buf + ((size_t)py*w + px)*4;
+                        {
+                            unsigned aa=(unsigned)a;
+                            pix[0]=(BYTE)(pix[0]+((255-pix[0])*aa>>8));
+                            pix[1]=(BYTE)(pix[1]+((255-pix[1])*aa>>8));
+                            pix[2]=(BYTE)(pix[2]+((255-pix[2])*aa>>8));
+                            pix[3]=0xFF;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    /* 3) upload + bind into a sprite and swap ctx+0x37C */
+    if (vortex_upload(g_vortexTex, w, h, buf)) {
+        DWORD ctx = 0, gfx = 0;
+        DWORD app;
+        /* find gfx + ctx the same way the white-fade finds gfx */
+        if (!IsBadReadPtr((void*)(results + RESULT_APP), 4)) {
+            app = *(DWORD*)(results + RESULT_APP);
+            if (app && !IsBadReadPtr((void*)(app + SPRITE_WEAEL_APP), 4)) {
+                DWORD sp = *(DWORD*)(app + SPRITE_WEAEL_APP);
+                if (sp && !IsBadReadPtr((void*)(sp + SPRITE_GFX), 4))
+                    gfx = *(DWORD*)(sp + SPRITE_GFX);
+            }
+        }
+        if (!IsBadReadPtr((void*)(results + RESULT_CTX), 4))
+            ctx = *(DWORD*)(results + RESULT_CTX);
+        if (gfx && ctx && ctx > 0x10000) {
+            if (!g_vortexSprite)
+                g_vortexSprite = vortex_make_sprite_box(gfx, g_vortexTex);
+            if (!g_vortexSwapActive) {
+                if (!IsBadReadPtr((void*)(ctx + CTX_WEASEL), 4)) {
+                    g_vortexSwapOrig = *(DWORD*)(ctx + CTX_WEASEL);
+                    g_vortexSwapCtx = ctx;
+                    g_vortexSwapResults = (int)results;
+                    g_vortexSwapActive = 1;
+                    trace_logf("[vortex] SWAP-ARM ctx=%08X orig=%08X -> our-sprite=%08X frame=%d",
+                               ctx, g_vortexSwapOrig, g_vortexSprite, frame);
+                }
+            }
+            if (g_vortexSwapActive && (results == (DWORD)g_vortexSwapResults)) {
+                if (g_vortexSprite && g_vortexSprite > 0x10000)
+                    *(volatile DWORD*)(ctx + CTX_WEASEL) = g_vortexSprite;
+            }
+        }
+    }
+    VirtualFree(buf, 0, MEM_RELEASE);
+}
+
+/* Disarm the composite swap: restore the original weasel sprite at ctx+0x37C
+ * and free our texture/sprite/capture. Called at reveal end (+240). */
+static void vortex_disarm(void) {
+    if (g_vortexSwapActive && g_vortexSwapCtx && g_vortexSwapCtx > 0x10000) {
+        if (!IsBadReadPtr((void*)(g_vortexSwapCtx + CTX_WEASEL), 4))
+            *(volatile DWORD*)(g_vortexSwapCtx + CTX_WEASEL) = g_vortexSwapOrig;
+        trace_logf("[vortex] SWAP-DISARM ctx=%08X restore=%08X", g_vortexSwapCtx, g_vortexSwapOrig);
+    }
+    g_vortexSwapActive = 0; g_vortexSwapCtx = 0; g_vortexSwapOrig = 0;
+    g_vortexSwapResults = 0;
+    if (g_vortexSprite) { VirtualFree((void*)g_vortexSprite,0,MEM_RELEASE); g_vortexSprite=0; }
+    if (g_vortexTex) {
+        DWORD *rvt = *(DWORD**)g_vortexTex;
+        if (rvt && IsBadReadPtr((void*)(rvt + 0x08), 4)) {
+            typedef ULONG (__stdcall *PFN_Release)(void*);
+            PFN_Release rel = (PFN_Release)(*(void**)(rvt + 0x08));
+            if (rel) rel((void*)g_vortexTex);
+        }
+        g_vortexTex = 0;
+    }
+    g_vortexTexW = g_vortexTexH = 0;
+    if (g_vortexCaptured) { VirtualFree(g_vortexCaptured,0,MEM_RELEASE); g_vortexCaptured=NULL; }
+    g_vortexCaptW = g_vortexCaptH = 0;
+    g_vortexOrigTex = 0; g_vortexDevice = 0;
+}
+
 /* Reset the vortex cycle. Called by the weasel cave at WEASEL_WHITE_START. */
 static void vortex_sound_start(void);
 static void vortex_sound_stop(void);
-static void vortex_start_cycle(DWORD gfx, DWORD sprite) {
+static void vortex_start_cycle(DWORD gfx, DWORD sprite, DWORD results) {
     int i;
+    DWORD device = 0, weaselTex = 0;
+    int capW = 0, capH = 0;
     if (!gfx) return;
     vortex_seed();
     vortex_compute_center(gfx, sprite);
+    if (!IsBadReadPtr((void*)(gfx + GFX_DEV_OFFSET), 4))
+        device = *(DWORD*)(gfx + GFX_DEV_OFFSET);
+    if (!device) return;
+    g_vortexDevice = device;
+    /* grab the weasel texture from the sprite the game draws, and its real
+     * pixel size (1:1 capture, always in-bounds) + its draw box. */
+    if (!IsBadReadPtr((void*)(results + RESULT_APP), 4)) {
+        DWORD app = *(DWORD*)(results + RESULT_APP);
+        if (app && !IsBadReadPtr((void*)(app + SPRITE_WEAEL_APP), 4)) {
+            DWORD sp = *(DWORD*)(app + SPRITE_WEAEL_APP);
+            if (sp && !IsBadReadPtr((void*)(sp + 0x50), 4)) {
+                weaselTex = *(DWORD*)(sp + 0x50);
+                vortex_weasel_size(weaselTex, &capW, &capH);
+            }
+            if (sp && !IsBadReadPtr((void*)(sp + 0xC8), 8)) {
+                float fw = *(float*)(sp + 0xC8), fh = *(float*)(sp + 0xCC);
+                if (fw > 1.0f && fh > 1.0f) { g_vortexBoxW = fw; g_vortexBoxH = fh; }
+            }
+        }
+    }
+    if (capW <= 0 || capH <= 0) {   /* didn't resolve from the texture: fall back */
+        capW = 128; capH = 128;
+    }
+    /* clamp to a sane power-of-two range */
+    if (capW < VORTEX_TEX_MIN) capW = VORTEX_TEX_MIN;
+    if (capH < VORTEX_TEX_MIN) capH = VORTEX_TEX_MIN;
+    if (capW > VORTEX_TEX_MAX) capW = VORTEX_TEX_MAX;
+    if (capH > VORTEX_TEX_MAX) capH = VORTEX_TEX_MAX;
+    if (weaselTex)
+        vortex_capture_weasel(device, weaselTex, capW, capH);
+    else
+        return;   /* no weasel texture -> can't composite; abort cycle */
     g_vortexFrame = 0;
     g_vortexActive = 1;
     for (i = 0; i < VORTEX_MAX; i++) {
@@ -1428,32 +1827,21 @@ static void vortex_start_cycle(DWORD gfx, DWORD sprite) {
         g_vortex[i].r = 0.0f;
         g_vortex[i].born = 0;
     }
-    vortex_sound_start();   /* start looping whoosh for the vortex window */
+    vortex_sound_start();   /* start the whoosh for the vortex window */
 }
 
-/* Advance one vortex streak (spiral-in + fade). Called every frame the
- * cycle is active, for every streak slot.
- * Alpha timeline (by the streak's own age p->born):
- *   born 0..15           -> ease in (0..255)
- *   active window        -> 255 (sustain)
- *   tail (frame>=VORTEX_FRAMES) -> fade to nothing across VORTEX_TAIL frames */
+/* Advance one vortex streak (spiral-in + fade). Radii/stretch in TEXTURE
+ * pixels (relative to captured width). Called every frame the cycle runs. */
 static void vortex_update_streak(Diamond_VortexP *p, int frame) {
-    float a;
+    float L, cf;
     if (!p->active) return;
-    /* angle (curl) */
-    a = p->ax + p->ay * p->born;
-    /* gradual inward pull */
-    p->r -= p->vr;
-    /* The rectangle's inner tip is at r - VORTEX_STRETCH. Kill the particle once
-     * that tip reaches the center (r - STRETCH <= 0) so the streak's leading end
-     * disappears exactly at the center rather than passing through it and
-     * sticking out the far side. */
-    if (p->r - VORTEX_STRETCH <= 0.0f || p->r > 4000.0f) { p->active = 0; return; }
-    /* ease-in over first 15 frames of this streak's life */
+    p->r -= p->vr;                       /* inward pull */
+    L  = VORTEX_TEX_STRETCH * (float)g_vortexCaptW;
+    cf = VORTEX_TEX_CENTER_FADE * (float)g_vortexCaptW;
+    if (p->r - L <= 0.0f || p->r > 4000.0f) { p->active = 0; return; }
     if (p->born < 15) {
         p->alpha = (BYTE)((p->born * 17) & 0xFF);
     } else if (frame >= (int)VORTEX_FRAMES) {
-        /* tail: fade to nothing across the VORTEX_TAIL frames */
         int tail_elapsed = frame - (int)VORTEX_FRAMES;
         int rem = (int)VORTEX_TAIL - tail_elapsed;
         if (rem <= 0) p->alpha = 0;
@@ -1461,172 +1849,25 @@ static void vortex_update_streak(Diamond_VortexP *p, int frame) {
     } else {
         p->alpha = 255;
     }
-    /* Fade out as the inner tip approaches the center, reaching fully
-     * transparent exactly when the tip hits 0 (center). This prevents the
-     * streak from visibly sticking out the far side before it despawns. */
     {
-        float tip = p->r - VORTEX_STRETCH;            /* inner tip radius (0 = at center) */
-        if (tip < VORTEX_CENTER_FADE) {
-            float f = tip / VORTEX_CENTER_FADE;        /* 1..0 as tip -> center */
+        float tip = p->r - L;
+        if (tip < cf) {
+            float f = tip / cf;
             if (f <= 0.0f) p->alpha = 0;
             else p->alpha = (BYTE)((int)p->alpha * (f * f));
         }
     }
     p->born++;
-    (void)a;
 }
 
-/* Draw all active streaks around the trophy center as white screen-space
- * quads (2 triangles each). Runs on the main thread inside the weasel cave
- * (PUSHAD/POPAD), so D3D calls are safe. gfx is the graphics object. */
-static void vortex_draw(DWORD gfx) {
-    int i, n = 0;                    /* triangles emitted */
-    int vc = 0;                      /* vertices filled (independent cursor) */
-    DWORD device, vt;
-    Diamond_TLVertex verts[VORTEX_VERTS_MAX];
-    Diamond_TLVertex *v;
-    float cx, cy, s, rr;
-    float ang, cang, sang;
-    BYTE a;
-    /* resolve device */
-    if (!g_vortexActive) return;
-    if (!gfx || IsBadReadPtr((void*)(gfx + GFX_DEV_OFFSET), 4)) return;
-    device = *(DWORD*)(gfx + GFX_DEV_OFFSET);
-    if (!device || IsBadReadPtr((void*)device, 4)) return;
-    vt = *(DWORD*)device;
-    if (!vt || IsBadReadPtr((void*)(vt + D3D_DEV_DRAWPRIMITIVEUP), 4)) return;
-    cx = g_vortexCx; cy = g_vortexCy;
-    /* Build each streak as VORTEX_SEGS short rectangles stacked along the
-     * inward direction. Vertex alpha ramps 0 (outer tip) -> peak (middle) -> 0
-     * (inner tip): a triangular "tent" profile giving a soft gradient that
-     * fades to nothing at both ends of the streak. */
-    for (i = 0; i < VORTEX_MAX && n < VORTEX_TRIS_MAX; i++) {
-        Diamond_VortexP *p = &g_vortex[i];
-        if (!p->active || p->alpha == 0) continue;
-        ang = p->ax + p->ay * p->born;
-        cang = (float)cos(ang); sang = (float)sin(ang);
-        rr = p->r;
-        s  = 0.5f;                    /* rectangle half-thickness (px) — thin */
-        a  = p->alpha;
-        {
-            float px_ = -sang, py_ = cang;              /* perpendicular */
-            float outer = rr;                            /* outer radius */
-            float inner = rr - VORTEX_STRETCH;           /* inner radius */
-            int seg;
-            for (seg = 0; seg < VORTEX_SEGS; seg++) {
-                /* positions along the length [0..1] for this segment's edges */
-                float t0 = (float)seg              / (float)VORTEX_SEGS;
-                float t1 = (float)(seg + 1)        / (float)VORTEX_SEGS;
-                /* axial position: outer edge t=0, inner edge t=1 */
-                float r0 = outer + (inner - outer) * t0;   /* this segment's outer radius */
-                float r1 = outer + (inner - outer) * t1;   /* this segment's inner radius */
-                /* tent alpha profile: peak at t=0.5, 0 at both ends (t=0, t=1).
-                 * a_tip alpha at outer(0) and inner(1) = 0; peak ~ a at 0.5. */
-                float mid = 0.5f;
-                float f0 = (t0 <= mid) ? (t0 / mid) : ((1.0f - t0) / (1.0f - mid));
-                float f1 = (t1 <= mid) ? (t1 / mid) : ((1.0f - t1) / (1.0f - mid));
-                int a0 = (int)(a * (f0 * f0));   /* smoother falloff (quadratic) */
-                int a1 = (int)(a * (f1 * f1));
-                if (vc + 6 > VORTEX_VERTS_MAX) break;   /* hard guard, independent of n */
-                /* corners of this quad (A outer-left, B outer-right, C inner-right, D inner-left) */
-                v = &verts[vc];
-                v[0].x = cx + cang*r0 + px_*s;  v[0].y = cy + sang*r0 + py_*s;  /* A */
-                v[1].x = cx + cang*r0 - px_*s;  v[1].y = cy + sang*r0 - py_*s;  /* B */
-                v[2].x = cx + cang*r1 - px_*s;  v[2].y = cy + sang*r1 - py_*s;  /* C */
-                v[3].x = cx + cang*r0 + px_*s;  v[3].y = cy + sang*r0 + py_*s;  /* A */
-                v[4].x = cx + cang*r1 - px_*s;  v[4].y = cy + sang*r1 - py_*s;  /* C */
-                v[5].x = cx + cang*r1 + px_*s;  v[5].y = cy + sang*r1 + py_*s;  /* D */
-                for (int k = 0; k < 6; k++) {
-                    int ka = (k == 0 || k == 3) ? a0 : a1;   /* outer pair -> a0, inner pair -> a1 */
-                    v[k].z = 0.0f;
-                    v[k].rhw = 1.0f;
-                    v[k].color = (DWORD)(ka << 24) | 0x00FFFFFF;  /* white, gradient alpha */
-                }
-                vc += 6;
-                n += 2;   /* this segment = 2 triangles */
-            }
-        }
-    }
-    if (n == 0) return;
-    /* --- render setup (see d3d8-screen-rect-overlay recipe) ---
-     * Use proper C function pointers to the device vtable slots. All D3D8
-     * device methods are __stdcall, so the callee cleans the stack. */
-    {
-        typedef HRESULT (__stdcall *PFN_SetRenderState)(void*, int, DWORD);
-        typedef HRESULT (__stdcall *PFN_SetTextureStageState)(void*, int, int, DWORD);
-        typedef HRESULT (__stdcall *PFN_GetTextureStageState)(void*, int, int, DWORD*);
-        typedef HRESULT (__stdcall *PFN_DrawPrimitiveUP)(void*, DWORD, DWORD, const void*, DWORD);
-        typedef HRESULT (__stdcall *PFN_SetVertexShader)(void*, DWORD);
-        typedef HRESULT (__stdcall *PFN_GetVertexShader)(void*, DWORD*);
-        PFN_SetRenderState      SetRenderState  = (PFN_SetRenderState)      (*(void**)(vt + D3D_DEV_SETRENDERSTATE));
-        PFN_SetTextureStageState SetTextureStageState = (PFN_SetTextureStageState)(*(void**)(vt + D3D_DEV_SETTEXTURESTAGE));
-        PFN_GetTextureStageState GetTextureStageState = (PFN_GetTextureStageState)(*(void**)(vt + 0x100)); /* vtable[64] */
-        PFN_DrawPrimitiveUP     DrawPrimitiveUP = (PFN_DrawPrimitiveUP)     (*(void**)(vt + D3D_DEV_DRAWPRIMITIVEUP));
-        PFN_SetVertexShader     SetVertexShader = (PFN_SetVertexShader)     (*(void**)(vt + D3D_DEV_SETVERTEXSHADER));
-        PFN_GetVertexShader     GetVertexShader = (PFN_GetVertexShader)     (*(void**)(vt + D3D_DEV_GETVERTEXSHADER));
-        void *dev = (void*)device;
-        DWORD savedFVF = 0;
-        DWORD savedColorOp = 0, savedAlphaOp = 0;
-
-        /* Save the game's FVF, set our TL-vertex format. Without this the
-         * DrawPrimitiveUP reads the game's last-frame FVF (e.g. textured
-         * 3D vertex with extra fields) and walks past our 20-byte verts. */
-        if (GetVertexShader && SetVertexShader) {
-            GetVertexShader(dev, &savedFVF);
-            SetVertexShader(dev, D3DFVF_TLVERTEX);
-        }
-
-        /* Save the stage-0 color/alpha ops we are about to change so the
-         * next textured draw isn't stuck on SELECTARG2. The game re-asserts
-         * its stage states at material-apply in most paths, but not all, so
-         * a sprite drawn right after the vortex could come out tinted /
-         * untextured (works fine on Wine, flashes on real GPUs). */
-        if (GetTextureStageState) {
-            GetTextureStageState(dev, 0, D3DTSS_COLOROP, &savedColorOp);
-            GetTextureStageState(dev, 0, D3DTSS_ALPHAOP, &savedAlphaOp);
-        }
-
-        /* enable alpha blend (soft streaks) */
-        SetRenderState(dev, D3DRS_ALPHABLENDENABLE, 1);
-        SetRenderState(dev, D3DRS_SRCBLEND,  D3DBLEND_SRCALPHA);
-        SetRenderState(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-        SetRenderState(dev, D3DRS_FOGENABLE, 0);
-        /* texture stage: use vertex diffuse for color (SELECTARG2 / diffuse) */
-        SetTextureStageState(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG2);
-        SetTextureStageState(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-        SetTextureStageState(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG2);
-        SetTextureStageState(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-        /* draw n streak triangles */
-        DrawPrimitiveUP(dev, 4 /*D3DPT_TRIANGLELIST*/, (DWORD)n, verts,
-                        sizeof(Diamond_TLVertex));
-        /* restore render states + FVF a prior draw may rely on */
-        if (SetVertexShader) SetVertexShader(dev, savedFVF);
-        SetRenderState(dev, D3DRS_ALPHABLENDENABLE, 0);
-        SetRenderState(dev, D3DRS_FOGENABLE, 1);
-        if (SetTextureStageState && GetTextureStageState) {
-            SetTextureStageState(dev, 0, D3DTSS_COLOROP, savedColorOp);
-            SetTextureStageState(dev, 0, D3DTSS_ALPHAOP, savedAlphaOp);
-        }
-    }
-}
-
-/*
- * Vortex whoosh sound — a looping BASS stream of the game's Whoosh.ogg that
- * plays for as long as the vortex cycle runs (frame 55 -> ~frame 185, = the
- * 100-frame active window + 30-frame tail). Uses the mod's already-loaded
- * real BASS.dll so it needs no new DirectSound/heap plumbing and shares the
- * game's music output safely (BASS plays the .mod music + this stream
- * simultaneously). Falls back silently if bass_real.dll/a pointer is absent.
- */
+/* Vortex whoosh — a looping BASS stream of the game's Whoosh.ogg that plays
+ * for the vortex window. Falls back silently if real BASS is absent. */
 #define VORTEX_SND_STREAM  0
 static HSTREAM g_vortex_snd = VORTEX_SND_STREAM;
-#define WHOOSH_SND_PATH   "sounds\\whoosh.ogg"
-
+#define WHOOSH_SND_PATH   "sounds\\\\whoosh.ogg"
 static void vortex_sound_start(void) {
-    if (g_vortex_snd != VORTEX_SND_STREAM) return;   /* already playing */
+    if (g_vortex_snd != VORTEX_SND_STREAM) return;
     if (!real_BASS_StreamCreateFile || !real_BASS_ChannelPlay) return;
-    /* StreamCreateFile(mem=FALSE, file, off=0, len=0, flags=0) — NO loop flag:
-     * the whoosh is a single one-shot sound played once. */
     g_vortex_snd = real_BASS_StreamCreateFile(FALSE, WHOOSH_SND_PATH, 0, 0, 0);
     if (g_vortex_snd != VORTEX_SND_STREAM) real_BASS_ChannelPlay(g_vortex_snd, TRUE);
 }
@@ -1637,86 +1878,69 @@ static void vortex_sound_stop(void) {
     g_vortex_snd = VORTEX_SND_STREAM;
 }
 
-/* Main vortex tick: called from the weasel cave each frame the weasel is
- * drawn. Starts the cycle at WEASEL_WHITE_START, advances streaks, and
- * draws them behind the trophy. Clears at WEASEL_WHITE_END. results = the
- * results-screen object (READ ONLY for frame + to find gfx via the weasel
- * sprite, same as the white-fade). */
+/* Main vortex tick: called from the reveal driver each frame the weasel is
+ * drawn. Starts the cycle at WEASEL_WHITE_START, advances streaks + emits the
+ * composite frame via ctx+0x37C swap. Clears/disarms at the reveal end.
+ * results = the results-screen object. */
 __attribute__((used)) void diamond_vortex_tick(DWORD results) {
     int frame, i;
     DWORD app, sprite, gfx;
+    float t;
     cave_enter(results, "vortex_tick");
     if (!results) return;
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return;
     if (!diamond_first_earn(results)) {          /* replay -> no vortex */
-        g_vortexResults = results;               /* keep session anchor fresh */
-        return;                                  /* (no cycle to tear down) */
+        g_vortexResults = results;
+        return;
     }
-    /* Fresh results session (pointer changed) -> any leftover cycle from a
-     * previous results screen that was exited mid-cycle is torn down now:
-     * stop the whoosh and reset the active flag so the new session starts
-     * clean. (Without this, exiting the results screen before frame ~185
-     * leaves the whoosh handle live and marks the cycle active, so the next
-     * results screen would never restart it.) */
-    if (results != g_vortexResults) {
-        if (g_vortexActive) { g_vortexActive = 0; vortex_sound_stop(); }
+    if (results != g_vortexResults) {            /* fresh session -> teardown */
+        if (g_vortexActive) { g_vortexActive = 0; vortex_sound_stop(); vortex_disarm(); }
         g_vortexResults = results;
     }
-    frame = diamond_seq_frame(results);          /* frames since gold award */
-    /* start the cycle a touch after the white-fade begins; active spawn
-     * window is [START, START+VORTEX_FRAMES); the tail extends to
-     * [START+VORTEX_FRAMES, START+VORTEX_FRAMES+VORTEX_TAIL) during which no
-     * new streaks spawn but existing ones keep moving + fade away. */
-    if (frame >= WEASEL_WHITE_START && frame < WEASEL_WHITE_START + (int)(VORTEX_FRAMES + VORTEX_TAIL)) {
+    frame = diamond_seq_frame(results);
+    /* window: [WEASEL_WHITE_START, WEASEL_WHITE_START+VORTEX_FRAMES+VORTEX_TAIL) */
+    if (frame >= WEASEL_WHITE_START &&
+        frame <  WEASEL_WHITE_START + (int)(VORTEX_FRAMES + VORTEX_TAIL)) {
         if (!g_vortexActive) {
-            /* find gfx the same way the white-fade does */
             if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
             app = *(DWORD*)(results + RESULT_APP);
             if (!app || IsBadReadPtr((void*)(app + SPRITE_WEAEL_APP), 4)) return;
             sprite = *(DWORD*)(app + SPRITE_WEAEL_APP);
-            if (sprite && IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)==0)
-                gfx = *(DWORD*)(sprite + SPRITE_GFX);
-            else gfx = 0;
-            vortex_start_cycle(gfx, sprite);
+            gfx = (sprite && IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)==0)
+                    ? *(DWORD*)(sprite + SPRITE_GFX) : 0;
+            vortex_start_cycle(gfx, sprite, results);
         }
     } else {
-        /* outside the window -> cycle ended */
-        if (g_vortexActive) { g_vortexActive = 0; vortex_sound_stop(); }
+        if (g_vortexActive) { g_vortexActive = 0; vortex_sound_stop(); vortex_disarm(); }
         return;
     }
+    if (!g_vortexActive) return;                  /* cycle didn't start */
     g_vortexFrame = frame - WEASEL_WHITE_START;
-    /* --- spawn streak (active window only; suppress during the tail) --- */
+    /* spawn streaks (no new spawns in the tail) */
     for (i = 0; i < VORTEX_MAX; i++) {
         Diamond_VortexP *p = &g_vortex[i];
         if (!p->active) {
-            if (g_vortexFrame >= (int)VORTEX_FRAMES) { continue; }  /* tail: no new spawn */
-            /* random delay before a slot's first spawn (fade-in at random) */
-            int wait = (int)(vortex_frand() * 24.0f);
-            if (g_vortexFrame >= wait) {
-                p->active = 1; p->born = 0;
-                p->ax = vortex_frand() * 6.2832f;          /* random start angle (fixed: no curl) */
-                p->ay = 0.0f;                              /* no angular motion — straight inward pull */
-                /* start at a random radius on the outer ring */
-                p->r = 34.0f + vortex_frand()*40.0f;
-                p->vr = 4.4f + vortex_frand()*1.6f;      /* suck-in speed (uniform ~4.4-6.0) */
-                p->alpha = 0;
-            } else { continue; }
+            if (g_vortexFrame >= (int)VORTEX_FRAMES) continue;
+            {
+                int wait = (int)(vortex_frand() * 24.0f);
+                if (g_vortexFrame >= wait) {
+                    p->active=1; p->born=0;
+                    p->ax = vortex_frand() * 6.2832f;
+                    p->ay = 0.0f;                    /* no curl */
+                    p->r  = (0.45f + vortex_frand()*0.35f) * (float)g_vortexCaptW;
+                    p->vr = (4.4f + vortex_frand()*1.6f) * (1.0f/128.0f) * (float)g_vortexCaptW;
+                    p->alpha = 0;
+                } else continue;
+            }
         } else {
             vortex_update_streak(p, g_vortexFrame);
         }
     }
-    /* resolve gfx (for drawing) — reused from above if available */
-    if (IsBadReadPtr((void*)(results + RESULT_APP), 4)) return;
-    app = *(DWORD*)(results + RESULT_APP);
-    if (!app || IsBadReadPtr((void*)(app + SPRITE_WEAEL_APP), 4)) return;
-    sprite = *(DWORD*)(app + SPRITE_WEAEL_APP);
-    if (!sprite || IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)) return;
-    gfx = *(DWORD*)(sprite + SPRITE_GFX);
-    if (!gfx) return;
-    vortex_draw(gfx);
+    /* composite frame: white-lerp t ramps across [WHITE_START, WHITE_END] */
+    t = (float)(frame - WEASEL_WHITE_START) / (float)(WEASEL_WHITE_END - WEASEL_WHITE_START);
+    if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
+    vortex_composite_render(results, t, frame);
 }
-
-
 
 /* Trophy swap at the end of the white hold: at frame >= WEASEL_WHITE_TOTAL
  * (= 240), the golden weasel stops rendering and the diamond trophy appears in
@@ -2548,35 +2772,35 @@ static void __thiscall diamond_reveal_update(void *self) {
      *    leak onto the next screen's ctx+0x37C. Restore if the object changed. */
     if (g_trophySwapActive && results != g_trophySwapResults)
         diamond_trophy_restore(results);
-    /* 3) now run the reveal (reads the time correctly). */
+    /* 3) now run the reveal (reads the time correctly). The consolidated
+     *    procedural-composite vortex (diamond_vortex_tick) now does EVERYTHING
+     *    the reveal needs in ONE texture + one ctx+0x37C swap:
+     *      - captures the golden weasel's real pixels once,
+     *      - lerps them toward white by the reveal-frame t,
+     *      - paints the suction streaks into the annulus outside the weasel,
+     *      - uploads via CreateTexture+LockRect, binds to a sprite +0x50,
+     *      - swaps that sprite into ctx+0x37C so the game's own renderer
+     *        draws it with its single Sprite_DrawRect.
+     *    The former white-out mechanisms (weasel material-diffuse ramp
+     *    diamond_weasel_mult + additive diamond_set_add) are subsumed: the
+     *    white is baked by pixel control, so they would double-tint and fight
+     *    the texture. We therefore call ONLY the composite vortex. */
     if (g_revealArmedVtbl) {
 #ifndef VORTEX_OFF
-        diamond_vortex_tick(results);
+        diamond_vortex_tick(results);   /* composite: white-lerp + streaks in ONE texture */
 #endif
-        diamond_weasel_mult(results);
-        /* White-fade toward a white WEASEL on the award screen, driven from
-         * THIS SAFE UPDATE HOST (the only place that actually renders on the
-         * award screen — the GameUpdate 0x46C1F1 present hook does NOT run
-         * while a modal results/award screen is up, which is why the earlier
-         * present-hook overlay never drew and only risked the boot crash).
-         *
-         * Two complementary pushes, both from this host (no present hook):
-         *  - diamond_weasel_mult(): ramps the sprite's own material diffuse
-         *    whiter (m 1.0 -> 2.0) so the gold resolves toward white.
-         *  - diamond_set_add(): flips the device SRC/DST blend to ADDITIVE so
-         *    the whiter sprite actually BLOWS OUT to white instead of clamping
-         *    at the texture's max. Additive affects only the medal panel's own
-         *    sprites (0x44DF70 renders only sprites/text during award).
-         *    g_weaselIntens 0..1 across the fade.
-         *  - diamond_weasel_mult_clear() at WEASEL_WHITE_TOTAL restores both
-         *    the sprite diffuse (1,1,1,1), the +0x4C blend flag, and calls
-         *    diamond_set_add(...,0) to restore the game's default blend. */
-        diamond_set_add(results, g_weaselIntens);
         if (diamond_seq_frame(results) >= WEASEL_WHITE_TOTAL) {
-            /* reveal done: restore multiplier/blend, clear overlay, swap in diamond. */
-            diamond_weasel_mult_clear(results);
-            diamond_set_add(results, 0.0f);              /* restore default blend */
+            /* reveal done: disarm composite (restore ctx+0x37C + free our
+             * texture/sprite), then swap in the diamond trophy. */
+#ifndef VORTEX_OFF
+            vortex_disarm();
+#endif
             diamond_trophy_swap(results);
+            /* ensure the old white-out mechanisms are fully cleared even if
+             * they never ran in this build (defensive restore of the shared
+             * mult + default blend so no state leaks to the next frame). */
+            diamond_weasel_mult_clear(results);
+            diamond_set_add(results, 0.0f);
             g_revealArmedVtbl = 0;
         }
     }
