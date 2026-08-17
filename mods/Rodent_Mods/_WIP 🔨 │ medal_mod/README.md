@@ -400,10 +400,11 @@ one of them silently disappears:
 - `-DDIAMOND_VTABLE_OVERRIDE` → the results-screen diamond trophy reveal
   (patches award vtable slot[1]=0x4D6CF4) + the render-path sprite swap into
   `ctx+0x37C`.
-- *(optional)* `-DVORTEX_OFF` → compiles the procedural-composite vortex out
-  (white-fade + diamond swap stay enabled, but no vortex/white-lerp). The
-  consolidated vortex is safe (it draws through the game's own sprite
-  renderer, not raw D3D), so the normal build omits it.
+- `-DVORTEX_OFF` → *(optional)* compiles the procedural-composite vortex out
+  (white-fade + diamond swap stay enabled, but no vortex/white-lerp). **The
+  normal build ships the composite vortex enabled** — it draws through the
+  game's own sprite renderer (not raw D3D), so it is safe. Only pass
+  `-DVORTEX_OFF` if you specifically want the streak animation compiled out.
 
 Use both `TT_WRAPPER` + `VTABLE_OVERRIDE` together — building only one removes
 the corresponding feature.
