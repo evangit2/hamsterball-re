@@ -263,12 +263,12 @@ static void load_real_bass(void) {
 #define WEASEL_WHITE_END     150
 #define WEASEL_WHITE_MULT    4.0f      /* saturating color multiplier for pure white */
 #define WEASEL_WHITE_HOLD    55        /* frames the white trophy holds with no particles */
-/* Lead-in dead zone before the reveal countdown begins. The gold gate is at
- * results+0x4c (0x1e0=480), but some results screens reach the reveal state
- * earlier than the user expects — add a fixed no-op window up front so the
- * white-fade/vortex/trophy don't start too soon. Subtracted in
- * diamond_seq_frame so every phase (white start 55, total 240) shifts later
- * together. */
+/* Lead-in dead zone before the reveal countdown begins. The gold MEDAL gate is at
+ * results+0x74 (0x3BB=955), not the weasel gate 0x4C (0x1E0=480). Some results
+ * screens reach the reveal state earlier than the user expects — add a fixed
+ * no-op window up front so the white-fade/vortex/trophy don't start too soon.
+ * Subtracted in diamond_seq_frame so every phase (white start 55, total 240)
+ * shifts later together. */
 #define REVEAL_LEAD_IN      0    /* was 400: pushed diamond to gold+640 (10.6s after gold). 0 = diamond at gold+240 as designed */
 /* Total result-frame at which the white hold ends and the trophy reverts to
  * normal gold: (white start) + (active spawns) + (fade tail) + (hold). */
@@ -1112,10 +1112,10 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
 
 /* RESULT_OBJ offsets used by the weasel white-fade + diamond 5th-medal. */
 #define RESULT_FRAME   0x10   /* frame counter [esi+0x10] */
-#define RESULT_GOLD    0x4c   /* gold medal awarded when frame == [esi+0x4c];
-                                 drawn when frame > [esi+0x4c] (cmp 0x44e113).
-                                 NOTE: was mislabeled RESULT_GATE_GOLD 0x74 —
-                                 0x74 is a DIFFERENT medal's gate (0x44dd67). */
+#define RESULT_GOLD_WEASEL 0x4c /* gold WEASEL trophy gate: 480 (0x1e0) — drawn at 0x44E113 */
+#define RESULT_GOLD_MEDAL  0x74 /* gold MEDAL image gate: 955 (0x3BB) — drawn after 0x74 check */
+#define RESULT_GOLD    RESULT_GOLD_MEDAL /* re-timed to MEDAL (955), not weasel (480) */
+#define RESULT_CONTINUE 0x78 /* click-to-continue gate: 1010 (0x3F2), cmp 0x44DF2C */
 #define RESULT_APP     0x0C   /* App ptr [esi+0xc] */
 
 /* Frames SINCE the start of the reveal countdown. The gold gate is at
@@ -1186,6 +1186,27 @@ __attribute__((used)) int diamond_reveal_draw(DWORD results) {
      * cave fires AT ALL (before any gate). 0 = cave not reached. */
     { static int p = 0; if (!p) { p = 1; trace_logf("[diamond] CAVE-FIRED results=%08X", results); } }
     if (!diamond_first_earn(results)) return 0;   /* no reveal -> plain gold */
+    /* --- push click-to-continue until 55 after diamond (medal+295) --- */
+    /* Native continue gate is results+0x78 = 1010 (0x3F2). Diamond is at
+     * medal+240 (955+240=1195). User wants continue at diamond+55 = 1250.
+     * We patch the gate live so the game’s cmp 0x44DF2C holds off. One-shot
+     * log so you can verify on Windows. Only on first-earn. */
+    {
+        static int logged_cont = 0;
+        if (!IsBadReadPtr((void*)(results + RESULT_GOLD_MEDAL), 4) &&
+            !IsBadReadPtr((void*)(results + RESULT_CONTINUE), 4)) {
+            int gold = *(int*)(results + RESULT_GOLD_MEDAL);
+            int cont = *(int*)(results + RESULT_CONTINUE);
+            int desired = gold + WEASEL_WHITE_TOTAL + 55; /* 955+295=1250 */
+            if (cont < desired) {
+                *(int*)(results + RESULT_CONTINUE) = desired;
+                if (!logged_cont) {
+                    logged_cont = 1;
+                    trace_logf("[diamond] CONTINUE gate pushed %d -> %d (gold %d + %d)", cont, desired, gold, WEASEL_WHITE_TOTAL+55);
+                }
+            }
+        }
+    }
     frame = diamond_seq_frame(results);
     if (frame < WEASEL_WHITE_TOTAL) {
         /* reveal in progress: the procedural-composite vortex (diamond_vortex_tick)
