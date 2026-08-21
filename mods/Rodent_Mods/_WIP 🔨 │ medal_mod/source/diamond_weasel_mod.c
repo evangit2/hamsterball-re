@@ -269,7 +269,7 @@ static void load_real_bass(void) {
  * white-fade/vortex/trophy don't start too soon. Subtracted in
  * diamond_seq_frame so every phase (white start 55, total 240) shifts later
  * together. */
-#define REVEAL_LEAD_IN      400
+#define REVEAL_LEAD_IN      0    /* was 400: pushed diamond to gold+640 (10.6s after gold). 0 = diamond at gold+240 as designed */
 /* Total result-frame at which the white hold ends and the trophy reverts to
  * normal gold: (white start) + (active spawns) + (fade tail) + (hold). */
 #define WEASEL_WHITE_TOTAL   (WEASEL_WHITE_START + (int)VORTEX_FRAMES + (int)VORTEX_TAIL + WEASEL_WHITE_HOLD)
@@ -823,7 +823,13 @@ static void load_unlocks(void) {
     }
     if (RegQueryValueExA(hk, REG_VAL_MEDALS, NULL, &type, g_won, &size) == ERROR_SUCCESS
         && type == REG_BINARY && size <= 15) {
-        diag_logf("[diamond] loaded %u diamond unlock flags from registry", size);
+        if (size != 15) {
+            /* Partial write from an older build: zero-extend so g_won[ size .. 14 ] are not stale. */
+            if (size < 15) memset(g_won + size, 0, 15 - size);
+            diag_logf("[diamond] loaded %u/%u diamond unlock flags from registry (partial → zero-extended)", size, 15u);
+        } else {
+            diag_logf("[diamond] loaded %u diamond unlock flags from registry", size);
+        }
     } else {
         diag_log("[diamond] no DiamondMedals registry value (or unexpected)");
     }
@@ -863,7 +869,9 @@ static int get_race_index(void) {
      * (g_secret_cs, g_default_diamond_s, g_xml_block) are 0-indexed. Convert:
      * game slot N -> our index N-1. Without this, Odd (game slot 9) hit
      * our [9]=TOOB default (25.0s) instead of Odd's 12.0s. */
-    if (idx >= 1) idx -= 1;
+    if (idx >= 1 && idx <= 15) idx -= 1;
+    else return -1;
+    if (idx < 0 || idx > 14) return -1;
     return idx;
 }
 /* board+0x1C is an INTEGER centisecond counter (native medal code compares
@@ -991,20 +999,36 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
      * (the native golden-weasel ring) only if the sprite is unreadable. */
     if (IsBadReadPtr((void*)(app + CTX_WEASEL), 4)) return;
     sprite = *(DWORD*)(app + CTX_WEASEL);   /* app here = ctx = *(results+0xC) */
-    if (sprite && sprite > 0x10000 && !IsBadReadPtr((void*)(sprite + 0xC8), 8)) {
-        float w = *(float*)(sprite + 0xC8), h = *(float*)(sprite + 0xCC);
-        if (w > 1.0f && h > 1.0f) {
-            g_ringCx = 0x208 + w * 0.5f;
-            g_ringCy = 0x63  + h * 0.5f;
-            /* SEH-safe: this runs in the frame path (called from
-             * diamond_trophy_swap on the reveal frame). Use the in-memory
-             * trace ring, NOT diag_logf (direct fopen/fflush inside the award
-             * frame is a real-Windows C0000005 — mod docs lines 545-552). */
-            trace_logf("[diamond] ring center from sprite: w=%.1f h=%.1f -> (%.1f, %.1f)",
-                      w, h, g_ringCx, g_ringCy);
+    /* Star-burst center: the native golden-weasel burst is hardcoded at
+     * world (227,648) r=74 (block at 0x44D9A0, constants 0x4D6D8C/0x4D6D88/0x4D6D90).
+     * The diamond REPLACES the weasel (same ctx+0x37C, same world draw 0x208,0x63),
+     * so its burst must use the SAME native center as the weasel's — NOT the
+     * sprite's box center (which is offset by transparent padding and mis-aligned
+     * after the 2× canvas anchor shift). We still READ the sprite box for
+     * diagnostics, then OVERRIDE to the native center so the ring is pixel-perfect.
+     * The empirical test: using the other medal centers (429,317) placed the
+     * ring down-left; 227,648 is the weasel's true center.
+     *
+     * Diagnostic: log what the sprite box WOULD give vs the native constant,
+     * so a future visual test can measure the delta. */
+    {
+        float derivedCx = 0.0f, derivedCy = 0.0f;
+        if (sprite && sprite > 0x10000 && !IsBadReadPtr((void*)(sprite + 0xC8), 8)) {
+            float w = *(float*)(sprite + 0xC8), h = *(float*)(sprite + 0xCC);
+            if (w > 1.0f && h > 1.0f) {
+                derivedCx = 0x208 + w * 0.5f;
+                derivedCy = 0x63  + h * 0.5f;
+            }
+        }
+        /* PRIMARY: native weasel burst center (world coords, same transform as particles). */
+        g_ringCx = 227.0f; g_ringCy = 648.0f;
+        if (derivedCx != 0.0f) {
+            trace_logf("[diamond] ring center NATIVE (227,648) r=74 vs sprite-derived (%.1f, %.1f) delta (%.1f, %.1f) — using NATIVE",
+                      derivedCx, derivedCy, derivedCx - 227.0f, derivedCy - 648.0f);
+        } else {
+            trace_logf("[diamond] ring center NATIVE (227,648) r=74 (sprite unreadable)");
         }
     }
-    if (g_ringCx == 0.0f || g_ringCy == 0.0f) { g_ringCx = 227.0f; g_ringCy = 648.0f; }
     /* (1) Play the medal pop on the medal channel (App+0x50C). */
     if (IsBadReadPtr((void*)(app + SND_CHANNEL_MEDAL), 4)) return;
     channel = *(DWORD*)(app + SND_CHANNEL_MEDAL);
@@ -1546,7 +1570,7 @@ static DWORD vortex_ensure_scratch(DWORD device, int w, int h) {
     if (!CreateTexture) return 0;
     if (g_vortexTex) {   /* release old scratch (Release = slot 2) */
         DWORD *rvt = *(DWORD**)g_vortexTex;
-        if (rvt && IsBadReadPtr((void*)(rvt + 0x08), 4)) {
+        if (rvt && !IsBadReadPtr((void*)(rvt + 0x08), 4)) {
             typedef ULONG (__stdcall *PFN_Release)(void*);
             PFN_Release rel = (PFN_Release)(*(void**)(rvt + 0x08));
             if (rel) rel((void*)g_vortexTex);
@@ -1914,7 +1938,7 @@ static void vortex_disarm(void) {
     if (g_vortexSprite) { VirtualFree((void*)g_vortexSprite,0,MEM_RELEASE); g_vortexSprite=0; }
     if (g_vortexTex) {
         DWORD *rvt = *(DWORD**)g_vortexTex;
-        if (rvt && IsBadReadPtr((void*)(rvt + 0x08), 4)) {
+        if (rvt && !IsBadReadPtr((void*)(rvt + 0x08), 4)) {
             typedef ULONG (__stdcall *PFN_Release)(void*);
             PFN_Release rel = (PFN_Release)(*(void**)(rvt + 0x08));
             if (rel) rel((void*)g_vortexTex);
@@ -2044,11 +2068,15 @@ static void vortex_update_streak(Diamond_VortexP *p, int frame) {
  * for the vortex window. Falls back silently if real BASS is absent. */
 #define VORTEX_SND_STREAM  0
 static HSTREAM g_vortex_snd = VORTEX_SND_STREAM;
-#define WHOOSH_SND_PATH   "sounds\\\\whoosh.ogg"
+#define WHOOSH_SND_PATH   "sounds\\\\whoosh.ogg"  /* BASS fallback tries .wav if .ogg missing */
 static void vortex_sound_start(void) {
     if (g_vortex_snd != VORTEX_SND_STREAM) return;
     if (!real_BASS_StreamCreateFile || !real_BASS_ChannelPlay) return;
     g_vortex_snd = real_BASS_StreamCreateFile(FALSE, WHOOSH_SND_PATH, 0, 0, 0);
+    if (g_vortex_snd == VORTEX_SND_STREAM) {
+        /* Fallback: game stores sounds without extension (Sound_LoadOggOrWav tries .ogg/.wav). */
+        g_vortex_snd = real_BASS_StreamCreateFile(FALSE, "sounds\\\\whoosh", 0, 0, 0);
+    }
     if (g_vortex_snd != VORTEX_SND_STREAM) real_BASS_ChannelPlay(g_vortex_snd, TRUE);
 }
 static void vortex_sound_stop(void) {
