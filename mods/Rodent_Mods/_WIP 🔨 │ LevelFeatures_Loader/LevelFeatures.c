@@ -3718,6 +3718,19 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         *(float *)((char *)ext + UNI_MESH_13) = z;
         OrBoardFeat(board, FEAT_SWIRL);
         { void* ext=GetBoardExt(board); if(ext){ *(void**)((char*)ext+OFF_SWIRL_MESH)=obj; *(int*)((char*)ext+OFF_SWIRL_RENDER)=renderOut; *(float*)((char*)ext+OFF_SWIRL_POS_X)=x; *(float*)((char*)ext+OFF_SWIRL_POS_Y)=y; *(float*)((char*)ext+OFF_SWIRL_POS_Z)=z; } }
+        // Create swirl collision zone for Feature_SwirlZones proximity check
+        {
+            void* zoneMem = g_operatorNew(0x1110);
+            if (zoneMem) {
+                memset(zoneMem, 0, 0x1110);
+                *(float*)((char*)zoneMem + 0x10E0) = x;
+                *(float*)((char*)zoneMem + 0x10E4) = y;
+                *(float*)((char*)zoneMem + 0x10E8) = z;
+                *(float*)((char*)zoneMem + 0x1100) = 2.5f; // radius factor -> 150 units (*60)
+                if (ext) g_AthenaListAppend((void*)((char*)ext + UNI_SWIRL_LIST), (int)zoneMem);
+                else g_AthenaListAppend((void*)((char*)board + UNI_SWIRL_LIST), (int)zoneMem);
+            }
+        }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
     }
@@ -3727,7 +3740,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         S1EnsureMeshWorld(board, ext, UNI_GLUEBIE_MESH, "Levels\\Level3-Gluebie");
         if (difficulty == 0) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
         int meshOff = UNI_GLUEBIE_MESH;
-        int meshVal = *(int*)((char*)board + meshOff);
+        int meshVal = *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("GLUEBIE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x110C);
         if (mem) {
@@ -3747,7 +3760,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "CATAPULT", 8) == 0) {
         S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level4-Catapult");
         int meshOff = UNI_BONK_STORE;
-        int meshVal = *(int*)((char*)board + meshOff);
+        int meshVal = *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("CATAPULT: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1108);
         if (mem) {
