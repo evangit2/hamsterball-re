@@ -952,6 +952,7 @@ static char g_configPath[MAX_PATH] = "";
 static char g_levelDataPath[MAX_PATH] = "";
 static char g_raceFilesPath[MAX_PATH] = "";
 static char g_raceFiles[16][MAX_PATH] = {{0}}; // 1..15, each holds mesh path like "levels\\level1"
+static char g_levelDir[MAX_PATH] = ""; // fallback dir for textures/sounds/sub-meshworlds (e.g. "levels\\MyLevel\\")
 
 /* Pending race index for board constructor thunks */
 /* Must be non-static for asm reference */
@@ -6100,6 +6101,25 @@ static void UniversalConstructor(void *board, int raceIndex) {
         DebugLog(dbg2);
     }
 
+    /* Extract level dir for texture/sound/sub-mesh fallback.
+     * e.g. "levels\\MyLevel\\MyLevel" -> "levels\\MyLevel\\"
+     *      "levels\\level1" -> "levels\\" (no extra dir, fallback is just levels\\) */
+    {
+        const char *lastSlash = strrchr(resolved, '\\');
+        const char *lastSlash2 = strrchr(resolved, '/');
+        if (lastSlash2 && (!lastSlash || lastSlash2 > lastSlash)) lastSlash = lastSlash2;
+        if (lastSlash) {
+            int dirLen = (int)(lastSlash - resolved) + 1; // include slash
+            if (dirLen >= MAX_PATH) dirLen = MAX_PATH - 1;
+            strncpy(g_levelDir, resolved, dirLen);
+            g_levelDir[dirLen] = '\0';
+        } else {
+            g_levelDir[0] = '\0';
+        }
+        char dbg3[256]; wsprintfA(dbg3, "g_levelDir set to '%s'", g_levelDir);
+        DebugLog(dbg3);
+    }
+
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (!app || IsBadReadPtr((void *)app, 0x200)) return;
     void *gfx = *(void **)((char *)app + 0x174);
@@ -6386,6 +6406,145 @@ static void InstallHook(void) {
 }
 
 /* BASS proxy exports handled by bass.def - DLL forwarding to bass_real.dll */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * File fallback hook — if game can't find texture/sound/mesh in its
+ * default folder, retry in g_levelDir (the folder containing the main
+ * MESHWORLD for this race). Covers:
+ *   textures\\foo.png      -> g_levelDir\\foo.png
+ *   levels\\Level3-Water  -> g_levelDir\\Level3-Water  (+ .MESHWORLD/.MESH)
+ *   sounds\\foo.ogg       -> g_levelDir\\foo.ogg
+ * Implemented as IAT patch on kernel32!CreateFileA/W so every file open
+ * (D3DX, BASS, MESHWORLD) is covered without per-callsite hooks.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static HANDLE (WINAPI *g_origCreateFileA)(LPCSTR,DWORD,DWORD,LPSECURITY_ATTRIBUTES,DWORD,DWORD,HANDLE) = NULL;
+static HANDLE (WINAPI *g_origCreateFileW)(LPCWSTR,DWORD,DWORD,LPSECURITY_ATTRIBUTES,DWORD,DWORD,HANDLE) = NULL;
+
+static HANDLE WINAPI Hook_CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) {
+    HANDLE h = g_origCreateFileA(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    if (h != INVALID_HANDLE_VALUE) return h;
+    DWORD err = GetLastError();
+    if (err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND) return h;
+    if (!lpFileName || !g_levelDir[0]) return h;
+    /* Only fallback for asset extensions we care about */
+    const char *ext = strrchr(lpFileName, '.');
+    const char *slash = strrchr(lpFileName, '\\');
+    const char *slash2 = strrchr(lpFileName, '/');
+    if (slash2 && (!slash || slash2 > slash)) slash = slash2;
+    const char *base = slash ? slash + 1 : lpFileName;
+    if (!base || !*base) return h;
+    /* Build trial path = g_levelDir + base */
+    char trial[MAX_PATH];
+    int dirLen = strlen(g_levelDir);
+    int baseLen = strlen(base);
+    if (dirLen + baseLen >= MAX_PATH) return h;
+    strcpy(trial, g_levelDir);
+    strcat(trial, base);
+    /* Don't fallback if it's already the same path */
+    if (my_stricmp(trial, lpFileName) == 0) return h;
+    /* For MESHWORLD sub-files the game may omit extension; trial will also omit — still valid */
+    /* Avoid falling back for our own log/config files */
+    if (my_strnicmp(base, "lfdebug", 7)==0 || my_strnicmp(base, "LevelFeatures", 13)==0 || my_strnicmp(base, "RaceFiles", 9)==0) return h;
+    HANDLE h2 = g_origCreateFileA(trial, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    if (h2 != INVALID_HANDLE_VALUE) {
+        char dbg[512]; wsprintfA(dbg, "Fallback: '%s' -> '%s' (OK)", lpFileName, trial);
+        DebugLog(dbg);
+        return h2;
+    }
+    /* Also try without directory prefix duplication: if original was textures\\x, fallback already strips it */
+    /* If still not found and original had no extension, try adding .MESHWORLD */
+    if (!ext) {
+        if (dirLen + baseLen + 10 >= MAX_PATH) return h;
+        strcpy(trial, g_levelDir);
+        strcat(trial, base);
+        strcat(trial, ".MESHWORLD");
+        HANDLE h3 = g_origCreateFileA(trial, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+        if (h3 != INVALID_HANDLE_VALUE) {
+            char dbg2[512]; wsprintfA(dbg2, "Fallback (+.MESHWORLD): '%s' -> '%s' (OK)", lpFileName, trial);
+            DebugLog(dbg2);
+            return h3;
+        }
+    }
+    return h;
+}
+
+static HANDLE WINAPI Hook_CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) {
+    HANDLE h = g_origCreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    if (h != INVALID_HANDLE_VALUE) return h;
+    DWORD err = GetLastError();
+    if (err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND) return h;
+    if (!lpFileName || !g_levelDir[0]) return h;
+    /* Convert wide to ansi for simple logic */
+    char ansi[MAX_PATH]; WideCharToMultiByte(CP_ACP, 0, lpFileName, -1, ansi, MAX_PATH, NULL, NULL);
+    const char *slash = strrchr(ansi, '\\');
+    const char *slash2 = strrchr(ansi, '/');
+    if (slash2 && (!slash || slash2 > slash)) slash = slash2;
+    const char *base = slash ? slash + 1 : ansi;
+    if (!base || !*base) return h;
+    char trialAnsi[MAX_PATH];
+    int dirLen = strlen(g_levelDir);
+    int baseLen = strlen(base);
+    if (dirLen + baseLen >= MAX_PATH) return h;
+    strcpy(trialAnsi, g_levelDir);
+    strcat(trialAnsi, base);
+    if (my_stricmp(trialAnsi, ansi)==0) return h;
+    if (my_strnicmp(base, "lfdebug", 7)==0) return h;
+    WCHAR trialW[MAX_PATH]; MultiByteToWideChar(CP_ACP, 0, trialAnsi, -1, trialW, MAX_PATH);
+    HANDLE h2 = g_origCreateFileW(trialW, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    if (h2 != INVALID_HANDLE_VALUE) {
+        char dbg[512]; wsprintfA(dbg, "FallbackW: '%s' -> '%s' (OK)", ansi, trialAnsi);
+        DebugLog(dbg);
+        return h2;
+    }
+    return h;
+}
+
+static void InstallFileFallbackHook(void) {
+    if (g_origCreateFileA) return; // already installed
+    HMODULE exe = GetModuleHandleA(NULL);
+    if (!exe) exe = (HMODULE)g_moduleBase;
+    if (!exe || IsBadReadPtr(exe, 0x100)) return;
+    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)exe;
+    if (dos->e_magic != 0x5A4D) return;
+    PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((char*)exe + dos->e_lfanew);
+    if (IsBadReadPtr(nt, sizeof(IMAGE_NT_HEADERS))) return;
+    if (nt->Signature != 0x00004550) return;
+    DWORD importRVA = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+    if (!importRVA) return;
+    PIMAGE_IMPORT_DESCRIPTOR imp = (PIMAGE_IMPORT_DESCRIPTOR)((char*)exe + importRVA);
+    for (; imp->Name; imp++) {
+        char *dllName = (char*)exe + imp->Name;
+        if (!dllName || IsBadReadPtr(dllName, 8)) continue;
+        if (my_stricmp(dllName, "KERNEL32.dll") != 0 && my_stricmp(dllName, "kernel32.dll") != 0) continue;
+        PIMAGE_THUNK_DATA thunk = (PIMAGE_THUNK_DATA)((char*)exe + imp->FirstThunk);
+        PIMAGE_THUNK_DATA origThunk = (PIMAGE_THUNK_DATA)((char*)exe + imp->OriginalFirstThunk);
+        for (; thunk->u1.Function; thunk++, origThunk++) {
+            if (IMAGE_SNAP_BY_ORDINAL(origThunk->u1.Ordinal)) continue;
+            PIMAGE_IMPORT_BY_NAME byName = (PIMAGE_IMPORT_BY_NAME)((char*)exe + origThunk->u1.AddressOfData);
+            if (IsBadReadPtr(byName, 4)) continue;
+            char *funcName = (char*)byName->Name;
+            if (!funcName || IsBadReadPtr(funcName, 4)) continue;
+            DWORD oldProtect;
+            if (strcmp(funcName, "CreateFileA")==0) {
+                g_origCreateFileA = (void*)thunk->u1.Function;
+                VirtualProtect(&thunk->u1.Function, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                thunk->u1.Function = (DWORD)Hook_CreateFileA;
+                VirtualProtect(&thunk->u1.Function, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), &thunk->u1.Function, 4);
+                DebugLog("InstallFileFallbackHook: CreateFileA hooked");
+            } else if (strcmp(funcName, "CreateFileW")==0) {
+                g_origCreateFileW = (void*)thunk->u1.Function;
+                VirtualProtect(&thunk->u1.Function, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                thunk->u1.Function = (DWORD)Hook_CreateFileW;
+                VirtualProtect(&thunk->u1.Function, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), &thunk->u1.Function, 4);
+                DebugLog("InstallFileFallbackHook: CreateFileW hooked");
+            }
+        }
+    }
+    if (!g_origCreateFileA) DebugLog("InstallFileFallbackHook: CreateFileA not found in IAT");
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Debug logging
@@ -6717,6 +6876,8 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     DebugLog("InstallExtFreeHook done");
     PatchAllocSizes();
     DebugLog("PatchAllocSizes done");
+    InstallFileFallbackHook();
+    DebugLog("InstallFileFallbackHook done");
     InstallBoardCtorHooks();
     DebugLog("InstallBoardCtorHooks done");
     InstallUniversalConstructorHook();
