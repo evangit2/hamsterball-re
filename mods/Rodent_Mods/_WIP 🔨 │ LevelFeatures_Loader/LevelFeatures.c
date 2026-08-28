@@ -140,7 +140,71 @@ void DebugLog(const char *msg);
 #define BRIDGE_PARAM2      UNI_BRIDGE_STATE  /* 0 */
 #define BRIDGE_PARAM3      UNI_BRIDGE_COUNTER  /* 0x32 = 50 */
 
-#define UNION_SIZE  0xAB00
+#define UNION_SIZE  0xAB00  /* deprecated: board now vanilla-sized, union lives in extension heap */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Extension Heap — Option B (S1-driven, per-board HeapAlloc)
+ * Board stays vanilla-sized; all union data lives in a separate HeapAlloc
+ * block attached at board+EXT_PTR (0xAB00, beyond vanilla max 0x6498).
+ * EXT_SIZE is fixed 0x3000 for v1 (dynamic counting scaffold below).
+ * All OFF_* are ext-relative offsets. UNI_* kept as deprecated aliases.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+#define EXT_PTR   0xAB00
+#define EXT_SIZE  0x3000
+
+/* Fixed internal OFF_* layout inside ext — total <0x3000, compact for v1 */
+#define OFF_TIPPER_MESH     0x000
+#define OFF_TIPPER_RENDER   0x004
+#define OFF_WATER_MESH      0x008  /* UNI_MESH_0 */
+#define OFF_WATER_RENDER    0x00C  /* UNI_MESH_1 */
+#define OFF_WATER_ROT_X     0x010
+#define OFF_WATER_ROT_Y     0x014
+#define OFF_WATER_ROT_Z     0x018
+#define OFF_SWIRL_MESH      0x01C  /* UNI_MESH_6 */
+#define OFF_SWIRL_RENDER    0x020  /* UNI_MESH_7 */
+#define OFF_SWIRL_POS_X     0x024  /* UNI_MESH_15 */
+#define OFF_SWIRL_POS_Y     0x028  /* UNI_MESH_12 */
+#define OFF_SWIRL_POS_Z     0x02C  /* UNI_MESH_13 */
+#define OFF_SWIRL_ANGLE1    0x030  /* UNI_MESH_2 */
+#define OFF_SWIRL_SPEED     0x034  /* UNI_MESH_4 */
+#define OFF_SWIRL_ANGLE2    0x038  /* UNI_MESH_5 */
+#define OFF_WHEEL_EMBED_X   0x03C  /* UNI_WHEELEMBED_X */
+#define OFF_WHEEL_EMBED_Y   0x040
+#define OFF_WHEEL_EMBED_Z   0x044
+#define OFF_WHEEL_EMBED_VX  0x048
+#define OFF_WHEEL_EMBED_VY  0x04C
+#define OFF_WHEEL_EMBED_VZ  0x050
+#define OFF_BONK_STORE      0x054  /* UNI_BONK_STORE */
+#define OFF_BELL_OBJ        0x058
+#define OFF_SAW1_OBJ        0x05C
+#define OFF_SAW2_OBJ        0x060
+#define OFF_SAW2_ALERT_OBJ  0x064
+#define OFF_BRIDGE_ANGLE    0x068  /* UNI_BRIDGE_ANGLE */
+#define OFF_BRIDGE_STATE    0x06C
+#define OFF_BRIDGE_COUNTER  0x070
+#define OFF_WINDMILL_X      0x074  /* UNI_WINDMILL_X */
+#define OFF_WINDMILL_Y      0x078
+#define OFF_WINDMILL_Z      0x07C
+#define OFF_WINDMILL_ANGLE  0x080
+#define OFF_WINDMILL_SPEED  0x084
+#define OFF_WINDMILL_STATE  0x088
+#define OFF_WINDMILL_COUNTER 0x08C
+#define OFF_WINDMILL_DECAY  0x090
+#define OFF_BITE_STATE      0x094
+#define OFF_BITE_SPEED      0x098
+#define OFF_BUMPER_LIT      0x0A0  /* 8*4 = 0x20 bytes: 0x0A0-0x0BF */
+#define OFF_SKY_POPCYL_BASE 0x0C0  /* 16*4 = 0x40 bytes: 0x0C0-0x0FF */
+#define OFF_SKY_TIMER       0x100
+#define OFF_EHVECTOR        0x200  /* 8*0x418 = 0x20C0: 0x200-0x22BF */
+#define OFF_LIST_0          0x2400 /* 2-3 AthenaLists within 0x3000 (0x2400-0x2C1F) */
+#define OFF_LIST_1          0x2810
+#define OFF_LIST_2          0x2C20
+#define OFF_LIST_3          OFF_LIST_0  /* alias: reuse for TARBUBBLE if needed */
+#define OFF_SWIRL_LIST      OFF_LIST_0
+#define OFF_TARBUBBLE_LIST  OFF_LIST_1
+#define OFF_CATAPULT_LIST   OFF_LIST_2
+#define OFF_MACE_LIST       OFF_LIST_2  /* share */
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Object type system — extensible per-level feature toggles
@@ -239,7 +303,88 @@ static DWORD g_featureBits[] = {
 
 #define NUM_FEATURES (sizeof(g_featureNames) / sizeof(g_featureNames[0]) - 1)
 
-static int g_featuresParsed[16] = {0}; /* 1 if [FEATURES] section overrode defaults for this level */
+static int g_featuresParsed[16] = {0};
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Extension heap per-board map — Option B
+ * g_extMap tracks HeapAlloc blocks keyed by board pointer.
+ * g_extFeat is per-board auto-enable bitmask (replaces g_updateFeatures[level]).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+#define MAX_EXT_MAP 32
+typedef struct { void* board; void* ext; DWORD feat; } ExtEntry;
+static ExtEntry g_extMap[32] = {{0}};
+
+static void* GetBoardExt(void* board) {
+    if (!board) return NULL;
+    int i;
+    for (i = 0; i < MAX_EXT_MAP; i++) {
+        if (g_extMap[i].board == board && g_extMap[i].ext) {
+            if (!IsBadReadPtr(g_extMap[i].ext, 4)) return g_extMap[i].ext;
+        }
+    }
+    if (!IsBadReadPtr((char*)board + EXT_PTR, 4)) {
+        void* ext = *(void**)((char*)board + EXT_PTR);
+        if (ext && !IsBadReadPtr(ext, 4)) return ext;
+    }
+    return NULL;
+}
+static DWORD GetBoardFeat(void* board) {
+    int i;
+    for (i = 0; i < MAX_EXT_MAP; i++) if (g_extMap[i].board == board) return g_extMap[i].feat;
+    return 0;
+}
+static void OrBoardFeat(void* board, DWORD bits) {
+    int i, freeIdx = -1;
+    for (i = 0; i < MAX_EXT_MAP; i++) {
+        if (g_extMap[i].board == board) { g_extMap[i].feat |= bits; return; }
+        if (freeIdx==-1 && !g_extMap[i].board) freeIdx=i;
+    }
+    if (freeIdx!=-1) { g_extMap[freeIdx].board = board; g_extMap[freeIdx].feat = bits; }
+}
+static void SetBoardExt(void* board, void* ext) {
+    int i, freeIdx=-1;
+    for (i=0;i<MAX_EXT_MAP;i++) {
+        if (g_extMap[i].board == board) { g_extMap[i].ext = ext; return; }
+        if (freeIdx==-1 && !g_extMap[i].board) freeIdx=i;
+    }
+    if (freeIdx!=-1) { g_extMap[freeIdx].board = board; g_extMap[freeIdx].ext = ext; }
+}
+static void FreeBoardExt(void* board) {
+    int i;
+    for (i=0;i<MAX_EXT_MAP;i++) if (g_extMap[i].board == board) {
+        if (g_extMap[i].ext) {
+            if (!IsBadReadPtr(g_extMap[i].ext, 4)) HeapFree(GetProcessHeap(),0,g_extMap[i].ext);
+            g_extMap[i].ext=NULL;
+        }
+        g_extMap[i].feat=0;
+        g_extMap[i].board=NULL;
+        break;
+    }
+    if (!IsBadReadPtr((char*)board+EXT_PTR,4)) {
+        void* ext = *(void**)((char*)board+EXT_PTR);
+        if (ext && !IsBadReadPtr(ext,4)) {
+            int already=0;
+            for (i=0;i<MAX_EXT_MAP;i++) if (g_extMap[i].ext==ext) already=1;
+            if (!already) HeapFree(GetProcessHeap(),0,ext);
+        }
+        if (!IsBadWritePtr((char*)board+EXT_PTR,4)) *(void**)((char*)board+EXT_PTR)=NULL;
+    }
+}
+static void* EnsureBoardExt(void* board) {
+    void* ext = GetBoardExt(board);
+    if (ext) return ext;
+    DWORD extSize = EXT_SIZE;
+    ext = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, extSize);
+    if (!ext) return NULL;
+    SetBoardExt(board, ext);
+    if (!IsBadWritePtr((char*)board+EXT_PTR,4)) *(void**)((char*)board+EXT_PTR)=ext;
+    {
+        char dbg[128];
+        wsprintfA(dbg, "EnsureBoardExt: board=%p ext=%p size=0x%X", board, ext, extSize);
+        DebugLog(dbg);
+    }
+    return ext;
+}
+ /* 1 if [FEATURES] section overrode defaults for this level */
 typedef void (__fastcall *Scene_Update_t)(void *board);
 typedef void (__fastcall *Board_UpdateRaceState_t)(void *board);
 typedef void (__fastcall *Level_RenderDynamicObjects_t)(void *board);
@@ -2038,9 +2183,7 @@ static void InitBridge(void *board) {
 
 static void Feature_BridgeAnimation(void *board, int level) {
     if (!g_SceneUpdate) return;
-
-    /* Check ball list size — skip if race ending.
-     * board+0x362C is the race ball AthenaList (param_1+0xD8B in Ghidra = 0xD8B*4). */
+    void* ext = GetBoardExt(board);
     int ballCount = g_AthenaListGetSize((void *)((char *)board + UNI_RACE_BALL_LIST));
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (ballCount == 1 && app && !IsBadReadPtr((void *)app, 0x600)) {
@@ -2048,89 +2191,65 @@ static void Feature_BridgeAnimation(void *board, int level) {
         if (ball && !IsBadReadPtr((void *)ball, 0x200) && *(char *)(ball + 0x14C))
             return;
     }
-
-    /* All levels use unified bridge offsets. */
-    int renderOfs = BRD_BRIDGE_RENDER;
-    int base      = BRD_BRIDGE_PIVOT_X;
-    int angleOfs  = BRD_BRIDGE_ANGLE;
-    int stateOfs  = BRD_BRIDGE_STATE;
-    int counterOfs = BRD_BRIDGE_COUNTER;
-
-    DWORD renderObj = *(DWORD *)((char *)board + renderOfs);
-    if (!renderObj) return;
-
-    int state = *(int *)((char *)board + stateOfs);
-
-    switch (state) {
-    case 0: /* Countdown */
-        {
-            int c = *(int *)((char *)board + counterOfs) - 1;
-            *(int *)((char *)board + counterOfs) = c;
-            if (c < 1)
-                *(int *)((char *)board + stateOfs) = 1;
+    DWORD renderObj;
+    float *anglePtr; int *statePtr; int *counterPtr; float *pivotX; float *pivotY; float *pivotZ;
+    if (ext) {
+        renderObj = *(DWORD *)((char *)ext + OFF_BONK_STORE);
+        anglePtr = (float*)((char*)ext + OFF_BRIDGE_ANGLE);
+        statePtr = (int*)((char*)ext + OFF_BRIDGE_STATE);
+        counterPtr = (int*)((char*)ext + OFF_BRIDGE_COUNTER);
+        pivotX = (float*)((char*)ext + OFF_WINDMILL_X);
+        pivotY = (float*)((char*)ext + OFF_WINDMILL_Y);
+        pivotZ = (float*)((char*)ext + OFF_WINDMILL_Z);
+        if (!renderObj) renderObj = *(DWORD *)((char *)board + BRD_BRIDGE_RENDER);
+        if (*anglePtr==0 && *(float*)((char*)board + BRD_BRIDGE_ANGLE)!=0) {
+            *anglePtr = *(float*)((char*)board + BRD_BRIDGE_ANGLE);
+            *statePtr = *(int*)((char*)board + BRD_BRIDGE_STATE);
+            *counterPtr = *(int*)((char*)board + BRD_BRIDGE_COUNTER);
+            *pivotX = *(float*)((char*)board + BRD_BRIDGE_PIVOT_X);
+            *pivotY = *(float*)((char*)board + BRD_BRIDGE_PIVOT_Y);
+            *pivotZ = *(float*)((char*)board + BRD_BRIDGE_PIVOT_Z);
         }
-        break;
-
-    case 1: /* Tilt down */
-        {
-            float angle = *(float *)((char *)board + angleOfs) - 3.0f;
-            *(float *)((char *)board + angleOfs) = angle;
+    } else {
+        renderObj = *(DWORD *)((char *)board + BRD_BRIDGE_RENDER);
+        anglePtr = (float*)((char*)board + BRD_BRIDGE_ANGLE);
+        statePtr = (int*)((char*)board + BRD_BRIDGE_STATE);
+        counterPtr = (int*)((char*)board + BRD_BRIDGE_COUNTER);
+        pivotX = (float*)((char*)board + BRD_BRIDGE_PIVOT_X);
+        pivotY = (float*)((char*)board + BRD_BRIDGE_PIVOT_Y);
+        pivotZ = (float*)((char*)board + BRD_BRIDGE_PIVOT_Z);
+    }
+    if (!renderObj) return;
+    int state = *statePtr;
+    switch (state) {
+    case 0: { int c = *counterPtr - 1; *counterPtr = c; if (c < 1) *statePtr = 1; } break;
+    case 1: {
+            float angle = *anglePtr - 3.0f;
+            *anglePtr = angle;
             if (angle < 0.0f) {
-                *(float *)((char *)board + angleOfs) = 0.0f;
-                *(int *)((char *)board + counterOfs) = 0x7D; /* 125 */
-                *(int *)((char *)board + stateOfs) = 2;
-                /* Play sound + apply velocity to balls */
+                *anglePtr = 0.0f; *counterPtr = 0x7D; *statePtr = 2;
                 if (app && !IsBadReadPtr((void *)app, 0x800) && g_SoundPlay3D) {
                     DWORD snd = *(DWORD *)(app + APP_SOUNDFX_47C);
-                    if (snd) {
-                        float px = *(float *)((char *)board + base);
-                        float py = *(float *)((char *)board + base + 4);
-                        float pz = *(float *)((char *)board + base + 8);
-                        g_SoundPlay3D((void *)snd, px, py, pz);
-                    }
+                    if (snd) g_SoundPlay3D((void *)snd, *pivotX, *pivotY, *pivotZ);
                 }
                 if (g_SceneForEachBallSetVelocity && g_Vec3CopyUpd) {
-                    float pivot[3];
-                    g_Vec3CopyUpd(pivot, (float *)((char *)board + base));
-                    g_SceneForEachBallSetVelocity(board,
-                        pivot[1], pivot[2], 0.5f);
+                    float pivot[3]; g_Vec3CopyUpd(pivot, pivotX);
+                    g_SceneForEachBallSetVelocity(board, pivot[1], pivot[2], 0.5f);
                 }
             }
-        }
-        break;
-
-    case 2: /* Wait */
-        {
-            int c = *(int *)((char *)board + counterOfs) - 1;
-            *(int *)((char *)board + counterOfs) = c;
-            if (c < 1)
-                *(int *)((char *)board + stateOfs) = 3;
-        }
-        break;
-
-    case 3: /* Tilt back up */
-        {
-            float angle = *(float *)((char *)board + angleOfs) + 0.5f;
-            *(float *)((char *)board + angleOfs) = angle;
-            if (angle >= 45.0f) {
-                *(float *)((char *)board + angleOfs) = 45.0f;
-                *(int *)((char *)board + counterOfs) = 0x4B; /* 75 */
-                *(int *)((char *)board + stateOfs) = 0;
-            }
-            /* Play sound at intervals */
-            /* Transform ball positions through bridge rotation */
-            if (g_TimerInit && g_TimerCleanup && g_GfxScaleZ &&
-                g_GfxSetPosition && g_MatrixTransformVec3 && app) {
+        } break;
+    case 2: { int c = *counterPtr - 1; *counterPtr = c; if (c < 1) *statePtr = 3; } break;
+    case 3: {
+            float angle = *anglePtr + 0.5f;
+            *anglePtr = angle;
+            if (angle >= 45.0f) { *anglePtr = 45.0f; *counterPtr = 0x4B; *statePtr = 0; }
+            if (g_TimerInit && g_TimerCleanup && g_GfxScaleZ && g_GfxSetPosition && g_MatrixTransformVec3 && app) {
                 void *gfx = *(void **)(app + 0x174);
                 if (gfx) {
                 char timerBuf[68];
                 g_TimerInit(timerBuf);
-                g_GfxScaleZ(gfx, -*(float *)((char *)board + angleOfs));
-                g_GfxSetPosition(gfx,
-                    *(float *)((char *)board + base),
-                    *(float *)((char *)board + base + 4),
-                    *(float *)((char *)board + base + 8));
-                /* Call render object vtable[0x58] and [0x54] */
+                g_GfxScaleZ(gfx, -*anglePtr);
+                g_GfxSetPosition(gfx, *pivotX, *pivotY, *pivotZ);
                 DWORD *renderVtbl = *(DWORD **)renderObj;
                 if (renderVtbl) {
                     void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))renderVtbl[0x16];
@@ -2141,8 +2260,13 @@ static void Feature_BridgeAnimation(void *board, int level) {
                 g_TimerCleanup(timerBuf);
                 }
             }
-        }
-        break;
+        } break;
+    }
+    if (ext) {
+        *(DWORD*)((char*)board + BRD_BRIDGE_RENDER) = renderObj;
+        *(float*)((char*)board + BRD_BRIDGE_ANGLE) = *anglePtr;
+        *(int*)((char*)board + BRD_BRIDGE_STATE) = *statePtr;
+        *(int*)((char*)board + BRD_BRIDGE_COUNTER) = *counterPtr;
     }
 }
 
@@ -2154,6 +2278,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
 
 static void Feature_SwirlZones(void *board, int level) {
     if (!g_AthenaListGetIterator || !g_operatorNew) return;
+    void* ext = GetBoardExt(board); (void)ext;
 
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (!app || IsBadReadPtr((void *)app, 0x600)) return;
@@ -2366,18 +2491,24 @@ static void Feature_SwirlZones(void *board, int level) {
 
         /* Primary swirl mesh rotation (Gfx_ScaleY) */
         DebugLog("  [swirl] step3a: primary mesh rotation");
-        float angle1 = *(float *)((char *)board + BRD_SWIRL1_ANGLE) - 0.5f;
-        *(float *)((char *)board + BRD_SWIRL1_SPEED) = 0.5f;
-        *(float *)((char *)board + BRD_SWIRL1_ANGLE) = angle1;
+        void* ext_swirl = GetBoardExt(board);
+        float angle1 = (ext_swirl ? *(float*)((char*)ext_swirl + OFF_SWIRL_ANGLE1) : *(float *)((char *)board + BRD_SWIRL1_ANGLE)) - 0.5f;
+        if (ext_swirl) { *(float*)((char*)ext_swirl + OFF_SWIRL_SPEED)=0.5f; *(float*)((char*)ext_swirl + OFF_SWIRL_ANGLE1)=angle1; } else { *(float *)((char *)board + BRD_SWIRL1_SPEED) = 0.5f; *(float *)((char *)board + BRD_SWIRL1_ANGLE) = angle1; }
         DebugLog("  [swirl] step3a: calling Matrix44Zero");
         g_Matrix44Zero((int *)timerBuf);
         DebugLog("  [swirl] step3a: calling GfxScaleY");
-        g_GfxScaleY(gfx, angle1);
+        if (ext_swirl) {
+            float rx = *(float*)((char*)ext_swirl + OFF_WATER_ROT_X);
+            float ry = *(float*)((char*)ext_swirl + OFF_WATER_ROT_Y);
+            float rz = *(float*)((char*)ext_swirl + OFF_WATER_ROT_Z);
+            if (rx!=0 || ry!=0 || rz!=0) {
+                if (ry!=0) g_GfxScaleY(gfx, angle1 * ry); else g_GfxScaleY(gfx, angle1);
+                if (rx!=0) g_GfxScaleX(gfx, angle1 * rx);
+                if (rz!=0) g_GfxScaleZ(gfx, angle1 * rz);
+            } else g_GfxScaleY(gfx, angle1);
+        } else g_GfxScaleY(gfx, angle1);
         DebugLog("  [swirl] step3a: calling GfxSetPosition");
-        g_GfxSetPosition(gfx,
-            *(float *)((char *)board + BRD_SWIRL1_POS_X),
-            *(float *)((char *)board + BRD_SWIRL1_POS_Y),
-            *(float *)((char *)board + BRD_SWIRL1_POS_Z));
+        if (ext_swirl) g_GfxSetPosition(gfx, *(float*)((char*)ext_swirl + OFF_WHEEL_EMBED_X), *(float*)((char*)ext_swirl + OFF_WHEEL_EMBED_Y), *(float*)((char*)ext_swirl + OFF_WHEEL_EMBED_Z)); else g_GfxSetPosition(gfx, *(float *)((char *)board + BRD_SWIRL1_POS_X), *(float *)((char *)board + BRD_SWIRL1_POS_Y), *(float *)((char *)board + BRD_SWIRL1_POS_Z));
         DebugLog("  [swirl] step3a: Gfx calls done, vtable render skipped (intermittent crash 0x498D9D)");
         /* Vtable calls SKIPPED — the mesh's spatial tree data is intermittently
          * corrupt, causing crash at 0x498D9D (FUN_00498BF0 spatial tree builder).
@@ -2399,9 +2530,9 @@ static void Feature_SwirlZones(void *board, int level) {
         char timerBuf[68];
         g_TimerInit(timerBuf);
 
+        void* ext_swirl2 = GetBoardExt(board);
         float swirlSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 0.5f;
-        *(float *)((char *)board + BRD_SWIRL2_ANGLE) =
-            *(float *)((char *)board + BRD_SWIRL2_ANGLE) + swirlSpeed;
+        if (ext_swirl2) *(float*)((char*)ext_swirl2 + OFF_SWIRL_ANGLE2) = *(float*)((char*)ext_swirl2 + OFF_SWIRL_ANGLE2) + swirlSpeed; else *(float *)((char *)board + BRD_SWIRL2_ANGLE) = *(float *)((char *)board + BRD_SWIRL2_ANGLE) + swirlSpeed;
         DebugLog("  [swirl] step3b: calling Matrix44Zero");
         g_Matrix44Zero((int *)timerBuf);
         DebugLog("  [swirl] step3b: calling GfxScaleX");
@@ -2432,47 +2563,62 @@ static void Feature_SwirlZones(void *board, int level) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void Feature_Windmill(void *board, int level) {
+    void* ext = GetBoardExt(board);
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (!app || IsBadReadPtr((void *)app, 0x500)) return;
-
-    /* Accumulate rotation — angle is stored as float (confirmed via disasm:
-     * FLD float ptr [ESI+0x438c], FADD, FSTP float ptr [ESI+0x438c]).
-     * The int modulo check converts to int via __ftol2() only for the creak test. */
+    float *anglePtr; float *speedPtr; int *statePtr; int *counterPtr; float *decayPtr; float *posX; float *posY; float *posZ;
+    DWORD *renderPtr;
+    if (ext) {
+        anglePtr = (float*)((char*)ext + OFF_WINDMILL_ANGLE);
+        speedPtr = (float*)((char*)ext + OFF_WINDMILL_SPEED);
+        statePtr = (int*)((char*)ext + OFF_WINDMILL_STATE);
+        counterPtr = (int*)((char*)ext + OFF_WINDMILL_COUNTER);
+        decayPtr = (float*)((char*)ext + OFF_WINDMILL_DECAY);
+        posX = (float*)((char*)ext + OFF_WINDMILL_X);
+        posY = (float*)((char*)ext + OFF_WINDMILL_Y);
+        posZ = (float*)((char*)ext + OFF_WINDMILL_Z);
+        renderPtr = (DWORD*)((char*)ext + OFF_BONK_STORE);
+        if (*anglePtr==0 && *(float*)((char*)board + BRD_WM_ANGLE)!=0) {
+            *anglePtr = *(float*)((char*)board + BRD_WM_ANGLE);
+            *speedPtr = *(float*)((char*)board + BRD_WM_SPEED);
+            *statePtr = *(int*)((char*)board + BRD_WM_STATE);
+            *counterPtr = *(int*)((char*)board + BRD_WM_COUNTER);
+            *decayPtr = *(float*)((char*)board + BRD_WM_DECAY_VAL);
+            *posX = *(float*)((char*)board + BRD_WM_POS_X);
+            *posY = *(float*)((char*)board + BRD_WM_POS_Y);
+            *posZ = *(float*)((char*)board + BRD_WM_POS_Z);
+            *renderPtr = *(DWORD*)((char*)board + BRD_WM_RENDER);
+        }
+    } else {
+        anglePtr = (float*)((char*)board + BRD_WM_ANGLE);
+        speedPtr = (float*)((char*)board + BRD_WM_SPEED);
+        statePtr = (int*)((char*)board + BRD_WM_STATE);
+        counterPtr = (int*)((char*)board + BRD_WM_COUNTER);
+        decayPtr = (float*)((char*)board + BRD_WM_DECAY_VAL);
+        posX = (float*)((char*)board + BRD_WM_POS_X);
+        posY = (float*)((char*)board + BRD_WM_POS_Y);
+        posZ = (float*)((char*)board + BRD_WM_POS_Z);
+        renderPtr = (DWORD*)((char*)board + BRD_WM_RENDER);
+    }
     float rotSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 1.0f;
-    *(float *)((char *)board + BRD_WM_ANGLE) =
-        *(float *)((char *)board + BRD_WM_ANGLE) + rotSpeed;
-
-    /* Play creak sound every 45° within each 90° cycle.
-     * Disasm: FLD angle → CALL __ftol2 → CDQ → IDIV 0x5A → CMP EDX,0x2D.
-     * The float angle is converted to int for the modulo check only. */
+    *anglePtr = *anglePtr + rotSpeed;
     {
-        int angleInt = (int)*(float *)((char *)board + BRD_WM_ANGLE);
+        int angleInt = (int)*anglePtr;
         if (angleInt % 0x5A == 0x2D) {
             if (g_SoundPlay3D) {
                 DWORD snd = *(DWORD *)(app + 0x4A4);
-                if (snd) {
-                    g_SoundPlay3D((void *)snd,
-                        *(float *)((char *)board + BRD_WM_POS_X),
-                        *(float *)((char *)board + BRD_WM_POS_Y),
-                        *(float *)((char *)board + BRD_WM_POS_Z));
-                }
+                if (snd) g_SoundPlay3D((void *)snd, *posX, *posY, *posZ);
             }
         }
     }
-
-    /* Render windmill mesh with rotation.
-     * Disasm: Gfx_ScaleY called with angle as float (FLD + PUSH). */
     if (g_TimerInit && g_TimerCleanup && g_GfxScaleY && g_GfxSetPosition && app) {
         void *gfx = *(void **)(app + 0x174);
         if (gfx) {
         char timerBuf[68];
         g_TimerInit(timerBuf);
-        g_GfxScaleY(gfx, *(float *)((char *)board + BRD_WM_ANGLE));
-        g_GfxSetPosition(gfx,
-            *(float *)((char *)board + BRD_WM_POS_X),
-            *(float *)((char *)board + BRD_WM_POS_Y),
-            *(float *)((char *)board + BRD_WM_POS_Z));
-        DWORD renderObj = *(DWORD *)((char *)board + BRD_WM_RENDER);
+        g_GfxScaleY(gfx, *anglePtr);
+        g_GfxSetPosition(gfx, *posX, *posY, *posZ);
+        DWORD renderObj = *renderPtr;
         if (renderObj) {
             DWORD *vtbl = *(DWORD **)renderObj;
             if (vtbl) {
@@ -2485,72 +2631,19 @@ static void Feature_Windmill(void *board, int level) {
         g_TimerCleanup(timerBuf);
         }
     }
-
-    /* 4-state machine for windmill speed control */
-    int wmState = *(int *)((char *)board + BRD_WM_STATE);
+    int wmState = *statePtr;
     switch (wmState) {
-    case 0: /* Spin up (decelerate) */
-        {
-            float speed = *(float *)((char *)board + BRD_WM_SPEED);
-            if (speed == 0.0f) speed = 0.25f;  /* 0x3E800000 */
-            speed *= 1.2f;
-            *(float *)((char *)board + BRD_WM_SPEED) = speed;
-            if (speed > 25.0f) {
-                *(float *)((char *)board + BRD_WM_SPEED) = 25.0f;  /* 0x41C80000 */
-                *(int *)((char *)board + BRD_WM_STATE) = 1;
-                *(int *)((char *)board + BRD_WM_COUNTER) = 0x19;
-                *(float *)((char *)board + BRD_WM_DECAY_VAL) = 50.0f;  /* 0x42480000 */
-            }
-        }
-        break;
-    case 1: /* Countdown then play sound */
-        {
-            int c = *(int *)((char *)board + BRD_WM_COUNTER) - 1;
-            *(int *)((char *)board + BRD_WM_COUNTER) = c;
-            if (c < 1) {
-                *(int *)((char *)board + BRD_WM_STATE) = 2;
-                if (g_SoundPlay3D) {
-                    DWORD snd = *(DWORD *)(app + 0x4A8);
-                    if (snd) {
-                        g_SoundPlay3D((void *)snd,
-                            *(float *)((char *)board + BRD_WM_POS_X),
-                            *(float *)((char *)board + BRD_WM_POS_Y),
-                            *(float *)((char *)board + BRD_WM_POS_Z));
-                    }
-                }
-            }
-        }
-        break;
-    case 2: /* Spin down */
-        {
-            float speed = *(float *)((char *)board + BRD_WM_SPEED) * 0.25f;
-            *(float *)((char *)board + BRD_WM_SPEED) = speed;
-            if (speed < 1.0f) {
-                *(float *)((char *)board + BRD_WM_SPEED) = 0.0f;
-                if (g_RNG) {
-                    int rng = RNG_call((void *)0x4F7360, 0, 2, 0);
-                    if (rng != 0) {
-                        *(int *)((char *)board + BRD_WM_STATE) = 3;
-                        int rng2 = RNG_call((void *)0x4F7360, 0, 100, 0);
-                        *(int *)((char *)board + BRD_WM_COUNTER) = rng2 + 100;
-                    } else {
-                        *(int *)((char *)board + BRD_WM_STATE) = 0;
-                    }
-                }
-            }
-        }
-        break;
-    case 3: /* Pause + decay */
-        {
-            float decay = *(float *)((char *)board + BRD_WM_DECAY_VAL) - 2.0f;
-            if (decay < 0.0f) decay = 0.0f;
-            *(float *)((char *)board + BRD_WM_DECAY_VAL) = decay;
-            int c = *(int *)((char *)board + BRD_WM_COUNTER) - 1;
-            *(int *)((char *)board + BRD_WM_COUNTER) = c;
-            if (c < 1)
-                *(int *)((char *)board + BRD_WM_STATE) = 0;
-        }
-        break;
+    case 0: { float speed = *speedPtr; if (speed == 0.0f) speed = 0.25f; speed *= 1.2f; *speedPtr = speed; if (speed > 25.0f) { *speedPtr = 25.0f; *statePtr = 1; *counterPtr = 0x19; *decayPtr = 50.0f; } } break;
+    case 1: { int c = *counterPtr - 1; *counterPtr = c; if (c < 1) { *statePtr = 2; if (g_SoundPlay3D) { DWORD snd = *(DWORD *)(app + 0x4A8); if (snd) g_SoundPlay3D((void *)snd, *posX, *posY, *posZ); } } } break;
+    case 2: { float speed = *speedPtr * 0.25f; *speedPtr = speed; if (speed < 1.0f) { *speedPtr = 0.0f; if (g_RNG) { int rng = RNG_call((void *)0x4F7360, 0, 2, 0); if (rng != 0) { *statePtr = 3; int rng2 = RNG_call((void *)0x4F7360, 0, 100, 0); *counterPtr = rng2 + 100; } else { *statePtr = 0; } } } } break;
+    case 3: { float decay = *decayPtr - 2.0f; if (decay < 0.0f) decay = 0.0f; *decayPtr = decay; int c = *counterPtr - 1; *counterPtr = c; if (c < 1) *statePtr = 0; } break;
+    }
+    if (ext) {
+        *(float*)((char*)board + BRD_WM_ANGLE) = *anglePtr;
+        *(float*)((char*)board + BRD_WM_SPEED) = *speedPtr;
+        *(int*)((char*)board + BRD_WM_STATE) = *statePtr;
+        *(int*)((char*)board + BRD_WM_COUNTER) = *counterPtr;
+        *(float*)((char*)board + BRD_WM_DECAY_VAL) = *decayPtr;
     }
 }
 
@@ -3313,8 +3406,12 @@ void __fastcall UniversalBoardUpdate(void *board) {
     int level = GetCurrentLevel(board);
     if (level == 0) return;
 
-    DWORD features = g_updateFeatures[level];
-    if (!features) return;
+    DWORD extFeat = GetBoardFeat(board);
+    DWORD features = extFeat ? extFeat : g_updateFeatures[level];
+    if (!features) {
+        features = g_updateFeatures[level];
+        if (!features) return;
+    }
 
     /* Bridge animation (Intermediate + Master bridge) */
     if (features & FEAT_BRIDGE_ANIM) {
@@ -3393,8 +3490,12 @@ void __fastcall UniversalRaceState(void *board) {
         g_origRaceState[level](board);
     }
 
-    DWORD features = g_updateFeatures[level];
-    if (!features) return;
+    DWORD extFeat = GetBoardFeat(board);
+    DWORD features = extFeat ? extFeat : g_updateFeatures[level];
+    if (!features) {
+        features = g_updateFeatures[level];
+        if (!features) return;
+    }
     if (features & FEAT_BUMPER_DECAY)
         Feature_BumperDecay(board, level);
 
@@ -3456,14 +3557,15 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── TIPPER (Dizzy) ── */
     if (my_strnicmp(name, "TIPPER", 6) == 0 && difficulty != 0) {
+        void* ext = EnsureBoardExt(board);
         int meshOff = UNI_TIPPER_MESH;
         int renderOff = UNI_TIPPER_RENDER;
         int meshVal = *(int*)((char*)board + meshOff);
         if (!meshVal) { DebugLog("TIPPER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         {
             char dbg[256];
-            wsprintfA(dbg, "TIPPER: meshOff=0x%X meshVal=0x%X renderOff=0x%X renderVal=0x%X level=%d",
-                      meshOff, meshVal, renderOff, *(int*)((char*)board + renderOff), level);
+            wsprintfA(dbg, "TIPPER: meshOff=0x%X meshVal=0x%X renderOff=0x%X renderVal=0x%X level=%d rot=%.1f,%.1f,%.1f",
+                      meshOff, meshVal, renderOff, *(int*)((char*)board + renderOff), level, x2,y2,z2);
             DebugLog(dbg);
         }
         void *mem = g_operatorNew(0x1104);
@@ -3472,6 +3574,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             DWORD *o = (DWORD *)obj;
             o[0x436] = *(DWORD*)&x; o[0x437] = *(DWORD*)&y; o[0x438] = *(DWORD*)&z;
             o[0x439] = *(DWORD*)&x2; o[0x43A] = *(DWORD*)&y2; o[0x43B] = *(DWORD*)&z2;
+            if (ext) {
+                *(float*)((char*)ext + OFF_WATER_ROT_X) = x2;
+                *(float*)((char*)ext + OFF_WATER_ROT_Y) = y2;
+                *(float*)((char*)ext + OFF_WATER_ROT_Z) = z2;
+            }
             void *vmem = g_operatorNew(0x10D0);
             if (vmem) {
                 void *vis = g_TipperVisualCtor(vmem, *(int*)((char*)board + renderOff));
@@ -3480,18 +3587,45 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             }
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
         }
+        OrBoardFeat(board, FEAT_SWIRL);
         *(int*)out1 = (int)obj; *(int*)out2 = (int)renderOut;
         return;
     }
 
+
     /* ── WATERWHEEL (Dizzy) ── */
     if (my_strnicmp(name, "WATERWHEEL", 10) == 0) {
-        obj = *(void **)((char *)board + UNI_MESH_0);
-        renderOut = *(int *)((char *)board + UNI_MESH_1);
-        *(float *)((char *)board + UNI_WHEELEMBED_X) = x;
-        *(float *)((char *)board + UNI_WHEELEMBED_Y) = y;
-        *(float *)((char *)board + UNI_WHEELEMBED_Z) = z;
+        void* ext = EnsureBoardExt(board);
+        if (ext) {
+            *(void**)((char*)ext + OFF_WATER_MESH) = *(void**)((char *)board + UNI_MESH_0);
+            *(int*)((char*)ext + OFF_WATER_RENDER) = *(int *)((char *)board + UNI_MESH_1);
+            *(float*)((char*)ext + OFF_WHEEL_EMBED_X) = x;
+            *(float*)((char*)ext + OFF_WHEEL_EMBED_Y) = y;
+            *(float*)((char*)ext + OFF_WHEEL_EMBED_Z) = z;
+            *(float*)((char*)ext + OFF_WATER_ROT_X) = x2;
+            *(float*)((char*)ext + OFF_WATER_ROT_Y) = y2;
+            *(float*)((char*)ext + OFF_WATER_ROT_Z) = z2;
+            *(void**)((char *)board + UNI_MESH_0) = *(void**)((char*)ext + OFF_WATER_MESH);
+            *(float *)((char *)board + UNI_WHEELEMBED_X) = x;
+            *(float *)((char *)board + UNI_WHEELEMBED_Y) = y;
+            *(float *)((char *)board + UNI_WHEELEMBED_Z) = z;
+        } else {
+            obj = *(void **)((char *)board + UNI_MESH_0);
+            renderOut = *(int *)((char *)board + UNI_MESH_1);
+            *(float *)((char *)board + UNI_WHEELEMBED_X) = x;
+            *(float *)((char *)board + UNI_WHEELEMBED_Y) = y;
+            *(float *)((char *)board + UNI_WHEELEMBED_Z) = z;
+        }
+        if (!obj && ext) { obj = *(void**)((char*)ext + OFF_WATER_MESH); renderOut = *(int*)((char*)ext + OFF_WATER_RENDER); }
+        else if (!obj) { obj = *(void **)((char *)board + UNI_MESH_0); renderOut = *(int *)((char *)board + UNI_MESH_1); }
+        if (ext) *(DWORD *)((char *)ext + OFF_BONK_STORE) = 0;
         *(DWORD *)((char *)board + UNI_JUDGE_LIST) = 0;
+        OrBoardFeat(board, FEAT_SWIRL);
+        {
+            char dbg[256];
+            wsprintfA(dbg, "WATERWHEEL: pos=%.1f,%.1f,%.1f rot=%.1f,%.1f,%.1f feat SWIRL auto-enabled", x,y,z,x2,y2,z2);
+            DebugLog(dbg);
+        }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
     }
@@ -3506,6 +3640,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         *(float *)((char *)board + UNI_MESH_15) = x;
         *(float *)((char *)board + UNI_MESH_12) = y;
         *(float *)((char *)board + UNI_MESH_13) = z;
+        OrBoardFeat(board, FEAT_SWIRL);
+        { void* ext=GetBoardExt(board); if(ext){ *(void**)((char*)ext+OFF_SWIRL_MESH)=obj; *(int*)((char*)ext+OFF_SWIRL_RENDER)=renderOut; *(float*)((char*)ext+OFF_SWIRL_POS_X)=x; *(float*)((char*)ext+OFF_SWIRL_POS_Y)=y; *(float*)((char*)ext+OFF_SWIRL_POS_Z)=z; } }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
     }
@@ -3765,6 +3901,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             if (!strstr(name, "(NOCOLLIDE)"))
                 renderOut = *(int *)((char *)board + UNI_SAW1_OBJ);
         }
+        OrBoardFeat(board, FEAT_BRIDGE_ANIM);
+        { void* ext=EnsureBoardExt(board); if(ext){ *(float*)((char*)ext+OFF_WINDMILL_X)=x; *(float*)((char*)ext+OFF_WINDMILL_Y)=y; *(float*)((char*)ext+OFF_WINDMILL_Z)=z; } }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
     }
@@ -5583,6 +5721,12 @@ static void UniversalConstructor(void *board, int raceIndex) {
     void *meshWorld = g_LevelMeshWorldCtor(meshMem, gfx, meshPath);
     *(DWORD *)((char *)board + BOARD_MESHWORLD) = (DWORD)meshWorld;
 
+    /* Step 1b: Extension heap allocation (Option B) — S1-driven. */
+    {
+        void* ext = EnsureBoardExt(board);
+        (void)ext;
+    }
+
     /* Step 2: RenderObj */
     void *renderMem = g_operatorNew(0x10D0);
     void *renderObj = NULL;
@@ -5770,23 +5914,64 @@ static const DWORD g_allocPatchRVAs[15] = {
 };
 
 static void PatchAllocSizes(void) {
-    int i;
-    for (i = 0; i < 15; i++) {
-        unsigned char *site = (unsigned char *)(g_moduleBase + g_allocPatchRVAs[i]);
-        if (IsBadReadPtr(site, 5)) continue;
-        if (site[0] != 0x68) continue;
-
-        DWORD oldProtect;
-        VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &oldProtect);
-        *(DWORD *)(site + 1) = UNION_SIZE;
-        VirtualProtect(site, 5, oldProtect, &oldProtect);
-        FlushInstructionCache(GetCurrentProcess(), site, 5);
-    }
+    /* Option B: board stays vanilla-sized; union lives in extension heap at board+EXT_PTR.
+     * We no longer patch the 15 PUSH sites to UNION_SIZE (0xAB00). Leave them vanilla. */
+    DebugLog("PatchAllocSizes: skipped (vanilla board size, ext heap used)");
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Install collision hook
  * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Hook Tournament_AdvanceRace (0x00427080) to free ext on level unload */
+static unsigned char* g_advanceTrampoline = NULL;
+static void (__stdcall *g_origAdvanceRace)(DWORD);
+static void __stdcall Hook_AdvanceRace(DWORD a1) {
+    /* Free extension heaps for boards that are about to be abandoned.
+     * Tournament_AdvanceRace is called with the new race index; the previous
+     * board(s) will be destroyed. Best-effort: free any ext whose board is
+     * no longer readable, or free the oldest entry to prevent leak on rapid
+     * level switches. For v1 we free all tracked exts before advancing. */
+    int i;
+    for (i=0;i<MAX_EXT_MAP;i++) if (g_extMap[i].ext) {
+        if (g_extMap[i].board && IsBadReadPtr(g_extMap[i].board, 4)) {
+            HeapFree(GetProcessHeap(),0,g_extMap[i].ext);
+            g_extMap[i].ext=NULL; g_extMap[i].feat=0; g_extMap[i].board=NULL;
+        }
+    }
+    /* Also clear the board+EXT_PTR slot if the board is still valid but level is changing.
+     * We can't know which board is old, so we preserve exts that are still readable;
+     * they will be freed when their board dtor runs or next advance reaps them. */
+    if (g_origAdvanceRace) g_origAdvanceRace(a1);
+    /* Post-advance: opportunistically free any ext that became stale after the call */
+    for (i=0;i<MAX_EXT_MAP;i++) if (g_extMap[i].ext && g_extMap[i].board && IsBadReadPtr(g_extMap[i].board, 4)) {
+        HeapFree(GetProcessHeap(),0,g_extMap[i].ext);
+        g_extMap[i].ext=NULL; g_extMap[i].feat=0; g_extMap[i].board=NULL;
+    }
+}
+static void InstallExtFreeHook(void) {
+    DWORD targetAddr = g_moduleBase + 0x00027080;
+    unsigned char* orig = (unsigned char*)targetAddr;
+    if (IsBadReadPtr(orig, 6)) return;
+    if (orig[0]!=0x55 || orig[1]!=0x8B || orig[2]!=0xEC) {
+        DebugLog("InstallExtFreeHook: unexpected prologue, skipping");
+        return;
+    }
+    g_advanceTrampoline = VirtualAlloc(NULL, 32, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!g_advanceTrampoline) return;
+    memcpy(g_advanceTrampoline, orig, 6);
+    g_advanceTrampoline[6]=0xE9;
+    *(DWORD*)(g_advanceTrampoline+7) = (targetAddr+6) - ((DWORD)g_advanceTrampoline+11);
+    g_origAdvanceRace = (void (__stdcall *)(DWORD))g_advanceTrampoline;
+    DWORD oldProtect;
+    VirtualProtect(orig, 6, PAGE_EXECUTE_READWRITE, &oldProtect);
+    orig[0]=0xE9;
+    *(DWORD*)(orig+1) = (DWORD)Hook_AdvanceRace - (targetAddr+5);
+    orig[5]=0x90;
+    VirtualProtect(orig,6, oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), orig, 6);
+    DebugLog("InstallExtFreeHook: hooked Tournament_AdvanceRace");
+}
 
 static void InstallHook(void) {
     DWORD targetAddr = g_moduleBase + RVA_DispatchCollisionEvents;
@@ -6131,6 +6316,8 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     LoadLevelData();
     DebugLog("LoadLevelData done");
 
+    InstallExtFreeHook();
+    DebugLog("InstallExtFreeHook done");
     PatchAllocSizes();
     DebugLog("PatchAllocSizes done");
     InstallBoardCtorHooks();
