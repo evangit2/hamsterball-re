@@ -1554,6 +1554,58 @@ static void NormalizeRaceFile(char *out, const char *in) {
     else { my_strncpy(out, tmp, MAX_PATH); }
 }
 
+static int RaceFileExists(const char *base) {
+    // Check base.MESHWORLD, base, and base with original case variations.
+    // base is like "levels\\LoopyRace" or "levels\\LoopyRace\\LoopyRace"
+    char tryPath[MAX_PATH];
+    DWORD attr;
+    // 1) base + ".MESHWORLD"
+    my_strncpy(tryPath, base, MAX_PATH);
+    strncat(tryPath, ".MESHWORLD", MAX_PATH-strlen(tryPath)-1);
+    attr = GetFileAttributesA(tryPath);
+    if (attr != (DWORD)-1 && !(attr & FILE_ATTRIBUTE_DIRECTORY)) return 1;
+    // 2) base itself (in case user included extension already)
+    attr = GetFileAttributesA(base);
+    if (attr != (DWORD)-1 && !(attr & FILE_ATTRIBUTE_DIRECTORY)) return 1;
+    // 3) lowercase extension variant (Wine case-sensitive)
+    my_strncpy(tryPath, base, MAX_PATH);
+    strncat(tryPath, ".meshworld", MAX_PATH-strlen(tryPath)-1);
+    attr = GetFileAttributesA(tryPath);
+    if (attr != (DWORD)-1 && !(attr & FILE_ATTRIBUTE_DIRECTORY)) return 1;
+    return 0;
+}
+
+static void ResolveRacePath(char *out, const char *in) {
+    // in is normalized like "levels\\LoopyRace" or "levels\\Pack\\File" or "custom\\file"
+    // If in is "levels\\<Name>" with no further slash, try "levels\\<Name>\\<Name>" first.
+    char baseName[MAX_PATH]="";
+    const char *prefix = "levels\\";
+    int preLen = 7;
+    if (my_strnicmp(in, prefix, preLen)==0) {
+        const char *rest = in + preLen;
+        int hasSep2=0; for (int i=0;rest[i];i++) if (rest[i]=='\\' || rest[i]=='/') hasSep2=1;
+        if (!hasSep2 && rest[0]) {
+            char doubled[MAX_PATH];
+            my_strncpy(doubled, in, MAX_PATH);
+            strncat(doubled, "\\", MAX_PATH-strlen(doubled)-1);
+            strncat(doubled, rest, MAX_PATH-strlen(doubled)-1);
+            if (RaceFileExists(doubled)) { my_strncpy(out, doubled, MAX_PATH); return; }
+        }
+    } else if (my_strnicmp(in, "levels/", 7)==0) {
+        const char *rest = in + 7;
+        int hasSep2=0; for (int i=0;rest[i];i++) if (rest[i]=='\\' || rest[i]=='/') hasSep2=1;
+        if (!hasSep2 && rest[0]) {
+            char doubled[MAX_PATH];
+            my_strncpy(doubled, in, MAX_PATH);
+            strncat(doubled, "/", MAX_PATH-strlen(doubled)-1);
+            strncat(doubled, rest, MAX_PATH-strlen(doubled)-1);
+            if (RaceFileExists(doubled)) { my_strncpy(out, doubled, MAX_PATH); return; }
+        }
+    }
+    // No doubling or doubled file not found -> use in as-is
+    my_strncpy(out, in, MAX_PATH);
+}
+
 static void LoadRaceFiles(void) {
     InitRaceFilesDefaults();
     if (!g_raceFilesPath[0]) return;
@@ -1627,6 +1679,9 @@ static void GenerateRaceFiles(void) {
         "#   3 = levels\\\\level2.MESHWORLD\r\n"
         "# Lines starting with # ; [ are ignored.\r\n"
         "# You can use a bare name (Level1) or a full path (levels\\\\level1).\r\n"
+        "# Bare names try levels\\\\<Name>\\\\<Name>.MESHWORLD first, then levels\\\\<Name>.MESHWORLD.\r\n"
+        "# Example: \"LoopyRace\" loads levels\\\\LoopyRace\\\\LoopyRace.MESHWORLD if that folder exists,\r\n"
+        "# otherwise it falls back to levels\\\\LoopyRace.MESHWORLD.\r\n"
         "# Changes are picked up on the next level load (no restart needed).\r\n\r\n";
     DWORD written; WriteFile(hFile, header, strlen(header), &written, NULL);
     InitRaceFilesDefaults();
@@ -6025,15 +6080,19 @@ static void UniversalConstructor(void *board, int raceIndex) {
         return;
     }
 
-    /* RaceFiles.txt overrides everything: Race 1..15 -> file. Then LevelData, then g_meshPaths. */
+    /* RaceFiles.txt overrides everything: Race 1..15 -> file. Then LevelData, then g_meshPaths.
+     * Bare names like "LoopyRace" resolve to "levels\\LoopyRace\\LoopyRace" if that
+     * subfolder file exists, otherwise fallback to "levels\\LoopyRace". */
     LoadRaceFiles();
-    const char *meshPath = NULL;
-    if (raceIndex>=1 && raceIndex<=15 && g_raceFiles[raceIndex][0]) meshPath = g_raceFiles[raceIndex];
-    if (!meshPath || !*meshPath) meshPath = g_levelData[raceIndex].meshPath;
-    if (!meshPath || !*meshPath) meshPath = g_meshPaths[raceIndex];
-    if (!meshPath) return;
+    const char *rawPath = NULL;
+    if (raceIndex>=1 && raceIndex<=15 && g_raceFiles[raceIndex][0]) rawPath = g_raceFiles[raceIndex];
+    if (!rawPath || !*rawPath) rawPath = g_levelData[raceIndex].meshPath;
+    if (!rawPath || !*rawPath) rawPath = g_meshPaths[raceIndex];
+    if (!rawPath) return;
+    char resolved[MAX_PATH]; ResolveRacePath(resolved, rawPath);
+    const char *meshPath = resolved;
     {
-        char dbg2[256]; wsprintfA(dbg2, "UniversalConstructor meshPath race=%d -> '%s'", raceIndex, meshPath);
+        char dbg2[256]; wsprintfA(dbg2, "UniversalConstructor meshPath race=%d raw='%s' resolved='%s'", raceIndex, rawPath, meshPath);
         DebugLog(dbg2);
     }
 
