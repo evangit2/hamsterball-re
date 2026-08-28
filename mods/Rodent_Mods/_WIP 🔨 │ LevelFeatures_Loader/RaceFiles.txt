@@ -6,6 +6,9 @@
 #   3 = levels\\level2.MESHWORLD
 # Lines starting with # ; [ are ignored.
 # You can use a bare name (Level1) or a full path (levels\\level1).
+# Bare names try levels\\<Name>\\<Name>.MESHWORLD first, then levels\\<Name>.MESHWORLD.
+# Example: "LoopyRace" loads levels\\LoopyRace\\LoopyRace.MESHWORLD if that folder exists,
+# otherwise it falls back to levels\\LoopyRace.MESHWORLD.
 # Changes are picked up on the next level load (no restart needed).
 
 Race 1: level1
