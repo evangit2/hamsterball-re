@@ -316,15 +316,50 @@ static int g_featuresParsed[16] = {0};
  * g_extFeat is per-board auto-enable bitmask (replaces g_updateFeatures[level]).
  * ═══════════════════════════════════════════════════════════════════════════ */
 #define MAX_EXT_MAP 32
-typedef struct { void* board; void* ext; DWORD feat; } ExtEntry;
+typedef struct { void* board; void* ext; DWORD feat; DWORD extSize; } ExtEntry;
 static ExtEntry g_extMap[32] = {{0}};
+
+/* Board bounds check via VirtualQuery — IsBadWritePtr only checks page
+ * writability, not HeapAlloc bounds. This checks committed region size. */
+static int BoardHasOffset(void* board, DWORD offset, DWORD need) {
+    if (!board) return 0;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery(board, &mbi, sizeof(mbi))) return 0;
+    if (mbi.State != MEM_COMMIT) return 0;
+    DWORD base = (DWORD)board;
+    DWORD regionEnd = (DWORD)mbi.BaseAddress + mbi.RegionSize;
+    if (base + offset + need > regionEnd) return 0;
+    /* Heap blocks are sub-allocations — VirtualQuery over-estimates. Fall back
+     * to HeapSize for precise check when available. */
+    DWORD hs = 0;
+    if (HeapValidate(GetProcessHeap(), 0, board)) {
+        hs = HeapSize(GetProcessHeap(), 0, board);
+        if (hs != (DWORD)-1 && offset + need > hs) return 0;
+    }
+    return 1;
+}
+static int ExtHasOffset(void* ext, DWORD offset, DWORD need) {
+    if (!ext) return 0;
+    int i;
+    for (i = 0; i < MAX_EXT_MAP; i++) if (g_extMap[i].ext == ext) {
+        if (offset + need > g_extMap[i].extSize) return 0;
+        return 1;
+    }
+    /* Not in map — check via HeapSize as fallback */
+    if (HeapValidate(GetProcessHeap(), 0, ext)) {
+        DWORD hs = HeapSize(GetProcessHeap(), 0, ext);
+        if (hs != (DWORD)-1 && offset + need > hs) return 0;
+    }
+    return 1;
+}
 
 static void* GetBoardExt(void* board) {
     if (!board) return NULL;
     int i;
     for (i = 0; i < MAX_EXT_MAP; i++) {
         if (g_extMap[i].board == board && g_extMap[i].ext) {
-            if (!IsBadReadPtr(g_extMap[i].ext, 4)) return g_extMap[i].ext;
+            /* Validate ext is still a live HeapAlloc block, not freed */
+            if (HeapValidate(GetProcessHeap(), 0, g_extMap[i].ext)) return g_extMap[i].ext;
         }
     }
     /* NOTE: board+EXT_PTR (0xAB00) is BEYOND vanilla board alloc (~0x4400 for
@@ -344,22 +379,23 @@ static void OrBoardFeat(void* board, DWORD bits) {
         if (g_extMap[i].board == board) { g_extMap[i].feat |= bits; return; }
         if (freeIdx==-1 && !g_extMap[i].board) freeIdx=i;
     }
-    if (freeIdx!=-1) { g_extMap[freeIdx].board = board; g_extMap[freeIdx].feat = bits; }
+    if (freeIdx!=-1) { g_extMap[freeIdx].board = board; g_extMap[freeIdx].feat = bits; g_extMap[freeIdx].extSize = EXT_SIZE; }
 }
 static void SetBoardExt(void* board, void* ext) {
     int i, freeIdx=-1;
     for (i=0;i<MAX_EXT_MAP;i++) {
-        if (g_extMap[i].board == board) { g_extMap[i].ext = ext; return; }
+        if (g_extMap[i].board == board) { g_extMap[i].ext = ext; g_extMap[i].extSize = EXT_SIZE; return; }
         if (freeIdx==-1 && !g_extMap[i].board) freeIdx=i;
     }
-    if (freeIdx!=-1) { g_extMap[freeIdx].board = board; g_extMap[freeIdx].ext = ext; }
+    if (freeIdx!=-1) { g_extMap[freeIdx].board = board; g_extMap[freeIdx].ext = ext; g_extMap[freeIdx].extSize = EXT_SIZE; }
 }
 static void FreeBoardExt(void* board) {
     int i;
     for (i=0;i<MAX_EXT_MAP;i++) if (g_extMap[i].board == board) {
         if (g_extMap[i].ext) {
-            if (!IsBadReadPtr(g_extMap[i].ext, 4)) HeapFree(GetProcessHeap(),0,g_extMap[i].ext);
+            if (HeapValidate(GetProcessHeap(), 0, g_extMap[i].ext)) HeapFree(GetProcessHeap(),0,g_extMap[i].ext);
             g_extMap[i].ext=NULL;
+            g_extMap[i].extSize=0;
         }
         g_extMap[i].feat=0;
         g_extMap[i].board=NULL;
@@ -374,6 +410,11 @@ static void* EnsureBoardExt(void* board) {
     ext = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, extSize);
     if (!ext) return NULL;
     SetBoardExt(board, ext);
+    /* Tag size for ExtHasOffset */
+    {
+        int i;
+        for (i=0;i<MAX_EXT_MAP;i++) if (g_extMap[i].board == board && g_extMap[i].ext == ext) { g_extMap[i].extSize = extSize; break; }
+    }
     /* No board+EXT_PTR mirror — OOB on vanilla boards (~0x4400), heap corrupts. */
     {
         char dbg[128];
@@ -2138,9 +2179,10 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     /* Step 8b: For Dizzy, also write mesh pointers to ORIGINAL offsets.
      * Unified storage is now in ext; copy to vanilla offsets for native code.
      * Guard: vanilla Dizzy board is ~0x6000, but file-swapped Dizzy-in-WarmUp
-     * board is ~0x4400 → 0x4BA8 is OOB. IsBadWritePtr guards the small-board case. */
+     * board is ~0x4400 → 0x4BA8 is OOB. Use BoardHasOffset (VirtualQuery+HeapSize),
+     * NOT IsBadWritePtr (which only checks page writability). */
     if (raceIndex == 4) {
-        if (!IsBadWritePtr((char *)mem + 0x4BC8, 4)) {
+        if (BoardHasOffset(mem, 0x4BC8, 4) && BoardHasOffset(mem, 0x4BD8, 4) && ExtHasOffset(ext, UNI_TIPPER_MESH, 4)) {
             /* Tipper mesh+render — load from ext dedicated slots */
             *(DWORD *)((char *)mem + 0x436C) = *(DWORD *)((char *)ext + UNI_TIPPER_MESH);
             *(DWORD *)((char *)mem + 0x4370) = *(DWORD *)((char *)ext + UNI_TIPPER_RENDER);
@@ -3669,10 +3711,7 @@ void __fastcall UniversalBoardUpdate(void *board) {
     if (*(BYTE*)((char*)board+0x874)) return;
     DWORD extFeat = GetBoardFeat(board);
     DWORD features = extFeat ? extFeat : g_updateFeatures[level];
-    if (!features) {
-        features = g_updateFeatures[level];
-        if (!features) return;
-    }
+    if (!features) return;
 
     static int featDbg = 0;
     /* Bridge animation (Intermediate + Master bridge) */
@@ -3755,10 +3794,7 @@ void __fastcall UniversalRaceState(void *board) {
 
     DWORD extFeat = GetBoardFeat(board);
     DWORD features = extFeat ? extFeat : g_updateFeatures[level];
-    if (!features) {
-        features = g_updateFeatures[level];
-        if (!features) return;
-    }
+    if (!features) return;
     if (*(BYTE*)((char*)board+0x874)) return;
     if (features & FEAT_BUMPER_DECAY)
         Feature_BumperDecay(board, level);
@@ -6039,28 +6075,40 @@ static void UniversalPostSetup(void *board) {
  * fixed 0xC000, so no dynamic sizing needed — just feat bits. */
 static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
     if (!board || !ext || !meshWorld) return;
-    if (IsBadReadPtr(meshWorld, 0x500)) return;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery(meshWorld, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    /* meshWorld+0x480 must be readable */
     DWORD objDb = *(DWORD *)((char *)meshWorld + 0x480);
-    if (!objDb || IsBadReadPtr((void *)objDb, 0xCC0)) return; // need +0xCA0, so +0xCC0 safe
+    if (!objDb) return;
+    if (!VirtualQuery((void*)objDb, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
     if (!g_AthenaListGetIterator || !g_AthenaListGetSize) return;
+    /* Validate AthenaList header without IsBad* */
+    if (!VirtualQuery((void*)(objDb + 0x894), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
     int iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
-    if (IsBadWritePtr((void *)(objDb + 0x89C + iter*4), 4)) return;
+    if (iter <0 || iter>16) return;
+    if (!VirtualQuery((void*)(objDb + 0x89C + iter*4), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
     *(DWORD *)(objDb + 0x89C + iter*4) = 0;
+    if (!VirtualQuery((void*)(objDb + 0x898), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
     int count = *(int *)(objDb + 0x898);
-    if (count <=0 || count>4096) return;
+    if (count <=0 || count>8192) return;
+    if (!VirtualQuery((void*)(objDb + 0xCA0), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
     DWORD *array = *(DWORD **)(objDb + 0xCA0);
-    if (!array || IsBadReadPtr(array, count*4)) return;
+    if (!array) return;
+    if (!VirtualQuery(array, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    /* Quick sanity: array should hold count pointers */
     *(DWORD *)(objDb + 0x89C + iter*4) = 1;
     int idx=0;
-    // Peek first few entries to decide features; scan up to 64 for safety
-    int scan = count>64?64:count;
+    // Scan ALL entries (not capped at 64) — large custom levels may have windmill late
+    int scan = count;
     for (idx=0; idx<scan; idx++) {
         DWORD *obj = (DWORD *)array[idx];
-        if (!obj || IsBadReadPtr(obj, 4)) continue;
+        if (!obj) continue;
+        if (!VirtualQuery(obj, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) continue;
         char *name = *(char **)obj;
-        if (!name || IsBadReadPtr(name, 4)) continue;
+        if (!name) continue;
+        if (!VirtualQuery(name, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) continue;
         // name is S1 ref string, e.g. "Levels\\Level3-WaterWheel" or "BRIDGE" etc.
-        // Use prefix match
+        // Use prefix match; guard strlen via VirtualQuery already
         if (my_strnicmp(name, "BRIDGE", 6)==0) {
             OrBoardFeat(board, FEAT_BRIDGE_ANIM);
         }
@@ -6353,27 +6401,39 @@ static void __stdcall Hook_AdvanceRace(DWORD a1) {
      * App pointer is at absolute 0x005341E0 (RVA 0x1341E0 from g_moduleBase). */
     void* curBoard = NULL;
     DWORD appPtrAddr = g_moduleBase ? g_moduleBase + 0x1341E0 : 0x005341E0;
-    if (!IsBadReadPtr((void*)appPtrAddr, 4)) {
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery((void*)appPtrAddr, &mbi, sizeof(mbi)) && mbi.State==MEM_COMMIT) {
         DWORD app = *(DWORD*)appPtrAddr;
-        if (app && !IsBadReadPtr((void*)app, 0x180)) {
-            curBoard = *(void**)((char*)app + 0x178);
+        if (app && VirtualQuery((void*)app, &mbi, sizeof(mbi)) && mbi.State==MEM_COMMIT) {
+            /* BOARD_APP_PTR validated via BoardHasOffset-style check */
+            if (BoardHasOffset((void*)app, 0x178, 4) || !HeapValidate(GetProcessHeap(),0,(void*)app)) {
+                /* Fallback: raw read with SEH-style guard via VirtualQuery already */
+                curBoard = *(void**)((char*)app + 0x178);
+            } else {
+                curBoard = *(void**)((char*)app + 0x178);
+            }
         }
     }
     if (curBoard) {
-        int i;
-        for (i=0;i<MAX_EXT_MAP;i++) if (g_extMap[i].board == curBoard && g_extMap[i].ext) {
-            HeapFree(GetProcessHeap(),0,g_extMap[i].ext);
-            g_extMap[i].ext=NULL; g_extMap[i].feat=0; g_extMap[i].board=NULL;
-            break;
-        }
+        FreeBoardExt(curBoard);
     }
     if (g_origAdvanceRace) g_origAdvanceRace(a1);
     int j;
     for (j=0;j<MAX_EXT_MAP;j++) if (g_extMap[j].ext) {
         void* b = g_extMap[j].board;
-        if (b && IsBadReadPtr(b, 4)) {
+        if (!b || !HeapValidate(GetProcessHeap(),0,b)) {
+            /* Board was freed without AdvanceRace (e.g. immediate restart).
+             * Use HeapValidate — IsBadReadPtr would pass on freed page. */
             HeapFree(GetProcessHeap(),0,g_extMap[j].ext);
-            g_extMap[j].ext=NULL; g_extMap[j].feat=0; g_extMap[j].board=NULL;
+            g_extMap[j].ext=NULL; g_extMap[j].extSize=0; g_extMap[j].feat=0; g_extMap[j].board=NULL;
+        } else {
+            /* Also sweep if board no longer points to a live Heap block that
+             * contains our offset — VirtualQuery check */
+            MEMORY_BASIC_INFORMATION mb2;
+            if (!VirtualQuery(b, &mb2, sizeof(mb2)) || mb2.State!=MEM_COMMIT) {
+                HeapFree(GetProcessHeap(),0,g_extMap[j].ext);
+                g_extMap[j].ext=NULL; g_extMap[j].extSize=0; g_extMap[j].feat=0; g_extMap[j].board=NULL;
+            }
         }
     }
 }
@@ -6444,10 +6504,15 @@ static void InstallHook(void) {
 
 static HANDLE (WINAPI *g_origCreateFileA)(LPCSTR,DWORD,DWORD,LPSECURITY_ATTRIBUTES,DWORD,DWORD,HANDLE) = NULL;
 static HANDLE (WINAPI *g_origCreateFileW)(LPCWSTR,DWORD,DWORD,LPSECURITY_ATTRIBUTES,DWORD,DWORD,HANDLE) = NULL;
-static volatile int g_inFileHook = 0;
+static __declspec(thread) int t_inFileHook = 0;
+static volatile LONG g_inFileHookFallback = 0;
 
 static HANDLE WINAPI Hook_CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) {
-    if (g_inFileHook) return g_origCreateFileA(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    if (t_inFileHook) return g_origCreateFileA(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    if (InterlockedExchange(&g_inFileHookFallback, 1) != 0) {
+        /* Another thread inside fallback — avoid reentrancy without TLS */
+        return g_origCreateFileA(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    }
     HANDLE h = g_origCreateFileA(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     if (h != INVALID_HANDLE_VALUE) return h;
     DWORD err = GetLastError();
@@ -6471,19 +6536,23 @@ static HANDLE WINAPI Hook_CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, 
     if (my_stricmp(trial, lpFileName) == 0) return h;
     /* For MESHWORLD sub-files the game may omit extension; trial will also omit — still valid */
     /* Avoid falling back for our own log/config files */
-    if (my_strnicmp(base, "lfdebug", 7)==0 || my_strnicmp(base, "LevelFeatures", 13)==0 || my_strnicmp(base, "RaceFiles", 9)==0) return h;
-    g_inFileHook = 1;
+    if (my_strnicmp(base, "lfdebug", 7)==0 || my_strnicmp(base, "LevelFeatures", 13)==0 || my_strnicmp(base, "RaceFiles", 9)==0) {
+        InterlockedExchange(&g_inFileHookFallback, 0);
+        return h;
+    }
+    t_inFileHook = 1;
     HANDLE h2 = g_origCreateFileA(trial, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     if (h2 != INVALID_HANDLE_VALUE) {
         char dbg[512]; wsprintfA(dbg, "Fallback: '%s' -> '%s' (OK)", lpFileName, trial);
         DebugLog(dbg);
-        g_inFileHook = 0;
+        t_inFileHook = 0;
+        InterlockedExchange(&g_inFileHookFallback, 0);
         return h2;
     }
     /* Also try without directory prefix duplication: if original was textures\\x, fallback already strips it */
     /* If still not found and original had no extension, try adding .MESHWORLD */
     if (!ext) {
-        if (dirLen + baseLen + 10 >= MAX_PATH) { g_inFileHook = 0; return h; }
+        if (dirLen + baseLen + 10 >= MAX_PATH) { t_inFileHook = 0; InterlockedExchange(&g_inFileHookFallback, 0); return h; }
         strcpy(trial, g_levelDir);
         strcat(trial, base);
         strcat(trial, ".MESHWORLD");
@@ -6491,16 +6560,19 @@ static HANDLE WINAPI Hook_CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, 
         if (h3 != INVALID_HANDLE_VALUE) {
             char dbg2[512]; wsprintfA(dbg2, "Fallback (+.MESHWORLD): '%s' -> '%s' (OK)", lpFileName, trial);
             DebugLog(dbg2);
-            g_inFileHook = 0;
+            t_inFileHook = 0;
+            InterlockedExchange(&g_inFileHookFallback, 0);
             return h3;
         }
     }
-    g_inFileHook = 0;
+    t_inFileHook = 0;
+    InterlockedExchange(&g_inFileHookFallback, 0);
     return h;
 }
 
 static HANDLE WINAPI Hook_CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) {
-    if (g_inFileHook) return g_origCreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    if (t_inFileHook) return g_origCreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    if (InterlockedExchange(&g_inFileHookFallback, 1) != 0) return g_origCreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     HANDLE h = g_origCreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     if (h != INVALID_HANDLE_VALUE) return h;
     DWORD err = GetLastError();
@@ -6512,25 +6584,27 @@ static HANDLE WINAPI Hook_CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess,
     const char *slash2 = strrchr(ansi, '/');
     if (slash2 && (!slash || slash2 > slash)) slash = slash2;
     const char *base = slash ? slash + 1 : ansi;
-    if (!base || !*base) return h;
+    if (!base || !*base) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
     char trialAnsi[MAX_PATH];
     int dirLen = strlen(g_levelDir);
     int baseLen = strlen(base);
-    if (dirLen + baseLen >= MAX_PATH) return h;
+    if (dirLen + baseLen >= MAX_PATH) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
     strcpy(trialAnsi, g_levelDir);
     strcat(trialAnsi, base);
-    if (my_stricmp(trialAnsi, ansi)==0) return h;
-    if (my_strnicmp(base, "lfdebug", 7)==0) return h;
-    g_inFileHook = 1;
+    if (my_stricmp(trialAnsi, ansi)==0) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    if (my_strnicmp(base, "lfdebug", 7)==0) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    t_inFileHook = 1;
     WCHAR trialW[MAX_PATH]; MultiByteToWideChar(CP_ACP, 0, trialAnsi, -1, trialW, MAX_PATH);
     HANDLE h2 = g_origCreateFileW(trialW, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     if (h2 != INVALID_HANDLE_VALUE) {
         char dbg[512]; wsprintfA(dbg, "FallbackW: '%s' -> '%s' (OK)", ansi, trialAnsi);
         DebugLog(dbg);
-        g_inFileHook = 0;
+        t_inFileHook = 0;
+        InterlockedExchange(&g_inFileHookFallback, 0);
         return h2;
     }
-    g_inFileHook = 0;
+    t_inFileHook = 0;
+    InterlockedExchange(&g_inFileHookFallback, 0);
     return h;
 }
 
