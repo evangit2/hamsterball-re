@@ -3937,7 +3937,19 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
      * Intermediate/Master: position-only bridge (breaking behavior via BBRIDGE S1 objects) */
     if (my_strnicmp(name, "BRIDGE", 6) == 0) {
         S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level2-Bridge");
-        S1EnsureRender(board, ext, UNI_SAW1_OBJ, UNI_BONK_STORE);
+        // For Intermediate the render is TIPPER: (Render+TipperVisual_Attach)
+        void* brMesh = *(void**)((char*)ext + UNI_BONK_STORE);
+        void* brRender = *(void**)((char*)ext + UNI_SAW1_OBJ);
+        if (!brRender && brMesh) {
+            void* mem = g_operatorNew(0x10D0);
+            if (mem) {
+                void* robj = g_LevelRenderCtor(mem, brMesh);
+                if (robj) {
+                    g_TipperVisualAttach(robj, brMesh);
+                    *(void**)((char*)ext + UNI_SAW1_OBJ) = robj;
+                }
+            }
+        }
         if (level == 8) {
             /* Expert: Spinner_Level_ctor */
             void *mem = g_operatorNew(0x10FC);
