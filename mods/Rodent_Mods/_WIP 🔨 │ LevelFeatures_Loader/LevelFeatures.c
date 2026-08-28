@@ -4468,7 +4468,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "DFLOOR", 6) == 0 && name[6] >= '1' && name[6] <= '4') {
         int dNum = name[6] - '0';
         int meshOff = UNI_MESH_3 + (dNum-1) * 4;
-        int meshVal = *(int*)((char*)board + meshOff);
+        void *dExt = GetBoardExt(board); if (!dExt) dExt = ext;
+        int meshVal = dExt ? *(int*)((char*)dExt + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("DFLOOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1104);
         if (mem) {
@@ -5297,7 +5298,9 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                 if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)ball + 0x164), *(float *)((char *)ball + 0x168), *(float *)((char *)ball + 0x16C));
             }
             /* Call vtable[+0x10](0) on player's render obj */
-            DWORD *renderObj = *(DWORD **)((char *)board + ball[6]*4 + UNI_BONK_STORE);
+            void *lightExt = GetBoardExt(board); if (!lightExt) lightExt = ext;
+            DWORD *renderObj = lightExt ? *(DWORD **)((char *)lightExt + ball[6]*4 + UNI_BONK_STORE) : NULL;
+            if (!renderObj && lightExt) renderObj = *(DWORD **)((char *)lightExt + UNI_BONK_STORE);
             if (renderObj) {
                 DWORD *vtbl = *(DWORD **)renderObj;
                 if (vtbl) {
@@ -5324,7 +5327,9 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                 DWORD snd = *(DWORD *)(app + 0x528);
                 if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)ball + 0x164), *(float *)((char *)ball + 0x168), *(float *)((char *)ball + 0x16C));
             }
-            DWORD *renderObj = *(DWORD **)((char *)board + ball[6]*4 + UNI_BONK_STORE);
+            void *lightExt2 = GetBoardExt(board); if (!lightExt2) lightExt2 = ext;
+            DWORD *renderObj = lightExt2 ? *(DWORD **)((char *)lightExt2 + ball[6]*4 + UNI_BONK_STORE) : NULL;
+            if (!renderObj && lightExt2) renderObj = *(DWORD **)((char *)lightExt2 + UNI_BONK_STORE);
             if (renderObj) {
                 DWORD *vtbl = *(DWORD **)renderObj;
                 if (vtbl) {
@@ -5354,16 +5359,18 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     /* ── Expert/Master: E:CALLHAMMER ── */
     if (IsCollisionEventEnabled("E:CALLHAMMER", level) && my_stricmp(name, "E:CALLHAMMER") == 0) {
         if (difficulty != 0 && g_CreateBonkPopup) {
-            int bonkStore = UNI_BONK_STORE;
-            g_CreateBonkPopup(*(int *)((char *)board + bonkStore));
+            void *be = GetBoardExt(board); if (!be) be = ext;
+            int bonkObj = be ? *(int*)((char*)be + UNI_BONK_STORE) : *(int*)((char*)ext + UNI_BONK_STORE);
+            g_CreateBonkPopup(bonkObj);
         }
     }
 
     /* ── Expert/Master: E:HAMMERCHASE ── */
     if (IsCollisionEventEnabled("E:HAMMERCHASE", level) && my_stricmp(name, "E:HAMMERCHASE") == 0) {
         if (difficulty != 0 && g_HammerChaseStart) {
-            int bonkStore = UNI_BONK_STORE;
-            g_HammerChaseStart(*(int *)((char *)board + bonkStore));
+            void *be2 = GetBoardExt(board); if (!be2) be2 = ext;
+            int bonkObj2 = be2 ? *(int*)((char*)be2 + UNI_BONK_STORE) : *(int*)((char*)ext + UNI_BONK_STORE);
+            g_HammerChaseStart(bonkObj2);
         }
     }
 
@@ -5890,7 +5897,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                 *(BYTE *)((char *)ext + REND_GLASS_FLAG1) = 1;
                 if (g_SoundPlay3D && app) {
                     DWORD snd = *(DWORD *)(app + 0x52C);
-                    if (snd) g_SoundPlay3D((void *)snd, *(float*)((char*)board+REND_GLASS_S1_X), *(float*)((char*)board+REND_GLASS_S1_Y), *(float*)((char*)board+REND_GLASS_S1_Z));
+                    if (snd) g_SoundPlay3D((void *)snd, *(float*)((char*)ext+REND_GLASS_S1_X), *(float*)((char*)ext+REND_GLASS_S1_Y), *(float*)((char*)ext+REND_GLASS_S1_Z));
                 }
                 if (app) {
                     int gameMode = *(int *)(app + 0x220);
@@ -5917,7 +5924,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                 *(BYTE *)((char *)ext + REND_GLASS_FLAG2) = 1;
                 if (g_SoundPlay3D && app) {
                     DWORD snd = *(DWORD *)(app + 0x52C);
-                    if (snd) g_SoundPlay3D((void *)snd, *(float*)((char*)board+REND_GLASS_S2_X), *(float*)((char*)board+REND_GLASS_S2_Y), *(float*)((char*)board+REND_GLASS_S2_Z));
+                    if (snd) g_SoundPlay3D((void *)snd, *(float*)((char*)ext+REND_GLASS_S2_X), *(float*)((char*)ext+REND_GLASS_S2_Y), *(float*)((char*)ext+REND_GLASS_S2_Z));
                 }
                 if (app) {
                     int gameMode = *(int *)(app + 0x220);
@@ -6504,55 +6511,43 @@ static void InstallHook(void) {
 
 static HANDLE (WINAPI *g_origCreateFileA)(LPCSTR,DWORD,DWORD,LPSECURITY_ATTRIBUTES,DWORD,DWORD,HANDLE) = NULL;
 static HANDLE (WINAPI *g_origCreateFileW)(LPCWSTR,DWORD,DWORD,LPSECURITY_ATTRIBUTES,DWORD,DWORD,HANDLE) = NULL;
-static __declspec(thread) int t_inFileHook = 0;
 static volatile LONG g_inFileHookFallback = 0;
 
 static HANDLE WINAPI Hook_CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) {
-    if (t_inFileHook) return g_origCreateFileA(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     if (InterlockedExchange(&g_inFileHookFallback, 1) != 0) {
-        /* Another thread inside fallback — avoid reentrancy without TLS */
         return g_origCreateFileA(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     }
     HANDLE h = g_origCreateFileA(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
-    if (h != INVALID_HANDLE_VALUE) return h;
+    if (h != INVALID_HANDLE_VALUE) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
     DWORD err = GetLastError();
-    if (err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND) return h;
-    if (!lpFileName || !g_levelDir[0]) return h;
-    /* Only fallback for asset extensions we care about */
+    if (err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    if (!lpFileName || !g_levelDir[0]) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
     const char *ext = strrchr(lpFileName, '.');
     const char *slash = strrchr(lpFileName, '\\');
     const char *slash2 = strrchr(lpFileName, '/');
     if (slash2 && (!slash || slash2 > slash)) slash = slash2;
     const char *base = slash ? slash + 1 : lpFileName;
-    if (!base || !*base) return h;
-    /* Build trial path = g_levelDir + base */
+    if (!base || !*base) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
     char trial[MAX_PATH];
     int dirLen = strlen(g_levelDir);
     int baseLen = strlen(base);
-    if (dirLen + baseLen >= MAX_PATH) return h;
+    if (dirLen + baseLen >= MAX_PATH) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
     strcpy(trial, g_levelDir);
     strcat(trial, base);
-    /* Don't fallback if it's already the same path */
-    if (my_stricmp(trial, lpFileName) == 0) return h;
-    /* For MESHWORLD sub-files the game may omit extension; trial will also omit — still valid */
-    /* Avoid falling back for our own log/config files */
+    if (my_stricmp(trial, lpFileName) == 0) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
     if (my_strnicmp(base, "lfdebug", 7)==0 || my_strnicmp(base, "LevelFeatures", 13)==0 || my_strnicmp(base, "RaceFiles", 9)==0) {
         InterlockedExchange(&g_inFileHookFallback, 0);
         return h;
     }
-    t_inFileHook = 1;
     HANDLE h2 = g_origCreateFileA(trial, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     if (h2 != INVALID_HANDLE_VALUE) {
         char dbg[512]; wsprintfA(dbg, "Fallback: '%s' -> '%s' (OK)", lpFileName, trial);
         DebugLog(dbg);
-        t_inFileHook = 0;
         InterlockedExchange(&g_inFileHookFallback, 0);
         return h2;
     }
-    /* Also try without directory prefix duplication: if original was textures\\x, fallback already strips it */
-    /* If still not found and original had no extension, try adding .MESHWORLD */
     if (!ext) {
-        if (dirLen + baseLen + 10 >= MAX_PATH) { t_inFileHook = 0; InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+        if (dirLen + baseLen + 10 >= MAX_PATH) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
         strcpy(trial, g_levelDir);
         strcat(trial, base);
         strcat(trial, ".MESHWORLD");
@@ -6560,25 +6555,21 @@ static HANDLE WINAPI Hook_CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, 
         if (h3 != INVALID_HANDLE_VALUE) {
             char dbg2[512]; wsprintfA(dbg2, "Fallback (+.MESHWORLD): '%s' -> '%s' (OK)", lpFileName, trial);
             DebugLog(dbg2);
-            t_inFileHook = 0;
             InterlockedExchange(&g_inFileHookFallback, 0);
             return h3;
         }
     }
-    t_inFileHook = 0;
     InterlockedExchange(&g_inFileHookFallback, 0);
     return h;
 }
 
 static HANDLE WINAPI Hook_CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) {
-    if (t_inFileHook) return g_origCreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     if (InterlockedExchange(&g_inFileHookFallback, 1) != 0) return g_origCreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     HANDLE h = g_origCreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
-    if (h != INVALID_HANDLE_VALUE) return h;
+    if (h != INVALID_HANDLE_VALUE) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
     DWORD err = GetLastError();
-    if (err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND) return h;
-    if (!lpFileName || !g_levelDir[0]) return h;
-    /* Convert wide to ansi for simple logic */
+    if (err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    if (!lpFileName || !g_levelDir[0]) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
     char ansi[MAX_PATH]; WideCharToMultiByte(CP_ACP, 0, lpFileName, -1, ansi, MAX_PATH, NULL, NULL);
     const char *slash = strrchr(ansi, '\\');
     const char *slash2 = strrchr(ansi, '/');
@@ -6593,17 +6584,14 @@ static HANDLE WINAPI Hook_CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess,
     strcat(trialAnsi, base);
     if (my_stricmp(trialAnsi, ansi)==0) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
     if (my_strnicmp(base, "lfdebug", 7)==0) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
-    t_inFileHook = 1;
     WCHAR trialW[MAX_PATH]; MultiByteToWideChar(CP_ACP, 0, trialAnsi, -1, trialW, MAX_PATH);
     HANDLE h2 = g_origCreateFileW(trialW, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     if (h2 != INVALID_HANDLE_VALUE) {
         char dbg[512]; wsprintfA(dbg, "FallbackW: '%s' -> '%s' (OK)", ansi, trialAnsi);
         DebugLog(dbg);
-        t_inFileHook = 0;
         InterlockedExchange(&g_inFileHookFallback, 0);
         return h2;
     }
-    t_inFileHook = 0;
     InterlockedExchange(&g_inFileHookFallback, 0);
     return h;
 }
