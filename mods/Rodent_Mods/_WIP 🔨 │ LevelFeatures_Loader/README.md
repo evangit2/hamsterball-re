@@ -1,6 +1,9 @@
-# LevelFeatures_Loader (v8)
+# LevelFeatures_Loader (v9) — RaceFiles.txt swappable races
 
 Universal cross-level object injection and vtable replacement for Hamsterball. Replaces all 15 per-level constructors **and** 4 vtable slots (Board_Update, RaceState, DispatchCollision, CreateDynamicObjects) with universal handlers, enabling config-driven level features without recompilation.
+
+## What's New in v9
+- **RaceFiles.txt**: 15-line map `Race N: <file>` (e.g. `Race 1: Level1`) lets you swap any race to any `.MESHWORLD` **without renaming files**. The game loads `levels\\<name>` from this file instead of the hardcoded slot. Accepts `Race 1: Level1`, `2 = LevelCascade`, `3 = levels\\level2.MESHWORLD`, etc. Bare name auto-prepends `levels\\`; `.MESHWORLD` extension auto-stripped. File is re-read on every level load (no restart). Auto-generated with defaults on first run. S1 scan still auto-enables bridge/swirl/windmill from the *loaded* file's S1 refs, so dropping `Level3` into `Race 1` just works.
 
 ## What's New in v8
 
@@ -105,6 +108,16 @@ Features are implemented as **objects** with per-level toggles. Each object type
 2. Write an `Init<ObjectName>` function that replicates the original constructor steps
 3. Call it from `UniversalPostSetup` guarded by `g_objectEnabled[OBJ_XXX][level]`
 4. Add the object name to `LevelFeatures.txt`
+
+## RaceFiles.txt
+Maps `Race 1`..`Race 15` to a file. Edit `RaceFiles.txt` next to `bass.dll`:
+```ini
+Race 1: Level1          # WarmUp slot loads levels\\level1
+Race 2: LevelCascade    # Beginner slot loads levels\\levelcascade
+Race 3: Level2          # etc.
+Race 4: Level3          # swap Dizzy into WarmUp: change Race 1 to Level3
+```
+Any `.MESHWORLD` in `levels\\` works. The S1 feature scan uses the *loaded* file, so features follow the file, not the slot.
 
 ## Config file
 
