@@ -145,7 +145,9 @@ void DebugLog(const char *msg);
 /* ═══════════════════════════════════════════════════════════════════════════
  * Extension Heap — Option B (S1-driven, per-board HeapAlloc)
  * Board stays vanilla-sized; all union data lives in a separate HeapAlloc
- * block attached at board+EXT_PTR (0xAB00, beyond vanilla max 0x6498).
+ * block tracked in g_extMap (board->ext). board+EXT_PTR (0xAB00) is beyond
+ * vanilla max 0x6498 and is NOT used for storage on small boards (OOB) —
+ * g_extMap is the source of truth; board+EXT_PTR is only a best-effort mirror.
  * EXT_SIZE is fixed 0x3000 for v1 (dynamic counting scaffold below).
  * All OFF_* are ext-relative offsets. UNI_* kept as deprecated aliases.
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -1872,12 +1874,14 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
      *   0x435C = demo timer count (0x9c4 = 2500)
      *   0x4368 = 0 (byte flag)
      * Zeroing these causes crashes in Scene_Update's vtable sub-functions. */
-    // Board is vanilla-sized; unified data lives in ext (HEAP_ZERO_MEMORY). Only zero vanilla range that held old per-level data.
-    // 0x436C..0x6000 is safe for all levels (max vanilla 0x6498). Don't zero to 0x6500 — that overflows small boards (WarmUp ~0x4400).
-    memset((char *)mem + 0x436C, 0, 0x6000 - 0x436C);
+    // Vanilla board stays small; unified data now lives in ext (HEAP_ZERO_MEMORY).
+    // Previous memset to 0x6000 overflowed WarmUp (~0x4400) -> heap corruption -> 0x452783 crash.
+    // Safe fix: do NOT memset board+0x436C at all. Ext is already zeroed. If a level needs
+    // legacy zero at 0x436C (Up lifter list), that is handled in step 9a-extra instead.
+    // (Kept as no-op to avoid OOB on small boards.)
     {
         char dbg2[128];
-        wsprintfA(dbg2, "memset board+0x436C..0x6500 done (board=0x%08X)", (DWORD)mem);
+        wsprintfA(dbg2, "memset skipped (OOB fix, board=0x%08X)", (DWORD)mem);
         DebugLog(dbg2);
     }
 
@@ -2200,10 +2204,7 @@ static void InitBridge(void *board) {
     *(DWORD *)((char *)ext + BRIDGE_PARAM1) = 0x42340000;  /* 45.0f */
     *(DWORD *)((char *)ext + BRIDGE_PARAM2) = 0;
     *(DWORD *)((char *)ext + BRIDGE_PARAM3) = 0x32;       /* 50 */
-    // Mirror to vanilla for native bridge pivot code that reads board+UNI_BRIDGE_*
-    *(DWORD *)((char *)ext + OFF_BRIDGE_ANGLE) = 0x42340000;
-    *(DWORD *)((char *)ext + OFF_BRIDGE_STATE) = 0;
-    *(DWORD *)((char *)ext + OFF_BRIDGE_COUNTER) = 0x32;
+    // OFF_* mirrors removed: UNI_* at ext+0x8634/38/3C is canonical inside ext heap.
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2213,6 +2214,8 @@ static void InitBridge(void *board) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void Feature_BridgeAnimation(void *board, int level) {
+    // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
+    if (*(BYTE*)((char*)board+0x874)) return;
     if (!g_SceneUpdate) return;
     void* ext = GetBoardExt(board);
     int ballCount = g_AthenaListGetSize((void *)((char *)board + UNI_RACE_BALL_LIST));
@@ -2224,31 +2227,24 @@ static void Feature_BridgeAnimation(void *board, int level) {
     }
     DWORD renderObj;
     float *anglePtr; int *statePtr; int *counterPtr; float *pivotX; float *pivotY; float *pivotZ;
-    if (ext) {
-        renderObj = *(DWORD *)((char *)ext + OFF_BONK_STORE);
-        anglePtr = (float*)((char*)ext + OFF_BRIDGE_ANGLE);
-        statePtr = (int*)((char*)ext + OFF_BRIDGE_STATE);
-        counterPtr = (int*)((char*)ext + OFF_BRIDGE_COUNTER);
-        pivotX = (float*)((char*)ext + OFF_WINDMILL_X);
-        pivotY = (float*)((char*)ext + OFF_WINDMILL_Y);
-        pivotZ = (float*)((char*)ext + OFF_WINDMILL_Z);
-        if (!renderObj) renderObj = *(DWORD *)((char *)ext + BRD_BRIDGE_RENDER);
-        if (*anglePtr==0 && *(float*)((char*)ext+BRD_BRIDGE_ANGLE)!=0) {
-            *anglePtr = *(float*)((char*)ext+BRD_BRIDGE_ANGLE);
-            *statePtr = *(int*)((char*)ext+BRD_BRIDGE_STATE);
-            *counterPtr = *(int*)((char*)ext+BRD_BRIDGE_COUNTER);
-            *pivotX = *(float*)((char*)ext+BRD_BRIDGE_PIVOT_X);
-            *pivotY = *(float*)((char*)ext+BRD_BRIDGE_PIVOT_Y);
-            *pivotZ = *(float*)((char*)ext+BRD_BRIDGE_PIVOT_Z);
-        }
-    } else {
-        renderObj = *(DWORD *)((char *)ext + BRD_BRIDGE_RENDER);
-        anglePtr = (float*)((char*)ext+BRD_BRIDGE_ANGLE);
-        statePtr = (int*)((char*)ext+BRD_BRIDGE_STATE);
-        counterPtr = (int*)((char*)ext+BRD_BRIDGE_COUNTER);
-        pivotX = (float*)((char*)ext+BRD_BRIDGE_PIVOT_X);
-        pivotY = (float*)((char*)ext+BRD_BRIDGE_PIVOT_Y);
-        pivotZ = (float*)((char*)ext+BRD_BRIDGE_PIVOT_Z);
+    if (!ext) return;
+    // Unified ext is source of truth; OFF_* are canonical, BRD_* are deprecated aliases at same offsets.
+    // Keep sync from old BRD_* location if OFF_* still zero (covers pre-migration saves).
+    renderObj = *(DWORD *)((char *)ext + OFF_BONK_STORE);
+    anglePtr = (float*)((char*)ext + OFF_BRIDGE_ANGLE);
+    statePtr = (int*)((char*)ext + OFF_BRIDGE_STATE);
+    counterPtr = (int*)((char*)ext + OFF_BRIDGE_COUNTER);
+    pivotX = (float*)((char*)ext + OFF_WINDMILL_X);
+    pivotY = (float*)((char*)ext + OFF_WINDMILL_Y);
+    pivotZ = (float*)((char*)ext + OFF_WINDMILL_Z);
+    if (!renderObj) renderObj = *(DWORD *)((char *)ext + BRD_BRIDGE_RENDER);
+    if (*anglePtr==0 && *(float*)((char*)ext+BRD_BRIDGE_ANGLE)!=0) {
+        *anglePtr = *(float*)((char*)ext+BRD_BRIDGE_ANGLE);
+        *statePtr = *(int*)((char*)ext+BRD_BRIDGE_STATE);
+        *counterPtr = *(int*)((char*)ext+BRD_BRIDGE_COUNTER);
+        *pivotX = *(float*)((char*)ext+BRD_BRIDGE_PIVOT_X);
+        *pivotY = *(float*)((char*)ext+BRD_BRIDGE_PIVOT_Y);
+        *pivotZ = *(float*)((char*)ext+BRD_BRIDGE_PIVOT_Z);
     }
     if (!renderObj) return;
     int state = *statePtr;
@@ -2303,6 +2299,8 @@ static void Feature_BridgeAnimation(void *board, int level) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void Feature_SwirlZones(void *board, int level) {
+    // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
+    if (*(BYTE*)((char*)board+0x874)) return;
     if (!g_AthenaListGetIterator || !g_operatorNew) return;
     void* ext = GetBoardExt(board);
     if (!ext) ext = EnsureBoardExt(board);
@@ -2609,6 +2607,8 @@ static void Feature_SwirlZones(void *board, int level) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void Feature_Windmill(void *board, int level) {
+    // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
+    if (*(BYTE*)((char*)board+0x874)) return;
     void* ext = GetBoardExt(board);
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (!app || IsBadReadPtr((void *)app, 0x500)) return;
@@ -2672,6 +2672,8 @@ static void Feature_Windmill(void *board, int level) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void Feature_BadBallSpawner(void *board, int level) {
+    // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
+    if (*(BYTE*)((char*)board+0x874)) return;
     if (!g_RNG || !g_BadBallCtor || !g_operatorNew || !g_AthenaListAppend) return;
     void* ext = GetBoardExt(board);
     if (!ext) ext = EnsureBoardExt(board);
@@ -2773,6 +2775,8 @@ static void Feature_BadBallSpawner(void *board, int level) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void Feature_BumperDecay(void *board, int level) {
+    // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
+    if (*(BYTE*)((char*)board+0x874)) return;
     void* ext = GetBoardExt(board);
     if (!ext) return;
     int baseOfs;
@@ -2807,6 +2811,8 @@ static void Feature_BumperDecay(void *board, int level) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void Feature_NeonCamera(void *board, int level) {
+    // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
+    if (*(BYTE*)((char*)board+0x874)) return;
     void* ext = GetBoardExt(board);
     if (!ext) return;
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
@@ -2857,6 +2863,8 @@ static void Feature_NeonCamera(void *board, int level) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void Feature_SkyPopcylinder(void *board, int level) {
+    // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
+    if (*(BYTE*)((char*)board+0x874)) return;
     if (!g_RNG || !g_SceneSetRaceActive) return;
     void* ext = GetBoardExt(board);
     if (!ext) return;
@@ -3435,6 +3443,8 @@ void __fastcall UniversalBoardUpdate(void *board) {
     int level = GetCurrentLevel(board);
     if (level == 0) return;
 
+    // Pause already handled per-feature, but gate here too
+    if (*(BYTE*)((char*)board+0x874)) return;
     DWORD extFeat = GetBoardFeat(board);
     DWORD features = extFeat ? extFeat : g_updateFeatures[level];
     if (!features) {
@@ -3525,6 +3535,7 @@ void __fastcall UniversalRaceState(void *board) {
         features = g_updateFeatures[level];
         if (!features) return;
     }
+    if (*(BYTE*)((char*)board+0x874)) return;
     if (features & FEAT_BUMPER_DECAY)
         Feature_BumperDecay(board, level);
 
@@ -3669,30 +3680,15 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "WATERWHEEL", 10) == 0) {
         S1EnsureMeshWorld(board, ext, UNI_MESH_0, "Levels\\Level3-WaterWheel");
         S1EnsureRender(board, ext, UNI_MESH_1, UNI_MESH_0);
-        void* ext = EnsureBoardExt(board);
-        if (ext) {
-            *(void**)((char*)ext + OFF_WATER_MESH) = *(void**)((char *)ext + UNI_MESH_0);
-            *(int*)((char*)ext + OFF_WATER_RENDER) = *(int *)((char *)ext + UNI_MESH_1);
-            *(float*)((char*)ext + OFF_WHEEL_EMBED_X) = x;
-            *(float*)((char*)ext + OFF_WHEEL_EMBED_Y) = y;
-            *(float*)((char*)ext + OFF_WHEEL_EMBED_Z) = z;
-            *(float*)((char*)ext + OFF_WATER_ROT_X) = x2;
-            *(float*)((char*)ext + OFF_WATER_ROT_Y) = y2;
-            *(float*)((char*)ext + OFF_WATER_ROT_Z) = z2;
-            *(void**)((char *)ext + UNI_MESH_0) = *(void**)((char*)ext + OFF_WATER_MESH);
-            *(float *)((char *)ext + UNI_WHEELEMBED_X) = x;
-            *(float *)((char *)ext + UNI_WHEELEMBED_Y) = y;
-            *(float *)((char *)ext + UNI_WHEELEMBED_Z) = z;
-        } else {
-            obj = *(void **)((char *)ext + UNI_MESH_0);
-            renderOut = *(int *)((char *)ext + UNI_MESH_1);
-            *(float *)((char *)ext + UNI_WHEELEMBED_X) = x;
-            *(float *)((char *)ext + UNI_WHEELEMBED_Y) = y;
-            *(float *)((char *)ext + UNI_WHEELEMBED_Z) = z;
-        }
-        if (!obj && ext) { obj = *(void**)((char*)ext + OFF_WATER_MESH); renderOut = *(int*)((char*)ext + OFF_WATER_RENDER); }
-        else if (!obj) { obj = *(void **)((char *)ext + UNI_MESH_0); renderOut = *(int *)((char *)ext + UNI_MESH_1); }
-        if (ext) *(DWORD *)((char *)ext + OFF_BONK_STORE) = 0;
+        // ext already ensured at top; no shadow var. Canonical storage is UNI_* inside ext.
+        *(float *)((char *)ext + UNI_WHEELEMBED_X) = x;
+        *(float *)((char *)ext + UNI_WHEELEMBED_Y) = y;
+        *(float *)((char *)ext + UNI_WHEELEMBED_Z) = z;
+        // Keep OFF_* as mirror for Feature_SwirlZones which reads OFF_WATER_ROT_*
+        *(float*)((char*)ext + OFF_WATER_ROT_X) = x2;
+        *(float*)((char*)ext + OFF_WATER_ROT_Y) = y2;
+        *(float*)((char*)ext + OFF_WATER_ROT_Z) = z2;
+        if (!obj) { obj = *(void **)((char *)ext + UNI_MESH_0); renderOut = *(int *)((char *)ext + UNI_MESH_1); }
         *(DWORD *)((char *)ext + UNI_JUDGE_LIST) = 0;
         OrBoardFeat(board, FEAT_SWIRL);
         {
@@ -3928,7 +3924,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             DWORD *o = (DWORD *)obj;
             renderOut = o[0x43E];
             int storeOff = UNI_BONK_STORE;
-            *(void **)((char *)board + storeOff) = obj;
+            void* bExt = GetBoardExt(board); if(!bExt) bExt=EnsureBoardExt(board);
+            if(bExt) *(void **)((char *)bExt + storeOff) = obj; else *(void **)((char *)board + storeOff) = obj;
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
@@ -4135,7 +4132,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "BLOCKDAWG", 9) == 0 && difficulty != 0) {
         int dawgNum = name[9] - '0';
         int meshOff = UNI_MESH_3 + (dawgNum-1) * 4;
-        int meshVal = *(int*)((char*)board + meshOff);
+        void* bExt2 = GetBoardExt(board); int meshVal = bExt2 ? *(int*)((char*)bExt2 + meshOff) : *(int*)((char*)board + meshOff);
+        if (!meshVal) meshVal = *(int*)((char*)board + meshOff); // fallback for pre-migration boards
         if (!meshVal) { DebugLog("BLOCKDAWG: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         char pathName[] = "DAWGPATH0";
         pathName[8] = '0' + dawgNum;
@@ -4155,7 +4153,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "WOBBLY", 6) == 0 && name[6] >= '1' && name[6] <= '7') {
         int wNum = name[6] - '0';
         int meshOff = UNI_BONK_STORE + (wNum-1) * 4;
-        int meshVal = *(int*)((char*)board + meshOff);
+        void* wExt = GetBoardExt(board); int meshVal = wExt ? *(int*)((char*)wExt + meshOff) : *(int*)((char*)board + meshOff);
+        if (!meshVal) meshVal = *(int*)((char*)board + meshOff);
         if (!meshVal) { DebugLog("WOBBLY: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1524);
         if (mem) {
@@ -4252,7 +4251,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             if (idx >= 0 && idx < 16) {
                 int meshIdx = idx & 1;
                 int meshOff = UNI_BRIDGE_STATE + meshIdx * 4;
-                int meshVal = *(int*)((char*)board + meshOff);
+                void* pExt = GetBoardExt(board); int meshVal = pExt ? *(int*)((char*)pExt + meshOff) : *(int*)((char*)board + meshOff);
+                if (!meshVal) meshVal = *(int*)((char*)board + meshOff);
                 if (!meshVal) { DebugLog("POPCYLINDER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
                 void *mem = g_operatorNew(0x10F4);
                 if (mem) {
@@ -4394,13 +4394,14 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         int bNum = name[7] - '0';
         int meshOff = (bNum == 1) ? UNI_MESH_5 : UNI_MESH_6;
         int storeOff = (bNum == 1) ? UNI_MESH_7 : UNI_MESH_8;
-        int meshVal = *(int*)((char*)board + meshOff);
+        void* bbExt2 = GetBoardExt(board); int meshVal = bbExt2 ? *(int*)((char*)bbExt2 + meshOff) : *(int*)((char*)board + meshOff);
+        if (!meshVal) meshVal = *(int*)((char*)board + meshOff);
         if (!meshVal) { DebugLog("BBRIDGE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1100);
         if (mem) {
             obj = g_BreakBridgeCtor(mem, (int)board, x, y, z, meshVal);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            *(void **)((char *)board + storeOff) = obj;
+            void* bbExt = GetBoardExt(board); if(bbExt) *(void **)((char *)bbExt + storeOff) = obj; else *(void **)((char *)board + storeOff) = obj;
             renderOut = ((DWORD*)obj)[0x438];
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
@@ -6091,27 +6092,24 @@ static void PatchAllocSizes(void) {
 static unsigned char* g_advanceTrampoline = NULL;
 static void (__stdcall *g_origAdvanceRace)(DWORD);
 static void __stdcall Hook_AdvanceRace(DWORD a1) {
-    /* Free extension heaps for boards that are about to be abandoned.
-     * Tournament_AdvanceRace is called with the new race index; the previous
-     * board(s) will be destroyed. Best-effort: free any ext whose board is
-     * no longer readable, or free the oldest entry to prevent leak on rapid
-     * level switches. For v1 we free all tracked exts before advancing. */
+    // Fix leak: Tournament_AdvanceRace destroys previous board. Free ALL tracked exts
+    // before advancing, not just those whose board is already unreadable. Also clear
+    // any board+EXT_PTR slot if still readable to avoid dangling pointer.
     int i;
     for (i=0;i<MAX_EXT_MAP;i++) if (g_extMap[i].ext) {
-        if (g_extMap[i].board && IsBadReadPtr(g_extMap[i].board, 4)) {
-            HeapFree(GetProcessHeap(),0,g_extMap[i].ext);
-            g_extMap[i].ext=NULL; g_extMap[i].feat=0; g_extMap[i].board=NULL;
+        void* b = g_extMap[i].board;
+        void* e = g_extMap[i].ext;
+        if (b && !IsBadReadPtr(b, 4)) {
+            // Clear board+EXT_PTR slot if it points to this ext
+            if (!IsBadReadPtr((char*)b+EXT_PTR, 4)) {
+                void* slot = *(void**)((char*)b+EXT_PTR);
+                if (slot==e && !IsBadWritePtr((char*)b+EXT_PTR,4)) *(void**)((char*)b+EXT_PTR)=NULL;
+            }
         }
-    }
-    /* Also clear the board+EXT_PTR slot if the board is still valid but level is changing.
-     * We can't know which board is old, so we preserve exts that are still readable;
-     * they will be freed when their board dtor runs or next advance reaps them. */
-    if (g_origAdvanceRace) g_origAdvanceRace(a1);
-    /* Post-advance: opportunistically free any ext that became stale after the call */
-    for (i=0;i<MAX_EXT_MAP;i++) if (g_extMap[i].ext && g_extMap[i].board && IsBadReadPtr(g_extMap[i].board, 4)) {
-        HeapFree(GetProcessHeap(),0,g_extMap[i].ext);
+        HeapFree(GetProcessHeap(),0,e);
         g_extMap[i].ext=NULL; g_extMap[i].feat=0; g_extMap[i].board=NULL;
     }
+    if (g_origAdvanceRace) g_origAdvanceRace(a1);
 }
 static void InstallExtFreeHook(void) {
     DWORD targetAddr = g_moduleBase + 0x00027080;
