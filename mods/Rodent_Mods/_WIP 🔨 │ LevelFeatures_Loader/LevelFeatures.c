@@ -476,8 +476,8 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define RVA_Gfx_ScaleY                0x00057C90
 #define RVA_Gfx_ScaleX                0x00057C60
 #define RVA_Gfx_SetPosition           0x00057B50
-#define RVA_Timer_Init                0x00057AD0
-#define RVA_Timer_Cleanup             0x00057A40
+#define RVA_Timer_Init                0x00057A40
+#define RVA_Timer_Cleanup             0x00057A50
 #define RVA_Matrix_TransformVec3      0x0000A0B0
 #define RVA_Matrix44_Zero             0x00057B10
 #define RVA_Scene_ForEachBall_SetVel  0x00019B70
@@ -2136,23 +2136,29 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     }
 
     /* Step 8b: For Dizzy, also write mesh pointers to ORIGINAL offsets.
-     * Unified storage is now in ext; copy to vanilla offsets for native code. */
+     * Unified storage is now in ext; copy to vanilla offsets for native code.
+     * Guard: vanilla Dizzy board is ~0x6000, but file-swapped Dizzy-in-WarmUp
+     * board is ~0x4400 → 0x4BA8 is OOB. IsBadWritePtr guards the small-board case. */
     if (raceIndex == 4) {
-        /* Tipper mesh+render — load from ext dedicated slots */
-        *(DWORD *)((char *)mem + 0x436C) = *(DWORD *)((char *)ext + UNI_TIPPER_MESH);
-        *(DWORD *)((char *)mem + 0x4370) = *(DWORD *)((char *)ext + UNI_TIPPER_RENDER);
-        /* WaterWheel mesh+render */
-        *(DWORD *)((char *)mem + 0x4BA8) = *(DWORD *)((char *)ext + UNI_MESH_0);
-        *(DWORD *)((char *)mem + 0x4BAC) = *(DWORD *)((char *)ext + UNI_MESH_1);
-        /* Swirl mesh+render */
-        *(DWORD *)((char *)mem + 0x4BC4) = *(DWORD *)((char *)ext + UNI_MESH_6);
-        *(DWORD *)((char *)mem + 0x4BC8) = *(DWORD *)((char *)ext + UNI_MESH_11);
-        /* Gluebie mesh */
-        *(DWORD *)((char *)mem + 0x4374) = *(DWORD *)((char *)ext + UNI_GLUEBIE_MESH);
-        /* Init angle/scale fields (original offsets) */
-        *(DWORD *)((char *)mem + 0x4BC0) = 0;  /* WaterWheel scale */
-        *(DWORD *)((char *)mem + 0x4BD8) = 0;  /* Swirl angle */
-        DebugLog("Step 8b: Dizzy mesh pointers dual-written to original offsets");
+        if (!IsBadWritePtr((char *)mem + 0x4BC8, 4)) {
+            /* Tipper mesh+render — load from ext dedicated slots */
+            *(DWORD *)((char *)mem + 0x436C) = *(DWORD *)((char *)ext + UNI_TIPPER_MESH);
+            *(DWORD *)((char *)mem + 0x4370) = *(DWORD *)((char *)ext + UNI_TIPPER_RENDER);
+            /* WaterWheel mesh+render */
+            *(DWORD *)((char *)mem + 0x4BA8) = *(DWORD *)((char *)ext + UNI_MESH_0);
+            *(DWORD *)((char *)mem + 0x4BAC) = *(DWORD *)((char *)ext + UNI_MESH_1);
+            /* Swirl mesh+render */
+            *(DWORD *)((char *)mem + 0x4BC4) = *(DWORD *)((char *)ext + UNI_MESH_6);
+            *(DWORD *)((char *)mem + 0x4BC8) = *(DWORD *)((char *)ext + UNI_MESH_11);
+            /* Gluebie mesh */
+            *(DWORD *)((char *)mem + 0x4374) = *(DWORD *)((char *)ext + UNI_GLUEBIE_MESH);
+            /* Init angle/scale fields (original offsets) */
+            *(DWORD *)((char *)mem + 0x4BC0) = 0;  /* WaterWheel scale */
+            *(DWORD *)((char *)mem + 0x4BD8) = 0;  /* Swirl angle */
+            DebugLog("Step 8b: Dizzy mesh pointers dual-written to original offsets");
+        } else {
+            DebugLog("Step 8b: Dizzy dual-write skipped (vanilla board too small for 0x4BA8)");
+        }
     }
 
     /* Step 9: Set unlock flags */
@@ -2440,24 +2446,25 @@ static void Feature_BridgeAnimation(void *board, int level) {
     DWORD renderObj;
     float *anglePtr; int *statePtr; int *counterPtr; float *pivotX; float *pivotY; float *pivotZ;
     if (!ext) return;
-    // Unified ext is source of truth; OFF_* are canonical, BRD_* are deprecated aliases at same offsets.
-    // Keep sync from old BRD_* location if OFF_* still zero (covers pre-migration saves).
-    renderObj = *(DWORD *)((char *)ext + OFF_BONK_STORE);
-    anglePtr = (float*)((char*)ext + OFF_BRIDGE_ANGLE);
-    statePtr = (int*)((char*)ext + OFF_BRIDGE_STATE);
-    counterPtr = (int*)((char*)ext + OFF_BRIDGE_COUNTER);
-    pivotX = (float*)((char*)ext + OFF_WINDMILL_X);
-    pivotY = (float*)((char*)ext + OFF_WINDMILL_Y);
-    pivotZ = (float*)((char*)ext + OFF_WINDMILL_Z);
-    if (!renderObj) renderObj = *(DWORD *)((char *)ext + BRD_BRIDGE_RENDER);
-    if (*anglePtr==0 && *(float*)((char*)ext+BRD_BRIDGE_ANGLE)!=0) {
-        *anglePtr = *(float*)((char*)ext+BRD_BRIDGE_ANGLE);
-        *statePtr = *(int*)((char*)ext+BRD_BRIDGE_STATE);
-        *counterPtr = *(int*)((char*)ext+BRD_BRIDGE_COUNTER);
-        *pivotX = *(float*)((char*)ext+BRD_BRIDGE_PIVOT_X);
-        *pivotY = *(float*)((char*)ext+BRD_BRIDGE_PIVOT_Y);
-        *pivotZ = *(float*)((char*)ext+BRD_BRIDGE_PIVOT_Z);
+    // UNI_* is canonical — writers (InitBridge, LoadExtraMeshes) store at ext+UNI_*. OFF_* is deprecated.
+    renderObj = *(DWORD *)((char *)ext + UNI_BONK_STORE);
+    anglePtr = (float*)((char*)ext + UNI_BRIDGE_ANGLE);
+    statePtr = (int*)((char*)ext + UNI_BRIDGE_STATE);
+    counterPtr = (int*)((char*)ext + UNI_BRIDGE_COUNTER);
+    pivotX = (float*)((char*)ext + UNI_WINDMILL_X);
+    pivotY = (float*)((char*)ext + UNI_WINDMILL_Y);
+    pivotZ = (float*)((char*)ext + UNI_WINDMILL_Z);
+    // Migration fallback: if UNI_* still zero but legacy OFF_*/BRD_* has data (pre-migration ext), copy once.
+    if (!renderObj) renderObj = *(DWORD *)((char *)ext + OFF_BONK_STORE);
+    if (*anglePtr==0 && *(float*)((char*)ext+OFF_BRIDGE_ANGLE)!=0) {
+        *anglePtr = *(float*)((char*)ext+OFF_BRIDGE_ANGLE);
+        *statePtr = *(int*)((char*)ext+OFF_BRIDGE_STATE);
+        *counterPtr = *(int*)((char*)ext+OFF_BRIDGE_COUNTER);
+        *pivotX = *(float*)((char*)ext+OFF_WINDMILL_X);
+        *pivotY = *(float*)((char*)ext+OFF_WINDMILL_Y);
+        *pivotZ = *(float*)((char*)ext+OFF_WINDMILL_Z);
     }
+    if (!renderObj) renderObj = *(DWORD *)((char *)ext + BRD_BRIDGE_RENDER);
     if (!renderObj) return;
     int state = *statePtr;
     switch (state) {
@@ -2827,15 +2834,17 @@ static void Feature_Windmill(void *board, int level) {
     float *anglePtr; float *speedPtr; int *statePtr; int *counterPtr; float *decayPtr; float *posX; float *posY; float *posZ;
     DWORD *renderPtr;
     if (!ext) return;
-    anglePtr = (float*)((char*)ext + OFF_WINDMILL_ANGLE);
-    speedPtr = (float*)((char*)ext + OFF_WINDMILL_SPEED);
-    statePtr = (int*)((char*)ext + OFF_WINDMILL_STATE);
-    counterPtr = (int*)((char*)ext + OFF_WINDMILL_COUNTER);
-    decayPtr = (float*)((char*)ext + OFF_WINDMILL_DECAY);
-    posX = (float*)((char*)ext + OFF_WINDMILL_X);
-    posY = (float*)((char*)ext + OFF_WINDMILL_Y);
-    posZ = (float*)((char*)ext + OFF_WINDMILL_Z);
-    renderPtr = (DWORD*)((char*)ext + OFF_BONK_STORE);
+    anglePtr = (float*)((char*)ext + UNI_WINDMILL_ANGLE);
+    speedPtr = (float*)((char*)ext + UNI_WINDMILL_SPEED);
+    statePtr = (int*)((char*)ext + UNI_WINDMILL_STATE);
+    counterPtr = (int*)((char*)ext + UNI_WINDMILL_COUNTER);
+    decayPtr = (float*)((char*)ext + UNI_WINDMILL_DECAY);
+    posX = (float*)((char*)ext + UNI_WINDMILL_X);
+    posY = (float*)((char*)ext + UNI_WINDMILL_Y);
+    posZ = (float*)((char*)ext + UNI_WINDMILL_Z);
+    renderPtr = (DWORD*)((char*)ext + UNI_BONK_STORE);
+    /* Also migrate legacy OFF_* windmill render pointer if present. */
+    if (!*renderPtr && *(DWORD*)((char*)ext+OFF_BONK_STORE)) *renderPtr = *(DWORD*)((char*)ext+OFF_BONK_STORE);
     float rotSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 1.0f;
     *anglePtr = *anglePtr + rotSpeed;
     {
@@ -3855,12 +3864,12 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         S1EnsureRender(board, ext, UNI_TIPPER_RENDER, UNI_TIPPER_MESH);
         int meshOff = UNI_TIPPER_MESH;
         int renderOff = UNI_TIPPER_RENDER;
-        int meshVal = *(int*)((char*)board + meshOff);
+        int meshVal = *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("TIPPER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         {
             char dbg[256];
             wsprintfA(dbg, "TIPPER: meshOff=0x%X meshVal=0x%X renderOff=0x%X renderVal=0x%X level=%d rot=%.1f,%.1f,%.1f",
-                      meshOff, meshVal, renderOff, *(int*)((char*)board + renderOff), level, x2,y2,z2);
+                      meshOff, meshVal, renderOff, *(int*)((char*)ext + renderOff), level, x2,y2,z2);
             DebugLog(dbg);
         }
         void *mem = g_operatorNew(0x1104);
@@ -3876,7 +3885,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             }
             void *vmem = g_operatorNew(0x10D0);
             if (vmem) {
-                void *vis = g_TipperVisualCtor(vmem, *(int*)((char*)board + renderOff));
+                void *vis = g_TipperVisualCtor(vmem, *(int*)((char*)ext + renderOff));
                 o[0x435] = (DWORD)vis;
                 g_TipperVisualAttach(vis, (int)obj);
             }
@@ -4344,8 +4353,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "BLOCKDAWG", 9) == 0 && difficulty != 0) {
         int dawgNum = name[9] - '0';
         int meshOff = UNI_MESH_3 + (dawgNum-1) * 4;
-        void* bExt2 = GetBoardExt(board); int meshVal = bExt2 ? *(int*)((char*)bExt2 + meshOff) : *(int*)((char*)board + meshOff);
-        if (!meshVal) meshVal = *(int*)((char*)board + meshOff); // fallback for pre-migration boards
+        void* bExt2 = GetBoardExt(board); if (!bExt2) bExt2 = ext;
+        int meshVal = bExt2 ? *(int*)((char*)bExt2 + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("BLOCKDAWG: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         char pathName[] = "DAWGPATH0";
         pathName[8] = '0' + dawgNum;
@@ -4365,8 +4374,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "WOBBLY", 6) == 0 && name[6] >= '1' && name[6] <= '7') {
         int wNum = name[6] - '0';
         int meshOff = UNI_BONK_STORE + (wNum-1) * 4;
-        void* wExt = GetBoardExt(board); int meshVal = wExt ? *(int*)((char*)wExt + meshOff) : *(int*)((char*)board + meshOff);
-        if (!meshVal) meshVal = *(int*)((char*)board + meshOff);
+        void* wExt = GetBoardExt(board); if (!wExt) wExt = ext;
+        int meshVal = wExt ? *(int*)((char*)wExt + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("WOBBLY: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1524);
         if (mem) {
@@ -4463,8 +4472,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             if (idx >= 0 && idx < 16) {
                 int meshIdx = idx & 1;
                 int meshOff = UNI_BRIDGE_STATE + meshIdx * 4;
-                void* pExt = GetBoardExt(board); int meshVal = pExt ? *(int*)((char*)pExt + meshOff) : *(int*)((char*)board + meshOff);
-                if (!meshVal) meshVal = *(int*)((char*)board + meshOff);
+                void* pExt = GetBoardExt(board); if (!pExt) pExt = ext;
+                int meshVal = pExt ? *(int*)((char*)pExt + meshOff) : *(int*)((char*)ext + meshOff);
                 if (!meshVal) { DebugLog("POPCYLINDER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
                 void *mem = g_operatorNew(0x10F4);
                 if (mem) {
@@ -4606,8 +4615,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         int bNum = name[7] - '0';
         int meshOff = (bNum == 1) ? UNI_MESH_5 : UNI_MESH_6;
         int storeOff = (bNum == 1) ? UNI_MESH_7 : UNI_MESH_8;
-        void* bbExt2 = GetBoardExt(board); int meshVal = bbExt2 ? *(int*)((char*)bbExt2 + meshOff) : *(int*)((char*)board + meshOff);
-        if (!meshVal) meshVal = *(int*)((char*)board + meshOff);
+        void* bbExt2 = GetBoardExt(board); if (!bbExt2) bbExt2 = ext;
+        int meshVal = bbExt2 ? *(int*)((char*)bbExt2 + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("BBRIDGE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1100);
         if (mem) {
@@ -5000,10 +5009,12 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             *(float *)(phys + 0xCAC) = vz;
         }
         long bumperNum = atol(name + 8);
-        if (bumperNum < 0 || bumperNum >= 8) goto call_global; // bounds check — N:BUMPER1..8 only
+        // Require N:BUMPERn with 1-8 digit — plain "N:BUMPER" (no number) is not a valid bumper mesh
+        if (name[8] < '1' || name[8] > '8' || name[9] != '\0') goto call_global;
+        bumperNum = name[8] - '0';
         DWORD litBase = UNI_BUMPER_LIT;
-        // BUMPER_LIT is unified -> ext
-        *(DWORD *)((char *)ext + bumperNum * 4 + litBase) = 0x3F800000;
+        // BUMPER_LIT is unified -> ext ; adjust for 1-based naming: lit index = bumperNum-1
+        *(DWORD *)((char *)ext + (bumperNum-1) * 4 + litBase) = 0x3F800000;
     }
 
     /* ── Intermediate: N:BRIDGE ── */
@@ -5065,12 +5076,12 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             DWORD catCount = UNI_CATAPULT_COUNT;
             DWORD catData = UNI_CATAPULT_DATA;
             int iter = g_AthenaListGetIterator((void *)((char *)ext + catList));
-            *(DWORD *)((char *)board + catList + 8 + iter * 4) = 0;
+            *(DWORD *)((char *)ext + catList + 8 + iter * 4) = 0;
             int count = *(int *)((char *)ext + catCount);
             int item = 0;
             if (count > 0) {
                 item = **(int **)((char *)ext + catData);
-                *(DWORD *)((char *)board + catList + 8 + iter * 4) = 1;
+                *(DWORD *)((char *)ext + catList + 8 + iter * 4) = 1;
             }
             while (item) {
                 if (*(int *)(item + 0x10D4) == sceneObj) {
@@ -5081,10 +5092,10 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                         if (ch) g_SoundPlayChannel(ch);
                     }
                 }
-                int next = *(int *)((char *)board + catList + 8 + iter * 4);
+                int next = *(int *)((char *)ext + catList + 8 + iter * 4);
                 if (*(int *)((char *)ext + catCount) <= next) break;
                 item = *(int *)(*(int **)((char *)ext + catData) + next * 4);
-                *(int *)((char *)board + catList + 8 + iter * 4) = next + 1;
+                *(int *)((char *)ext + catList + 8 + iter * 4) = next + 1;
             }
         }
     }
@@ -6027,7 +6038,7 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
     if (!board || !ext || !meshWorld) return;
     if (IsBadReadPtr(meshWorld, 0x500)) return;
     DWORD objDb = *(DWORD *)((char *)meshWorld + 0x480);
-    if (!objDb || IsBadReadPtr((void *)objDb, 0x20)) return;
+    if (!objDb || IsBadReadPtr((void *)objDb, 0xCC0)) return; // need +0xCA0, so +0xCC0 safe
     if (!g_AthenaListGetIterator || !g_AthenaListGetSize) return;
     int iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
     if (IsBadWritePtr((void *)(objDb + 0x89C + iter*4), 4)) return;
