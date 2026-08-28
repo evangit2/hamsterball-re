@@ -1,0 +1,25 @@
+# RaceFiles.txt — map each Race 1..15 to a .MESHWORLD file
+# No renaming needed: edit the name on the right side.
+# Formats accepted (all equivalent):
+#   Race 1: Level1
+#   2 = LevelCascade
+#   3 = levels\\level2.MESHWORLD
+# Lines starting with # ; [ are ignored.
+# You can use a bare name (Level1) or a full path (levels\\level1).
+# Changes are picked up on the next level load (no restart needed).
+
+Race 1: level1
+Race 2: levelcascade
+Race 3: level2
+Race 4: level3
+Race 5: level4
+Race 6: levelup
+Race 7: leveldark
+Race 8: level5
+Race 9: level6
+Race 10: level8
+Race 11: level7
+Race 12: levelglass
+Race 13: level9
+Race 14: level10
+Race 15: levelimpossible

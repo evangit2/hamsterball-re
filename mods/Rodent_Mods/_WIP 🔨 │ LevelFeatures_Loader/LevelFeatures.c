@@ -958,6 +958,8 @@ DispatchCollisionEvents_t g_OriginalDispatch = NULL;
 static unsigned char *g_trampoline = NULL;
 static char g_configPath[MAX_PATH] = "";
 static char g_levelDataPath[MAX_PATH] = "";
+static char g_raceFilesPath[MAX_PATH] = "";
+static char g_raceFiles[16][MAX_PATH] = {{0}}; // 1..15, each holds mesh path like "levels\\level1"
 
 /* Pending race index for board constructor thunks */
 /* Must be non-static for asm reference */
@@ -1482,8 +1484,163 @@ static void GetConfigPath(void) {
             strcpy(g_levelDataPath, g_configPath);
             p = strrchr(g_levelDataPath, '\\');
             if (p) strcpy(p + 1, "LevelData.txt");
+            strcpy(g_raceFilesPath, g_configPath);
+            p = strrchr(g_raceFilesPath, '\\');
+            if (p) strcpy(p + 1, "RaceFiles.txt");
         }
     }
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * RaceFiles.txt — maps Race 1..15 to a .MESHWORLD file (no renaming needed)
+ * Format is forgiving:
+ *   Race 1: Level1
+ *   Race 2 = LevelCascade
+ *   3 = levels\\level2
+ *   4: levels\\level3.MESHWORLD
+ * Lines starting with # ; [ are ignored. Bare number before = or : is the race.
+ * Value is the file/path; "levels\\" is prepended if missing, and a trailing
+ * ".MESHWORLD" extension is stripped (the loader adds it).
+ * If the file is missing, defaults are used (see g_defaultRaceFiles).
+ * The file is re-read on every level load so you can swap without restarting.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static const char *g_defaultRaceFiles[16] = {
+    NULL,
+    "levels\\level1",        // 1 WarmUp
+    "levels\\levelcascade",  // 2 Beginner
+    "levels\\level2",        // 3 Intermediate
+    "levels\\level3",        // 4 Dizzy
+    "levels\\level4",        // 5 Tower
+    "levels\\levelup",       // 6 Up
+    "levels\\leveldark",     // 7 Neon
+    "levels\\level5",        // 8 Expert
+    "levels\\level6",        // 9 Odd
+    "levels\\level8",        // 10 Toob
+    "levels\\level7",        // 11 Wobbly
+    "levels\\levelglass",    // 12 Glass
+    "levels\\level9",        // 13 Sky
+    "levels\\level10",       // 14 Master
+    "levels\\levelimpossible", // 15 Impossible
+};
+
+static void InitRaceFilesDefaults(void) {
+    int i; for (i=1;i<=15;i++) if (!g_raceFiles[i][0] && g_defaultRaceFiles[i]) my_strncpy(g_raceFiles[i], g_defaultRaceFiles[i], MAX_PATH);
+}
+
+static void NormalizeRaceFile(char *out, const char *in) {
+    int len = strlen(in);
+    int start=0;
+    char tmp[MAX_PATH];
+    int tl=0;
+    int tlen;
+    int hasSep=0;
+    int k;
+    int i;
+    while (len>0 && (in[len-1]=='"' || in[len-1]=='\'')) len--;
+    while (in[start]=='"' || in[start]=='\'') start++;
+    for (i=start;i<len && tl<MAX_PATH-1;i++) tmp[tl++]=in[i];
+    tmp[tl]='\0';
+    trim_str(tmp);
+    tlen=strlen(tmp);
+    if (tlen>10 && my_strnicmp(tmp+tlen-10, ".MESHWORLD", 10)==0) { tmp[tlen-10]='\0'; tlen-=10; }
+    if (tlen>5 && my_strnicmp(tmp+tlen-5, ".MESH", 5)==0) { tmp[tlen-5]='\0'; }
+    trim_str(tmp);
+    if (!tmp[0]) { out[0]='\0'; return; }
+    hasSep=0;
+    for (k=0;tmp[k];k++) if (tmp[k]=='\\' || tmp[k]=='/') hasSep=1;
+    if (!hasSep) { my_strncpy(out, "levels\\", MAX_PATH); strncat(out, tmp, MAX_PATH-strlen(out)-1); }
+    else { my_strncpy(out, tmp, MAX_PATH); }
+}
+
+static void LoadRaceFiles(void) {
+    InitRaceFilesDefaults();
+    if (!g_raceFilesPath[0]) return;
+    HANDLE hFile = CreateFileA(g_raceFilesPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile==INVALID_HANDLE_VALUE) return;
+    DWORD fileSize = GetFileSize(hFile, NULL);
+    if (fileSize>8192) fileSize=8192;
+    char buf[8192]; DWORD bytesRead=0;
+    ReadFile(hFile, buf, fileSize, &bytesRead, NULL);
+    CloseHandle(hFile);
+    buf[bytesRead]='\0';
+    char *start=buf;
+    if (bytesRead>=3 && (unsigned char)start[0]==0xEF && (unsigned char)start[1]==0xBB && (unsigned char)start[2]==0xBF) start+=3;
+    char *line=start;
+    while (line < buf+bytesRead) {
+        char *eol=line; while (*eol && *eol!='\n' && *eol!='\r') eol++;
+        char saved=*eol; *eol='\0';
+        char *p=line; while (*p==' ' || *p=='\t') p++;
+        if (*p=='\0' || *p=='#' || *p==';' || *p=='[') goto next_rf_line;
+        // find first number 1..15 in line
+        int raceNum=0; char *numPos=NULL;
+        char *q=p; while (*q) {
+            if (*q>='0' && *q<='9') {
+                int v=atoi(q); if (v>=1 && v<=15) { raceNum=v; numPos=q; break; }
+                while (*q>='0' && *q<='9') q++;
+            } else q++;
+        }
+        if (!raceNum || !numPos) goto next_rf_line;
+        // find separator = or : after the number
+        char *sep=numPos; while (*sep>='0' && *sep<='9') sep++;
+        while (*sep==' ' || *sep=='\t') sep++;
+        if (*sep=='R' || *sep=='r') { // handles "Race 1:" where p starts with Race - already skipped, but just in case
+            while (*sep && *sep!=':' && *sep!='=') sep++;
+        }
+        if (*sep!=':' && *sep!='=') {
+            // try to find any : or = in remainder of line
+            char *alt=p; while (*alt && *alt!=':' && *alt!='=') alt++;
+            if (*alt==':' || *alt=='=') sep=alt; else goto next_rf_line;
+        }
+        // value is after sep
+        char *val=sep+1; while (*val==' ' || *val=='\t') val++;
+        trim_str(val);
+        // strip inline comment after value ( # or ; )
+        char *cmt=val; while (*cmt && *cmt!='#' && *cmt!=';') cmt++;
+        if (*cmt) { *cmt='\0'; trim_str(val); }
+        if (!*val) goto next_rf_line;
+        // also strip inline //  comment
+        char *ds=strstr(val, "//"); if (ds) { *ds='\0'; trim_str(val); }
+        char norm[MAX_PATH]; NormalizeRaceFile(norm, val);
+        if (norm[0]) my_strncpy(g_raceFiles[raceNum], norm, MAX_PATH);
+next_rf_line:
+        *eol=saved;
+        if (*eol=='\r') eol++;
+        if (*eol=='\n') eol++;
+        line=eol;
+    }
+    // keep defaults for any holes
+    InitRaceFilesDefaults();
+}
+
+static void GenerateRaceFiles(void) {
+    if (!g_raceFilesPath[0]) return;
+    HANDLE hFile = CreateFileA(g_raceFilesPath, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile==INVALID_HANDLE_VALUE) return;
+    const char *header =
+        "# RaceFiles.txt — map each Race 1..15 to a .MESHWORLD file\r\n"
+        "# No renaming needed: edit the name on the right side.\r\n"
+        "# Formats accepted (all equivalent):\r\n"
+        "#   Race 1: Level1\r\n"
+        "#   2 = LevelCascade\r\n"
+        "#   3 = levels\\\\level2.MESHWORLD\r\n"
+        "# Lines starting with # ; [ are ignored.\r\n"
+        "# You can use a bare name (Level1) or a full path (levels\\\\level1).\r\n"
+        "# Changes are picked up on the next level load (no restart needed).\r\n\r\n";
+    DWORD written; WriteFile(hFile, header, strlen(header), &written, NULL);
+    InitRaceFilesDefaults();
+    for (int i=1;i<=15;i++) {
+        char line[256];
+        // write bare filename for readability (strip levels\\ prefix)
+        const char *p=g_raceFiles[i]; const char *bare=p;
+        const char *slash=strrchr(p, '\\'); if (slash) bare=slash+1;
+        const char *slash2=strrchr(bare, '/'); if (slash2) bare=slash2+1;
+        int pos=0;
+        pos+=sprintf(line+pos, "Race %d: %s\r\n", i, bare[0]?bare:"level1");
+        WriteFile(hFile, line, pos, &written, NULL);
+    }
+    CloseHandle(hFile);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -5868,10 +6025,17 @@ static void UniversalConstructor(void *board, int raceIndex) {
         return;
     }
 
-    /* Use meshPath from LevelData if available, fallback to g_meshPaths */
-    const char *meshPath = g_levelData[raceIndex].meshPath;
+    /* RaceFiles.txt overrides everything: Race 1..15 -> file. Then LevelData, then g_meshPaths. */
+    LoadRaceFiles();
+    const char *meshPath = NULL;
+    if (raceIndex>=1 && raceIndex<=15 && g_raceFiles[raceIndex][0]) meshPath = g_raceFiles[raceIndex];
+    if (!meshPath || !*meshPath) meshPath = g_levelData[raceIndex].meshPath;
     if (!meshPath || !*meshPath) meshPath = g_meshPaths[raceIndex];
     if (!meshPath) return;
+    {
+        char dbg2[256]; wsprintfA(dbg2, "UniversalConstructor meshPath race=%d -> '%s'", raceIndex, meshPath);
+        DebugLog(dbg2);
+    }
 
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (!app || IsBadReadPtr((void *)app, 0x200)) return;
@@ -6450,7 +6614,20 @@ static DWORD WINAPI PatchThread(LPVOID param) {
         char dbg_cp[256];
         wsprintfA(dbg_cp, "GetConfigPath done: path='%s'", g_configPath[0] ? g_configPath : "(empty)");
         DebugLog(dbg_cp);
+        char dbg_rf[256]; wsprintfA(dbg_rf, "RaceFiles path='%s'", g_raceFilesPath[0] ? g_raceFilesPath : "(empty)");
+        DebugLog(dbg_rf);
     }
+    // RaceFiles.txt: generate defaults if missing, then load
+    {
+        HANDLE hRf = CreateFileA(g_raceFilesPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hRf==INVALID_HANDLE_VALUE) {
+            InitRaceFilesDefaults();
+            GenerateRaceFiles();
+            DebugLog("GenerateRaceFiles done (defaults)");
+        } else CloseHandle(hRf);
+    }
+    LoadRaceFiles();
+    DebugLog("LoadRaceFiles done");
     LoadConfig();
     DebugLog("LoadConfig done");
 
