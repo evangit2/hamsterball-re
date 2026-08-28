@@ -2539,11 +2539,20 @@ static void Feature_SwirlZones(void *board, int level) {
         }
         DebugLog("  [swirl] step3a: calling GfxSetPosition");
         g_GfxSetPosition(gfx, *(float*)((char*)ext + OFF_WHEEL_EMBED_X), *(float*)((char*)ext + OFF_WHEEL_EMBED_Y), *(float*)((char*)ext + OFF_WHEEL_EMBED_Z));
-        DebugLog("  [swirl] step3a: Gfx calls done, vtable render skipped (intermittent crash 0x498D9D)");
-        /* Vtable calls SKIPPED — the mesh's spatial tree data is intermittently
-         * corrupt, causing crash at 0x498D9D (FUN_00498BF0 spatial tree builder).
-         * Sometimes works, sometimes crashes. Need proper mesh registration
-         * via Scene_ResetObjectSlots before re-enabling. */
+        DebugLog("  [swirl] step3a: Gfx calls done, calling render");
+        // Re-enabled after ext-heap fix — heap overflow was corrupting spatial tree at +0x18
+        {
+            DWORD waterRender = *(DWORD*)((char*)ext + UNI_MESH_1);
+            if (waterRender && !IsBadReadPtr((void*)waterRender, 4)) {
+                DWORD *vtbl = *(DWORD**)waterRender;
+                if (vtbl && !IsBadReadPtr(vtbl, 0x60)) {
+                    void (__thiscall *fn16)(DWORD) = (void (__thiscall*)(DWORD))vtbl[0x16];
+                    void (__thiscall *fn15)(DWORD, void*) = (void (__thiscall*)(DWORD,void*))vtbl[0x15];
+                    if (fn16) fn16(waterRender);
+                    if (fn15) fn15(waterRender, timerBuf);
+                }
+            }
+        }
         DebugLog("  [swirl] step3a done");
 
         g_TimerCleanup(timerBuf);
@@ -2571,11 +2580,19 @@ static void Feature_SwirlZones(void *board, int level) {
             *(float *)((char *)ext + OFF_SWIRL_POS_X),
             *(float *)((char *)ext + OFF_SWIRL_POS_Y),
             *(float *)((char *)ext + OFF_SWIRL_POS_Z));
-        DebugLog("  [swirl] step3b: Gfx calls done, vtable render skipped (crashes on Swirl mesh)");
-        /* Vtable calls SKIPPED for secondary mesh — Swirl mesh crashes at 0x456A40.
-         * The WaterWheel (primary) works fine, but the Swirl mesh's vtable[0x54]
-         * call corrupts something, causing Timer_Cleanup to crash.
-         * TODO: investigate why Swirl mesh behaves differently from WaterWheel. */
+        DebugLog("  [swirl] step3b: Gfx calls done, calling render");
+        {
+            DWORD swirlRender = *(DWORD*)((char*)ext + UNI_MESH_7);
+            if (swirlRender && !IsBadReadPtr((void*)swirlRender, 4)) {
+                DWORD *vtbl = *(DWORD**)swirlRender;
+                if (vtbl && !IsBadReadPtr(vtbl, 0x60)) {
+                    void (__thiscall *fn16)(DWORD) = (void (__thiscall*)(DWORD))vtbl[0x16];
+                    void (__thiscall *fn15)(DWORD, void*) = (void (__thiscall*)(DWORD,void*))vtbl[0x15];
+                    if (fn16) fn16(swirlRender);
+                    if (fn15) fn15(swirlRender, timerBuf);
+                }
+            }
+        }
         DebugLog("  [swirl] step3b done");
 
         g_TimerCleanup(timerBuf);
