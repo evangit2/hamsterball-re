@@ -323,10 +323,10 @@ static void* GetBoardExt(void* board) {
             if (!IsBadReadPtr(g_extMap[i].ext, 4)) return g_extMap[i].ext;
         }
     }
-    if (!IsBadReadPtr((char*)board + EXT_PTR, 4)) {
-        void* ext = *(void**)((char*)board + EXT_PTR);
-        if (ext && !IsBadReadPtr(ext, 4)) return ext;
-    }
+    /* NOTE: board+EXT_PTR (0xAB00) is BEYOND vanilla board alloc (~0x4400 for
+     * WarmUp). IsBadReadPtr only checks page writability, NOT allocation
+     * bounds, so reading/writing board+0xAB00 heap-corrupts. g_extMap is the
+     * sole source of truth — no board+EXT_PTR fallback. */
     return NULL;
 }
 static DWORD GetBoardFeat(void* board) {
@@ -361,15 +361,7 @@ static void FreeBoardExt(void* board) {
         g_extMap[i].board=NULL;
         break;
     }
-    if (!IsBadReadPtr((char*)board+EXT_PTR,4)) {
-        void* ext = *(void**)((char*)board+EXT_PTR);
-        if (ext && !IsBadReadPtr(ext,4)) {
-            int already=0;
-            for (i=0;i<MAX_EXT_MAP;i++) if (g_extMap[i].ext==ext) already=1;
-            if (!already) HeapFree(GetProcessHeap(),0,ext);
-        }
-        if (!IsBadWritePtr((char*)board+EXT_PTR,4)) *(void**)((char*)board+EXT_PTR)=NULL;
-    }
+    /* No board+EXT_PTR cleanup — that slot is OOB on small boards and would heap-corrupt. */
 }
 static void* EnsureBoardExt(void* board) {
     void* ext = GetBoardExt(board);
@@ -378,7 +370,7 @@ static void* EnsureBoardExt(void* board) {
     ext = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, extSize);
     if (!ext) return NULL;
     SetBoardExt(board, ext);
-    if (!IsBadWritePtr((char*)board+EXT_PTR,4)) *(void**)((char*)board+EXT_PTR)=ext;
+    /* No board+EXT_PTR mirror — OOB on vanilla boards (~0x4400), heap corrupts. */
     {
         char dbg[128];
         wsprintfA(dbg, "EnsureBoardExt: board=%p ext=%p size=0x%X", board, ext, extSize);
@@ -2547,7 +2539,7 @@ static void Feature_SwirlZones(void *board, int level) {
         if (!IsBadReadPtr(tarList, 0x410)) {
             tarCount = *(int *)(tarList + 1);  /* count at +0x04 */
         }
-        {
+        if (swirlDbg < 3) {
             char dbg[128];
             wsprintfA(dbg, "  [swirl] step1: tarCount=%d tarListOfs=0x%X", tarCount, tarListOfs);
             DebugLog(dbg);
@@ -2556,7 +2548,7 @@ static void Feature_SwirlZones(void *board, int level) {
             int rngResult = -1;
             if (g_RNG) {
                 rngResult = RNG_call((void *)0x4F7360, 0, 0x14, 0);
-                {
+                if (swirlDbg < 3) {
                     char dbg2[128];
                     wsprintfA(dbg2, "  [swirl] step1: rngResult=%d (need 10)", rngResult);
                     DebugLog(dbg2);
@@ -2564,36 +2556,36 @@ static void Feature_SwirlZones(void *board, int level) {
                 if (rngResult == 10) {
                     void *tar = g_operatorNew(0x1C);
                     if (tar) {
-                        DebugLog("  [swirl] step1: calling CreateTarBubble");
+                        if (swirlDbg < 3) DebugLog("  [swirl] step1: calling CreateTarBubble");
                         g_CreateTarBubble(tar, app, (int)((char *)ext + tarListOfs));
                         g_AthenaListAppend((void *)((char *)board + UNI_PARTICLE_LIST), (int)tar);
-                        DebugLog("  [swirl] step1: CreateTarBubble done");
+                        if (swirlDbg < 3) DebugLog("  [swirl] step1: CreateTarBubble done");
                     }
                 }
             }
         }
     }
-    DebugLog("  [swirl] step1 done");
+    if (swirlDbg < 3) DebugLog("  [swirl] step1 done");
 
     /* Swirl zone processing: iterate ball list, check proximity to swirl zones
      * Ball list at board+0x29D4 (AthenaList), array at board+0x2DE0 */
-    DebugLog("  [swirl] step2: ball list iteration");
-    DebugLog("  [swirl] step2a: get ball iterator");
+    if (swirlDbg < 3) DebugLog("  [swirl] step2: ball list iteration");
+    if (swirlDbg < 3) DebugLog("  [swirl] step2a: get ball iterator");
     int ballIter = g_AthenaListGetIterator((void *)((char *)board + UNI_BALL_LIST));
-    DebugLog("  [swirl] step2a done");
+    if (swirlDbg < 3) DebugLog("  [swirl] step2a done");
     *(int *)((char *)board + UNI_BALL_ITER + ballIter * 4) = 0;
-    DebugLog("  [swirl] step2b: read ball count");
+    if (swirlDbg < 3) DebugLog("  [swirl] step2b: read ball count");
     int ballCount = *(int *)((char *)board + UNI_BALL_COUNT);
-    DebugLog("  [swirl] step2b done");
+    if (swirlDbg < 3) DebugLog("  [swirl] step2b done");
     int ballIdx = 0;
     if (ballCount > 0) {
-        DebugLog("  [swirl] step2c: read ball array");
+        if (swirlDbg < 3) DebugLog("  [swirl] step2c: read ball array");
         DWORD ballArrayPtr = *(DWORD *)((char *)board + UNI_BALL_ARRAY);
         if (ballArrayPtr && !IsBadReadPtr((void *)ballArrayPtr, 4)) {
             ballIdx = *(int *)ballArrayPtr;
             *(int *)((char *)board + UNI_BALL_ITER + ballIter * 4) = 1;
         }
-        DebugLog("  [swirl] step2c done");
+        if (swirlDbg < 3) DebugLog("  [swirl] step2c done");
     }
 
     while (ballIdx) {
@@ -2726,10 +2718,10 @@ static void Feature_SwirlZones(void *board, int level) {
         ballIdx = *(int *)(ballArr + nextBall * 4);
         *(int *)((char *)board + UNI_BALL_ITER + ballIter * 4) = nextBall + 1;
     }
-    DebugLog("  [swirl] step2 done");
+    if (swirlDbg < 3) DebugLog("  [swirl] step2 done");
 
     /* Dizzy-only: mesh rotation (Master doesn't rotate meshes) */
-    DebugLog("  [swirl] step3: mesh rotation");
+    if (swirlDbg < 3) DebugLog("  [swirl] step3: mesh rotation");
     if (level != 14 && g_TimerInit && g_TimerCleanup && g_GfxScaleY &&
         g_GfxSetPosition && g_Matrix44Zero && app) {
         void *gfx = *(void **)(app + 0x174);
@@ -2738,12 +2730,12 @@ static void Feature_SwirlZones(void *board, int level) {
         g_TimerInit(timerBuf);
 
         /* Primary swirl mesh rotation (Gfx_ScaleY) */
-        DebugLog("  [swirl] step3a: primary mesh rotation");
+        if (swirlDbg < 3) DebugLog("  [swirl] step3a: primary mesh rotation");
         float angle1 = *(float*)((char*)ext + OFF_SWIRL_ANGLE1) - 0.5f;
         *(float*)((char*)ext + OFF_SWIRL_SPEED)=0.5f; *(float*)((char*)ext + OFF_SWIRL_ANGLE1)=angle1;
-        DebugLog("  [swirl] step3a: calling Matrix44Zero");
+        if (swirlDbg < 3) DebugLog("  [swirl] step3a: calling Matrix44Zero");
         g_Matrix44Zero((int *)timerBuf);
-        DebugLog("  [swirl] step3a: calling GfxScaleY");
+        if (swirlDbg < 3) DebugLog("  [swirl] step3a: calling GfxScaleY");
         {
             float rx = *(float*)((char*)ext + OFF_WATER_ROT_X);
             float ry = *(float*)((char*)ext + OFF_WATER_ROT_Y);
@@ -2754,9 +2746,9 @@ static void Feature_SwirlZones(void *board, int level) {
                 if (rz!=0) g_GfxScaleZ(gfx, angle1 * rz);
             } else g_GfxScaleY(gfx, angle1);
         }
-        DebugLog("  [swirl] step3a: calling GfxSetPosition");
+        if (swirlDbg < 3) DebugLog("  [swirl] step3a: calling GfxSetPosition");
         g_GfxSetPosition(gfx, *(float*)((char*)ext + OFF_WHEEL_EMBED_X), *(float*)((char*)ext + OFF_WHEEL_EMBED_Y), *(float*)((char*)ext + OFF_WHEEL_EMBED_Z));
-        DebugLog("  [swirl] step3a: Gfx calls done, calling render");
+        if (swirlDbg < 3) DebugLog("  [swirl] step3a: Gfx calls done, calling render");
         // Re-enabled after ext-heap fix — heap overflow was corrupting spatial tree at +0x18
         {
             DWORD waterRender = *(DWORD*)((char*)ext + UNI_MESH_1);
@@ -2770,7 +2762,7 @@ static void Feature_SwirlZones(void *board, int level) {
                 }
             }
         }
-        DebugLog("  [swirl] step3a done");
+        if (swirlDbg < 3) DebugLog("  [swirl] step3a done");
 
         g_TimerCleanup(timerBuf);
         }
@@ -2782,22 +2774,22 @@ static void Feature_SwirlZones(void *board, int level) {
         g_GfxSetPosition && g_Matrix44Zero && app) {
         void *gfx = *(void **)(app + 0x174);
         if (gfx) {
-        DebugLog("  [swirl] step3b: secondary mesh rotation");
+        if (swirlDbg < 3) DebugLog("  [swirl] step3b: secondary mesh rotation");
         char timerBuf[68];
         g_TimerInit(timerBuf);
 
         float swirlSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 0.5f;
         *(float*)((char*)ext + OFF_SWIRL_ANGLE2) = *(float*)((char*)ext + OFF_SWIRL_ANGLE2) + swirlSpeed;
-        DebugLog("  [swirl] step3b: calling Matrix44Zero");
+        if (swirlDbg < 3) DebugLog("  [swirl] step3b: calling Matrix44Zero");
         g_Matrix44Zero((int *)timerBuf);
-        DebugLog("  [swirl] step3b: calling GfxScaleX");
+        if (swirlDbg < 3) DebugLog("  [swirl] step3b: calling GfxScaleX");
         g_GfxScaleX(gfx, *(float *)((char *)ext + OFF_SWIRL_ANGLE2));
-        DebugLog("  [swirl] step3b: calling GfxSetPosition");
+        if (swirlDbg < 3) DebugLog("  [swirl] step3b: calling GfxSetPosition");
         g_GfxSetPosition(gfx,
             *(float *)((char *)ext + OFF_SWIRL_POS_X),
             *(float *)((char *)ext + OFF_SWIRL_POS_Y),
             *(float *)((char *)ext + OFF_SWIRL_POS_Z));
-        DebugLog("  [swirl] step3b: Gfx calls done, calling render");
+        if (swirlDbg < 3) DebugLog("  [swirl] step3b: Gfx calls done, calling render");
         {
             DWORD swirlRender = *(DWORD*)((char*)ext + UNI_MESH_7);
             if (swirlRender && !IsBadReadPtr((void*)swirlRender, 4)) {
@@ -2810,13 +2802,14 @@ static void Feature_SwirlZones(void *board, int level) {
                 }
             }
         }
-        DebugLog("  [swirl] step3b done");
+        if (swirlDbg < 3) DebugLog("  [swirl] step3b done");
 
         g_TimerCleanup(timerBuf);
         }
-        DebugLog("  [swirl] step3b done");
+        if (swirlDbg < 3) DebugLog("  [swirl] step3b done");
     }
-    DebugLog("  [swirl] Feature_SwirlZones complete");
+    if (swirlDbg < 3) DebugLog("  [swirl] Feature_SwirlZones complete");
+    swirlDbg++;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -6326,24 +6319,19 @@ static void PatchAllocSizes(void) {
 static unsigned char* g_advanceTrampoline = NULL;
 static void (__stdcall *g_origAdvanceRace)(DWORD);
 static void __stdcall Hook_AdvanceRace(DWORD a1) {
-    // Fix leak: Tournament_AdvanceRace destroys previous board. Free ALL tracked exts
-    // before advancing, not just those whose board is already unreadable. Also clear
-    // any board+EXT_PTR slot if still readable to avoid dangling pointer.
+    /* Call original first — it frees the old board. Then sweep g_extMap for
+     * stale boards (IsBadReadPtr) and free their ext heaps. This avoids needing
+     * to guess which board is "current" before the call and avoids OOB
+     * board+EXT_PTR accesses. */
+    if (g_origAdvanceRace) g_origAdvanceRace(a1);
     int i;
     for (i=0;i<MAX_EXT_MAP;i++) if (g_extMap[i].ext) {
         void* b = g_extMap[i].board;
-        void* e = g_extMap[i].ext;
-        if (b && !IsBadReadPtr(b, 4)) {
-            // Clear board+EXT_PTR slot if it points to this ext
-            if (!IsBadReadPtr((char*)b+EXT_PTR, 4)) {
-                void* slot = *(void**)((char*)b+EXT_PTR);
-                if (slot==e && !IsBadWritePtr((char*)b+EXT_PTR,4)) *(void**)((char*)b+EXT_PTR)=NULL;
-            }
+        if (b && IsBadReadPtr(b, 4)) {
+            HeapFree(GetProcessHeap(),0,g_extMap[i].ext);
+            g_extMap[i].ext=NULL; g_extMap[i].feat=0; g_extMap[i].board=NULL;
         }
-        HeapFree(GetProcessHeap(),0,e);
-        g_extMap[i].ext=NULL; g_extMap[i].feat=0; g_extMap[i].board=NULL;
     }
-    if (g_origAdvanceRace) g_origAdvanceRace(a1);
 }
 static void InstallExtFreeHook(void) {
     DWORD targetAddr = g_moduleBase + 0x00027080;
