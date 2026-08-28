@@ -3540,6 +3540,44 @@ void __fastcall UniversalRaceState(void *board) {
  * can be used on any other level via LevelData.txt mesh configuration.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+static void* S1EnsureMeshWorld(void* board, void* ext, DWORD offset, const char* path) {
+    void* cur = *(void**)((char*)ext + offset);
+    if (cur) return cur;
+    DWORD app = *(DWORD*)((char*)board + BOARD_APP_PTR);
+    if (!app || IsBadReadPtr((void*)app, 0x200)) return NULL;
+    void* gfx = *(void**)((char*)app + 0x174);
+    if (!gfx || !g_operatorNew || !g_LevelMeshWorldCtor) return NULL;
+    void* mem = g_operatorNew(0x10D0);
+    if (!mem) return NULL;
+    void* mw = g_LevelMeshWorldCtor(mem, gfx, path);
+    if (mw) *(void**)((char*)ext + offset) = mw;
+    return mw;
+}
+static void* S1EnsureRender(void* board, void* ext, DWORD renderOff, DWORD meshOff) {
+    void* cur = *(void**)((char*)ext + renderOff);
+    if (cur) return cur;
+    void* mesh = *(void**)((char*)ext + meshOff);
+    if (!mesh || !g_operatorNew || !g_LevelRenderCtor) return NULL;
+    void* mem = g_operatorNew(0x10D0);
+    if (!mem) return NULL;
+    void* robj = g_LevelRenderCtor(mem, mesh);
+    if (robj) *(void**)((char*)ext + renderOff) = robj;
+    return robj;
+}
+static void* S1EnsureMeshNode(void* board, void* ext, DWORD offset, const char* path) {
+    void* cur = *(void**)((char*)ext + offset);
+    if (cur) return cur;
+    DWORD app = *(DWORD*)((char*)board + BOARD_APP_PTR);
+    if (!app || IsBadReadPtr((void*)app, 0x200)) return NULL;
+    void* gfx = *(void**)((char*)app + 0x174);
+    if (!gfx || !g_operatorNew || !g_MeshNodeCtor) return NULL;
+    void* mem = g_operatorNew(0x18);
+    if (!mem) return NULL;
+    void* node = g_MeshNodeCtor(mem, gfx, path);
+    if (node) *(void**)((char*)ext + offset) = node;
+    return node;
+}
+
 void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out1, void *out2, int *s1data) {
     if (!name || !out1 || !out2 || !s1data) return;
     int level = GetCurrentLevel(board);
@@ -3570,8 +3608,11 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     int renderOut = 0;
 
     /* ── TIPPER (Dizzy) ── */
+    // S1 ensure for swapped files
+
     if (my_strnicmp(name, "TIPPER", 6) == 0 && difficulty != 0) {
-        void* ext = EnsureBoardExt(board);
+        S1EnsureMeshWorld(board, ext, UNI_TIPPER_MESH, "Levels\\Level3-Tipper");
+        S1EnsureRender(board, ext, UNI_TIPPER_RENDER, UNI_TIPPER_MESH);
         int meshOff = UNI_TIPPER_MESH;
         int renderOff = UNI_TIPPER_RENDER;
         int meshVal = *(int*)((char*)board + meshOff);
@@ -3609,6 +3650,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── WATERWHEEL (Dizzy) ── */
     if (my_strnicmp(name, "WATERWHEEL", 10) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_MESH_0, "Levels\\Level3-WaterWheel");
+        S1EnsureRender(board, ext, UNI_MESH_1, UNI_MESH_0);
         void* ext = EnsureBoardExt(board);
         if (ext) {
             *(void**)((char*)ext + OFF_WATER_MESH) = *(void**)((char *)ext + UNI_MESH_0);
@@ -3646,6 +3689,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── SWIRL (Dizzy) ── */
     if (my_strnicmp(name, "SWIRL", 5) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_MESH_6, "Levels\\Level3-Swirl");
+        S1EnsureRender(board, ext, UNI_MESH_7, UNI_MESH_6);
         /* Original: obj = board+0x4BC4 (Swirl mesh), renderOut = board+0x4BC8 (render obj)
          * Mod: Swirl mesh at UNI_MESH_6 (0x85F8), render at UNI_MESH_7 (0x85FC) */
         obj = *(void **)((char *)ext + UNI_MESH_6);
@@ -3662,6 +3707,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── GLUEBIE (Dizzy) ── */
     if (my_strnicmp(name, "GLUEBIE", 7) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_GLUEBIE_MESH, "Levels\\Level3-Gluebie");
         if (difficulty == 0) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
         int meshOff = UNI_GLUEBIE_MESH;
         int meshVal = *(int*)((char*)board + meshOff);
@@ -3682,6 +3728,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── CATAPULT (Tower) ── */
     if (my_strnicmp(name, "CATAPULT", 8) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level4-Catapult");
         int meshOff = UNI_BONK_STORE;
         int meshVal = *(int*)((char*)board + meshOff);
         if (!meshVal) { DebugLog("CATAPULT: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -3738,6 +3785,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── WINDMILL (Tower) ── */
     if (my_strnicmp(name, "WINDMILL", 8) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_MESH_4, "Levels\\Level4-Windmill");
         int mesh = *(int *)((char *)ext + UNI_MESH_4);
         if (!mesh) { DebugLog("WINDMILL: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10D0);
@@ -3884,9 +3932,12 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     }
 
     /* ── BRIDGE (Expert, Intermediate, Master) ──
+    // S1 ensure bridge mesh for swapped files
      * Expert: rotating spinner bridge
      * Intermediate/Master: position-only bridge (breaking behavior via BBRIDGE S1 objects) */
     if (my_strnicmp(name, "BRIDGE", 6) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level2-Bridge");
+        S1EnsureRender(board, ext, UNI_SAW1_OBJ, UNI_BONK_STORE);
         if (level == 8) {
             /* Expert: Spinner_Level_ctor */
             void *mem = g_operatorNew(0x10FC);
