@@ -154,58 +154,62 @@ void DebugLog(const char *msg);
 #define EXT_PTR   0xAB00
 #define EXT_SIZE  0xC000
 
-/* Fixed internal OFF_* layout inside ext — total <0x3000, compact for v1 */
-#define OFF_TIPPER_MESH     0x000
-#define OFF_TIPPER_RENDER   0x004
-#define OFF_WATER_MESH      0x008  /* UNI_MESH_0 */
-#define OFF_WATER_RENDER    0x00C  /* UNI_MESH_1 */
-#define OFF_WATER_ROT_X     0x010
-#define OFF_WATER_ROT_Y     0x014
-#define OFF_WATER_ROT_Z     0x018
-#define OFF_SWIRL_MESH      0x01C  /* UNI_MESH_6 */
-#define OFF_SWIRL_RENDER    0x020  /* UNI_MESH_7 */
-#define OFF_SWIRL_POS_X     0x024  /* UNI_MESH_15 */
-#define OFF_SWIRL_POS_Y     0x028  /* UNI_MESH_12 */
-#define OFF_SWIRL_POS_Z     0x02C  /* UNI_MESH_13 */
-#define OFF_SWIRL_ANGLE1    0x030  /* UNI_MESH_2 */
-#define OFF_SWIRL_SPEED     0x034  /* UNI_MESH_4 */
-#define OFF_SWIRL_ANGLE2    0x038  /* UNI_MESH_5 */
-#define OFF_WHEEL_EMBED_X   0x03C  /* UNI_WHEELEMBED_X */
-#define OFF_WHEEL_EMBED_Y   0x040
-#define OFF_WHEEL_EMBED_Z   0x044
-#define OFF_WHEEL_EMBED_VX  0x048
-#define OFF_WHEEL_EMBED_VY  0x04C
-#define OFF_WHEEL_EMBED_VZ  0x050
-#define OFF_BONK_STORE      0x054  /* UNI_BONK_STORE */
-#define OFF_BELL_OBJ        0x058
-#define OFF_SAW1_OBJ        0x05C
-#define OFF_SAW2_OBJ        0x060
-#define OFF_SAW2_ALERT_OBJ  0x064
-#define OFF_BRIDGE_ANGLE    0x068  /* UNI_BRIDGE_ANGLE */
-#define OFF_BRIDGE_STATE    0x06C
-#define OFF_BRIDGE_COUNTER  0x070
-#define OFF_WINDMILL_X      0x074  /* UNI_WINDMILL_X */
-#define OFF_WINDMILL_Y      0x078
-#define OFF_WINDMILL_Z      0x07C
-#define OFF_WINDMILL_ANGLE  0x080
-#define OFF_WINDMILL_SPEED  0x084
-#define OFF_WINDMILL_STATE  0x088
-#define OFF_WINDMILL_COUNTER 0x08C
-#define OFF_WINDMILL_DECAY  0x090
-#define OFF_BITE_STATE      0x094
-#define OFF_BITE_SPEED      0x098
-#define OFF_BUMPER_LIT      0x0A0  /* 8*4 = 0x20 bytes: 0x0A0-0x0BF */
-#define OFF_SKY_POPCYL_BASE 0x0C0  /* 16*4 = 0x40 bytes: 0x0C0-0x0FF */
-#define OFF_SKY_TIMER       0x100
-#define OFF_EHVECTOR        0x200  /* 8*0x418 = 0x20C0: 0x200-0x22BF */
-#define OFF_LIST_0          0x2400 /* 2-3 AthenaLists within 0x3000 (0x2400-0x2C1F) */
-#define OFF_LIST_1          0x2810
-#define OFF_LIST_2          0x2C20
-#define OFF_LIST_3          OFF_LIST_0  /* alias: reuse for TARBUBBLE if needed */
-#define OFF_SWIRL_LIST      OFF_LIST_0
-#define OFF_TARBUBBLE_LIST  OFF_LIST_1
-#define OFF_CATAPULT_LIST   OFF_LIST_2
-#define OFF_MACE_LIST       OFF_LIST_2  /* share */
+/* OFF_* are now aliases to UNI_* — one map, no wasted compact region.
+ * Previously OFF_* used small 0x000-0x2C20 offsets inside ext, while UNI_*
+ * used legacy 0x6500-0xA880 offsets. Two labels for same drawer caused
+ * writer/reader mismatches (e.g. WATER_ROT written to 0x010 but bridge reads
+ * 0x8634). Now every OFF_* == UNI_* so ext+OFF_* == ext+UNI_*. */
+#define OFF_TIPPER_MESH     UNI_TIPPER_MESH
+#define OFF_TIPPER_RENDER   UNI_TIPPER_RENDER
+#define OFF_WATER_MESH      UNI_MESH_0
+#define OFF_WATER_RENDER    UNI_MESH_1
+#define OFF_WATER_ROT_X     UNI_WATER_ROT_X
+#define OFF_WATER_ROT_Y     UNI_WATER_ROT_Y
+#define OFF_WATER_ROT_Z     UNI_WATER_ROT_Z
+#define OFF_SWIRL_MESH      UNI_MESH_6
+#define OFF_SWIRL_RENDER    UNI_MESH_7
+#define OFF_SWIRL_POS_X     UNI_MESH_15
+#define OFF_SWIRL_POS_Y     UNI_MESH_12
+#define OFF_SWIRL_POS_Z     UNI_MESH_13
+#define OFF_SWIRL_ANGLE1    UNI_MESH_2
+#define OFF_SWIRL_SPEED     UNI_MESH_4
+#define OFF_SWIRL_ANGLE2    UNI_MESH_5
+#define OFF_WHEEL_EMBED_X   UNI_WHEELEMBED_X
+#define OFF_WHEEL_EMBED_Y   UNI_WHEELEMBED_Y
+#define OFF_WHEEL_EMBED_Z   UNI_WHEELEMBED_Z
+#define OFF_WHEEL_EMBED_VX  UNI_WHEELEMBED_VX
+#define OFF_WHEEL_EMBED_VY  UNI_WHEELEMBED_VY
+#define OFF_WHEEL_EMBED_VZ  UNI_WHEELEMBED_VZ
+#define OFF_BONK_STORE      UNI_BONK_STORE
+#define OFF_BELL_OBJ        UNI_BELL_OBJ
+#define OFF_SAW1_OBJ        UNI_SAW1_OBJ
+#define OFF_SAW2_OBJ        UNI_SAW2_OBJ
+#define OFF_SAW2_ALERT_OBJ  UNI_SAW2_ALERT_OBJ
+#define OFF_BRIDGE_ANGLE    UNI_BRIDGE_ANGLE
+#define OFF_BRIDGE_STATE    UNI_BRIDGE_STATE
+#define OFF_BRIDGE_COUNTER  UNI_BRIDGE_COUNTER
+#define OFF_WINDMILL_X      UNI_WINDMILL_X
+#define OFF_WINDMILL_Y      UNI_WINDMILL_Y
+#define OFF_WINDMILL_Z      UNI_WINDMILL_Z
+#define OFF_WINDMILL_ANGLE  UNI_WINDMILL_ANGLE
+#define OFF_WINDMILL_SPEED  UNI_WINDMILL_SPEED
+#define OFF_WINDMILL_STATE  UNI_WINDMILL_STATE
+#define OFF_WINDMILL_COUNTER UNI_WINDMILL_COUNTER
+#define OFF_WINDMILL_DECAY  UNI_WINDMILL_DECAY
+#define OFF_BITE_STATE      UNI_BITE_STATE
+#define OFF_BITE_SPEED      UNI_BITE_SPEED
+#define OFF_BUMPER_LIT      UNI_BUMPER_LIT
+#define OFF_SKY_POPCYL_BASE UNI_SKY_POPCYL_BASE
+#define OFF_SKY_TIMER       UNI_SKY_TIMER
+#define OFF_EHVECTOR        UNI_EHVECTOR
+#define OFF_LIST_0          UNI_LIST_0
+#define OFF_LIST_1          UNI_LIST_1
+#define OFF_LIST_2          UNI_LIST_2
+#define OFF_LIST_3          UNI_LIST_3
+#define OFF_SWIRL_LIST      UNI_LIST_0
+#define OFF_TARBUBBLE_LIST  UNI_LIST_1
+#define OFF_CATAPULT_LIST   UNI_LIST_2
+#define OFF_MACE_LIST       UNI_LIST_2  /* share */
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -730,6 +734,9 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_LOOPER_MESH      0x86D8  /* Looper mesh (Impossible) */
 #define UNI_GEAR_MESH        0x86DC  /* Gear mesh (Impossible) */
 #define UNI_BIGGEAR_MESH     0x86E0  /* BigGear mesh (Impossible) */
+#define UNI_WATER_ROT_X      0x86E4  /* WaterWheel base rot X (fallback file) */
+#define UNI_WATER_ROT_Y      0x86E8  /* WaterWheel base rot Y */
+#define UNI_WATER_ROT_Z      0x86EC  /* WaterWheel base rot Z */
 
 /* Sky popcyl array (16 × 4 = 64 bytes) */
 #define UNI_SKY_POPCYL_BASE 0x8700
@@ -3667,33 +3674,35 @@ void __fastcall UniversalBoardUpdate(void *board) {
         if (!features) return;
     }
 
+    static int featDbg = 0;
     /* Bridge animation (Intermediate + Master bridge) */
     if (features & FEAT_BRIDGE_ANIM) {
-        DebugLog("  [update] Feature_BridgeAnimation...");
+        if (featDbg < 3) DebugLog("  [update] Feature_BridgeAnimation...");
         Feature_BridgeAnimation(board, level);
-        DebugLog("  [update] Feature_BridgeAnimation done");
+        if (featDbg < 3) DebugLog("  [update] Feature_BridgeAnimation done");
     }
 
     /* Swirl zones (Dizzy + Master) */
     if (features & FEAT_SWIRL) {
-        DebugLog("  [update] Feature_SwirlZones...");
+        if (featDbg < 3) DebugLog("  [update] Feature_SwirlZones...");
         Feature_SwirlZones(board, level);
-        DebugLog("  [update] Feature_SwirlZones done");
+        if (featDbg < 3) DebugLog("  [update] Feature_SwirlZones done");
     }
 
     /* Windmill (Tower) */
     if (features & FEAT_WINDMILL) {
-        DebugLog("  [update] Feature_Windmill...");
+        if (featDbg < 3) DebugLog("  [update] Feature_Windmill...");
         Feature_Windmill(board, level);
-        DebugLog("  [update] Feature_Windmill done");
+        if (featDbg < 3) DebugLog("  [update] Feature_Windmill done");
     }
 
     /* BadBall spawner (Odd) */
     if (features & FEAT_BADBALL) {
-        DebugLog("  [update] Feature_BadBallSpawner...");
+        if (featDbg < 3) DebugLog("  [update] Feature_BadBallSpawner...");
         Feature_BadBallSpawner(board, level);
-        DebugLog("  [update] Feature_BadBallSpawner done");
+        if (featDbg < 3) DebugLog("  [update] Feature_BadBallSpawner done");
     }
+    if (featDbg < 3) featDbg++;
 
     /* Note: Bumper decay, neon camera, and sky popcylinder are handled in
        UniversalRaceState (slot 19), NOT here. In the original game, these
@@ -6339,17 +6348,32 @@ static void PatchAllocSizes(void) {
 static unsigned char* g_advanceTrampoline = NULL;
 static void (__stdcall *g_origAdvanceRace)(DWORD);
 static void __stdcall Hook_AdvanceRace(DWORD a1) {
-    /* Call original first — it frees the old board. Then sweep g_extMap for
-     * stale boards (IsBadReadPtr) and free their ext heaps. This avoids needing
-     * to guess which board is "current" before the call and avoids OOB
-     * board+EXT_PTR accesses. */
-    if (g_origAdvanceRace) g_origAdvanceRace(a1);
-    int i;
-    for (i=0;i<MAX_EXT_MAP;i++) if (g_extMap[i].ext) {
-        void* b = g_extMap[i].board;
-        if (b && IsBadReadPtr(b, 4)) {
+    /* Free the outgoing board's ext *before* the call (App+0x178 is the cur board)
+     * and sweep stales *after* the call. Covers both reuse and free cases.
+     * App pointer is at absolute 0x005341E0 (RVA 0x1341E0 from g_moduleBase). */
+    void* curBoard = NULL;
+    DWORD appPtrAddr = g_moduleBase ? g_moduleBase + 0x1341E0 : 0x005341E0;
+    if (!IsBadReadPtr((void*)appPtrAddr, 4)) {
+        DWORD app = *(DWORD*)appPtrAddr;
+        if (app && !IsBadReadPtr((void*)app, 0x180)) {
+            curBoard = *(void**)((char*)app + 0x178);
+        }
+    }
+    if (curBoard) {
+        int i;
+        for (i=0;i<MAX_EXT_MAP;i++) if (g_extMap[i].board == curBoard && g_extMap[i].ext) {
             HeapFree(GetProcessHeap(),0,g_extMap[i].ext);
             g_extMap[i].ext=NULL; g_extMap[i].feat=0; g_extMap[i].board=NULL;
+            break;
+        }
+    }
+    if (g_origAdvanceRace) g_origAdvanceRace(a1);
+    int j;
+    for (j=0;j<MAX_EXT_MAP;j++) if (g_extMap[j].ext) {
+        void* b = g_extMap[j].board;
+        if (b && IsBadReadPtr(b, 4)) {
+            HeapFree(GetProcessHeap(),0,g_extMap[j].ext);
+            g_extMap[j].ext=NULL; g_extMap[j].feat=0; g_extMap[j].board=NULL;
         }
     }
 }
@@ -6420,8 +6444,10 @@ static void InstallHook(void) {
 
 static HANDLE (WINAPI *g_origCreateFileA)(LPCSTR,DWORD,DWORD,LPSECURITY_ATTRIBUTES,DWORD,DWORD,HANDLE) = NULL;
 static HANDLE (WINAPI *g_origCreateFileW)(LPCWSTR,DWORD,DWORD,LPSECURITY_ATTRIBUTES,DWORD,DWORD,HANDLE) = NULL;
+static volatile int g_inFileHook = 0;
 
 static HANDLE WINAPI Hook_CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) {
+    if (g_inFileHook) return g_origCreateFileA(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     HANDLE h = g_origCreateFileA(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     if (h != INVALID_HANDLE_VALUE) return h;
     DWORD err = GetLastError();
@@ -6446,16 +6472,18 @@ static HANDLE WINAPI Hook_CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, 
     /* For MESHWORLD sub-files the game may omit extension; trial will also omit — still valid */
     /* Avoid falling back for our own log/config files */
     if (my_strnicmp(base, "lfdebug", 7)==0 || my_strnicmp(base, "LevelFeatures", 13)==0 || my_strnicmp(base, "RaceFiles", 9)==0) return h;
+    g_inFileHook = 1;
     HANDLE h2 = g_origCreateFileA(trial, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     if (h2 != INVALID_HANDLE_VALUE) {
         char dbg[512]; wsprintfA(dbg, "Fallback: '%s' -> '%s' (OK)", lpFileName, trial);
         DebugLog(dbg);
+        g_inFileHook = 0;
         return h2;
     }
     /* Also try without directory prefix duplication: if original was textures\\x, fallback already strips it */
     /* If still not found and original had no extension, try adding .MESHWORLD */
     if (!ext) {
-        if (dirLen + baseLen + 10 >= MAX_PATH) return h;
+        if (dirLen + baseLen + 10 >= MAX_PATH) { g_inFileHook = 0; return h; }
         strcpy(trial, g_levelDir);
         strcat(trial, base);
         strcat(trial, ".MESHWORLD");
@@ -6463,13 +6491,16 @@ static HANDLE WINAPI Hook_CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, 
         if (h3 != INVALID_HANDLE_VALUE) {
             char dbg2[512]; wsprintfA(dbg2, "Fallback (+.MESHWORLD): '%s' -> '%s' (OK)", lpFileName, trial);
             DebugLog(dbg2);
+            g_inFileHook = 0;
             return h3;
         }
     }
+    g_inFileHook = 0;
     return h;
 }
 
 static HANDLE WINAPI Hook_CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) {
+    if (g_inFileHook) return g_origCreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     HANDLE h = g_origCreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     if (h != INVALID_HANDLE_VALUE) return h;
     DWORD err = GetLastError();
@@ -6490,13 +6521,16 @@ static HANDLE WINAPI Hook_CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess,
     strcat(trialAnsi, base);
     if (my_stricmp(trialAnsi, ansi)==0) return h;
     if (my_strnicmp(base, "lfdebug", 7)==0) return h;
+    g_inFileHook = 1;
     WCHAR trialW[MAX_PATH]; MultiByteToWideChar(CP_ACP, 0, trialAnsi, -1, trialW, MAX_PATH);
     HANDLE h2 = g_origCreateFileW(trialW, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     if (h2 != INVALID_HANDLE_VALUE) {
         char dbg[512]; wsprintfA(dbg, "FallbackW: '%s' -> '%s' (OK)", ansi, trialAnsi);
         DebugLog(dbg);
+        g_inFileHook = 0;
         return h2;
     }
+    g_inFileHook = 0;
     return h;
 }
 
@@ -6519,9 +6553,11 @@ static void InstallFileFallbackHook(void) {
         if (my_stricmp(dllName, "KERNEL32.dll") != 0 && my_stricmp(dllName, "kernel32.dll") != 0) continue;
         PIMAGE_THUNK_DATA thunk = (PIMAGE_THUNK_DATA)((char*)exe + imp->FirstThunk);
         PIMAGE_THUNK_DATA origThunk = (PIMAGE_THUNK_DATA)((char*)exe + imp->OriginalFirstThunk);
+        int useOrig = (imp->OriginalFirstThunk != 0);
         for (; thunk->u1.Function; thunk++, origThunk++) {
-            if (IMAGE_SNAP_BY_ORDINAL(origThunk->u1.Ordinal)) continue;
-            PIMAGE_IMPORT_BY_NAME byName = (PIMAGE_IMPORT_BY_NAME)((char*)exe + origThunk->u1.AddressOfData);
+            PIMAGE_THUNK_DATA nameThunk = useOrig ? origThunk : thunk;
+            if (IMAGE_SNAP_BY_ORDINAL(nameThunk->u1.Ordinal)) continue;
+            PIMAGE_IMPORT_BY_NAME byName = (PIMAGE_IMPORT_BY_NAME)((char*)exe + nameThunk->u1.AddressOfData);
             if (IsBadReadPtr(byName, 4)) continue;
             char *funcName = (char*)byName->Name;
             if (!funcName || IsBadReadPtr(funcName, 4)) continue;
@@ -6658,7 +6694,7 @@ static void InstallVtablePatches(void) {
 
 static DWORD WINAPI PatchThread(LPVOID param) {
     DebugLog("=== PatchThread started ===");
-    Sleep(2000);
+    Sleep(500); // reduced from 2000ms — faster hook install avoids first-race vanilla window
     DebugLog("Sleep done, resolving module base");
     g_moduleBase = (DWORD)GetModuleHandleA("Hamsterball.exe");
     if (!g_moduleBase) g_moduleBase = 0x00400000;
