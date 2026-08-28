@@ -5712,6 +5712,53 @@ static void UniversalPostSetup(void *board) {
  * Universal Scene Constructor — REPLACES vtable[0x48] (Scene_LoadLevel*)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* S1-driven auto-enable — makes any MESHWORLD file-swappable.
+ * Scans meshWorld+0x480 S1 refs after Level_MeshWorldCtor and OrBoardFeat for
+ * bridge/swirl/windmill so a Dizzy MESHWORLD dropped into WarmUp slot
+ * auto-enables its features without LevelData.txt edit. Heap size is
+ * fixed 0xC000, so no dynamic sizing needed — just feat bits. */
+static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
+    if (!board || !ext || !meshWorld) return;
+    if (IsBadReadPtr(meshWorld, 0x500)) return;
+    DWORD objDb = *(DWORD *)((char *)meshWorld + 0x480);
+    if (!objDb || IsBadReadPtr((void *)objDb, 0x20)) return;
+    if (!g_AthenaListGetIterator || !g_AthenaListGetSize) return;
+    int iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
+    if (IsBadWritePtr((void *)(objDb + 0x89C + iter*4), 4)) return;
+    *(DWORD *)(objDb + 0x89C + iter*4) = 0;
+    int count = *(int *)(objDb + 0x898);
+    if (count <=0 || count>4096) return;
+    DWORD *array = *(DWORD **)(objDb + 0xCA0);
+    if (!array || IsBadReadPtr(array, count*4)) return;
+    *(DWORD *)(objDb + 0x89C + iter*4) = 1;
+    int idx=0;
+    // Peek first few entries to decide features; scan up to 64 for safety
+    int scan = count>64?64:count;
+    for (idx=0; idx<scan; idx++) {
+        DWORD *obj = (DWORD *)array[idx];
+        if (!obj || IsBadReadPtr(obj, 4)) continue;
+        char *name = *(char **)obj;
+        if (!name || IsBadReadPtr(name, 4)) continue;
+        // name is S1 ref string, e.g. "Levels\\Level3-WaterWheel" or "BRIDGE" etc.
+        // Use prefix match
+        if (my_strnicmp(name, "BRIDGE", 6)==0) {
+            OrBoardFeat(board, FEAT_BRIDGE_ANIM);
+        }
+        if (my_strnicmp(name, "WATERWHEEL", 10)==0 || my_strnicmp(name, "WHEELEMBED", 10)==0 || my_strnicmp(name, "SWIRL", 5)==0 || my_strnicmp(name, "TarBubble", 9)==0 || my_strnicmp(name, "GLUEBIE", 7)==0 || my_strnicmp(name, "TIPPER", 6)==0) {
+            OrBoardFeat(board, FEAT_SWIRL);
+        }
+        if (my_strnicmp(name, "WINDMILL", 8)==0) {
+            OrBoardFeat(board, FEAT_WINDMILL);
+        }
+        // Tower extras imply windmill level but not needed for feat; keep minimal
+    }
+    // No need to restore iterator; Board_Setup will re-init if needed
+    char dbg[128];
+    DWORD feat = GetBoardFeat(board);
+    wsprintfA(dbg, "S1 scan: count=%d feat=0x%X", count, feat);
+    DebugLog(dbg);
+}
+
 static void UniversalConstructor(void *board, int raceIndex) {
     void* ext = EnsureBoardExt(board);
     char buf[256];
@@ -5745,8 +5792,10 @@ static void UniversalConstructor(void *board, int raceIndex) {
 
     /* Step 1b: Extension heap allocation (Option B) — S1-driven. */
     {
-        void* ext = EnsureBoardExt(board);
-        (void)ext;
+        void* ext2 = EnsureBoardExt(board);
+        (void)ext2;
+        // S1 scan now that meshWorld exists — auto-enables feats for file-swapped levels
+        if (ext && meshWorld) ScanS1AndAutoEnable(board, ext, meshWorld);
     }
 
     /* Step 2: RenderObj */
