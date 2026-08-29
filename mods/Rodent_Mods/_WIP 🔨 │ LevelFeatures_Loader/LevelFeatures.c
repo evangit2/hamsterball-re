@@ -787,6 +787,12 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_SKY_POPCYL_BASE 0x8700
 #define UNI_SKY_TIMER        0x8740
 
+/* S1-driven collision list (Option B) — per-board N:/E: names discovered via S1 scan */
+#define OFF_COLLISION_COUNT 0xA8D0  /* int count */
+#define OFF_COLLISION_NAMES 0xA8D4  /* 64 * 32 bytes = 0x800 */
+static int IsS1CollisionEnabled(void *board, const char *eventName);
+#define MAX_S1_COLLISIONS 64
+#define S1_COLLISION_NAME_LEN 32
 /* AthenaList slots (8 × 0x410 = 0x2080 bytes) */
 #define UNI_LIST_0    0x8800
 #define UNI_LIST_1    0x8C10
@@ -3265,7 +3271,7 @@ void UniversalRenderImpl(void *board) {
     DWORD features = 0;
 
     /* REND_BUMPER: active when N:BUMPER collision event is enabled for this level */
-    if (IsCollisionEventEnabled("N:BUMPER", level))
+    if (IsS1CollisionEnabled(board, "N:BUMPER"))
         features |= REND_BUMPER;
 
     /* REND_WINDMILL: active when a windmill render obj exists at REND_TOWER_WINDMILL.
@@ -3274,7 +3280,7 @@ void UniversalRenderImpl(void *board) {
         features |= REND_WINDMILL;
 
     /* REND_GLASS: active when N:GLASS collision event is enabled for this level */
-    if (IsCollisionEventEnabled("N:GLASS", level))
+    if (IsS1CollisionEnabled(board, "N:GLASS"))
         features |= REND_GLASS;
 
     /* REND_SKY_CAM: active when a cloud sprite exists at REND_SKY_SPRITE.
@@ -3712,7 +3718,7 @@ void __fastcall UniversalBoardUpdate(void *board) {
     // Pause already handled per-feature, but gate here too
     if (*(BYTE*)((char*)board+0x874)) return;
     DWORD extFeat = GetBoardFeat(board);
-    DWORD features = extFeat ? extFeat : g_updateFeatures[level];
+    DWORD features = extFeat; // Option B: pure S1-driven, no g_updateFeatures fallback
     if (!features) return;
 
     static int featDbg = 0;
@@ -3795,7 +3801,7 @@ void __fastcall UniversalRaceState(void *board) {
     }
 
     DWORD extFeat = GetBoardFeat(board);
-    DWORD features = extFeat ? extFeat : g_updateFeatures[level];
+    DWORD features = extFeat; // Option B: pure S1-driven, no g_updateFeatures fallback
     if (!features) return;
     if (*(BYTE*)((char*)board+0x874)) return;
     if (features & FEAT_BUMPER_DECAY)
@@ -5017,7 +5023,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     DWORD meshObj = (sceneObj && !IsBadReadPtr((void *)sceneObj, 0x500)) ? *(DWORD *)(sceneObj + 0x47C) : 0;
 
     /* ── Beginner/Toob/Master: N:BUMPER ── */
-    if (IsCollisionEventEnabled("N:BUMPER", level) && my_strnicmp(name, "N:BUMPER", 8) == 0) {
+    if (IsS1CollisionEnabled(board, "N:BUMPER") && my_strnicmp(name, "N:BUMPER", 8) == 0) {
         float px = *(float *)((char *)ball + 0x164);
         float py = *(float *)((char *)ball + 0x168);
         float pz = *(float *)((char *)ball + 0x16C);
@@ -5062,7 +5068,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Intermediate: N:BRIDGE ── */
-    if (IsCollisionEventEnabled("N:BRIDGE", level) && my_stricmp(name, "N:BRIDGE") == 0) {
+    if (IsS1CollisionEnabled(board, "N:BRIDGE") && my_stricmp(name, "N:BRIDGE") == 0) {
         if (*(int *)((char *)ext + UNI_BRIDGE_STATE) == 3) {
             *(BYTE *)((char *)ball + 0x778) = 1;
         }
@@ -5073,13 +5079,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Dizzy: N:WATERWHEEL ── */
-    if (IsCollisionEventEnabled("N:WATERWHEEL", level) && my_stricmp(name, "N:WATERWHEEL") == 0) {
+    if (IsS1CollisionEnabled(board, "N:WATERWHEEL") && my_stricmp(name, "N:WATERWHEEL") == 0) {
         *(BYTE *)((char *)ball + 0x778) = 1;
         return; /* Dizzy returns early */
     }
 
     /* ── Dizzy: N:WHEELEMBED ── */
-    if (IsCollisionEventEnabled("N:WHEELEMBED", level) && my_stricmp(name, "N:WHEELEMBED") == 0) {
+    if (IsS1CollisionEnabled(board, "N:WHEELEMBED") && my_stricmp(name, "N:WHEELEMBED") == 0) {
         float dx = *(float *)((char *)ball + 0x164) - *(float *)((char *)ext + UNI_WHEELEMBED_X);
         float dy = *(float *)((char *)ball + 0x168) - *(float *)((char *)ext + UNI_WHEELEMBED_Y);
         float dz = *(float *)((char *)ball + 0x16C) - *(float *)((char *)ext + UNI_WHEELEMBED_Z);
@@ -5107,13 +5113,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Dizzy: N:SWIRL ── */
-    if (IsCollisionEventEnabled("N:SWIRL", level) && my_stricmp(name, "N:SWIRL") == 0) {
+    if (IsS1CollisionEnabled(board, "N:SWIRL") && my_stricmp(name, "N:SWIRL") == 0) {
         *(BYTE *)((char *)ball + 0x779) = 1;
         return; /* Dizzy returns early */
     }
 
     /* ── Tower/Master: E:CATAPULTBOTTOM ── */
-    if (IsCollisionEventEnabled("E:CATAPULTBOTTOM", level) && my_stricmp(name, "E:CATAPULTBOTTOM") == 0) {
+    if (IsS1CollisionEnabled(board, "E:CATAPULTBOTTOM") && my_stricmp(name, "E:CATAPULTBOTTOM") == 0) {
         if (*(int *)((char *)ball + 0x808) < 1) {
             *(int *)((char *)ball + 0x808) = 1000;
             DWORD catList = UNI_CATAPULT_LIST;
@@ -5145,7 +5151,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Tower: E:OPENSESAME ── */
-    if (IsCollisionEventEnabled("E:OPENSESAME", level) && my_stricmp(name, "E:OPENSESAME") == 0) {
+    if (IsS1CollisionEnabled(board, "E:OPENSESAME") && my_stricmp(name, "E:OPENSESAME") == 0) {
         if (g_TrapdoorOpen) {
             int count = *(int *)((char *)ext + UNI_DRAWBRIDGE_COUNT);
             int item = 0;
@@ -5155,7 +5161,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Tower: N:TRAPDOOR ── */
-    if (IsCollisionEventEnabled("N:TRAPDOOR", level) && my_stricmp(name, "N:TRAPDOOR") == 0) {
+    if (IsS1CollisionEnabled(board, "N:TRAPDOOR") && my_stricmp(name, "N:TRAPDOOR") == 0) {
         int iter = g_AthenaListGetIterator((void *)((char *)ext + UNI_TRAPDOOR_LIST));
         *(DWORD *)((char *)ext + UNI_TRAPDOOR_LIST + 8 + iter * 4) = 0;
         int count = *(int *)((char *)ext + UNI_TRAPDOOR_COUNT);
@@ -5176,13 +5182,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Tower: E:BITE ── */
-    if (IsCollisionEventEnabled("E:BITE", level) && my_stricmp(name, "E:BITE") == 0) {
+    if (IsS1CollisionEnabled(board, "E:BITE") && my_stricmp(name, "E:BITE") == 0) {
         *(DWORD *)((char *)ext + UNI_BITE_STATE) = 0;
         *(DWORD *)((char *)ext + UNI_BITE_SPEED) = 0x41C80000;
     }
 
     /* ── Tower: E:MACETRIGGER ── */
-    if (IsCollisionEventEnabled("E:MACETRIGGER", level) && my_stricmp(name, "E:MACETRIGGER") == 0) {
+    if (IsS1CollisionEnabled(board, "E:MACETRIGGER") && my_stricmp(name, "E:MACETRIGGER") == 0) {
         int iter = g_AthenaListGetIterator((void *)((char *)ext + UNI_MACE_LIST));
         *(DWORD *)((char *)ext + UNI_MACE_LIST + 8 + iter * 4) = 0;
         int count = *(int *)((char *)ext + UNI_MACE_COUNT);
@@ -5201,7 +5207,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Tower: N:MACE ── */
-    if (IsCollisionEventEnabled("N:MACE", level) && my_stricmp(name, "N:MACE") == 0) {
+    if (IsS1CollisionEnabled(board, "N:MACE") && my_stricmp(name, "N:MACE") == 0) {
         int iter = g_AthenaListGetIterator((void *)((char *)ext + UNI_MACE_LIST));
         *(DWORD *)((char *)ext + UNI_MACE_LIST + 8 + iter * 4) = 0;
         int count = *(int *)((char *)ext + UNI_MACE_COUNT);
@@ -5230,20 +5236,20 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
 
     /* ── Up/Impossible: E:HELPINERTIA ──
      * Impossible gates this on (char)ball[0x768] != 0; Up does not. */
-    if (IsCollisionEventEnabled("E:HELPINERTIA", level) && my_stricmp(name, "E:HELPINERTIA") == 0) {
+    if (IsS1CollisionEnabled(board, "E:HELPINERTIA") && my_stricmp(name, "E:HELPINERTIA") == 0) {
         if (level != 15 || (char)*(int *)((char *)ball + 0x768))
             ball[0xA9] = 0x40200000;
     }
 
     /* ── Up/Impossible: E:UNHELPINERTIA ──
      * Impossible gates this on (char)ball[0x768] != 0; Up does not. */
-    if (IsCollisionEventEnabled("E:UNHELPINERTIA", level) && my_stricmp(name, "E:UNHELPINERTIA") == 0) {
+    if (IsS1CollisionEnabled(board, "E:UNHELPINERTIA") && my_stricmp(name, "E:UNHELPINERTIA") == 0) {
         if (level != 15 || (char)*(int *)((char *)ball + 0x768))
             ball[0xA9] = 0x40A00000;
     }
 
     /* ── Up: E:VACPOPOUT ── */
-    if (IsCollisionEventEnabled("E:VACPOPOUT", level) && my_stricmp(name, "E:VACPOPOUT") == 0) {
+    if (IsS1CollisionEnabled(board, "E:VACPOPOUT") && my_stricmp(name, "E:VACPOPOUT") == 0) {
         ball[0xA1] = 0x41D00000;
         if (g_SoundPlay3D && app) {
             DWORD snd = *(DWORD *)(app + 0x468);
@@ -5252,13 +5258,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Up: N:SPEEDCYLINDER ── */
-    if (IsCollisionEventEnabled("N:SPEEDCYLINDER", level) && my_stricmp(name, "N:SPEEDCYLINDER") == 0) {
+    if (IsS1CollisionEnabled(board, "N:SPEEDCYLINDER") && my_stricmp(name, "N:SPEEDCYLINDER") == 0) {
         if (g_PendulumPlayCollisionSound && meshObj)
             g_PendulumPlayCollisionSound((void *)meshObj, (int)ball);
     }
 
     /* ── Up: N:EXTRATIME ── */
-    if (IsCollisionEventEnabled("N:EXTRATIME", level) && my_stricmp(name, "N:EXTRATIME") == 0) {
+    if (IsS1CollisionEnabled(board, "N:EXTRATIME") && my_stricmp(name, "N:EXTRATIME") == 0) {
         if (meshObj && *(char *)(meshObj + 0x10E4) == 0) {
             if (g_RotatorTriggerSound) g_RotatorTriggerSound(meshObj);
             if (app) {
@@ -5279,12 +5285,12 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Neon: N:NEONPLATFORM ── */
-    if (IsCollisionEventEnabled("N:NEONPLATFORM", level) && my_strnicmp(name, "N:NEONPLATFORM", 14) == 0) {
+    if (IsS1CollisionEnabled(board, "N:NEONPLATFORM") && my_strnicmp(name, "N:NEONPLATFORM", 14) == 0) {
         if (g_NeonPlatformActivate && meshObj) g_NeonPlatformActivate(meshObj);
     }
 
     /* ── Neon: E:ZOOP ── */
-    if (IsCollisionEventEnabled("E:ZOOP", level) && my_strnicmp(name, "E:ZOOP", 6) == 0) {
+    if (IsS1CollisionEnabled(board, "E:ZOOP") && my_strnicmp(name, "E:ZOOP", 6) == 0) {
         if (*(int *)((char *)ball + 0x7F0) == 0) {
             if (g_SoundPlay3D && app) {
                 DWORD snd = *(DWORD *)(app + 0x524);
@@ -5295,7 +5301,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Neon: E:LIGHTSOFF ── */
-    if (IsCollisionEventEnabled("E:LIGHTSOFF", level) && my_strnicmp(name, "E:LIGHTSOFF", 10) == 0) {
+    if (IsS1CollisionEnabled(board, "E:LIGHTSOFF") && my_strnicmp(name, "E:LIGHTSOFF", 10) == 0) {
         if (*(int *)((char *)ball + 0x7B4) == 0) {
             if (g_SoundPlay3D && app) {
                 DWORD snd = *(DWORD *)(app + 0x528);
@@ -5325,7 +5331,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Neon: E:LIGHTSON ── */
-    if (IsCollisionEventEnabled("E:LIGHTSON", level) && my_strnicmp(name, "E:LIGHTSON", 10) == 0) {
+    if (IsS1CollisionEnabled(board, "E:LIGHTSON") && my_strnicmp(name, "E:LIGHTSON", 10) == 0) {
         if (*(int *)((char *)ball + 0x7B8) == 0) {
             if (g_SoundPlay3D && app) {
                 DWORD snd = *(DWORD *)(app + 0x528);
@@ -5361,7 +5367,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Expert/Master: E:CALLHAMMER ── */
-    if (IsCollisionEventEnabled("E:CALLHAMMER", level) && my_stricmp(name, "E:CALLHAMMER") == 0) {
+    if (IsS1CollisionEnabled(board, "E:CALLHAMMER") && my_stricmp(name, "E:CALLHAMMER") == 0) {
         if (difficulty != 0 && g_CreateBonkPopup) {
             void *be = GetBoardExt(board); if (!be) be = ext;
             int bonkObj = be ? *(int*)((char*)be + UNI_BONK_STORE) : *(int*)((char*)ext + UNI_BONK_STORE);
@@ -5370,7 +5376,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Expert/Master: E:HAMMERCHASE ── */
-    if (IsCollisionEventEnabled("E:HAMMERCHASE", level) && my_stricmp(name, "E:HAMMERCHASE") == 0) {
+    if (IsS1CollisionEnabled(board, "E:HAMMERCHASE") && my_stricmp(name, "E:HAMMERCHASE") == 0) {
         if (difficulty != 0 && g_HammerChaseStart) {
             void *be2 = GetBoardExt(board); if (!be2) be2 = ext;
             int bonkObj2 = be2 ? *(int*)((char*)be2 + UNI_BONK_STORE) : *(int*)((char*)ext + UNI_BONK_STORE);
@@ -5379,19 +5385,19 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Expert: E:ALERTSAW1 ── */
-    if (IsCollisionEventEnabled("E:ALERTSAW1", level) && my_stricmp(name, "E:ALERTSAW1") == 0) {
+    if (IsS1CollisionEnabled(board, "E:ALERTSAW1") && my_stricmp(name, "E:ALERTSAW1") == 0) {
         if (difficulty != 0 && g_SawAlertActivate)
             g_SawAlertActivate(*(int *)((char *)ext + UNI_SAW1_OBJ));
     }
 
     /* ── Expert: E:ALERTSAW2 ── */
-    if (IsCollisionEventEnabled("E:ALERTSAW2", level) && my_stricmp(name, "E:ALERTSAW2") == 0) {
+    if (IsS1CollisionEnabled(board, "E:ALERTSAW2") && my_stricmp(name, "E:ALERTSAW2") == 0) {
         if (difficulty != 0 && g_SawAlertActivate)
             g_SawAlertActivate(*(int *)((char *)ext + UNI_SAW2_OBJ));
     }
 
     /* ── Toob: E:ALERTSAW3 (renamed from ALERTSAW2) ── */
-    if (IsCollisionEventEnabled("E:ALERTSAW3", level) && my_stricmp(name, "E:ALERTSAW3") == 0) {
+    if (IsS1CollisionEnabled(board, "E:ALERTSAW3") && my_stricmp(name, "E:ALERTSAW3") == 0) {
         if (difficulty != 0) {
             int saw2Obj = *(int *)((char *)ext + UNI_BRIDGE_STATE);
             if (saw2Obj) *(BYTE *)(saw2Obj + 0x110C) = 1;
@@ -5399,19 +5405,19 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Expert: E:ACTIVATESAW1 ── */
-    if (IsCollisionEventEnabled("E:ACTIVATESAW1", level) && my_stricmp(name, "E:ACTIVATESAW1") == 0) {
+    if (IsS1CollisionEnabled(board, "E:ACTIVATESAW1") && my_stricmp(name, "E:ACTIVATESAW1") == 0) {
         if (difficulty != 0 && g_SawActivate)
             g_SawActivate(*(int *)((char *)ext + UNI_SAW1_OBJ));
     }
 
     /* ── Expert: E:ACTIVATESAW2 ── */
-    if (IsCollisionEventEnabled("E:ACTIVATESAW2", level) && my_stricmp(name, "E:ACTIVATESAW2") == 0) {
+    if (IsS1CollisionEnabled(board, "E:ACTIVATESAW2") && my_stricmp(name, "E:ACTIVATESAW2") == 0) {
         if (difficulty != 0 && g_SawActivate)
             g_SawActivate(*(int *)((char *)ext + UNI_SAW2_OBJ));
     }
 
     /* ── Expert: E:ALERTJUDGES ── */
-    if (IsCollisionEventEnabled("E:ALERTJUDGES", level) && my_stricmp(name, "E:ALERTJUDGES") == 0) {
+    if (IsS1CollisionEnabled(board, "E:ALERTJUDGES") && my_stricmp(name, "E:ALERTJUDGES") == 0) {
         int iter = g_AthenaListGetIterator((void *)((char *)ext + UNI_JUDGE_LIST));
         *(DWORD *)((char *)ext + UNI_JUDGE_LIST + 8 + iter * 4) = 0;
         int count = *(int *)((char *)ext + UNI_JUDGE_COUNT);
@@ -5430,7 +5436,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Expert: E:SCORE ── */
-    if (IsCollisionEventEnabled("E:SCORE", level) && my_strnicmp(name, "E:SCORE", 7) == 0) {
+    if (IsS1CollisionEnabled(board, "E:SCORE") && my_strnicmp(name, "E:SCORE", 7) == 0) {
         int iter = g_AthenaListGetIterator((void *)((char *)ext + UNI_JUDGE_LIST));
         *(DWORD *)((char *)ext + UNI_JUDGE_LIST + 8 + iter * 4) = 0;
         int count = *(int *)((char *)ext + UNI_JUDGE_COUNT);
@@ -5453,7 +5459,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
      *   No level-specific handler needed — the global handler at the end handles it. ── */
 
     /* ── Expert: E:BELL ── */
-    if (IsCollisionEventEnabled("E:BELL", level) && my_strnicmp(name, "E:BELL", 6) == 0) {
+    if (IsS1CollisionEnabled(board, "E:BELL") && my_strnicmp(name, "E:BELL", 6) == 0) {
         if (g_BellActivate) g_BellActivate(*(int *)((char *)ext + UNI_BELL_OBJ));
         if (app) {
             int gameMode = *(int *)(app + 0x220);
@@ -5472,7 +5478,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Odd: E:GRAVITY ── */
-    if (IsCollisionEventEnabled("E:GRAVITY", level) && my_strnicmp(name, "E:GRAVITY", 9) == 0) {
+    if (IsS1CollisionEnabled(board, "E:GRAVITY") && my_strnicmp(name, "E:GRAVITY", 9) == 0) {
         if (g_SceneObjectSub1Ctor && g_AthenaStringSet && g_MWParserReadTag && g_StreamReaderDtor) {
             char strObj[64];
             g_SceneObjectSub1Ctor(strObj);
@@ -5496,7 +5502,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Odd: N:JUMPFIRST / N:JUMPSECOND ── */
-    if (IsCollisionEventEnabled("N:JUMPFIRST", level) && my_stricmp(name, "N:JUMPFIRST") == 0) {
+    if (IsS1CollisionEnabled(board, "N:JUMPFIRST") && my_stricmp(name, "N:JUMPFIRST") == 0) {
         /* Uses AthenaHashTable_Lookup for "JUMPPIPE1" */
         float pos[3] = {0,0,0};
         if (g_AthenaHashTableLookup && app) {
@@ -5514,7 +5520,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             *(DWORD *)(phys + 0xCAC) = 0;
         }
     }
-    if (IsCollisionEventEnabled("N:JUMPSECOND", level) && my_stricmp(name, "N:JUMPSECOND") == 0) {
+    if (IsS1CollisionEnabled(board, "N:JUMPSECOND") && my_stricmp(name, "N:JUMPSECOND") == 0) {
         float pos[3] = {0,0,0};
         if (g_AthenaHashTableLookup && app) {
             void *ht = *(void **)((char *)board + BOARD_MESHWORLD);
@@ -5533,7 +5539,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Odd: E:SHRINK ── */
-    if (IsCollisionEventEnabled("E:SHRINK", level) && my_stricmp(name, "E:SHRINK") == 0) {
+    if (IsS1CollisionEnabled(board, "E:SHRINK") && my_stricmp(name, "E:SHRINK") == 0) {
         if (g_BallShrink) g_BallShrink((int)ball);
         float pos[3] = {0,0,0};
         if (g_AthenaHashTableLookup) {
@@ -5553,7 +5559,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Odd: E:GROWSOUND ── */
-    if (IsCollisionEventEnabled("E:GROWSOUND", level) && my_stricmp(name, "E:GROWSOUND") == 0) {
+    if (IsS1CollisionEnabled(board, "E:GROWSOUND") && my_stricmp(name, "E:GROWSOUND") == 0) {
         if (*(int *)((char *)ball + 0x7F8) == 0) {
             if (g_SoundPlayChannel && app) {
                 int ch = *(int *)(app + 0x4D8);
@@ -5564,17 +5570,17 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Odd: E:GROW ── */
-    if (IsCollisionEventEnabled("E:GROW", level) && my_stricmp(name, "E:GROW") == 0) {
+    if (IsS1CollisionEnabled(board, "E:GROW") && my_stricmp(name, "E:GROW") == 0) {
         if (g_BallGrow) g_BallGrow((int)ball);
     }
 
     /* ── Odd: E:DROPLIFT ── */
-    if (IsCollisionEventEnabled("E:DROPLIFT", level) && my_stricmp(name, "E:DROPLIFT") == 0) {
+    if (IsS1CollisionEnabled(board, "E:DROPLIFT") && my_stricmp(name, "E:DROPLIFT") == 0) {
         if (g_DropLiftActivate) g_DropLiftActivate(*(int *)((char *)ext + UNI_BONK_STORE));
     }
 
     /* ── Odd: E:PIPERANDOM (complex — simplified to core behavior) ── */
-    if (IsCollisionEventEnabled("E:PIPERANDOM", level) && my_stricmp(name, "E:PIPERANDOM") == 0) {
+    if (IsS1CollisionEnabled(board, "E:PIPERANDOM") && my_stricmp(name, "E:PIPERANDOM") == 0) {
         if (g_BallGrow) g_BallGrow((int)ball);
         if (difficulty != 0) *(BYTE *)((char *)ext + UNI_SAW1_OBJ) = 1;
         /* Random pipe selection */
@@ -5612,7 +5618,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
 
     /* ── Odd: E:LIMIT / E:LIMITX / E:LIMITZ / E:LIMITPIPE1 / E:LIMITPIPE2 / E:SWALLOW ── */
     /* Odd's E:LIMIT checks ball+0x1D2 (axis selector) */
-    if (IsCollisionEventEnabled("E:LIMIT", level) && my_stricmp(name, "E:LIMIT") == 0) {
+    if (IsS1CollisionEnabled(board, "E:LIMIT") && my_stricmp(name, "E:LIMIT") == 0) {
         /* Odd's version: only activates if ball+0x1D2 == 0 */
         if (*(int *)((char *)ball + 0x748) == 0) {
             *(BYTE *)((char *)ball + 0x768) = 0;
@@ -5624,28 +5630,28 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             if (mgObj) g_AthenaListRemoveByValue((void *)(mgObj + 0x2C), (int)ball);
         }
     }
-    if (IsCollisionEventEnabled("E:LIMITX", level) && my_stricmp(name, "E:LIMITX") == 0) {
+    if (IsS1CollisionEnabled(board, "E:LIMITX") && my_stricmp(name, "E:LIMITX") == 0) {
         if (*(int *)((char *)ball + 0x748) == 1) {
             *(BYTE *)((char *)ball + 0x768) = 0;
             *(BYTE *)((char *)ball + 0x2E9) = 1;
         }
     }
-    if (IsCollisionEventEnabled("E:LIMITZ", level) && my_stricmp(name, "E:LIMITZ") == 0) {
+    if (IsS1CollisionEnabled(board, "E:LIMITZ") && my_stricmp(name, "E:LIMITZ") == 0) {
         if (*(int *)((char *)ball + 0x748) == 2) {
             *(BYTE *)((char *)ball + 0x768) = 0;
             *(BYTE *)((char *)ball + 0x2E9) = 1;
         }
     }
-    if (IsCollisionEventEnabled("E:LIMITPIPE1", level) && my_stricmp(name, "E:LIMITPIPE1") == 0) {
+    if (IsS1CollisionEnabled(board, "E:LIMITPIPE1") && my_stricmp(name, "E:LIMITPIPE1") == 0) {
         if ((char)ball[1] != 0) {
             *(BYTE *)((char *)ball + 0x768) = 0;
             *(BYTE *)((char *)ball + 0x2E9) = 1;
         }
     }
-    if (IsCollisionEventEnabled("E:SWALLOW", level) && my_stricmp(name, "E:SWALLOW") == 0) {
+    if (IsS1CollisionEnabled(board, "E:SWALLOW") && my_stricmp(name, "E:SWALLOW") == 0) {
         *(BYTE *)((char *)ball + 0x2E8) = 1;
     }
-    if (IsCollisionEventEnabled("E:LIMITPIPE2", level) && my_stricmp(name, "E:LIMITPIPE2") == 0) {
+    if (IsS1CollisionEnabled(board, "E:LIMITPIPE2") && my_stricmp(name, "E:LIMITPIPE2") == 0) {
         /* VERIFIED via Ghidra decompilation of OddBoard_CollisionHandler (0x0040ED30):
          * Original: cVar1 = *(char *)((int)param_2 + 5);  — byte offset 5, NOT int* index.
          * This is correct as-is. E:LIMITPIPE1 uses (char)param_2[1] = byte 4 (int* arithmetic).
@@ -5657,7 +5663,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Toob: E:BRANCH (pipe branching system) ── */
-    if (IsCollisionEventEnabled("E:BRANCH", level) && my_strnicmp(name, "E:BRANCH", 8) == 0) {
+    if (IsS1CollisionEnabled(board, "E:BRANCH") && my_strnicmp(name, "E:BRANCH", 8) == 0) {
         if (g_AthenaHashTableLookup && g_CPUIDRNG && g_Vec3NormalizeAndScale &&
             g_AthenaListInit && g_AthenaListAppend && g_AthenaListGetSize &&
             g_AthenaListGetIterator && g_operatorNew) {
@@ -5788,12 +5794,12 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Toob: N:SPINNY ── */
-    if (IsCollisionEventEnabled("N:SPINNY", level) && my_strnicmp(name, "N:SPINNY", 8) == 0) {
+    if (IsS1CollisionEnabled(board, "N:SPINNY") && my_strnicmp(name, "N:SPINNY", 8) == 0) {
         if (g_RotatorAddBall && meshObj) g_RotatorAddBall((void *)meshObj, (int)ball);
     }
 
     /* ── Toob: N:SAWTEETH ── */
-    if (IsCollisionEventEnabled("N:SAWTEETH", level) && my_strnicmp(name, "N:SAWTEETH", 10) == 0) {
+    if (IsS1CollisionEnabled(board, "N:SAWTEETH") && my_strnicmp(name, "N:SAWTEETH", 10) == 0) {
         if (meshObj && *(int *)(meshObj + 0x10F4) == 0 && *(int *)((char *)ball + 0x7DC) < 1) {
             *(int *)((char *)ball + 0x7DC) = 0x32;
             float vx = *(float *)(meshObj + 0x1100);
@@ -5812,12 +5818,12 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Master: N:SPINNER ── */
-    if (IsCollisionEventEnabled("N:SPINNER", level) && my_strnicmp(name, "N:SPINNER", 9) == 0) {
+    if (IsS1CollisionEnabled(board, "N:SPINNER") && my_strnicmp(name, "N:SPINNER", 9) == 0) {
         if (g_SpinnerActivate && meshObj) g_SpinnerActivate((void *)meshObj, (int)ball);
     }
 
     /* ── Master: E:LAUNCH ── */
-    if (IsCollisionEventEnabled("E:LAUNCH", level) && my_stricmp(name, "E:LAUNCH") == 0) {
+    if (IsS1CollisionEnabled(board, "E:LAUNCH") && my_stricmp(name, "E:LAUNCH") == 0) {
         float launchPos[3] = {0,0,0};
         if (g_AthenaHashTableLookup) {
             void *ht = *(void **)((char *)board + BOARD_MESHWORLD);
@@ -5876,24 +5882,24 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Wobbly: N:SQUAREWOBBLY ── */
-    if (IsCollisionEventEnabled("N:SQUAREWOBBLY", level) && my_strnicmp(name, "N:SQUAREWOBBLY", 14) == 0) {
+    if (IsS1CollisionEnabled(board, "N:SQUAREWOBBLY") && my_strnicmp(name, "N:SQUAREWOBBLY", 14) == 0) {
         if ((char)*(int *)((char *)ball + 0x768) && g_SquareWobblyActivate && meshObj)
             g_SquareWobblyActivate((void *)meshObj, (int)ball);
     }
 
     /* ── Wobbly: N:WAVY ── */
-    if (IsCollisionEventEnabled("N:WAVY", level) && my_strnicmp(name, "N:WAVY", 6) == 0) {
+    if (IsS1CollisionEnabled(board, "N:WAVY") && my_strnicmp(name, "N:WAVY", 6) == 0) {
         if ((char)*(int *)((char *)ball + 0x768) && g_WavyActivate && meshObj)
             g_WavyActivate((void *)meshObj, (int)ball);
     }
 
     /* ── Glass: N:GLASS ── */
-    if (IsCollisionEventEnabled("N:GLASS", level) && my_strnicmp(name, "N:GLASS", 7) == 0) {
+    if (IsS1CollisionEnabled(board, "N:GLASS") && my_strnicmp(name, "N:GLASS", 7) == 0) {
         *(int *)((char *)ball + 0xC5C) = 0xF;
     }
 
     /* ── Glass: N:TENBONUS1 / N:TENBONUS2 ── */
-    if (IsCollisionEventEnabled("N:TENBONUS1", level) && my_strnicmp(name, "N:TENBONUS1", 11) == 0) {
+    if (IsS1CollisionEnabled(board, "N:TENBONUS1") && my_strnicmp(name, "N:TENBONUS1", 11) == 0) {
         int phys = ball[0x69];
         if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
             float speed = sqrtf(*(float*)(phys+0xCA4)**(float*)(phys+0xCA4) + *(float*)(phys+0xCA8)**(float*)(phys+0xCA8) + *(float*)(phys+0xCAC)**(float*)(phys+0xCAC));
@@ -5920,7 +5926,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             }
         }
     }
-    if (IsCollisionEventEnabled("N:TENBONUS2", level) && my_strnicmp(name, "N:TENBONUS2", 11) == 0) {
+    if (IsS1CollisionEnabled(board, "N:TENBONUS2") && my_strnicmp(name, "N:TENBONUS2", 11) == 0) {
         int phys = ball[0x69];
         if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
             float speed = sqrtf(*(float*)(phys+0xCA4)**(float*)(phys+0xCA4) + *(float*)(phys+0xCA8)**(float*)(phys+0xCA8) + *(float*)(phys+0xCAC)**(float*)(phys+0xCAC));
@@ -5949,7 +5955,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Sky: E:PEGS ── */
-    if (IsCollisionEventEnabled("E:PEGS", level) && my_stricmp(name, "E:PEGS") == 0) {
+    if (IsS1CollisionEnabled(board, "E:PEGS") && my_stricmp(name, "E:PEGS") == 0) {
         if (*(int *)((char *)ball + 0x788) == 0) {
             *(int *)((char *)ext + UNI_PEG_COUNT) += 1;
             *(int *)((char *)ball + 0x788) = 1;
@@ -5957,7 +5963,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Sky: E:TRAPPOP ── */
-    if (IsCollisionEventEnabled("E:TRAPPOP", level) && my_stricmp(name, "E:TRAPPOP") == 0) {
+    if (IsS1CollisionEnabled(board, "E:TRAPPOP") && my_stricmp(name, "E:TRAPPOP") == 0) {
         if (difficulty != 0 && g_RotatorStartSound) {
             int trapObj = *(int *)((char *)ext + UNI_NEON_TRAPDOOR);
             if (trapObj) g_RotatorStartSound(trapObj);
@@ -5965,7 +5971,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Sky: E:NOPEGS ── */
-    if (IsCollisionEventEnabled("E:NOPEGS", level) && my_stricmp(name, "E:NOPEGS") == 0) {
+    if (IsS1CollisionEnabled(board, "E:NOPEGS") && my_stricmp(name, "E:NOPEGS") == 0) {
         if (*(int *)((char *)ball + 0x78C) == 0) {
             *(int *)((char *)ext + UNI_PEG_COUNT) -= 1;
             *(int *)((char *)ball + 0x78C) = 1;
@@ -5973,7 +5979,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Sky: E:HEATON ── */
-    if (IsCollisionEventEnabled("E:HEATON", level) && my_stricmp(name, "E:HEATON") == 0) {
+    if (IsS1CollisionEnabled(board, "E:HEATON") && my_stricmp(name, "E:HEATON") == 0) {
         if (difficulty != 0 && g_AthenaListContainsValue && g_PendulumAddIndex) {
             DWORD mgObj = *(DWORD *)((char *)ext + UNI_MAGNIFYING_GLASS);
             if (mgObj) {
@@ -5984,7 +5990,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Sky: E:HEATOFF ── */
-    if (IsCollisionEventEnabled("E:HEATOFF", level) && my_stricmp(name, "E:HEATOFF") == 0) {
+    if (IsS1CollisionEnabled(board, "E:HEATOFF") && my_stricmp(name, "E:HEATOFF") == 0) {
         if (difficulty != 0 && g_AthenaListRemoveByValue) {
             DWORD mgObj = *(DWORD *)((char *)ext + UNI_MAGNIFYING_GLASS);
             if (mgObj) g_AthenaListRemoveByValue((void *)(mgObj + 0x2C), (int)ball);
@@ -5992,7 +5998,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Impossible: N:BOUNCE ── */
-    if (IsCollisionEventEnabled("N:BOUNCE", level) && my_strnicmp(name, "N:BOUNCE", 8) == 0) {
+    if (IsS1CollisionEnabled(board, "N:BOUNCE") && my_strnicmp(name, "N:BOUNCE", 8) == 0) {
         if ((char)*(int *)((char *)ball + 0x768)) {
             int phys = ball[0x69];
             if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
@@ -6012,14 +6018,14 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
 
     /* ── Impossible: N:ONROTATOR ──
      * Original gates on (char)ball[0x768] != 0. */
-    if (IsCollisionEventEnabled("N:ONROTATOR", level) && my_strnicmp(name, "N:ONROTATOR", 11) == 0) {
+    if (IsS1CollisionEnabled(board, "N:ONROTATOR") && my_strnicmp(name, "N:ONROTATOR", 11) == 0) {
         if ((char)*(int *)((char *)ball + 0x768) && g_RotatorAddBall && meshObj)
             g_RotatorAddBall((void *)meshObj, (int)ball);
     }
 
     /* ── Impossible: N:ONGEAR ──
      * Original gates on (char)ball[0x768] != 0. */
-    if (IsCollisionEventEnabled("N:ONGEAR", level) && my_strnicmp(name, "N:ONGEAR", 8) == 0) {
+    if (IsS1CollisionEnabled(board, "N:ONGEAR") && my_strnicmp(name, "N:ONGEAR", 8) == 0) {
         if ((char)*(int *)((char *)ball + 0x768) && g_GearAddBall && meshObj)
             g_GearAddBall((void *)meshObj, (int)ball);
     }
@@ -6039,15 +6045,12 @@ static void UniversalPostSetup(void *board) {
     int level = GetCurrentLevel(board);
     if (level == 0) return;
 
-    LoadConfig();
-
-    /* Bridge */
-    if (g_objectEnabled[OBJ_BRIDGE][level]) {
-        InitBridge(board);
-    }
-
-    /* Bumpers */
-    if (g_objectEnabled[OBJ_BUMPERS][level]) {
+    // Option B: LevelFeatures.txt deprecated — no LoadConfig, pure S1-driven
+    // Bridge init is now S1-driven via ScanS1AndAutoEnable + lazy S1Ensure in CreateDynamicObjects
+    // Do not call InitBridge here; CreateDynamicObjects handles BRIDGE/BUMPERS on demand
+    // Keep bumpers S1-driven: scan for N:BUMPER presence
+    int hasBumper = IsS1CollisionEnabled(board, "N:BUMPER");
+    if (hasBumper) {
         DWORD meshWorld = *(DWORD *)((char *)board + BOARD_MESHWORLD);
         if (!meshWorld || IsBadReadPtr((void *)meshWorld, 0x430)) return;
 
@@ -6084,6 +6087,32 @@ static void UniversalPostSetup(void *board) {
  * bridge/swirl/windmill so a Dizzy MESHWORLD dropped into WarmUp slot
  * auto-enables its features without LevelData.txt edit. Heap size is
  * fixed 0xC000, so no dynamic sizing needed — just feat bits. */
+static void AddS1CollisionToExt(void *board, void *ext, const char *name) {
+    if (!board || !ext || !name) return;
+    if (name[0]!='N' && name[0]!='E') return;
+    if (name[1]!=':') return;
+    // dedup
+    int count = *(int*)((char*)ext + OFF_COLLISION_COUNT);
+    if (count <0 || count >= MAX_S1_COLLISIONS) return;
+    char *base = (char*)ext + OFF_COLLISION_NAMES;
+    for (int i=0;i<count;i++) if (my_stricmp(base + i*S1_COLLISION_NAME_LEN, name)==0) return;
+    my_strncpy(base + count*S1_COLLISION_NAME_LEN, name, S1_COLLISION_NAME_LEN);
+    *(int*)((char*)ext + OFF_COLLISION_COUNT) = count+1;
+}
+static int IsS1CollisionEnabled(void *board, const char *eventName) {
+    if (!board || !eventName) return 0;
+    void *ext = GetBoardExt(board);
+    if (!ext) return 0;
+    int count = *(int*)((char*)ext + OFF_COLLISION_COUNT);
+    if (count<=0 || count>MAX_S1_COLLISIONS) return 0;
+    char *base = (char*)ext + OFF_COLLISION_NAMES;
+    for (int i=0;i<count;i++) if (my_stricmp(base + i*S1_COLLISION_NAME_LEN, eventName)==0) return 1;
+    // also allow prefix match for N:BUMPER1 vs N:BUMPER (bumper variant)
+    if (my_strnicmp(eventName, "N:BUMPER", 8)==0) {
+        for (int i=0;i<count;i++) if (my_strnicmp(base + i*S1_COLLISION_NAME_LEN, "N:BUMPER", 8)==0) return 1;
+    }
+    return 0;
+}
 static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
     if (!board || !ext || !meshWorld) return;
     MEMORY_BASIC_INFORMATION mbi;
@@ -6134,6 +6163,10 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
         }
         if (my_strnicmp(name, "BONK", 4)==0 || my_strnicmp(name, "FAN", 3)==0 || my_strnicmp(name, "SAWBLADE", 8)==0 || my_strnicmp(name, "BELL", 4)==0 || my_strnicmp(name, "JUDGE", 5)==0 || my_strnicmp(name, "SPINNER", 7)==0 || my_strnicmp(name, "LOOPER", 6)==0 || my_strnicmp(name, "GEAR", 4)==0 || my_strnicmp(name, "PENDULUM", 8)==0 || my_strnicmp(name, "ROTATOR", 7)==0) {
             // Expert/Impossible family — handled via S1Ensure* in CreateDynamicObjects
+        }
+        // Option B: every N:/E: S1 ref auto-enables its collision event for this board
+        if ((name[0]=='N' || name[0]=='E') && name[1]==':') {
+            AddS1CollisionToExt(board, ext, name);
         }
     }
     // No need to restore iterator; Board_Setup will re-init if needed
@@ -6870,13 +6903,9 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     g_SceneSetRaceActive = (Scene_SetRaceActive_t)(g_moduleBase + RVA_Scene_SetRaceActive);
     g_SceneAddObject = (Scene_AddObject_t)(g_moduleBase + RVA_Scene_AddObject);
 
-    /* Initialize feature flags from defaults */
-    memcpy(g_updateFeatures, g_defaultFeatures, sizeof(g_updateFeatures));
-    /* Render features are NOT set from defaults — they are computed dynamically
-     * in UniversalRender based on what objects/events are enabled. */
-
-    /* Initialize collision event defaults */
-    InitCollisionDefaults();
+    /* Option B: Feature flags now per-board via ScanS1AndAutoEnable/OrBoardFeat.
+     * g_updateFeatures/g_collisionEvents no longer used — S1-driven. */
+    // memcpy(g_updateFeatures, ...) deprecated
 
     /* Resolve collision handler function pointers */
     g_SoundPlayChannel = (Sound_PlayChannel_t)(g_moduleBase + RVA_Sound_PlayChannel);
@@ -6952,8 +6981,8 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     }
     LoadRaceFiles();
     DebugLog("LoadRaceFiles done");
-    LoadConfig();
-    DebugLog("LoadConfig done");
+    // Option B: LevelFeatures.txt deprecated — no LoadConfig
+    DebugLog("LevelFeatures.txt deprecated (Option B, S1 collisions)");
 
     /* LevelData.txt — DEPRECATED Phase1: removed. g_levelData[] stays as
      * in-memory defaults only; spawns are S1-driven via ScanS1AndAutoEnable + S1Ensure*. */

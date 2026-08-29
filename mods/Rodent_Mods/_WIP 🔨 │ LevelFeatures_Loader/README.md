@@ -1,10 +1,11 @@
 # LevelFeatures_Loader (v10) — Phase1 S1-driven (LevelData.txt deprecated)
 
-## What's New in v10 (Phase1)
+## What's New in v10 (Phase1) + v11 (Option B — S1 collisions)
 - **All S1 references added dynamically**: Every object type (`BRIDGE`, `WATERWHEEL`, `TIPPER`, `SWIRL`, `GLUEBIE`, `WINDMILL`, `CHOMPER`, `TURRET`, `CATAPULT`, `MACE`, `DRAWBRIDGE`, `BONK`, `FAN`, `WOBBLY`, etc.) is now spawned via `S1Ensure*` lazy-loading inside `UniversalCreateDynamicObjects` — no static `g_levelData[].meshes` preload. Drop any `.MESHWORLD` into any slot, its S1 strings bring their own meshes.
 - **LevelData.txt deprecated**: File generation/loading removed. `g_levelData[]` kept as in-memory defaults only (board names, colors, raceData, vtable). `GenerateLevelData`/`LoadLevelData` no longer called; `Step 8: S1-driven meshes` replaces `LoadExtraMeshes` static preload.
 - **Full S1 feat scan**: `ScanS1AndAutoEnable` now covers full registry (`BRIDGE`/`BBRIDGE`→`BRIDGE_ANIM`, `WATERWHEEL`/`SWIRL`/`TIPPER`/`GLUEBIE`→`SWIRL`, `WINDMILL`/`CHOMPER`/`TURRET`/`CATAPULT`/`MACE`/`DRAWBRIDGE`/`TRAPDOOR`→`WINDMILL`). File-swapped levels auto-enable correct `FEAT_*` without `LevelFeatures.txt` edit.
 - **MACE/DRAWBRIDGE fixes**: Lazy `S1EnsureMeshWorld` for `Level4-Mace`/`Level4-Drawbridge` (previously assumed preloaded).
+- **LevelFeatures.txt deprecated (Option B)**: `[OBJECTS]`/`[FEATURES]`/`[COLLISION]` no longer read. `LoadConfig`/`InitCollisionDefaults`/`LoadCollisionConfig` retired. Every `N:`/`E:` S1 ref (`N:BUMPER`, `E:CATAPULTBOTTOM`, `N:GLASS`, `E:BRANCH`, etc.) is captured via `AddS1CollisionToExt` during `ScanS1AndAutoEnable` into per-board `OFF_COLLISION_NAMES` (64×32B at `0xA8D0`) and checked via `IsS1CollisionEnabled(board, event)` in `UniversalDispatchCollision`/`UniversalRender`. No file edit needed — adding `N:SWIRL` to the `.MESHWORLD` auto-enables it. `RaceFiles.txt` remains as the only file (slot→`.MESHWORLD` map).
 
 # LevelFeatures_Loader (v9) — RaceFiles.txt swappable races
 
@@ -127,9 +128,9 @@ Race 4: Level3          # swap Dizzy into WarmUp: change Race 1 to Level3
 ```
 Any `.MESHWORLD` in `levels\\` works. The S1 feature scan uses the *loaded* file, so features follow the file, not the slot.
 
-## Config file
+## Config file — DEPRECATED (v11 Option B)
 
-`LevelFeatures.txt` (next to `bass.dll`) controls which objects and features are active per level:
+`LevelFeatures.txt` is no longer read. Previously it controlled objects/features/collisions; now S1 `N:`/`E:` refs are the source of truth. `RaceFiles.txt` is the only file. Historic format below for reference:
 
 ### [OBJECTS] — Object toggles
 
@@ -175,7 +176,7 @@ i686-w64-mingw32-gcc -shared -o bass.dll LevelFeatures.c \
 
 - `bass.dll` — compiled mod (rename original bass.dll to bass_real.dll)
 - `LevelFeatures.c` — source code
-- `LevelFeatures.txt` — config file (object toggles per level)
+- `LevelFeatures.txt` — **DEPRECATED v11 Option B** — no longer read; S1 `N:`/`E:` refs are source of truth
 - `LevelData.txt` — **DEPRECATED v10** — no longer generated; in-memory defaults only
 - `LevelFeatures.xml` — reference catalog of all injectable objects (documentation only)
 - `bass.def` — export definitions for bass.dll proxy (111 forwarded exports)
