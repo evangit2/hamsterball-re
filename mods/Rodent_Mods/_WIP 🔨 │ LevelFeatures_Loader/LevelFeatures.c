@@ -1,6 +1,6 @@
 /*
- * LevelFeatures_Loader v10 — Phase1 S1-driven (LevelData.txt deprecated)
- * Phase1: All S1 references added dynamically via S1Ensure* + ScanS1AndAutoEnable.
+ * LevelFeatures_Loader v12 — S1 + level-folder sub-mesh N:/E: scan (LevelData.txt deprecated)
+ * Phase1+Folder: All S1 refs + every .MESHWORLD/.MESH in level folder byte-scanned for N:/E: (64->128 slots at 0xA8D4).
  * LevelData.txt removed — g_levelData[] kept as in-memory defaults only.
  * Original v6 header below:
  * LevelFeatures_Loader v6 — Universal Level Handler + Universal Vtable
@@ -789,9 +789,9 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 
 /* S1-driven collision list (Option B) — per-board N:/E: names discovered via S1 scan */
 #define OFF_COLLISION_COUNT 0xA8D0  /* int count */
-#define OFF_COLLISION_NAMES 0xA8D4  /* 64 * 32 bytes = 0x800 */
+#define OFF_COLLISION_NAMES 0xA8D4  /* 128 * 32 bytes = 0x1000, ends at 0xB8D4 (fits in 0xC000) */
 static int IsS1CollisionEnabled(void *board, const char *eventName);
-#define MAX_S1_COLLISIONS 64
+#define MAX_S1_COLLISIONS 128
 #define S1_COLLISION_NAME_LEN 32
 /* AthenaList slots (8 × 0x410 = 0x2080 bytes) */
 #define UNI_LIST_0    0x8800
@@ -6176,6 +6176,102 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
     DebugLog(dbg);
 }
 
+/* ── File byte-scan for N:/E: hidden in sub-meshes ──
+ * Some N:/E: collision meshes live inside sub-mesh .MESHWORLD/.MESH
+ * files (e.g. Level3-WaterWheel) not in the main level S1/S6.
+ * User requested: scan ALL mesh/meshworld files in the level folder.
+ * Generic extractor: finds N:XXX / E:XXX tokens in raw bytes and
+ * AddS1CollisionToExt for this board. Dedup handled by AddS1.
+ * Called once per level load, not per frame. */
+static int IsCollNameChar(char c) {
+    return (c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='_'||c==':'||c=='-'||c=='('||c==')';
+}
+static void ScanFileForCollisions(void *board, void *ext, const char *filePath) {
+    if (!board || !ext || !filePath || !filePath[0]) return;
+    HANDLE h = CreateFileA(filePath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h==INVALID_HANDLE_VALUE) return;
+    DWORD fsize = GetFileSize(h, NULL);
+    if (fsize==0 || fsize==(DWORD)-1 || fsize>0x500000) { CloseHandle(h); return; }
+    char *buf = (char*)HeapAlloc(GetProcessHeap(), 0, fsize);
+    if (!buf) { CloseHandle(h); return; }
+    DWORD br=0; if (!ReadFile(h, buf, fsize, &br, NULL) || br!=fsize) { HeapFree(GetProcessHeap(),0,buf); CloseHandle(h); return; }
+    CloseHandle(h);
+    int added=0;
+    for (DWORD i=0; i+2 < fsize; ) {
+        if ((buf[i]=='N' || buf[i]=='E') && buf[i+1]==':' && IsCollNameChar(buf[i+2])) {
+            DWORD j=0;
+            while (i+j < fsize && j < 31 && IsCollNameChar(buf[i+j])) j++;
+            if (j>=3 && j<=31) {
+                char name[32]; int k; for (k=0;k<(int)j && k<31;k++) name[k]=buf[i+k];
+                name[k]='\0';
+                // validate: at least N:X or E:XX and not just prefix
+                if ((name[0]=='N' || name[0]=='E') && name[1]==':' && name[2]) {
+                    int before = (int)*(int*)((char*)ext + OFF_COLLISION_COUNT);
+                    AddS1CollisionToExt(board, ext, name);
+                    int after = (int)*(int*)((char*)ext + OFF_COLLISION_COUNT);
+                    if (after>before) added++;
+                }
+            }
+            i += (j?j:1);
+        } else i++;
+    }
+    HeapFree(GetProcessHeap(),0,buf);
+    if (added) { char lg[96]; wsprintfA(lg, "FileScan: '%s' +%d N:/E:", filePath, added); DebugLog(lg); }
+}
+static void ScanLevelFolderForCollisions(void *board, void *ext, const char *basePath) {
+    if (!board || !ext || !basePath || !basePath[0]) return;
+    // extract dir from basePath (up to last slash)
+    char dir[MAX_PATH]=""; const char *last=NULL; for (const char *q=basePath; *q; q++) if (*q=='\\' || *q=='/') last=q;
+    if (last) { int len=(int)(last - basePath)+1; if (len>=MAX_PATH) len=MAX_PATH-1; strncpy(dir, basePath, len); dir[len]='\0'; }
+    else { strcpy(dir, "levels\\"); }
+    // also ensure dir ends with slash
+    int dlen=strlen(dir); if (dlen && dir[dlen-1]!='\\' && dir[dlen-1]!='/') { if (dlen+1<MAX_PATH){dir[dlen]='\\';dir[dlen+1]='\0';} }
+    // helper to scan wildcard in a given dir
+    const char *pats[4]={"*.MESHWORLD","*.MESH","*.meshworld","*.mesh"};
+    char globalDir[MAX_PATH]="levels\\";
+    // scan requested dir
+    for (int pi=0; pi<4; pi++) {
+        char pat[MAX_PATH]; strcpy(pat, dir); strcat(pat, pats[pi]);
+        WIN32_FIND_DATAA fd; HANDLE fh=FindFirstFileA(pat, &fd);
+        if (fh==INVALID_HANDLE_VALUE) continue;
+        do {
+            if (fd.cFileName[0]=='.') continue;
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+            char full[MAX_PATH]; strcpy(full, dir); strcat(full, fd.cFileName);
+            ScanFileForCollisions(board, ext, full);
+        } while (FindNextFileA(fh, &fd));
+        FindClose(fh);
+    }
+    // also scan global levels\ if dir was a subfolder (custom level) and not already global
+    if (my_stricmp(dir, globalDir)!=0) {
+        for (int pi=0; pi<4; pi++) {
+            char pat[MAX_PATH]; strcpy(pat, globalDir); strcat(pat, pats[pi]);
+            WIN32_FIND_DATAA fd; HANDLE fh=FindFirstFileA(pat, &fd);
+            if (fh==INVALID_HANDLE_VALUE) continue;
+            do {
+                if (fd.cFileName[0]=='.') continue;
+                if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+                char full[MAX_PATH]; strcpy(full, globalDir); strcat(full, fd.cFileName);
+                ScanFileForCollisions(board, ext, full);
+            } while (FindNextFileA(fh, &fd));
+            FindClose(fh);
+        }
+    }
+    // also explicitly scan the basePath file itself (covers bare-name resolves without slash)
+    {
+        char tryPath[MAX_PATH]; strcpy(tryPath, basePath);
+        ScanFileForCollisions(board, ext, tryPath);
+        // try with extension
+        int tlen=strlen(tryPath);
+        if (tlen+10 < MAX_PATH && my_strnicmp(tryPath+tlen-10, ".MESHWORLD", 10)!=0 && my_strnicmp(tryPath+tlen-5, ".MESH", 5)!=0) {
+            strcat(tryPath, ".MESHWORLD");
+            ScanFileForCollisions(board, ext, tryPath);
+        }
+    }
+    char lg2[96]; int cnt=*(int*)((char*)ext + OFF_COLLISION_COUNT);
+    wsprintfA(lg2, "FolderScan done dir='%s' total N:/E:=%d", dir, cnt); DebugLog(lg2);
+}
+
 static void UniversalConstructor(void *board, int raceIndex) {
     void* ext = EnsureBoardExt(board);
     char buf[256];
@@ -6243,6 +6339,8 @@ static void UniversalConstructor(void *board, int raceIndex) {
         (void)ext2;
         // S1 scan now that meshWorld exists — auto-enables feats for file-swapped levels
         if (ext && meshWorld) ScanS1AndAutoEnable(board, ext, meshWorld);
+        // Folder scan: catch N:/E: hidden in sub-mesh .MESHWORLD/.MESH files
+        if (ext) ScanLevelFolderForCollisions(board, ext, meshPath);
     }
 
     /* Step 2: RenderObj */
