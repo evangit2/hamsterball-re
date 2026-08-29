@@ -6242,8 +6242,8 @@ static void ScanLevelFolderForCollisions(void *board, void *ext, const char *bas
         } while (FindNextFileA(fh, &fd));
         FindClose(fh);
     }
-    // also scan global levels\ if dir was a subfolder (custom level) and not already global
-    if (my_stricmp(dir, globalDir)!=0) {
+    // also scan global levels\ — always (secret objects + shared sub-meshes live there)
+    if (1) /* always scan Levels folder — secret objects etc. live there, dedup-safe */ {
         for (int pi=0; pi<4; pi++) {
             char pat[MAX_PATH]; strcpy(pat, globalDir); strcat(pat, pats[pi]);
             WIN32_FIND_DATAA fd; HANDLE fh=FindFirstFileA(pat, &fd);
