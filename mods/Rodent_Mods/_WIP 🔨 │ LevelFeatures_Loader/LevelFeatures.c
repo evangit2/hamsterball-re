@@ -252,18 +252,25 @@ typedef enum {
 typedef enum {
     REND_NONE         = 0,
     REND_BUMPER       = 1 << 0,  /* Bumper reflective material (Beginner, Toob, Master) */
-    REND_WINDMILL     = 1 << 1,  /* Tower windmill + chomper render */
+    REND_WINDMILL     = 1 << 1,  /* Tower windmill wheel */
     REND_GLASS        = 1 << 2,  /* Glass transparent smasher render */
-    REND_SKY_CAM      = 1 << 3,  /* Sky camera + cloud sprite + object list */
+    REND_SKY_BOX      = 1 << 3,  /* Sky box: far-clip + CLOUDSCAPE sprite (points 1-3) */
+    REND_SKY_LIST     = 1 << 4,  /* Sky transparent list (point 4) */
+    REND_CHOMPER      = 1 << 5,  /* Tower chomper mouth */
+    REND_TURRET       = 1 << 6,  /* Tower turret (tower) */
+    REND_SKY_CAM      = REND_SKY_BOX, /* alias for compat */
 } RenderFeature;
 
 /* Render features are NOT hardcoded per level.
  * They are determined dynamically at render time based on what objects/events
  * are actually enabled for the current level:
  *   REND_BUMPER:   active when N:BUMPER collision event is enabled
- *   REND_WINDMILL: active when a windmill render object exists at UNI_MESH_4
+ *   REND_WINDMILL: active when WINDMILL S1 / REND_TOWER_WINDMILL !=0
+ *   REND_CHOMPER:  active when CHOMPER S1 / REND_TOWER_CHOMPER !=0
+ *   REND_TURRET:   active when TURRET* S1 / REND_TOWER_TURRET !=0
  *   REND_GLASS:    active when N:GLASS collision event is enabled
- *   REND_SKY_CAM:  active when a cloud sprite exists at UNI_MESH_11
+ *   REND_SKY_BOX:  active when CLOUDSCAPE S1 / REND_SKY_SPRITE !=0 (skybox + clouds)
+ *   REND_SKY_LIST: active when Sky transparent list has objects
  * Computed in UniversalRender, not set from defaults. */
 static DWORD g_renderFeatures[16] = {0};
 
@@ -1241,6 +1248,7 @@ static void LoadConfig(void) {
  * LevelData.txt parser
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* DEPRECATED Step 3: LevelData.txt removed — kept for reference, no longer called (S1-driven) */
 static void LoadLevelData(void) {
     HANDLE hFile = CreateFileA(g_levelDataPath, GENERIC_READ, FILE_SHARE_READ,
                                NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -1417,6 +1425,7 @@ static void LoadLevelData(void) {
  * Auto-generate LevelData.txt if missing
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* DEPRECATED Step 3: LevelData.txt generation removed — kept for reference */
 static void GenerateLevelData(void) {
     HANDLE hFile = CreateFileA(g_levelDataPath, GENERIC_WRITE, 0,
                                NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -2001,6 +2010,7 @@ static const char *g_meshPaths[16] = {
  *   9. Set unlock flags (per-level)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* DEPRECATED Step 3: static LoadExtraMeshes removed — S1Ensure* lazy-load replaces it (kept stub) */
 static void LoadExtraMeshes(void *board, LevelData *ld) {
     void *ext = EnsureBoardExt(board);
     if (!ext) {
@@ -3274,20 +3284,29 @@ void UniversalRenderImpl(void *board) {
     if (IsS1CollisionEnabled(board, "N:BUMPER"))
         features |= REND_BUMPER;
 
-    /* REND_WINDMILL: active when a windmill render obj exists at REND_TOWER_WINDMILL.
-     * Set by the WINDMILL handler in CreateDynamicObjects. */
+    /* REND_WINDMILL/CHOMPER/TURRET: each tower segment gated on its own S1 / render pointer.
+     * WINDMILL S1 -> REND_TOWER_WINDMILL, CHOMPER S1 -> REND_TOWER_CHOMPER, TURRET* S1 -> REND_TOWER_TURRET */
     if (*(DWORD *)((char *)ext + REND_TOWER_WINDMILL) != 0)
         features |= REND_WINDMILL;
+    if (*(DWORD *)((char *)ext + REND_TOWER_CHOMPER) != 0)
+        features |= REND_CHOMPER;
+    if (*(DWORD *)((char *)ext + REND_TOWER_TURRET) != 0)
+        features |= REND_TURRET;
 
     /* REND_GLASS: active when N:GLASS collision event is enabled for this level */
     if (IsS1CollisionEnabled(board, "N:GLASS"))
         features |= REND_GLASS;
 
-    /* REND_SKY_CAM: active when a cloud sprite exists at REND_SKY_SPRITE.
-     * Set by LoadExtraMeshes when a SPRITE: entry is in the mesh config.
-     * If you put a cloud sprite on any level, it gets sky camera rendering. */
+    /* REND_SKY_BOX: skybox + cloud sprite (CLOUDSCAPE S1). Points 1-3: projection, cull, sprite quad */
     if (*(DWORD *)((char *)ext + REND_SKY_SPRITE) != 0)
-        features |= REND_SKY_CAM;
+        features |= REND_SKY_BOX;
+    /* REND_SKY_LIST: transparent object list (point 4) — only if list has objects or mesh exists */
+    {
+        int skyCount = *(int *)((char *)ext + REND_SKY_LIST + 4);
+        DWORD skyMesh = *(DWORD *)((char *)ext + REND_SKY_MESH);
+        if (skyCount > 0 || skyMesh != 0)
+            features |= REND_SKY_LIST;
+    }
 
     if (!features) return;
 
@@ -3336,11 +3355,12 @@ void UniversalRenderImpl(void *board) {
         *(void **)((char *)board + 0x7C0) = NULL;
     }
 
-    /* ── Tower Windmill Render ──
-     * Renders windmill + chomper with custom projection and rotation.
-     * Reads windmill render obj from REND_TOWER_WINDMILL, chomper from REND_TOWER_CHOMPER,
-     * turret from REND_TOWER_TURRET, rotation from UNI_WINDMILL_ANGLE. */
-    if (features & REND_WINDMILL) {
+    /* ── Tower Render — split per reference (WINDMILL / CHOMPER / TURRET tower) ──
+     * Each segment only runs if its S1 was present (WINDMILL, CHOMPER, TURRET*).
+     * Original combined them under one flag; now gated individually.
+     * Inner per-pointer checks stay, outer is OR of all three so a level with
+     * only CHOMPER still renders it. */
+    if (features & (REND_WINDMILL | REND_CHOMPER | REND_TURRET)) {
         DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
         if (!app || IsBadReadPtr((void *)app, 0x200)) goto glass_render;
         void *gfx = *(void **)((char *)app + 0x174);
@@ -3504,10 +3524,9 @@ void UniversalRenderImpl(void *board) {
 
     sky_render:
 
-    /* ── Sky Camera Render ──
-     * Sets up far-clip projection, renders cloud sprite, then renders
-     * transparent scene objects from the Sky render AthenaList. */
-    if (features & REND_SKY_CAM) {
+    /* ── Sky Box (CLOUDSCAPE skybox) — far-clip + CLOUDSCAPE cloud sprite (points 1-3) ──
+     * Only active if CLOUDSCAPE S1 / REND_SKY_SPRITE exists. */
+    if (features & REND_SKY_BOX) {
         DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
         if (!app || IsBadReadPtr((void *)app, 0x200)) return;
         void *gfx = *(void **)((char *)app + 0x174);
@@ -3556,12 +3575,19 @@ void UniversalRenderImpl(void *board) {
             (*(int *)((char *)gfx + 0x7C8))++;
         }
 
-        /* Adjust projection based on gfx field, then render objects */
+        /* Adjust projection based on gfx field */
         float fovAdjust = *(float *)((char *)gfx + 0x188);
         fovAdjust = (fovAdjust + fovAdjust) * 0.0009765625f + 0.00048828125f;
         if (g_GraphicsSetProjection)
             g_GraphicsSetProjection(gfx, 20.0f, fovAdjust + fovAdjust);
-
+    }
+    /* ── Sky Transparent List (point 4) — only if respective objects exist ──
+     * Iterates REND_SKY_LIST (UNI_LIST_7) of transparent popcylinders etc.
+     * Gated on REND_SKY_LIST (count>0 or mesh). */
+    if (features & REND_SKY_LIST) {
+        DWORD app2 = *(DWORD *)((char *)board + BOARD_APP_PTR);
+        void *gfx2 = (app2 && !IsBadReadPtr((void *)app2, 0x200)) ? *(void **)((char *)app2 + 0x174) : NULL;
+        if (gfx2) {
         /* Level_RenderDynamicObjects was already called above.
          * Now iterate the Sky render object AthenaList and render transparent objects.
          * Uses dedicated REND_SKY_LIST (UNI_LIST_7) — separate from swirl's UNI_LIST_6. */
@@ -3611,8 +3637,9 @@ void UniversalRenderImpl(void *board) {
                 *(int *)((char *)ext + REND_SKY_LIST + 8 + iter * 4) = next + 1;
             }
         }
-    }
-}
+        } // gfx2
+    } // REND_SKY_LIST
+} // UniversalRenderImpl
 
 /* Naked thunk for UniversalRender — handles the calling convention mismatch.
  * The game has two call sites for vtable slot 24:
@@ -4138,7 +4165,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         return;
     }
 
-    /* ── TURRET (Tower) ──
+    /* ── TURRET tower (Tower) — not a gun, it's a tower ──
      * Original game (Tower_CreateDynamicObjects at 0x0040d7c0):
      *   1. operator_new(0x10D0) → Stands_ctor(mem, meshPtr)
      *   2. Timer_Init(stack local) — creates a Timer object
