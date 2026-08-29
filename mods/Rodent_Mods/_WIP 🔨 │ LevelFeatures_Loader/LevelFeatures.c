@@ -1,4 +1,8 @@
 /*
+ * LevelFeatures_Loader v10 — Phase1 S1-driven (LevelData.txt deprecated)
+ * Phase1: All S1 references added dynamically via S1Ensure* + ScanS1AndAutoEnable.
+ * LevelData.txt removed — g_levelData[] kept as in-memory defaults only.
+ * Original v6 header below:
  * LevelFeatures_Loader v6 — Universal Level Handler + Universal Vtable
  *
  * 1. ALLOCATION PATCH: Patches all 15 level allocation sites in
@@ -2169,12 +2173,10 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     *(char **)((char *)mem + UNI_MUSIC_NAME) = ld->musicName;
     DebugLog("Music set");
 
-    /* Step 8: Load extra meshes */
-    if (g_operatorNew && g_LevelMeshWorldCtor) {
-        DebugLog("Loading extra meshes...");
-        LoadExtraMeshes(mem, ld);
-        DebugLog("Extra meshes loaded");
-    }
+    /* Step 8: Load extra meshes — DEPRECATED Phase1 S1-driven.
+     * Static g_levelData[].meshes preload removed. All meshes now lazy-loaded
+     * via S1Ensure* inside UniversalCreateDynamicObjects on demand. */
+    DebugLog("Step 8: S1-driven meshes (no static preload)");
 
     /* Step 8b: For Dizzy, also write mesh pointers to ORIGINAL offsets.
      * Unified storage is now in ext; copy to vanilla offsets for native code.
@@ -4034,6 +4036,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── MACE (Tower) ── */
     if (my_strnicmp(name, "MACE", 4) == 0 && difficulty != 0) {
+        S1EnsureMeshWorld(board, ext, UNI_MESH_3, "Levels\\Level4-Mace");
         int meshVal = *(int*)((char*)ext + UNI_MESH_3);
         if (!meshVal) { DebugLog("MACE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x110C);
@@ -4054,6 +4057,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── DRAWBRIDGE (Tower) ── */
     if (my_strnicmp(name, "DRAWBRIDGE", 10) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_SAW1_OBJ, "Levels\\Level4-Drawbridge");
         int meshVal = *(int*)((char*)ext + UNI_SAW1_OBJ);
         if (!meshVal) { DebugLog("DRAWBRIDGE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x113C);
@@ -6115,17 +6119,22 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
         if (!name) continue;
         if (!VirtualQuery(name, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) continue;
         // name is S1 ref string, e.g. "Levels\\Level3-WaterWheel" or "BRIDGE" etc.
-        // Use prefix match; guard strlen via VirtualQuery already
-        if (my_strnicmp(name, "BRIDGE", 6)==0) {
+        // Phase1 full registry: every S1 prefix auto-enables its feat / ensures mesh
+        if (my_strnicmp(name, "BRIDGE", 6)==0 || my_strnicmp(name, "BBRIDGE", 7)==0) {
             OrBoardFeat(board, FEAT_BRIDGE_ANIM);
         }
         if (my_strnicmp(name, "WATERWHEEL", 10)==0 || my_strnicmp(name, "WHEELEMBED", 10)==0 || my_strnicmp(name, "SWIRL", 5)==0 || my_strnicmp(name, "TarBubble", 9)==0 || my_strnicmp(name, "GLUEBIE", 7)==0 || my_strnicmp(name, "TIPPER", 6)==0) {
             OrBoardFeat(board, FEAT_SWIRL);
         }
-        if (my_strnicmp(name, "WINDMILL", 8)==0) {
+        if (my_strnicmp(name, "WINDMILL", 8)==0 || my_strnicmp(name, "CHOMPER", 7)==0 || my_strnicmp(name, "TURRET", 6)==0 || my_strnicmp(name, "CATAPULT", 8)==0 || my_strnicmp(name, "MACE", 4)==0 || my_strnicmp(name, "DRAWBRIDGE", 10)==0 || my_strnicmp(name, "TRAPDOOR", 8)==0) {
             OrBoardFeat(board, FEAT_WINDMILL);
         }
-        // Tower extras imply windmill level but not needed for feat; keep minimal
+        if (my_strnicmp(name, "WOBBLY", 6)==0 || my_strnicmp(name, "WAVY", 4)==0) {
+            // Wobbly family — no feat flag but S1 presence proves level intent
+        }
+        if (my_strnicmp(name, "BONK", 4)==0 || my_strnicmp(name, "FAN", 3)==0 || my_strnicmp(name, "SAWBLADE", 8)==0 || my_strnicmp(name, "BELL", 4)==0 || my_strnicmp(name, "JUDGE", 5)==0 || my_strnicmp(name, "SPINNER", 7)==0 || my_strnicmp(name, "LOOPER", 6)==0 || my_strnicmp(name, "GEAR", 4)==0 || my_strnicmp(name, "PENDULUM", 8)==0 || my_strnicmp(name, "ROTATOR", 7)==0) {
+            // Expert/Impossible family — handled via S1Ensure* in CreateDynamicObjects
+        }
     }
     // No need to restore iterator; Board_Setup will re-init if needed
     char dbg[128];
@@ -6946,29 +6955,9 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     LoadConfig();
     DebugLog("LoadConfig done");
 
-    /* Version-check LevelData.txt — if version mismatch, regenerate */
-    const char *EXPECTED_VERSION = "LevelData_v3";
-    /* Check if file exists and has correct version */
-    HANDLE hVerFile = CreateFileA(g_levelDataPath, GENERIC_READ, FILE_SHARE_READ,
-                                   NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    BOOL needRegen = FALSE;
-    if (hVerFile == INVALID_HANDLE_VALUE) {
-        needRegen = TRUE;
-    } else {
-        char verBuf[256];
-        DWORD vr = 0;
-        ReadFile(hVerFile, verBuf, sizeof(verBuf)-1, &vr, NULL);
-        CloseHandle(hVerFile);
-        verBuf[vr] = '\0';
-        if (!strstr(verBuf, EXPECTED_VERSION)) needRegen = TRUE;
-    }
-    if (needRegen) {
-        DebugLog("Generating LevelData...");
-        GenerateLevelData();
-        DebugLog("GenerateLevelData done");
-    }
-    LoadLevelData();
-    DebugLog("LoadLevelData done");
+    /* LevelData.txt — DEPRECATED Phase1: removed. g_levelData[] stays as
+     * in-memory defaults only; spawns are S1-driven via ScanS1AndAutoEnable + S1Ensure*. */
+    DebugLog("LevelData.txt deprecated — using in-memory defaults + S1 scan");
 
     InstallExtFreeHook();
     DebugLog("InstallExtFreeHook done");

@@ -1,3 +1,11 @@
+# LevelFeatures_Loader (v10) — Phase1 S1-driven (LevelData.txt deprecated)
+
+## What's New in v10 (Phase1)
+- **All S1 references added dynamically**: Every object type (`BRIDGE`, `WATERWHEEL`, `TIPPER`, `SWIRL`, `GLUEBIE`, `WINDMILL`, `CHOMPER`, `TURRET`, `CATAPULT`, `MACE`, `DRAWBRIDGE`, `BONK`, `FAN`, `WOBBLY`, etc.) is now spawned via `S1Ensure*` lazy-loading inside `UniversalCreateDynamicObjects` — no static `g_levelData[].meshes` preload. Drop any `.MESHWORLD` into any slot, its S1 strings bring their own meshes.
+- **LevelData.txt deprecated**: File generation/loading removed. `g_levelData[]` kept as in-memory defaults only (board names, colors, raceData, vtable). `GenerateLevelData`/`LoadLevelData` no longer called; `Step 8: S1-driven meshes` replaces `LoadExtraMeshes` static preload.
+- **Full S1 feat scan**: `ScanS1AndAutoEnable` now covers full registry (`BRIDGE`/`BBRIDGE`→`BRIDGE_ANIM`, `WATERWHEEL`/`SWIRL`/`TIPPER`/`GLUEBIE`→`SWIRL`, `WINDMILL`/`CHOMPER`/`TURRET`/`CATAPULT`/`MACE`/`DRAWBRIDGE`/`TRAPDOOR`→`WINDMILL`). File-swapped levels auto-enable correct `FEAT_*` without `LevelFeatures.txt` edit.
+- **MACE/DRAWBRIDGE fixes**: Lazy `S1EnsureMeshWorld` for `Level4-Mace`/`Level4-Drawbridge` (previously assumed preloaded).
+
 # LevelFeatures_Loader (v9) — RaceFiles.txt swappable races
 
 Universal cross-level object injection and vtable replacement for Hamsterball. Replaces all 15 per-level constructors **and** 4 vtable slots (Board_Update, RaceState, DispatchCollision, CreateDynamicObjects) with universal handlers, enabling config-driven level features without recompilation.
@@ -147,12 +155,9 @@ Available features: `BRIDGE_ANIM`, `SWIRL`, `WINDMILL`, `BADBALL`, `BUMPER_DECAY
 
 Config is re-read on every level load.
 
-## LevelData.txt
+## LevelData.txt — DEPRECATED (v10)
 
-Auto-generated on first run with Ghidra-extracted per-level defaults. Editable to customize:
-- Level names, vtable addresses, board names, race titles
-- Race data, music names, colors
-- Mesh paths and extra mesh loads (for non-object meshes)
+**Removed as of v10 Phase1.** Previously auto-generated per-level config, now kept only as in-memory defaults (`g_levelData[]`) for board names/colors/vtables. All spawns are S1-driven; edit the `.MESHWORLD` S1 refs instead. The file is no longer read or written.
 
 ## Installation
 
@@ -171,7 +176,7 @@ i686-w64-mingw32-gcc -shared -o bass.dll LevelFeatures.c \
 - `bass.dll` — compiled mod (rename original bass.dll to bass_real.dll)
 - `LevelFeatures.c` — source code
 - `LevelFeatures.txt` — config file (object toggles per level)
-- `LevelData.txt` — auto-generated per-level data (created on first run)
+- `LevelData.txt` — **DEPRECATED v10** — no longer generated; in-memory defaults only
 - `LevelFeatures.xml` — reference catalog of all injectable objects (documentation only)
 - `bass.def` — export definitions for bass.dll proxy (111 forwarded exports)
 
