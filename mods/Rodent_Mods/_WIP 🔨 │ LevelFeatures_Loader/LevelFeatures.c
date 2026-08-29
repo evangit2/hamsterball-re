@@ -6093,7 +6093,7 @@ static void AddS1CollisionToExt(void *board, void *ext, const char *name) {
     if (name[1]!=':') return;
     // dedup
     int count = *(int*)((char*)ext + OFF_COLLISION_COUNT);
-    if (count <0 || count >= MAX_S1_COLLISIONS) return;
+    if (count <0 || count >= MAX_S1_COLLISIONS) { if (count>=MAX_S1_COLLISIONS) DebugLog("AddS1Collision: overflow, dropping"); return; }
     char *base = (char*)ext + OFF_COLLISION_NAMES;
     for (int i=0;i<count;i++) if (my_stricmp(base + i*S1_COLLISION_NAME_LEN, name)==0) return;
     my_strncpy(base + count*S1_COLLISION_NAME_LEN, name, S1_COLLISION_NAME_LEN);
@@ -6106,10 +6106,13 @@ static int IsS1CollisionEnabled(void *board, const char *eventName) {
     int count = *(int*)((char*)ext + OFF_COLLISION_COUNT);
     if (count<=0 || count>MAX_S1_COLLISIONS) return 0;
     char *base = (char*)ext + OFF_COLLISION_NAMES;
+    // exact match
     for (int i=0;i<count;i++) if (my_stricmp(base + i*S1_COLLISION_NAME_LEN, eventName)==0) return 1;
-    // also allow prefix match for N:BUMPER1 vs N:BUMPER (bumper variant)
-    if (my_strnicmp(eventName, "N:BUMPER", 8)==0) {
-        for (int i=0;i<count;i++) if (my_strnicmp(base + i*S1_COLLISION_NAME_LEN, "N:BUMPER", 8)==0) return 1;
+    // generic prefix match: stored variant vs canonical event (E:BRANCH(A) vs E:BRANCH)
+    // covers N:BUMPER1, E:BRANCH(A)/(B), E:SCORE*, N:NEONPLATFORM*, N:SPINNY*, etc.
+    // dispatch uses my_strnicmp(name, event, len)==0, so stored "E:BRANCH(A)" must enable canonical "E:BRANCH"
+    { int elen=0; while(eventName[elen]) elen++;
+      for (int i=0;i<count;i++) if (my_strnicmp(base + i*S1_COLLISION_NAME_LEN, eventName, elen)==0) return 1;
     }
     return 0;
 }
@@ -6243,7 +6246,7 @@ static void ScanLevelFolderForCollisions(void *board, void *ext, const char *bas
         FindClose(fh);
     }
     // also scan global levels\ — always (secret objects + shared sub-meshes live there)
-    if (1) /* always scan Levels folder — secret objects etc. live there, dedup-safe */ {
+    if (my_stricmp(dir, globalDir)!=0) /* also scan global Levels folder for shared sub-meshes + secret objects */ {
         for (int pi=0; pi<4; pi++) {
             char pat[MAX_PATH]; strcpy(pat, globalDir); strcat(pat, pats[pi]);
             WIN32_FIND_DATAA fd; HANDLE fh=FindFirstFileA(pat, &fd);
