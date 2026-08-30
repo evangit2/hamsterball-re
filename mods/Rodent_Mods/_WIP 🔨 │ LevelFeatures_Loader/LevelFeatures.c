@@ -218,6 +218,92 @@ void DebugLog(const char *msg);
 #define OFF_CATAPULT_LIST   UNI_LIST_2
 #define OFF_MACE_LIST       UNI_LIST_2  /* share */
 
+#define OFF_CATAPULT_MESH   UNI_CATAPULT_MESH
+#define OFF_MACE_MESH       UNI_MACE_MESH
+#define OFF_DRAWBRIDGE_MESH UNI_DRAWBRIDGE_MESH
+#define OFF_BONK_MESH       UNI_BONK_MESH
+#define OFF_WINDMILL_MESH   UNI_WINDMILL_MESH
+#define OFF_CHOMPER_MESH    UNI_CHOMPER_MESH
+#define OFF_TURRET_MESH     UNI_TURRET_MESH
+#define OFF_SAWBLADE1_OBJ   UNI_SAWBLADE1_OBJ
+#define OFF_SAWBLADE2_OBJ   UNI_SAWBLADE2_OBJ
+#define OFF_BONK_STORE2     UNI_BONK_STORE2
+#define OFF_BLOCKDAWG1_MESH UNI_BLOCKDAWG1_MESH
+#define OFF_BLOCKDAWG2_MESH UNI_BLOCKDAWG2_MESH
+#define OFF_LIFTER_MESH     UNI_LIFTER_MESH
+#define OFF_ROTATOR_MESH    UNI_ROTATOR_MESH
+#define OFF_DFLOOR_BASE     UNI_DFLOOR_BASE
+#define OFF_WOBBLY_BASE     UNI_WOBBLY_BASE
+#define OFF_POPCYL_MESH_BASE UNI_POPCYL_MESH_BASE
+#define OFF_BBRIDGE1_MESH   UNI_BBRIDGE1_MESH
+#define OFF_BBRIDGE2_MESH   UNI_BBRIDGE2_MESH
+
+/* Per-board cached collision flags (built once after S1 scan) — 1 byte per event */
+#define OFF_COLLISION_FLAGS 0xB950  /* 64 bytes: 0xB950-0xB98F */
+#define COLL_FLAG_BUMPER       (OFF_COLLISION_FLAGS+0)
+#define COLL_FLAG_BRIDGE       (OFF_COLLISION_FLAGS+1)
+#define COLL_FLAG_WATERWHEEL   (OFF_COLLISION_FLAGS+2)
+#define COLL_FLAG_WHEELEMBED   (OFF_COLLISION_FLAGS+3)
+#define COLL_FLAG_SWIRL        (OFF_COLLISION_FLAGS+4)
+#define COLL_FLAG_CATAPULTBOTTOM (OFF_COLLISION_FLAGS+5)
+#define COLL_FLAG_OPENSESAME   (OFF_COLLISION_FLAGS+6)
+#define COLL_FLAG_TRAPDOOR     (OFF_COLLISION_FLAGS+7)
+#define COLL_FLAG_BITE         (OFF_COLLISION_FLAGS+8)
+#define COLL_FLAG_MACETRIGGER  (OFF_COLLISION_FLAGS+9)
+#define COLL_FLAG_MACE         (OFF_COLLISION_FLAGS+10)
+#define COLL_FLAG_HELPINERTIA  (OFF_COLLISION_FLAGS+11)
+#define COLL_FLAG_UNHELPINERTIA (OFF_COLLISION_FLAGS+12)
+#define COLL_FLAG_VACPOPOUT    (OFF_COLLISION_FLAGS+13)
+#define COLL_FLAG_SPEEDCYLINDER (OFF_COLLISION_FLAGS+14)
+#define COLL_FLAG_EXTRATIME    (OFF_COLLISION_FLAGS+15)
+#define COLL_FLAG_NEONPLATFORM (OFF_COLLISION_FLAGS+16)
+#define COLL_FLAG_ZOOP         (OFF_COLLISION_FLAGS+17)
+#define COLL_FLAG_LIGHTSOFF    (OFF_COLLISION_FLAGS+18)
+#define COLL_FLAG_LIGHTSON     (OFF_COLLISION_FLAGS+19)
+#define COLL_FLAG_CALLHAMMER   (OFF_COLLISION_FLAGS+20)
+#define COLL_FLAG_HAMMERCHASE  (OFF_COLLISION_FLAGS+21)
+#define COLL_FLAG_ALERTSAW1    (OFF_COLLISION_FLAGS+22)
+#define COLL_FLAG_ALERTSAW2    (OFF_COLLISION_FLAGS+23)
+#define COLL_FLAG_ALERTSAW3    (OFF_COLLISION_FLAGS+24)
+#define COLL_FLAG_ACTIVATESAW1 (OFF_COLLISION_FLAGS+25)
+#define COLL_FLAG_ACTIVATESAW2 (OFF_COLLISION_FLAGS+26)
+#define COLL_FLAG_ALERTJUDGES  (OFF_COLLISION_FLAGS+27)
+#define COLL_FLAG_SCORE        (OFF_COLLISION_FLAGS+28)
+#define COLL_FLAG_BELL         (OFF_COLLISION_FLAGS+29)
+#define COLL_FLAG_GRAVITY      (OFF_COLLISION_FLAGS+30)
+#define COLL_FLAG_JUMPFIRST    (OFF_COLLISION_FLAGS+31)
+#define COLL_FLAG_JUMPSECOND   (OFF_COLLISION_FLAGS+32)
+#define COLL_FLAG_SHRINK       (OFF_COLLISION_FLAGS+33)
+#define COLL_FLAG_GROWSOUND    (OFF_COLLISION_FLAGS+34)
+#define COLL_FLAG_GROW         (OFF_COLLISION_FLAGS+35)
+#define COLL_FLAG_DROPLIFT     (OFF_COLLISION_FLAGS+36)
+#define COLL_FLAG_PIPERANDOM   (OFF_COLLISION_FLAGS+37)
+#define COLL_FLAG_LIMIT        (OFF_COLLISION_FLAGS+38)
+#define COLL_FLAG_LIMITX       (OFF_COLLISION_FLAGS+39)
+#define COLL_FLAG_LIMITZ       (OFF_COLLISION_FLAGS+40)
+#define COLL_FLAG_LIMITPIPE1   (OFF_COLLISION_FLAGS+41)
+#define COLL_FLAG_SWALLOW      (OFF_COLLISION_FLAGS+42)
+#define COLL_FLAG_LIMITPIPE2   (OFF_COLLISION_FLAGS+43)
+#define COLL_FLAG_BRANCH       (OFF_COLLISION_FLAGS+44)
+#define COLL_FLAG_SPINNY       (OFF_COLLISION_FLAGS+45)
+#define COLL_FLAG_SAWTEETH     (OFF_COLLISION_FLAGS+46)
+#define COLL_FLAG_SPINNER      (OFF_COLLISION_FLAGS+47)
+#define COLL_FLAG_LAUNCH       (OFF_COLLISION_FLAGS+48)
+#define COLL_FLAG_SQUAREWOBBLY (OFF_COLLISION_FLAGS+49)
+#define COLL_FLAG_WAVY         (OFF_COLLISION_FLAGS+50)
+#define COLL_FLAG_GLASS        (OFF_COLLISION_FLAGS+51)
+#define COLL_FLAG_TENBONUS1    (OFF_COLLISION_FLAGS+52)
+#define COLL_FLAG_TENBONUS2    (OFF_COLLISION_FLAGS+53)
+#define COLL_FLAG_PEGS         (OFF_COLLISION_FLAGS+54)
+#define COLL_FLAG_TRAPPOP      (OFF_COLLISION_FLAGS+55)
+#define COLL_FLAG_NOPEGS       (OFF_COLLISION_FLAGS+56)
+#define COLL_FLAG_HEATON       (OFF_COLLISION_FLAGS+57)
+#define COLL_FLAG_HEATOFF      (OFF_COLLISION_FLAGS+58)
+#define COLL_FLAG_BOUNCE       (OFF_COLLISION_FLAGS+59)
+#define COLL_FLAG_ONROTATOR    (OFF_COLLISION_FLAGS+60)
+#define COLL_FLAG_ONGEAR       (OFF_COLLISION_FLAGS+61)
+#define COLL_FLAG_COUNT        62
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Object type system — extensible per-level feature toggles
@@ -294,12 +380,13 @@ static int BoardHasOffset(void* board, DWORD offset, DWORD need) {
     DWORD base = (DWORD)board;
     DWORD regionEnd = (DWORD)mbi.BaseAddress + mbi.RegionSize;
     if (base + offset + need > regionEnd) return 0;
-    /* Heap blocks are sub-allocations — VirtualQuery over-estimates. Fall back
-     * to HeapSize for precise check when available. */
-    DWORD hs = 0;
+    /* Heap blocks are sub-allocations — VirtualQuery over-estimates. Use HeapSize
+     * for precise check when this is a Heap block. If HeapValidate says not a heap
+     * block, VirtualQuery result stands. */
     if (HeapValidate(GetProcessHeap(), 0, board)) {
-        hs = HeapSize(GetProcessHeap(), 0, board);
-        if (hs != (DWORD)-1 && offset + need > hs) return 0;
+        DWORD hs = HeapSize(GetProcessHeap(), 0, board);
+        if (hs == (DWORD)-1) return 0;
+        if (offset + need > hs) return 0;
     }
     return 1;
 }
@@ -310,12 +397,14 @@ static int ExtHasOffset(void* ext, DWORD offset, DWORD need) {
         if (offset + need > g_extMap[i].extSize) return 0;
         return 1;
     }
-    /* Not in map — check via HeapSize as fallback */
+    /* Not in map — stale or unknown ext. Use HeapSize precisely, fail closed. */
     if (HeapValidate(GetProcessHeap(), 0, ext)) {
         DWORD hs = HeapSize(GetProcessHeap(), 0, ext);
-        if (hs != (DWORD)-1 && offset + need > hs) return 0;
+        if (hs == (DWORD)-1) return 0;
+        if (offset + need > hs) return 0;
+        return 1;
     }
-    return 1;
+    return 0;
 }
 
 static void* GetBoardExt(void* board) {
@@ -746,6 +835,31 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_TIPPER_ROT_X     0x86F0  /* Tipper base rot X (separate from WaterWheel) */
 #define UNI_TIPPER_ROT_Y     0x86F4  /* Tipper base rot Y */
 #define UNI_TIPPER_ROT_Z     0x86F8  /* Tipper base rot Z */
+
+/* ── Dedup: every shared mesh/instance slot gets its own ext offset ──
+ * Previously CATAPULT/MACE/DRAWBRIDGE/BONK/WINDMILL/CHOMPER/TURRET/BONK etc
+ * all aliased to UNI_BONK_STORE / UNI_MESH_3 / UNI_MESH_4 / UNI_SAW1_OBJ.
+ * A level with CATAPULT+BRIDGE or MACE+DRAWBRIDGE would clobber. Each now
+ * has a dedicated 4-byte slot in the high free region (0xB8D8+). */
+#define UNI_CATAPULT_MESH    0xB8D8  /* Catapult meshWorld (Tower) */
+#define UNI_MACE_MESH        0xB8DC  /* Mace meshWorld (Tower) */
+#define UNI_DRAWBRIDGE_MESH  0xB8E0  /* Drawbridge meshWorld (Tower) */
+#define UNI_BONK_MESH        0xB8E4  /* Bonk mesh/instance (Expert) */
+#define UNI_WINDMILL_MESH    0xB8E8  /* Windmill meshWorld (Tower) */
+#define UNI_CHOMPER_MESH     0xB8EC  /* Chomper meshWorld (Tower) */
+#define UNI_TURRET_MESH      0xB8F0  /* Turret meshWorld (Tower) */
+#define UNI_SAWBLADE1_OBJ    0xB8F4  /* SawBlade1 instance (Expert) */
+#define UNI_SAWBLADE2_OBJ    0xB8F8  /* SawBlade2 instance (Expert) */
+#define UNI_BONK_STORE2      0xB8FC  /* Bonk instance store (secondary) */
+#define UNI_BLOCKDAWG1_MESH  0xB900  /* Blockdawg1 mesh */
+#define UNI_BLOCKDAWG2_MESH  0xB904  /* Blockdawg2 mesh */
+#define UNI_LIFTER_MESH      0xB908  /* Lifter/SpeedCyl mesh (Up) */
+#define UNI_ROTATOR_MESH     0xB90C  /* Rotator/Pendulum mesh (Impossible) */
+#define UNI_DFLOOR_BASE      0xB910  /* DFloor1-4 meshes (4*4=16B: B910/B914/B918/B91C) */
+#define UNI_WOBBLY_BASE      0xB920  /* Wobbly1-7 meshes (7*4=28B: B920..B93C) */
+#define UNI_POPCYL_MESH_BASE 0xB940  /* PopCylinder meshes (2*4) */
+#define UNI_BBRIDGE1_MESH    0xB948  /* BBridge1 mesh (Master) */
+#define UNI_BBRIDGE2_MESH    0xB94C  /* BBridge2 mesh (Master) */
 
 /* Sky popcyl array (16 × 4 = 64 bytes) */
 #define UNI_SKY_POPCYL_BASE 0x8700
@@ -2706,7 +2820,7 @@ void UniversalRenderImpl(void *board) {
     DWORD features = 0;
 
     /* REND_BUMPER: active when N:BUMPER collision event is enabled for this level */
-    if (IsS1CollisionEnabled(board, "N:BUMPER"))
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_BUMPER)))
         features |= REND_BUMPER;
 
     /* REND_WINDMILL/CHOMPER/TURRET: each tower segment gated on its own S1 / render pointer.
@@ -2719,7 +2833,7 @@ void UniversalRenderImpl(void *board) {
         features |= REND_TURRET;
 
     /* REND_GLASS: active when N:GLASS collision event is enabled for this level */
-    if (IsS1CollisionEnabled(board, "N:GLASS"))
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_GLASS)))
         features |= REND_GLASS;
 
     /* REND_SKY_BOX: skybox + cloud sprite (CLOUDSCAPE S1). Points 1-3: projection, cull, sprite quad */
@@ -3474,8 +3588,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── CATAPULT (Tower) ── */
     if (my_strnicmp(name, "CATAPULT", 8) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level4-Catapult");
-        int meshOff = UNI_BONK_STORE;
+        S1EnsureMeshWorld(board, ext, UNI_CATAPULT_MESH, "Levels\\Level4-Catapult");
+        int meshOff = UNI_CATAPULT_MESH;
         int meshVal = *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("CATAPULT: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1108);
@@ -3494,8 +3608,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── MACE (Tower) ── */
     if (my_strnicmp(name, "MACE", 4) == 0 && difficulty != 0) {
-        S1EnsureMeshWorld(board, ext, UNI_MESH_3, "Levels\\Level4-Mace");
-        int meshVal = *(int*)((char*)ext + UNI_MESH_3);
+        S1EnsureMeshWorld(board, ext, UNI_MACE_MESH, "Levels\\Level4-Mace");
+        int meshVal = *(int*)((char*)ext + UNI_MACE_MESH);
         if (!meshVal) { DebugLog("MACE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x110C);
         if (mem) {
@@ -3515,8 +3629,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── DRAWBRIDGE (Tower) ── */
     if (my_strnicmp(name, "DRAWBRIDGE", 10) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_SAW1_OBJ, "Levels\\Level4-Drawbridge");
-        int meshVal = *(int*)((char*)ext + UNI_SAW1_OBJ);
+        S1EnsureMeshWorld(board, ext, UNI_DRAWBRIDGE_MESH, "Levels\\Level4-Drawbridge");
+        int meshVal = *(int*)((char*)ext + UNI_DRAWBRIDGE_MESH);
         if (!meshVal) { DebugLog("DRAWBRIDGE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x113C);
         if (mem) {
@@ -3533,8 +3647,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── WINDMILL (Tower) ── */
     if (my_strnicmp(name, "WINDMILL", 8) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_MESH_4, "Levels\\Level4-Windmill");
-        int mesh = *(int *)((char *)ext + UNI_MESH_4);
+        S1EnsureMeshWorld(board, ext, UNI_WINDMILL_MESH, "Levels\\Level4-Windmill");
+        int mesh = *(int *)((char *)ext + UNI_WINDMILL_MESH);
         if (!mesh) { DebugLog("WINDMILL: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10D0);
         if (mem) {
@@ -3578,7 +3692,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── CHOMPER (Tower) ── */
     if (my_strnicmp(name, "CHOMPER", 7) == 0) {
         /* Store chomper mesh pointer in dedicated render offset */
-        *(DWORD *)((char *)ext + REND_TOWER_CHOMPER) = *(DWORD *)((char *)ext + UNI_MESH_8);
+        /* CHOMPER mesh now at UNI_CHOMPER_MESH; REND_TOWER_CHOMPER set below */
+        /* dedup: no shared UNI_MESH_8 read */
         /* Store position in dedicated tower render offsets */
         *(float *)((char *)ext + REND_TOWER_CHOMP_X) = x;
         *(float *)((char *)ext + REND_TOWER_CHOMP_Y) = y;
@@ -3601,7 +3716,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
      *   6. Level_RenderCtor + TipperVisual_Attach
      *   7. Timer_Cleanup */
     if (my_strnicmp(name, "TURRET", 6) == 0) {
-        void *meshPtr = *(void **)((char *)ext + UNI_MESH_15);
+        S1EnsureMeshWorld(board, ext, UNI_TURRET_MESH, "Levels\\Level4-Turret");
+        void *meshPtr = *(void **)((char *)ext + UNI_TURRET_MESH);
         if (!meshPtr) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10D0);
         if (mem) {
@@ -3645,7 +3761,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             DWORD *o = (DWORD *)obj;
             renderOut = o[0x43E];
-            int storeOff = UNI_BONK_STORE;
+            int storeOff = UNI_BONK_MESH;
             void* bExt = GetBoardExt(board); if(!bExt) bExt=EnsureBoardExt(board);
             if(bExt) *(void **)((char *)bExt + storeOff) = obj;
         }
@@ -3673,8 +3789,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_SawBladeCtor(mem, (int)board, x, y, z);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            if (strstr(name, "1")) { g_SawBladeSetVariant(obj, 1); *(void **)((char *)ext + UNI_SAW1_OBJ) = obj; }
-            if (strstr(name, "2")) { g_SawBladeSetVariant(obj, 2); *(void **)((char *)ext + UNI_SAW2_OBJ) = obj; }
+            if (strstr(name, "1")) { g_SawBladeSetVariant(obj, 1); *(void **)((char *)ext + UNI_SAWBLADE1_OBJ) = obj; }
+            if (strstr(name, "2")) { g_SawBladeSetVariant(obj, 2); *(void **)((char *)ext + UNI_SAWBLADE2_OBJ) = obj; }
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
@@ -3687,7 +3803,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "BRIDGE", 6) == 0) {
         S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level2-Bridge");
         // For Intermediate the render is TIPPER: (Render+TipperVisual_Attach)
-        void* brMesh = *(void**)((char*)ext + UNI_BONK_STORE);
+        void* brMesh = *(void**)((char*)ext + UNI_BONK_STORE); // bridge keeps BONK_STORE
         void* brRender = *(void**)((char*)ext + UNI_SAW1_OBJ);
         if (!brRender && brMesh) {
             void* mem = g_operatorNew(0x10D0);
@@ -3757,6 +3873,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── LIFTER (Odd, Up) ── */
     if (my_strnicmp(name, "LIFTER", 6) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_LIFTER_MESH, "levels\\levelup-lifter");
         if (level == 9) {
             /* Odd: Odd_Lifter_ctor */
             void *mem = g_operatorNew(0x10FC);
@@ -3769,7 +3886,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         } else {
             /* Up: Lifter_ctor with number from name */
             long num = atol(name + 6);
-            int meshVal = *(int*)((char*)ext + UNI_MESH_3);
+            int meshVal = *(int*)((char*)ext + UNI_LIFTER_MESH);
             if (!meshVal) { DebugLog("LIFTER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
             void *mem = g_operatorNew(0x10F4);
             if (mem) {
@@ -3852,7 +3969,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── BLOCKDAWG1/2/3 (Toob) ── */
     if (my_strnicmp(name, "BLOCKDAWG", 9) == 0 && difficulty != 0) {
         int dawgNum = name[9] - '0';
-        int meshOff = UNI_MESH_3 + (dawgNum-1) * 4;
+        int meshOff = (dawgNum==1) ? UNI_BLOCKDAWG1_MESH : UNI_BLOCKDAWG2_MESH;
         void* bExt2 = GetBoardExt(board); if (!bExt2) bExt2 = ext;
         int meshVal = bExt2 ? *(int*)((char*)bExt2 + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("BLOCKDAWG: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -3873,7 +3990,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── WOBBLY1-7 (Wobbly) ── */
     if (my_strnicmp(name, "WOBBLY", 6) == 0 && name[6] >= '1' && name[6] <= '7') {
         int wNum = name[6] - '0';
-        int meshOff = UNI_BONK_STORE + (wNum-1) * 4;
+        int meshOff = UNI_WOBBLY_BASE + (wNum-1) * 4;
         void* wExt = GetBoardExt(board); if (!wExt) wExt = ext;
         int meshVal = wExt ? *(int*)((char*)wExt + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("WOBBLY: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -3928,7 +4045,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── DFLOOR1-4 (Neon) ── */
     if (my_strnicmp(name, "DFLOOR", 6) == 0 && name[6] >= '1' && name[6] <= '4') {
         int dNum = name[6] - '0';
-        int meshOff = UNI_MESH_3 + (dNum-1) * 4;
+        int meshOff = UNI_DFLOOR_BASE + (dNum-1) * 4;
         void *dExt = GetBoardExt(board); if (!dExt) dExt = ext;
         int meshVal = dExt ? *(int*)((char*)dExt + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("DFLOOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -3972,7 +4089,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             long idx = atol(name + 11) - 1;
             if (idx >= 0 && idx < 16) {
                 int meshIdx = idx & 1;
-                int meshOff = UNI_BRIDGE_STATE + meshIdx * 4;
+                int meshOff = UNI_POPCYL_MESH_BASE + meshIdx * 4;
                 void* pExt = GetBoardExt(board); if (!pExt) pExt = ext;
                 int meshVal = pExt ? *(int*)((char*)pExt + meshOff) : *(int*)((char*)ext + meshOff);
                 if (!meshVal) { DebugLog("POPCYLINDER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -4007,7 +4124,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── SPEEDCYLINDER (Up) ── */
     if (my_strnicmp(name, "SPEEDCYLINDER", 13) == 0) {
-        int meshVal = *(int*)((char*)ext + UNI_MESH_4);
+        int meshVal = *(int*)((char*)ext + UNI_LIFTER_MESH);
         if (!meshVal) { DebugLog("SPEEDCYLINDER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x150C);
         if (mem) {
@@ -4081,7 +4198,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── ROTATOR (Impossible) ── */
     if (my_strnicmp(name, "ROTATOR", 7) == 0) {
-        int meshVal = *(int*)((char*)ext + UNI_MESH_3);
+        int meshVal = *(int*)((char*)ext + UNI_ROTATOR_MESH);
         if (!meshVal) { DebugLog("ROTATOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1508);
         if (mem) {
@@ -4099,7 +4216,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── PENDULUM (Impossible) ── */
     if (my_strnicmp(name, "PENDULUM", 8) == 0) {
-        int meshVal = *(int*)((char*)ext + UNI_MESH_4);
+        int meshVal = *(int*)((char*)ext + UNI_ROTATOR_MESH);
         if (!meshVal) { DebugLog("PENDULUM: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1504);
         if (mem) {
@@ -4114,8 +4231,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── BBRIDGE1/2 (Master) ── */
     if (my_strnicmp(name, "BBRIDGE", 7) == 0) {
         int bNum = name[7] - '0';
-        int meshOff = (bNum == 1) ? UNI_MESH_5 : UNI_MESH_6;
-        int storeOff = (bNum == 1) ? UNI_MESH_7 : UNI_MESH_8;
+        int meshOff = (bNum == 1) ? UNI_BBRIDGE1_MESH : UNI_BBRIDGE2_MESH;
+        int storeOff = (bNum == 1) ? UNI_MESH_7 : UNI_MESH_8; // instance store keeps UNI_MESH_7/8 (dedup not needed for instance)
         void* bbExt2 = GetBoardExt(board); if (!bbExt2) bbExt2 = ext;
         int meshVal = bbExt2 ? *(int*)((char*)bbExt2 + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("BBRIDGE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -4386,7 +4503,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     DWORD meshObj = (sceneObj && !IsBadReadPtr((void *)sceneObj, 0x500)) ? *(DWORD *)(sceneObj + 0x47C) : 0;
 
     /* ── Beginner/Toob/Master: N:BUMPER ── */
-    if (IsS1CollisionEnabled(board, "N:BUMPER") && my_strnicmp(name, "N:BUMPER", 8) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_BUMPER)) && my_strnicmp(name, "N:BUMPER", 8) == 0) {
         float px = *(float *)((char *)ball + 0x164);
         float py = *(float *)((char *)ball + 0x168);
         float pz = *(float *)((char *)ball + 0x16C);
@@ -4431,7 +4548,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Intermediate: N:BRIDGE ── */
-    if (IsS1CollisionEnabled(board, "N:BRIDGE") && my_stricmp(name, "N:BRIDGE") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_BRIDGE)) && my_stricmp(name, "N:BRIDGE") == 0) {
         if (*(int *)((char *)ext + UNI_BRIDGE_STATE) == 3) {
             *(BYTE *)((char *)ball + 0x778) = 1;
         }
@@ -4442,13 +4559,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Dizzy: N:WATERWHEEL ── */
-    if (IsS1CollisionEnabled(board, "N:WATERWHEEL") && my_stricmp(name, "N:WATERWHEEL") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_WATERWHEEL)) && my_stricmp(name, "N:WATERWHEEL") == 0) {
         *(BYTE *)((char *)ball + 0x778) = 1;
         return; /* Dizzy returns early */
     }
 
     /* ── Dizzy: N:WHEELEMBED ── */
-    if (IsS1CollisionEnabled(board, "N:WHEELEMBED") && my_stricmp(name, "N:WHEELEMBED") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_WHEELEMBED)) && my_stricmp(name, "N:WHEELEMBED") == 0) {
         float dx = *(float *)((char *)ball + 0x164) - *(float *)((char *)ext + UNI_WHEELEMBED_X);
         float dy = *(float *)((char *)ball + 0x168) - *(float *)((char *)ext + UNI_WHEELEMBED_Y);
         float dz = *(float *)((char *)ball + 0x16C) - *(float *)((char *)ext + UNI_WHEELEMBED_Z);
@@ -4476,13 +4593,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Dizzy: N:SWIRL ── */
-    if (IsS1CollisionEnabled(board, "N:SWIRL") && my_stricmp(name, "N:SWIRL") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SWIRL)) && my_stricmp(name, "N:SWIRL") == 0) {
         *(BYTE *)((char *)ball + 0x779) = 1;
         return; /* Dizzy returns early */
     }
 
     /* ── Tower/Master: E:CATAPULTBOTTOM ── */
-    if (IsS1CollisionEnabled(board, "E:CATAPULTBOTTOM") && my_stricmp(name, "E:CATAPULTBOTTOM") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_CATAPULTBOTTOM)) && my_stricmp(name, "E:CATAPULTBOTTOM") == 0) {
         if (*(int *)((char *)ball + 0x808) < 1) {
             *(int *)((char *)ball + 0x808) = 1000;
             DWORD catList = UNI_CATAPULT_LIST;
@@ -4514,7 +4631,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Tower: E:OPENSESAME ── */
-    if (IsS1CollisionEnabled(board, "E:OPENSESAME") && my_stricmp(name, "E:OPENSESAME") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_OPENSESAME)) && my_stricmp(name, "E:OPENSESAME") == 0) {
         if (g_TrapdoorOpen) {
             int count = *(int *)((char *)ext + UNI_DRAWBRIDGE_COUNT);
             int item = 0;
@@ -4524,7 +4641,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Tower: N:TRAPDOOR ── */
-    if (IsS1CollisionEnabled(board, "N:TRAPDOOR") && my_stricmp(name, "N:TRAPDOOR") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_TRAPDOOR)) && my_stricmp(name, "N:TRAPDOOR") == 0) {
         int iter = g_AthenaListGetIterator((void *)((char *)ext + UNI_TRAPDOOR_LIST));
         *(DWORD *)((char *)ext + UNI_TRAPDOOR_LIST + 8 + iter * 4) = 0;
         int count = *(int *)((char *)ext + UNI_TRAPDOOR_COUNT);
@@ -4545,13 +4662,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Tower: E:BITE ── */
-    if (IsS1CollisionEnabled(board, "E:BITE") && my_stricmp(name, "E:BITE") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_BITE)) && my_stricmp(name, "E:BITE") == 0) {
         *(DWORD *)((char *)ext + UNI_BITE_STATE) = 0;
         *(DWORD *)((char *)ext + UNI_BITE_SPEED) = 0x41C80000;
     }
 
     /* ── Tower: E:MACETRIGGER ── */
-    if (IsS1CollisionEnabled(board, "E:MACETRIGGER") && my_stricmp(name, "E:MACETRIGGER") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_MACETRIGGER)) && my_stricmp(name, "E:MACETRIGGER") == 0) {
         int iter = g_AthenaListGetIterator((void *)((char *)ext + UNI_MACE_LIST));
         *(DWORD *)((char *)ext + UNI_MACE_LIST + 8 + iter * 4) = 0;
         int count = *(int *)((char *)ext + UNI_MACE_COUNT);
@@ -4570,7 +4687,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Tower: N:MACE ── */
-    if (IsS1CollisionEnabled(board, "N:MACE") && my_stricmp(name, "N:MACE") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_MACE)) && my_stricmp(name, "N:MACE") == 0) {
         int iter = g_AthenaListGetIterator((void *)((char *)ext + UNI_MACE_LIST));
         *(DWORD *)((char *)ext + UNI_MACE_LIST + 8 + iter * 4) = 0;
         int count = *(int *)((char *)ext + UNI_MACE_COUNT);
@@ -4599,20 +4716,20 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
 
     /* ── Up/Impossible: E:HELPINERTIA ──
      * Impossible gates this on (char)ball[0x768] != 0; Up does not. */
-    if (IsS1CollisionEnabled(board, "E:HELPINERTIA") && my_stricmp(name, "E:HELPINERTIA") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_HELPINERTIA)) && my_stricmp(name, "E:HELPINERTIA") == 0) {
         if (level != 15 || (char)*(int *)((char *)ball + 0x768))
             ball[0xA9] = 0x40200000;
     }
 
     /* ── Up/Impossible: E:UNHELPINERTIA ──
      * Impossible gates this on (char)ball[0x768] != 0; Up does not. */
-    if (IsS1CollisionEnabled(board, "E:UNHELPINERTIA") && my_stricmp(name, "E:UNHELPINERTIA") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_UNHELPINERTIA)) && my_stricmp(name, "E:UNHELPINERTIA") == 0) {
         if (level != 15 || (char)*(int *)((char *)ball + 0x768))
             ball[0xA9] = 0x40A00000;
     }
 
     /* ── Up: E:VACPOPOUT ── */
-    if (IsS1CollisionEnabled(board, "E:VACPOPOUT") && my_stricmp(name, "E:VACPOPOUT") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_VACPOPOUT)) && my_stricmp(name, "E:VACPOPOUT") == 0) {
         ball[0xA1] = 0x41D00000;
         if (g_SoundPlay3D && app) {
             DWORD snd = *(DWORD *)(app + 0x468);
@@ -4621,13 +4738,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Up: N:SPEEDCYLINDER ── */
-    if (IsS1CollisionEnabled(board, "N:SPEEDCYLINDER") && my_stricmp(name, "N:SPEEDCYLINDER") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SPEEDCYLINDER)) && my_stricmp(name, "N:SPEEDCYLINDER") == 0) {
         if (g_PendulumPlayCollisionSound && meshObj)
             g_PendulumPlayCollisionSound((void *)meshObj, (int)ball);
     }
 
     /* ── Up: N:EXTRATIME ── */
-    if (IsS1CollisionEnabled(board, "N:EXTRATIME") && my_stricmp(name, "N:EXTRATIME") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_EXTRATIME)) && my_stricmp(name, "N:EXTRATIME") == 0) {
         if (meshObj && *(char *)(meshObj + 0x10E4) == 0) {
             if (g_RotatorTriggerSound) g_RotatorTriggerSound(meshObj);
             if (app) {
@@ -4648,12 +4765,12 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Neon: N:NEONPLATFORM ── */
-    if (IsS1CollisionEnabled(board, "N:NEONPLATFORM") && my_strnicmp(name, "N:NEONPLATFORM", 14) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_NEONPLATFORM)) && my_strnicmp(name, "N:NEONPLATFORM", 14) == 0) {
         if (g_NeonPlatformActivate && meshObj) g_NeonPlatformActivate(meshObj);
     }
 
     /* ── Neon: E:ZOOP ── */
-    if (IsS1CollisionEnabled(board, "E:ZOOP") && my_strnicmp(name, "E:ZOOP", 6) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ZOOP)) && my_strnicmp(name, "E:ZOOP", 6) == 0) {
         if (*(int *)((char *)ball + 0x7F0) == 0) {
             if (g_SoundPlay3D && app) {
                 DWORD snd = *(DWORD *)(app + 0x524);
@@ -4664,7 +4781,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Neon: E:LIGHTSOFF ── */
-    if (IsS1CollisionEnabled(board, "E:LIGHTSOFF") && my_strnicmp(name, "E:LIGHTSOFF", 10) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_LIGHTSOFF)) && my_strnicmp(name, "E:LIGHTSOFF", 10) == 0) {
         if (*(int *)((char *)ball + 0x7B4) == 0) {
             if (g_SoundPlay3D && app) {
                 DWORD snd = *(DWORD *)(app + 0x528);
@@ -4694,7 +4811,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Neon: E:LIGHTSON ── */
-    if (IsS1CollisionEnabled(board, "E:LIGHTSON") && my_strnicmp(name, "E:LIGHTSON", 10) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_LIGHTSON)) && my_strnicmp(name, "E:LIGHTSON", 10) == 0) {
         if (*(int *)((char *)ball + 0x7B8) == 0) {
             if (g_SoundPlay3D && app) {
                 DWORD snd = *(DWORD *)(app + 0x528);
@@ -4730,7 +4847,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Expert/Master: E:CALLHAMMER ── */
-    if (IsS1CollisionEnabled(board, "E:CALLHAMMER") && my_stricmp(name, "E:CALLHAMMER") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_CALLHAMMER)) && my_stricmp(name, "E:CALLHAMMER") == 0) {
         if (difficulty != 0 && g_CreateBonkPopup) {
             void *be = GetBoardExt(board); if (!be) be = ext;
             int bonkObj = be ? *(int*)((char*)be + UNI_BONK_STORE) : *(int*)((char*)ext + UNI_BONK_STORE);
@@ -4739,7 +4856,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Expert/Master: E:HAMMERCHASE ── */
-    if (IsS1CollisionEnabled(board, "E:HAMMERCHASE") && my_stricmp(name, "E:HAMMERCHASE") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_HAMMERCHASE)) && my_stricmp(name, "E:HAMMERCHASE") == 0) {
         if (difficulty != 0 && g_HammerChaseStart) {
             void *be2 = GetBoardExt(board); if (!be2) be2 = ext;
             int bonkObj2 = be2 ? *(int*)((char*)be2 + UNI_BONK_STORE) : *(int*)((char*)ext + UNI_BONK_STORE);
@@ -4748,19 +4865,19 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Expert: E:ALERTSAW1 ── */
-    if (IsS1CollisionEnabled(board, "E:ALERTSAW1") && my_stricmp(name, "E:ALERTSAW1") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW1)) && my_stricmp(name, "E:ALERTSAW1") == 0) {
         if (difficulty != 0 && g_SawAlertActivate)
             g_SawAlertActivate(*(int *)((char *)ext + UNI_SAW1_OBJ));
     }
 
     /* ── Expert: E:ALERTSAW2 ── */
-    if (IsS1CollisionEnabled(board, "E:ALERTSAW2") && my_stricmp(name, "E:ALERTSAW2") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW2)) && my_stricmp(name, "E:ALERTSAW2") == 0) {
         if (difficulty != 0 && g_SawAlertActivate)
             g_SawAlertActivate(*(int *)((char *)ext + UNI_SAW2_OBJ));
     }
 
     /* ── Toob: E:ALERTSAW3 (renamed from ALERTSAW2) ── */
-    if (IsS1CollisionEnabled(board, "E:ALERTSAW3") && my_stricmp(name, "E:ALERTSAW3") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW3)) && my_stricmp(name, "E:ALERTSAW3") == 0) {
         if (difficulty != 0) {
             int saw2Obj = *(int *)((char *)ext + UNI_BRIDGE_STATE);
             if (saw2Obj) *(BYTE *)(saw2Obj + 0x110C) = 1;
@@ -4768,19 +4885,19 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Expert: E:ACTIVATESAW1 ── */
-    if (IsS1CollisionEnabled(board, "E:ACTIVATESAW1") && my_stricmp(name, "E:ACTIVATESAW1") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ACTIVATESAW1)) && my_stricmp(name, "E:ACTIVATESAW1") == 0) {
         if (difficulty != 0 && g_SawActivate)
             g_SawActivate(*(int *)((char *)ext + UNI_SAW1_OBJ));
     }
 
     /* ── Expert: E:ACTIVATESAW2 ── */
-    if (IsS1CollisionEnabled(board, "E:ACTIVATESAW2") && my_stricmp(name, "E:ACTIVATESAW2") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ACTIVATESAW2)) && my_stricmp(name, "E:ACTIVATESAW2") == 0) {
         if (difficulty != 0 && g_SawActivate)
             g_SawActivate(*(int *)((char *)ext + UNI_SAW2_OBJ));
     }
 
     /* ── Expert: E:ALERTJUDGES ── */
-    if (IsS1CollisionEnabled(board, "E:ALERTJUDGES") && my_stricmp(name, "E:ALERTJUDGES") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTJUDGES)) && my_stricmp(name, "E:ALERTJUDGES") == 0) {
         int iter = g_AthenaListGetIterator((void *)((char *)ext + UNI_JUDGE_LIST));
         *(DWORD *)((char *)ext + UNI_JUDGE_LIST + 8 + iter * 4) = 0;
         int count = *(int *)((char *)ext + UNI_JUDGE_COUNT);
@@ -4799,7 +4916,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Expert: E:SCORE ── */
-    if (IsS1CollisionEnabled(board, "E:SCORE") && my_strnicmp(name, "E:SCORE", 7) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SCORE)) && my_strnicmp(name, "E:SCORE", 7) == 0) {
         int iter = g_AthenaListGetIterator((void *)((char *)ext + UNI_JUDGE_LIST));
         *(DWORD *)((char *)ext + UNI_JUDGE_LIST + 8 + iter * 4) = 0;
         int count = *(int *)((char *)ext + UNI_JUDGE_COUNT);
@@ -4822,7 +4939,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
      *   No level-specific handler needed — the global handler at the end handles it. ── */
 
     /* ── Expert: E:BELL ── */
-    if (IsS1CollisionEnabled(board, "E:BELL") && my_strnicmp(name, "E:BELL", 6) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_BELL)) && my_strnicmp(name, "E:BELL", 6) == 0) {
         if (g_BellActivate) g_BellActivate(*(int *)((char *)ext + UNI_BELL_OBJ));
         if (app) {
             int gameMode = *(int *)(app + 0x220);
@@ -4841,7 +4958,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Odd: E:GRAVITY ── */
-    if (IsS1CollisionEnabled(board, "E:GRAVITY") && my_strnicmp(name, "E:GRAVITY", 9) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_GRAVITY)) && my_strnicmp(name, "E:GRAVITY", 9) == 0) {
         if (g_SceneObjectSub1Ctor && g_AthenaStringSet && g_MWParserReadTag && g_StreamReaderDtor) {
             char strObj[64];
             g_SceneObjectSub1Ctor(strObj);
@@ -4865,7 +4982,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Odd: N:JUMPFIRST / N:JUMPSECOND ── */
-    if (IsS1CollisionEnabled(board, "N:JUMPFIRST") && my_stricmp(name, "N:JUMPFIRST") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_JUMPFIRST)) && my_stricmp(name, "N:JUMPFIRST") == 0) {
         /* Uses AthenaHashTable_Lookup for "JUMPPIPE1" */
         float pos[3] = {0,0,0};
         if (g_AthenaHashTableLookup && app) {
@@ -4883,7 +5000,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             *(DWORD *)(phys + 0xCAC) = 0;
         }
     }
-    if (IsS1CollisionEnabled(board, "N:JUMPSECOND") && my_stricmp(name, "N:JUMPSECOND") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_JUMPSECOND)) && my_stricmp(name, "N:JUMPSECOND") == 0) {
         float pos[3] = {0,0,0};
         if (g_AthenaHashTableLookup && app) {
             void *ht = *(void **)((char *)board + BOARD_MESHWORLD);
@@ -4902,7 +5019,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Odd: E:SHRINK ── */
-    if (IsS1CollisionEnabled(board, "E:SHRINK") && my_stricmp(name, "E:SHRINK") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SHRINK)) && my_stricmp(name, "E:SHRINK") == 0) {
         if (g_BallShrink) g_BallShrink((int)ball);
         float pos[3] = {0,0,0};
         if (g_AthenaHashTableLookup) {
@@ -4922,7 +5039,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Odd: E:GROWSOUND ── */
-    if (IsS1CollisionEnabled(board, "E:GROWSOUND") && my_stricmp(name, "E:GROWSOUND") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_GROWSOUND)) && my_stricmp(name, "E:GROWSOUND") == 0) {
         if (*(int *)((char *)ball + 0x7F8) == 0) {
             if (g_SoundPlayChannel && app) {
                 int ch = *(int *)(app + 0x4D8);
@@ -4933,17 +5050,17 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Odd: E:GROW ── */
-    if (IsS1CollisionEnabled(board, "E:GROW") && my_stricmp(name, "E:GROW") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_GROW)) && my_stricmp(name, "E:GROW") == 0) {
         if (g_BallGrow) g_BallGrow((int)ball);
     }
 
     /* ── Odd: E:DROPLIFT ── */
-    if (IsS1CollisionEnabled(board, "E:DROPLIFT") && my_stricmp(name, "E:DROPLIFT") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_DROPLIFT)) && my_stricmp(name, "E:DROPLIFT") == 0) {
         if (g_DropLiftActivate) g_DropLiftActivate(*(int *)((char *)ext + UNI_BONK_STORE));
     }
 
     /* ── Odd: E:PIPERANDOM (complex — simplified to core behavior) ── */
-    if (IsS1CollisionEnabled(board, "E:PIPERANDOM") && my_stricmp(name, "E:PIPERANDOM") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_PIPERANDOM)) && my_stricmp(name, "E:PIPERANDOM") == 0) {
         if (g_BallGrow) g_BallGrow((int)ball);
         if (difficulty != 0) *(BYTE *)((char *)ext + UNI_SAW1_OBJ) = 1;
         /* Random pipe selection */
@@ -4981,7 +5098,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
 
     /* ── Odd: E:LIMIT / E:LIMITX / E:LIMITZ / E:LIMITPIPE1 / E:LIMITPIPE2 / E:SWALLOW ── */
     /* Odd's E:LIMIT checks ball+0x1D2 (axis selector) */
-    if (IsS1CollisionEnabled(board, "E:LIMIT") && my_stricmp(name, "E:LIMIT") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_LIMIT)) && my_stricmp(name, "E:LIMIT") == 0) {
         /* Odd's version: only activates if ball+0x1D2 == 0 */
         if (*(int *)((char *)ball + 0x748) == 0) {
             *(BYTE *)((char *)ball + 0x768) = 0;
@@ -4993,28 +5110,28 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             if (mgObj) g_AthenaListRemoveByValue((void *)(mgObj + 0x2C), (int)ball);
         }
     }
-    if (IsS1CollisionEnabled(board, "E:LIMITX") && my_stricmp(name, "E:LIMITX") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_LIMITX)) && my_stricmp(name, "E:LIMITX") == 0) {
         if (*(int *)((char *)ball + 0x748) == 1) {
             *(BYTE *)((char *)ball + 0x768) = 0;
             *(BYTE *)((char *)ball + 0x2E9) = 1;
         }
     }
-    if (IsS1CollisionEnabled(board, "E:LIMITZ") && my_stricmp(name, "E:LIMITZ") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_LIMITZ)) && my_stricmp(name, "E:LIMITZ") == 0) {
         if (*(int *)((char *)ball + 0x748) == 2) {
             *(BYTE *)((char *)ball + 0x768) = 0;
             *(BYTE *)((char *)ball + 0x2E9) = 1;
         }
     }
-    if (IsS1CollisionEnabled(board, "E:LIMITPIPE1") && my_stricmp(name, "E:LIMITPIPE1") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_LIMITPIPE1)) && my_stricmp(name, "E:LIMITPIPE1") == 0) {
         if ((char)ball[1] != 0) {
             *(BYTE *)((char *)ball + 0x768) = 0;
             *(BYTE *)((char *)ball + 0x2E9) = 1;
         }
     }
-    if (IsS1CollisionEnabled(board, "E:SWALLOW") && my_stricmp(name, "E:SWALLOW") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SWALLOW)) && my_stricmp(name, "E:SWALLOW") == 0) {
         *(BYTE *)((char *)ball + 0x2E8) = 1;
     }
-    if (IsS1CollisionEnabled(board, "E:LIMITPIPE2") && my_stricmp(name, "E:LIMITPIPE2") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_LIMITPIPE2)) && my_stricmp(name, "E:LIMITPIPE2") == 0) {
         /* VERIFIED via Ghidra decompilation of OddBoard_CollisionHandler (0x0040ED30):
          * Original: cVar1 = *(char *)((int)param_2 + 5);  — byte offset 5, NOT int* index.
          * This is correct as-is. E:LIMITPIPE1 uses (char)param_2[1] = byte 4 (int* arithmetic).
@@ -5026,7 +5143,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Toob: E:BRANCH (pipe branching system) ── */
-    if (IsS1CollisionEnabled(board, "E:BRANCH") && my_strnicmp(name, "E:BRANCH", 8) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_BRANCH)) && my_strnicmp(name, "E:BRANCH", 8) == 0) {
         if (g_AthenaHashTableLookup && g_CPUIDRNG && g_Vec3NormalizeAndScale &&
             g_AthenaListInit && g_AthenaListAppend && g_AthenaListGetSize &&
             g_AthenaListGetIterator && g_operatorNew) {
@@ -5157,12 +5274,12 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Toob: N:SPINNY ── */
-    if (IsS1CollisionEnabled(board, "N:SPINNY") && my_strnicmp(name, "N:SPINNY", 8) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SPINNY)) && my_strnicmp(name, "N:SPINNY", 8) == 0) {
         if (g_RotatorAddBall && meshObj) g_RotatorAddBall((void *)meshObj, (int)ball);
     }
 
     /* ── Toob: N:SAWTEETH ── */
-    if (IsS1CollisionEnabled(board, "N:SAWTEETH") && my_strnicmp(name, "N:SAWTEETH", 10) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SAWTEETH)) && my_strnicmp(name, "N:SAWTEETH", 10) == 0) {
         if (meshObj && *(int *)(meshObj + 0x10F4) == 0 && *(int *)((char *)ball + 0x7DC) < 1) {
             *(int *)((char *)ball + 0x7DC) = 0x32;
             float vx = *(float *)(meshObj + 0x1100);
@@ -5181,12 +5298,12 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Master: N:SPINNER ── */
-    if (IsS1CollisionEnabled(board, "N:SPINNER") && my_strnicmp(name, "N:SPINNER", 9) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SPINNER)) && my_strnicmp(name, "N:SPINNER", 9) == 0) {
         if (g_SpinnerActivate && meshObj) g_SpinnerActivate((void *)meshObj, (int)ball);
     }
 
     /* ── Master: E:LAUNCH ── */
-    if (IsS1CollisionEnabled(board, "E:LAUNCH") && my_stricmp(name, "E:LAUNCH") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_LAUNCH)) && my_stricmp(name, "E:LAUNCH") == 0) {
         float launchPos[3] = {0,0,0};
         if (g_AthenaHashTableLookup) {
             void *ht = *(void **)((char *)board + BOARD_MESHWORLD);
@@ -5245,24 +5362,24 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Wobbly: N:SQUAREWOBBLY ── */
-    if (IsS1CollisionEnabled(board, "N:SQUAREWOBBLY") && my_strnicmp(name, "N:SQUAREWOBBLY", 14) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SQUAREWOBBLY)) && my_strnicmp(name, "N:SQUAREWOBBLY", 14) == 0) {
         if ((char)*(int *)((char *)ball + 0x768) && g_SquareWobblyActivate && meshObj)
             g_SquareWobblyActivate((void *)meshObj, (int)ball);
     }
 
     /* ── Wobbly: N:WAVY ── */
-    if (IsS1CollisionEnabled(board, "N:WAVY") && my_strnicmp(name, "N:WAVY", 6) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_WAVY)) && my_strnicmp(name, "N:WAVY", 6) == 0) {
         if ((char)*(int *)((char *)ball + 0x768) && g_WavyActivate && meshObj)
             g_WavyActivate((void *)meshObj, (int)ball);
     }
 
     /* ── Glass: N:GLASS ── */
-    if (IsS1CollisionEnabled(board, "N:GLASS") && my_strnicmp(name, "N:GLASS", 7) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_GLASS)) && my_strnicmp(name, "N:GLASS", 7) == 0) {
         *(int *)((char *)ball + 0xC5C) = 0xF;
     }
 
     /* ── Glass: N:TENBONUS1 / N:TENBONUS2 ── */
-    if (IsS1CollisionEnabled(board, "N:TENBONUS1") && my_strnicmp(name, "N:TENBONUS1", 11) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_TENBONUS1)) && my_strnicmp(name, "N:TENBONUS1", 11) == 0) {
         int phys = ball[0x69];
         if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
             float speed = sqrtf(*(float*)(phys+0xCA4)**(float*)(phys+0xCA4) + *(float*)(phys+0xCA8)**(float*)(phys+0xCA8) + *(float*)(phys+0xCAC)**(float*)(phys+0xCAC));
@@ -5289,7 +5406,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             }
         }
     }
-    if (IsS1CollisionEnabled(board, "N:TENBONUS2") && my_strnicmp(name, "N:TENBONUS2", 11) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_TENBONUS2)) && my_strnicmp(name, "N:TENBONUS2", 11) == 0) {
         int phys = ball[0x69];
         if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
             float speed = sqrtf(*(float*)(phys+0xCA4)**(float*)(phys+0xCA4) + *(float*)(phys+0xCA8)**(float*)(phys+0xCA8) + *(float*)(phys+0xCAC)**(float*)(phys+0xCAC));
@@ -5318,7 +5435,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Sky: E:PEGS ── */
-    if (IsS1CollisionEnabled(board, "E:PEGS") && my_stricmp(name, "E:PEGS") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_PEGS)) && my_stricmp(name, "E:PEGS") == 0) {
         if (*(int *)((char *)ball + 0x788) == 0) {
             *(int *)((char *)ext + UNI_PEG_COUNT) += 1;
             *(int *)((char *)ball + 0x788) = 1;
@@ -5326,7 +5443,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Sky: E:TRAPPOP ── */
-    if (IsS1CollisionEnabled(board, "E:TRAPPOP") && my_stricmp(name, "E:TRAPPOP") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_TRAPPOP)) && my_stricmp(name, "E:TRAPPOP") == 0) {
         if (difficulty != 0 && g_RotatorStartSound) {
             int trapObj = *(int *)((char *)ext + UNI_NEON_TRAPDOOR);
             if (trapObj) g_RotatorStartSound(trapObj);
@@ -5334,7 +5451,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Sky: E:NOPEGS ── */
-    if (IsS1CollisionEnabled(board, "E:NOPEGS") && my_stricmp(name, "E:NOPEGS") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_NOPEGS)) && my_stricmp(name, "E:NOPEGS") == 0) {
         if (*(int *)((char *)ball + 0x78C) == 0) {
             *(int *)((char *)ext + UNI_PEG_COUNT) -= 1;
             *(int *)((char *)ball + 0x78C) = 1;
@@ -5342,7 +5459,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Sky: E:HEATON ── */
-    if (IsS1CollisionEnabled(board, "E:HEATON") && my_stricmp(name, "E:HEATON") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_HEATON)) && my_stricmp(name, "E:HEATON") == 0) {
         if (difficulty != 0 && g_AthenaListContainsValue && g_PendulumAddIndex) {
             DWORD mgObj = *(DWORD *)((char *)ext + UNI_MAGNIFYING_GLASS);
             if (mgObj) {
@@ -5353,7 +5470,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Sky: E:HEATOFF ── */
-    if (IsS1CollisionEnabled(board, "E:HEATOFF") && my_stricmp(name, "E:HEATOFF") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_HEATOFF)) && my_stricmp(name, "E:HEATOFF") == 0) {
         if (difficulty != 0 && g_AthenaListRemoveByValue) {
             DWORD mgObj = *(DWORD *)((char *)ext + UNI_MAGNIFYING_GLASS);
             if (mgObj) g_AthenaListRemoveByValue((void *)(mgObj + 0x2C), (int)ball);
@@ -5361,7 +5478,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Impossible: N:BOUNCE ── */
-    if (IsS1CollisionEnabled(board, "N:BOUNCE") && my_strnicmp(name, "N:BOUNCE", 8) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_BOUNCE)) && my_strnicmp(name, "N:BOUNCE", 8) == 0) {
         if ((char)*(int *)((char *)ball + 0x768)) {
             int phys = ball[0x69];
             if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
@@ -5381,14 +5498,14 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
 
     /* ── Impossible: N:ONROTATOR ──
      * Original gates on (char)ball[0x768] != 0. */
-    if (IsS1CollisionEnabled(board, "N:ONROTATOR") && my_strnicmp(name, "N:ONROTATOR", 11) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ONROTATOR)) && my_strnicmp(name, "N:ONROTATOR", 11) == 0) {
         if ((char)*(int *)((char *)ball + 0x768) && g_RotatorAddBall && meshObj)
             g_RotatorAddBall((void *)meshObj, (int)ball);
     }
 
     /* ── Impossible: N:ONGEAR ──
      * Original gates on (char)ball[0x768] != 0. */
-    if (IsS1CollisionEnabled(board, "N:ONGEAR") && my_strnicmp(name, "N:ONGEAR", 8) == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ONGEAR)) && my_strnicmp(name, "N:ONGEAR", 8) == 0) {
         if ((char)*(int *)((char *)ball + 0x768) && g_GearAddBall && meshObj)
             g_GearAddBall((void *)meshObj, (int)ball);
     }
@@ -5412,7 +5529,7 @@ static void UniversalPostSetup(void *board) {
     // Bridge init is now S1-driven via ScanS1AndAutoEnable + lazy S1Ensure in CreateDynamicObjects
     // Do not call InitBridge here; CreateDynamicObjects handles BRIDGE/BUMPERS on demand
     // Keep bumpers S1-driven: scan for N:BUMPER presence
-    int hasBumper = IsS1CollisionEnabled(board, "N:BUMPER");
+    int hasBumper = (*(BYTE*)((char*)ext + COLL_FLAG_BUMPER));
     if (hasBumper) {
         DWORD meshWorld = *(DWORD *)((char *)board + BOARD_MESHWORLD);
         if (!meshWorld || IsBadReadPtr((void *)meshWorld, 0x430)) return;
@@ -5479,6 +5596,76 @@ static int IsS1CollisionEnabled(void *board, const char *eventName) {
     }
     return 0;
 }
+static void BuildCollisionFlags(void *board, void *ext) {
+    if (!board || !ext) return;
+    // Clear flags
+    memset((char*)ext + OFF_COLLISION_FLAGS, 0, COLL_FLAG_COUNT);
+    // Set each based on IsS1CollisionEnabled (called once per event, not per collision)
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_BUMPER))) *(BYTE*)((char*)ext + COLL_FLAG_BUMPER)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_BRIDGE))) *(BYTE*)((char*)ext + COLL_FLAG_BRIDGE)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_WATERWHEEL))) *(BYTE*)((char*)ext + COLL_FLAG_WATERWHEEL)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_WHEELEMBED))) *(BYTE*)((char*)ext + COLL_FLAG_WHEELEMBED)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SWIRL))) *(BYTE*)((char*)ext + COLL_FLAG_SWIRL)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_CATAPULTBOTTOM))) *(BYTE*)((char*)ext + COLL_FLAG_CATAPULTBOTTOM)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_OPENSESAME))) *(BYTE*)((char*)ext + COLL_FLAG_OPENSESAME)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_TRAPDOOR))) *(BYTE*)((char*)ext + COLL_FLAG_TRAPDOOR)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_BITE))) *(BYTE*)((char*)ext + COLL_FLAG_BITE)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_MACETRIGGER))) *(BYTE*)((char*)ext + COLL_FLAG_MACETRIGGER)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_MACE))) *(BYTE*)((char*)ext + COLL_FLAG_MACE)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_HELPINERTIA))) *(BYTE*)((char*)ext + COLL_FLAG_HELPINERTIA)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_UNHELPINERTIA))) *(BYTE*)((char*)ext + COLL_FLAG_UNHELPINERTIA)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_VACPOPOUT))) *(BYTE*)((char*)ext + COLL_FLAG_VACPOPOUT)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SPEEDCYLINDER))) *(BYTE*)((char*)ext + COLL_FLAG_SPEEDCYLINDER)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_EXTRATIME))) *(BYTE*)((char*)ext + COLL_FLAG_EXTRATIME)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_NEONPLATFORM))) *(BYTE*)((char*)ext + COLL_FLAG_NEONPLATFORM)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ZOOP))) *(BYTE*)((char*)ext + COLL_FLAG_ZOOP)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_LIGHTSOFF))) *(BYTE*)((char*)ext + COLL_FLAG_LIGHTSOFF)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_LIGHTSON))) *(BYTE*)((char*)ext + COLL_FLAG_LIGHTSON)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_CALLHAMMER))) *(BYTE*)((char*)ext + COLL_FLAG_CALLHAMMER)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_HAMMERCHASE))) *(BYTE*)((char*)ext + COLL_FLAG_HAMMERCHASE)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW1))) *(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW1)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW2))) *(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW2)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW3))) *(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW3)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ACTIVATESAW1))) *(BYTE*)((char*)ext + COLL_FLAG_ACTIVATESAW1)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ACTIVATESAW2))) *(BYTE*)((char*)ext + COLL_FLAG_ACTIVATESAW2)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTJUDGES))) *(BYTE*)((char*)ext + COLL_FLAG_ALERTJUDGES)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SCORE))) *(BYTE*)((char*)ext + COLL_FLAG_SCORE)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_BELL))) *(BYTE*)((char*)ext + COLL_FLAG_BELL)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_GRAVITY))) *(BYTE*)((char*)ext + COLL_FLAG_GRAVITY)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_JUMPFIRST))) *(BYTE*)((char*)ext + COLL_FLAG_JUMPFIRST)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_JUMPSECOND))) *(BYTE*)((char*)ext + COLL_FLAG_JUMPSECOND)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SHRINK))) *(BYTE*)((char*)ext + COLL_FLAG_SHRINK)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_GROWSOUND))) *(BYTE*)((char*)ext + COLL_FLAG_GROWSOUND)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_GROW))) *(BYTE*)((char*)ext + COLL_FLAG_GROW)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_DROPLIFT))) *(BYTE*)((char*)ext + COLL_FLAG_DROPLIFT)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_PIPERANDOM))) *(BYTE*)((char*)ext + COLL_FLAG_PIPERANDOM)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_LIMIT))) *(BYTE*)((char*)ext + COLL_FLAG_LIMIT)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_LIMITX))) *(BYTE*)((char*)ext + COLL_FLAG_LIMITX)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_LIMITZ))) *(BYTE*)((char*)ext + COLL_FLAG_LIMITZ)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_LIMITPIPE1))) *(BYTE*)((char*)ext + COLL_FLAG_LIMITPIPE1)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SWALLOW))) *(BYTE*)((char*)ext + COLL_FLAG_SWALLOW)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_LIMITPIPE2))) *(BYTE*)((char*)ext + COLL_FLAG_LIMITPIPE2)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_BRANCH))) *(BYTE*)((char*)ext + COLL_FLAG_BRANCH)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SPINNY))) *(BYTE*)((char*)ext + COLL_FLAG_SPINNY)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SAWTEETH))) *(BYTE*)((char*)ext + COLL_FLAG_SAWTEETH)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SPINNER))) *(BYTE*)((char*)ext + COLL_FLAG_SPINNER)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_LAUNCH))) *(BYTE*)((char*)ext + COLL_FLAG_LAUNCH)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_SQUAREWOBBLY))) *(BYTE*)((char*)ext + COLL_FLAG_SQUAREWOBBLY)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_WAVY))) *(BYTE*)((char*)ext + COLL_FLAG_WAVY)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_GLASS))) *(BYTE*)((char*)ext + COLL_FLAG_GLASS)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_TENBONUS1))) *(BYTE*)((char*)ext + COLL_FLAG_TENBONUS1)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_TENBONUS2))) *(BYTE*)((char*)ext + COLL_FLAG_TENBONUS2)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_PEGS))) *(BYTE*)((char*)ext + COLL_FLAG_PEGS)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_TRAPPOP))) *(BYTE*)((char*)ext + COLL_FLAG_TRAPPOP)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_NOPEGS))) *(BYTE*)((char*)ext + COLL_FLAG_NOPEGS)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_HEATON))) *(BYTE*)((char*)ext + COLL_FLAG_HEATON)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_HEATOFF))) *(BYTE*)((char*)ext + COLL_FLAG_HEATOFF)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_BOUNCE))) *(BYTE*)((char*)ext + COLL_FLAG_BOUNCE)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ONROTATOR))) *(BYTE*)((char*)ext + COLL_FLAG_ONROTATOR)=1;
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ONGEAR))) *(BYTE*)((char*)ext + COLL_FLAG_ONGEAR)=1;
+    { char dbg[96]; int cnt=0; for(int i=0;i<COLL_FLAG_COUNT;i++) if(*(BYTE*)((char*)ext+OFF_COLLISION_FLAGS+i)) cnt++; wsprintfA(dbg,"BuildCollisionFlags: %d/%d enabled",cnt,COLL_FLAG_COUNT); DebugLog(dbg); }
+}
+
 static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
     if (!board || !ext || !meshWorld) return;
     MEMORY_BASIC_INFORMATION mbi;
@@ -5493,8 +5680,9 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
     int iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
     if (iter <0 || iter>16) return;
     if (!VirtualQuery((void*)(objDb + 0x89C + iter*4), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    DWORD savedIter = *(DWORD*)(objDb + 0x89C + iter*4);
     *(DWORD *)(objDb + 0x89C + iter*4) = 0;
-    if (!VirtualQuery((void*)(objDb + 0x898), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    if (!VirtualQuery((void*)(objDb + 0x898), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
     int count = *(int *)(objDb + 0x898);
     if (count <=0 || count>8192) return;
     if (!VirtualQuery((void*)(objDb + 0xCA0), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
@@ -5535,7 +5723,7 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
             AddS1CollisionToExt(board, ext, name);
         }
     }
-    // No need to restore iterator; Board_Setup will re-init if needed
+    *(DWORD*)(objDb + 0x89C + iter*4)=savedIter;
     char dbg[128];
     DWORD feat = GetBoardFeat(board);
     wsprintfA(dbg, "S1 scan: count=%d feat=0x%X", count, feat);
@@ -5584,6 +5772,86 @@ static void ScanFileForCollisions(void *board, void *ext, const char *filePath) 
     HeapFree(GetProcessHeap(),0,buf);
     if (added) { char lg[96]; wsprintfA(lg, "FileScan: '%s' +%d N:/E:", filePath, added); DebugLog(lg); }
 }
+// Targeted scan: only scan mesh files actually referenced by S1 (not whole folder wildcard).
+// Prevents hitch from scanning 30+ files every level load. Falls back to basePath file.
+static void ScanS1ReferencedMeshesForCollisions(void *board, void *ext, void *meshWorld, const char *basePath) {
+    if (!board || !ext) return;
+    // Always scan the main level file itself
+    if (basePath && basePath[0]) {
+        ScanFileForCollisions(board, ext, basePath);
+        char withExt[MAX_PATH]; strcpy(withExt, basePath);
+        int l=strlen(withExt);
+        if (l+10 < MAX_PATH && my_strnicmp(withExt+l-10, ".MESHWORLD", 10)!=0 && my_strnicmp(withExt+l-5, ".MESH", 5)!=0) {
+            strcat(withExt, ".MESHWORLD");
+            ScanFileForCollisions(board, ext, withExt);
+        }
+    }
+    if (!meshWorld) return;
+    DWORD objDb = *(DWORD *)((char *)meshWorld + 0x480);
+    if (!objDb) return;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery((void*)objDb, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    if (!g_AthenaListGetIterator || !g_AthenaListGetSize) return;
+    if (!VirtualQuery((void*)(objDb + 0x894), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    int iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
+    if (iter <0 || iter>16) return;
+    if (!VirtualQuery((void*)(objDb + 0x89C + iter*4), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    DWORD savedIter = *(DWORD*)(objDb + 0x89C + iter*4);
+    *(DWORD *)(objDb + 0x89C + iter*4) = 0;
+    if (!VirtualQuery((void*)(objDb + 0x898), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
+    int count = *(int *)(objDb + 0x898);
+    if (count <=0 || count>8192) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
+    if (!VirtualQuery((void*)(objDb + 0xCA0), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
+    DWORD *array = *(DWORD **)(objDb + 0xCA0);
+    if (!array || !VirtualQuery(array, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
+    *(DWORD *)(objDb + 0x89C + iter*4) = 1;
+    for (int idx=0; idx<count; idx++) {
+        DWORD *obj = (DWORD *)array[idx];
+        if (!obj || !VirtualQuery(obj, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) continue;
+        char *name = *(char **)obj;
+        if (!name || !VirtualQuery(name, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) continue;
+        // Heuristic: S1 strings that look like file paths (contain slash or known prefix) and not N:/E: themselves
+        if (name[0]=='N' && name[1]==':') continue;
+        if (name[0]=='E' && name[1]==':') continue;
+        int isPath = 0;
+        for (char *p=name; *p; p++) if (*p=='\\' || *p=='/') { isPath=1; break; }
+        if (!isPath) {
+            if (my_strnicmp(name, "Levels\\", 7)==0) isPath=1;
+            if (my_strnicmp(name, "Meshes\\", 7)==0) isPath=1;
+            if (my_strnicmp(name, "levels\\", 7)==0) isPath=1;
+        }
+        if (!isPath) continue;
+        // name is like "Levels\\Level3-WaterWheel" or "Meshes\\Chomper" etc. Scan that file.
+        char tryPath[MAX_PATH];
+        // If name already contains "levels\", use as-is; else prepend "levels\"
+        if (my_strnicmp(name, "levels\\", 7)==0 || my_strnicmp(name, "levels/", 7)==0) {
+            strcpy(tryPath, name);
+        } else {
+            // Many S1 refs are bare "Levels\\..." which maps to "levels\\..."
+            // Normalize: ensure lower levels prefix
+            if (my_strnicmp(name, "Levels\\", 7)==0) {
+                strcpy(tryPath, "levels\\");
+                strcat(tryPath, name+7);
+            } else if (my_strnicmp(name, "Meshes\\", 7)==0) {
+                strcpy(tryPath, "meshes\\");
+                strcat(tryPath, name+7);
+            } else {
+                strcpy(tryPath, name);
+            }
+        }
+        ScanFileForCollisions(board, ext, tryPath);
+        // also try with .MESHWORLD extension if no dot
+        if (!strchr(tryPath, '.')) {
+            char withExt2[MAX_PATH]; strcpy(withExt2, tryPath); strcat(withExt2, ".MESHWORLD");
+            ScanFileForCollisions(board, ext, withExt2);
+            strcpy(withExt2, tryPath); strcat(withExt2, ".MESH");
+            ScanFileForCollisions(board, ext, withExt2);
+        }
+        *(DWORD *)(objDb + 0x89C + iter*4) = idx+1;
+    }
+    *(DWORD *)(objDb + 0x89C + iter*4)=savedIter; // restore
+}
+
 static void ScanLevelFolderForCollisions(void *board, void *ext, const char *basePath) {
     if (!board || !ext || !basePath || !basePath[0]) return;
     // extract dir from basePath (up to last slash)
@@ -5705,8 +5973,10 @@ static void UniversalConstructor(void *board, int raceIndex) {
         (void)ext2;
         // S1 scan now that meshWorld exists — auto-enables feats for file-swapped levels
         if (ext && meshWorld) ScanS1AndAutoEnable(board, ext, meshWorld);
-        // Folder scan: catch N:/E: hidden in sub-mesh .MESHWORLD/.MESH files
-        if (ext) ScanLevelFolderForCollisions(board, ext, meshPath);
+        // Targeted scan: only S1-referenced sub-meshes + main file (not wildcard whole folder)
+        if (ext) ScanS1ReferencedMeshesForCollisions(board, ext, meshWorld, meshPath);
+        // Build per-board cached collision flags (once, not per-collision)
+        if (ext) BuildCollisionFlags(board, ext);
     }
 
     /* Step 2: RenderObj */
