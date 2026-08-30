@@ -226,7 +226,7 @@ typedef enum {
     OBJ_COUNT
 } ObjectType;
 
-static const char *g_objectNames[OBJ_COUNT] = {
+static const char *g_objectNames[OBJ_COUNT] __attribute__((unused)) = {
     "BUMPERS",
     "BRIDGE",
 };
@@ -949,7 +949,7 @@ static LevelData g_levelData[16] = {
  * g_objectEnabled[objType][level] = 1 if enabled
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static int g_objectEnabled[OBJ_COUNT][16] = {{0}};
+static int g_objectEnabled[OBJ_COUNT][16] __attribute__((unused)) = {{0}};
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Globals
@@ -1158,7 +1158,6 @@ static int RaceFileExists(const char *base) {
 static void ResolveRacePath(char *out, const char *in) {
     // in is normalized like "levels\\LoopyRace" or "levels\\Pack\\File" or "custom\\file"
     // If in is "levels\\<Name>" with no further slash, try "levels\\<Name>\\<Name>" first.
-    char baseName[MAX_PATH]="";
     const char *prefix = "levels\\";
     int preLen = 7;
     if (my_strnicmp(in, prefix, preLen)==0) {
@@ -3381,8 +3380,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_TipperCtor(mem, (int)board, meshVal);
             DWORD *o = (DWORD *)obj;
-            o[0x436] = *(DWORD*)&x; o[0x437] = *(DWORD*)&y; o[0x438] = *(DWORD*)&z;
-            o[0x439] = *(DWORD*)&x2; o[0x43A] = *(DWORD*)&y2; o[0x43B] = *(DWORD*)&z2;
+            memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
+            memcpy(&o[0x439], &x2, 4); memcpy(&o[0x43A], &y2, 4); memcpy(&o[0x43B], &z2, 4);
             if (ext) {
                 *(float*)((char*)ext + OFF_WATER_ROT_X) = x2;
                 *(float*)((char*)ext + OFF_WATER_ROT_Y) = y2;
@@ -3392,7 +3391,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             if (vmem) {
                 void *vis = g_TipperVisualCtor(vmem, *(int*)((char*)ext + renderOff));
                 o[0x435] = (DWORD)vis;
-                g_TipperVisualAttach(vis, (int)obj);
+                g_TipperVisualAttach(vis, (void*)obj);
             }
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
         }
@@ -3468,7 +3467,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_GluebieCtor(mem, (int)board, meshVal);
             DWORD *o = (DWORD *)obj;
-            o[0x435] = *(DWORD*)&x; o[0x436] = *(DWORD*)&y; o[0x437] = *(DWORD*)&z;
+            memcpy(&o[0x435], &x, 4); memcpy(&o[0x436], &y, 4); memcpy(&o[0x437], &z, 4);
             /* Original appends to board+0x4378 (Gluebie list) + board+0x2578 (obj list).
              * UNI_MESH_3 (0x85EC) is a mesh SLOT, not an AthenaList — appending to it
              * clobbers mesh pointers at 0x8620-0x862C via the iter array. */
@@ -3488,7 +3487,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_CatapultCtor(mem, (int)board, meshVal);
             DWORD *o = (DWORD *)obj;
-            o[0x436] = *(DWORD*)&x; o[0x437] = *(DWORD*)&y; o[0x438] = *(DWORD*)&z;
+            memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
             int listOff = UNI_CATAPULT_LIST;
             g_AthenaListAppend((void*)((char*)board + listOff), (int)obj);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
@@ -3507,7 +3506,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_MaceCtor(mem, (int)board, meshVal);
             DWORD *o = (DWORD *)obj;
-            o[0x436] = *(DWORD*)&x; o[0x437] = *(DWORD*)&y; o[0x438] = *(DWORD*)&z;
+            memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             g_AthenaListAppend((void*)((char*)ext + UNI_MACE_LIST), (int)obj);
             if (g_AthenaListGetSize((void*)((char*)ext + UNI_MACE_LIST)) == 1) {
@@ -3528,7 +3527,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_GlassLevelCtor(mem, (int)board, meshVal);
             DWORD *o = (DWORD *)obj;
-            o[0x436] = *(DWORD*)&x; o[0x437] = *(DWORD*)&y; o[0x438] = *(DWORD*)&z;
+            memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             g_AthenaListAppend((void*)((char*)ext + UNI_DRAWBRIDGE_LIST), (int)obj);
             renderOut = o[0x435];
@@ -3564,7 +3563,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_TrapdoorCtor(mem, (int)board);
             DWORD *o = (DWORD *)obj;
-            o[0x438] = *(DWORD*)&x; o[0x439] = *(DWORD*)&y; o[0x43A] = *(DWORD*)&z;
+            memcpy(&o[0x438], &x, 4); memcpy(&o[0x439], &y, 4); memcpy(&o[0x43A], &z, 4);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             g_AthenaListAppend((void*)((char*)ext + UNI_TRAPDOOR_LIST), (int)obj);
             renderOut = o[0x435];
@@ -3611,7 +3610,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (!meshPtr) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10D0);
         if (mem) {
-            int stands = (int)g_StandsCtor(mem, meshPtr);
+            int stands = (int)(DWORD)g_StandsCtor(mem, (int)(DWORD)meshPtr);
             char timerBuf[68];
             g_TimerInit(timerBuf);
             /* Copy position from S1 data to stack struct (matching original) */
@@ -4373,7 +4372,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     if (!board || !ball || !collPair) goto call_global;
     void* ext = GetBoardExt(board);
     if (!ext) ext = EnsureBoardExt(board);
-    // ext may be NULL for early calls, but most unified handlers need it
+    if (!ext) goto call_global;
     int level = GetCurrentLevel(board);
     if (level == 0 || level > 15) goto call_global;
 
@@ -5895,7 +5894,7 @@ static void InstallUniversalConstructorHook(void) {
  * Allocation size patch
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-static const DWORD g_allocPatchRVAs[15] = {
+static const DWORD g_allocPatchRVAs[15] __attribute__((unused)) = {
     0x00027109, 0x00027136, 0x00027167, 0x00027198, 0x000271C9,
     0x000271FA, 0x0002722B, 0x0002725C, 0x0002728D, 0x000272BE,
     0x000272EF, 0x00027320, 0x00027351, 0x0002737B, 0x000273A5,
@@ -5981,31 +5980,15 @@ static void InstallExtFreeHook(void) {
 }
 
 static void InstallHook(void) {
-    DWORD targetAddr = g_moduleBase + RVA_DispatchCollisionEvents;
-    unsigned char *orig = (unsigned char *)targetAddr;
-
-    if (orig[0] != 0x6A || orig[1] != 0xFF ||
-        orig[2] != 0x64 || orig[3] != 0xA1) return;
-
-    g_trampoline = VirtualAlloc(NULL, 16,
-                    MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!g_trampoline) return;
-
-    memcpy(g_trampoline, orig, 8);
-    g_trampoline[8] = 0xE9;
-    *(DWORD *)(g_trampoline + 9) = (targetAddr + 8) - ((DWORD)g_trampoline + 13);
-
-    g_OriginalDispatch = (DispatchCollisionEvents_t)g_trampoline;
-
-    DWORD oldProtect;
-    VirtualProtect(orig, 16, PAGE_EXECUTE_READWRITE, &oldProtect);
-    orig[0] = 0xE9;
-    *(DWORD *)(orig + 1) = (DWORD)&Hook_DispatchCollisionEvents - (targetAddr + 5);
-    orig[5] = 0x90;
-    orig[6] = 0x90;
-    orig[7] = 0x90;
-    VirtualProtect(orig, 16, oldProtect, &oldProtect);
-    FlushInstructionCache(GetCurrentProcess(), orig, 16);
+    /* DEPRECATED: SEH trampoline on DispatchCollisionEvents (0x40C5D0) caused
+     * stack/exception chain corruption (skill: Manual trampoline detour hooks
+     * on SEH functions crash). UniversalDispatchCollision via vtable[29]
+     * now solely handles collisions and calls the original directly.
+     * Keep trampoline disabled — just set g_OriginalDispatch to the raw
+     * function address. */
+    g_OriginalDispatch = (DispatchCollisionEvents_t)(g_moduleBase + RVA_DispatchCollisionEvents);
+    DebugLog("InstallHook: SEH trampoline disabled, vtable[29] handles collisions");
+    (void)g_trampoline;
 }
 
 /* BASS proxy exports handled by bass.def - DLL forwarding to bass_real.dll */
@@ -6198,7 +6181,7 @@ static void InstallVtablePatches(void) {
     for (i = 1; i <= 15; i++) {
         DWORD vtableAddr = g_levelVtables[i];
         if (!vtableAddr) continue;
-        if (IsBadReadPtr((void *)vtableAddr, 0x88)) continue;
+        { MEMORY_BASIC_INFORMATION mbi; if (!VirtualQuery((void*)vtableAddr, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT || (DWORD)mbi.BaseAddress + mbi.RegionSize < vtableAddr + 0x88) continue; }
 
         DWORD oldProtect;
 
@@ -6246,29 +6229,26 @@ static void InstallVtablePatches(void) {
             FlushInstructionCache(GetCurrentProcess(), slot, 4);
         }
 
-        /* Slot 24 (offset +0x60): Per-level render — DISABLED.
-         * Two call sites exist: 0x0046C8C7 (1-param, RET 0) and 0x0046C9F0
-         * (2-param, RET 4). A single replacement can't satisfy both.
-         * 9 of 15 levels use the shared Level_RenderDynamicObjects (RET 0).
-         * Patching all 15 with RET 4 crashes the 1-param levels.
-         * Fix: only patch the 6 levels that use 2-param render (2,5,10,12,13,14).
-         * For now, disabled entirely until per-level render features are needed. */
-#if 0
+        /* Slot 24 (offset +0x60): Per-level render — per-level RET convention.
+         * Two call sites: 0x0046C8C7 (1-param RET 0) vs 0x0046C9F0 (2-param RET 4).
+         * Only the 6 levels that use 2-param render (2=Beginner,5=Tower,10=Toob,12=Glass,13=Sky,14=Master) are patched. */
         {
-            DWORD *slot = (DWORD *)(vtableAddr + 0x60);
-            VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
-            *slot = (DWORD)&UniversalRender;
-            VirtualProtect(slot, 4, oldProtect, &oldProtect);
-            FlushInstructionCache(GetCurrentProcess(), slot, 4);
+            int is_two_param = (i==2 || i==5 || i==10 || i==12 || i==13 || i==14);
+            if (is_two_param) {
+                DWORD *slot = (DWORD *)(vtableAddr + 0x60);
+                VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                *slot = (DWORD)&UniversalRender;
+                VirtualProtect(slot, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), slot, 4);
+            }
         }
-#endif
     }
-    DebugLog("Vtable slots [1,19,29,33] patched for all 15 levels (slot 24 disabled)");
+    DebugLog("Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)");
 }
 
 static DWORD WINAPI PatchThread(LPVOID param) {
     DebugLog("=== PatchThread started ===");
-    Sleep(500); // reduced from 2000ms — faster hook install avoids first-race vanilla window
+    Sleep(1000); // 1s: early enough to beat first level load (~3-4s), late enough for BASS init
     DebugLog("Sleep done, resolving module base");
     g_moduleBase = (DWORD)GetModuleHandleA("Hamsterball.exe");
     if (!g_moduleBase) g_moduleBase = 0x00400000;
