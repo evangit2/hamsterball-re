@@ -170,6 +170,9 @@ void DebugLog(const char *msg);
 #define OFF_WATER_ROT_X     UNI_WATER_ROT_X
 #define OFF_WATER_ROT_Y     UNI_WATER_ROT_Y
 #define OFF_WATER_ROT_Z     UNI_WATER_ROT_Z
+#define OFF_TIPPER_ROT_X    UNI_TIPPER_ROT_X
+#define OFF_TIPPER_ROT_Y    UNI_TIPPER_ROT_Y
+#define OFF_TIPPER_ROT_Z    UNI_TIPPER_ROT_Z
 #define OFF_SWIRL_MESH      UNI_MESH_6
 #define OFF_SWIRL_RENDER    UNI_MESH_7
 #define OFF_SWIRL_POS_X     UNI_MESH_15
@@ -740,6 +743,9 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_WATER_ROT_X      0x86E4  /* WaterWheel base rot X (fallback file) */
 #define UNI_WATER_ROT_Y      0x86E8  /* WaterWheel base rot Y */
 #define UNI_WATER_ROT_Z      0x86EC  /* WaterWheel base rot Z */
+#define UNI_TIPPER_ROT_X     0x86F0  /* Tipper base rot X (separate from WaterWheel) */
+#define UNI_TIPPER_ROT_Y     0x86F4  /* Tipper base rot Y */
+#define UNI_TIPPER_ROT_Z     0x86F8  /* Tipper base rot Z */
 
 /* Sky popcyl array (16 × 4 = 64 bytes) */
 #define UNI_SKY_POPCYL_BASE 0x8700
@@ -1936,7 +1942,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
     DWORD renderObj;
     float *anglePtr; int *statePtr; int *counterPtr; float *pivotX; float *pivotY; float *pivotZ;
     if (!ext) return;
-    // UNI_* is canonical — writers (InitBridge, LoadExtraMeshes) store at ext+UNI_*. OFF_* is deprecated.
+    // UNI_* is canonical — writers (InitBridge, LoadExtraMeshes) store at ext+UNI_*.
     renderObj = *(DWORD *)((char *)ext + UNI_BONK_STORE);
     anglePtr = (float*)((char*)ext + UNI_BRIDGE_ANGLE);
     statePtr = (int*)((char*)ext + UNI_BRIDGE_STATE);
@@ -1944,17 +1950,6 @@ static void Feature_BridgeAnimation(void *board, int level) {
     pivotX = (float*)((char*)ext + UNI_WINDMILL_X);
     pivotY = (float*)((char*)ext + UNI_WINDMILL_Y);
     pivotZ = (float*)((char*)ext + UNI_WINDMILL_Z);
-    // Migration fallback: if UNI_* still zero but legacy OFF_*/BRD_* has data (pre-migration ext), copy once.
-    if (!renderObj) renderObj = *(DWORD *)((char *)ext + OFF_BONK_STORE);
-    if (*anglePtr==0 && *(float*)((char*)ext+OFF_BRIDGE_ANGLE)!=0) {
-        *anglePtr = *(float*)((char*)ext+OFF_BRIDGE_ANGLE);
-        *statePtr = *(int*)((char*)ext+OFF_BRIDGE_STATE);
-        *counterPtr = *(int*)((char*)ext+OFF_BRIDGE_COUNTER);
-        *pivotX = *(float*)((char*)ext+OFF_WINDMILL_X);
-        *pivotY = *(float*)((char*)ext+OFF_WINDMILL_Y);
-        *pivotZ = *(float*)((char*)ext+OFF_WINDMILL_Z);
-    }
-    if (!renderObj) renderObj = *(DWORD *)((char *)ext + BRD_BRIDGE_RENDER);
     if (!renderObj) return;
     int state = *statePtr;
     switch (state) {
@@ -3383,9 +3378,9 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
             memcpy(&o[0x439], &x2, 4); memcpy(&o[0x43A], &y2, 4); memcpy(&o[0x43B], &z2, 4);
             if (ext) {
-                *(float*)((char*)ext + OFF_WATER_ROT_X) = x2;
-                *(float*)((char*)ext + OFF_WATER_ROT_Y) = y2;
-                *(float*)((char*)ext + OFF_WATER_ROT_Z) = z2;
+                *(float*)((char*)ext + UNI_TIPPER_ROT_X) = x2;
+                *(float*)((char*)ext + UNI_TIPPER_ROT_Y) = y2;
+                *(float*)((char*)ext + UNI_TIPPER_ROT_Z) = z2;
             }
             void *vmem = g_operatorNew(0x10D0);
             if (vmem) {
