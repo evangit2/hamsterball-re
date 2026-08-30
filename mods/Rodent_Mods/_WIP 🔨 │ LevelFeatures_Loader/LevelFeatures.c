@@ -3400,14 +3400,13 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "WATERWHEEL", 10) == 0) {
         S1EnsureMeshWorld(board, ext, UNI_MESH_0, "Levels\\Level3-WaterWheel");
         S1EnsureRender(board, ext, UNI_MESH_1, UNI_MESH_0);
-        // ext already ensured at top; no shadow var. Canonical storage is UNI_* inside ext.
+        // Canonical UNI_* inside ext (OFF_* aliases same).
         *(float *)((char *)ext + UNI_WHEELEMBED_X) = x;
         *(float *)((char *)ext + UNI_WHEELEMBED_Y) = y;
         *(float *)((char *)ext + UNI_WHEELEMBED_Z) = z;
-        // Keep OFF_* as mirror for Feature_SwirlZones which reads OFF_WATER_ROT_*
-        *(float*)((char*)ext + OFF_WATER_ROT_X) = x2;
-        *(float*)((char*)ext + OFF_WATER_ROT_Y) = y2;
-        *(float*)((char*)ext + OFF_WATER_ROT_Z) = z2;
+        *(float*)((char*)ext + UNI_WATER_ROT_X) = x2;
+        *(float*)((char*)ext + UNI_WATER_ROT_Y) = y2;
+        *(float*)((char*)ext + UNI_WATER_ROT_Z) = z2;
         if (!obj) { obj = *(void **)((char *)ext + UNI_MESH_0); renderOut = *(int *)((char *)ext + UNI_MESH_1); }
         *(DWORD *)((char *)ext + UNI_JUDGE_LIST) = 0;
         OrBoardFeat(board, FEAT_SWIRL);
@@ -3433,7 +3432,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         *(float *)((char *)ext + UNI_MESH_12) = y;
         *(float *)((char *)ext + UNI_MESH_13) = z;
         OrBoardFeat(board, FEAT_SWIRL);
-        { void* ext=GetBoardExt(board); if(ext){ *(void**)((char*)ext+OFF_SWIRL_MESH)=obj; *(int*)((char*)ext+OFF_SWIRL_RENDER)=renderOut; *(float*)((char*)ext+OFF_SWIRL_POS_X)=x; *(float*)((char*)ext+OFF_SWIRL_POS_Y)=y; *(float*)((char*)ext+OFF_SWIRL_POS_Z)=z; } }
+        // Mirror for legacy OFF_* readers (alias, same addr) — use outer ext, no shadow.
+        if (ext) { *(void**)((char*)ext+OFF_SWIRL_MESH)=obj; *(int*)((char*)ext+OFF_SWIRL_RENDER)=renderOut; *(float*)((char*)ext+OFF_SWIRL_POS_X)=x; *(float*)((char*)ext+OFF_SWIRL_POS_Y)=y; *(float*)((char*)ext+OFF_SWIRL_POS_Z)=z; }
         // Create swirl collision zone for Feature_SwirlZones proximity check
         {
             void* zoneMem = g_operatorNew(0x1110);
@@ -3647,7 +3647,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             renderOut = o[0x43E];
             int storeOff = UNI_BONK_STORE;
             void* bExt = GetBoardExt(board); if(!bExt) bExt=EnsureBoardExt(board);
-            if(bExt) *(void **)((char *)bExt + storeOff) = obj; else *(void **)((char *)board + storeOff) = obj;
+            if(bExt) *(void **)((char *)bExt + storeOff) = obj;
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
@@ -3728,7 +3728,6 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
                 renderOut = *(int *)((char *)ext + UNI_SAW1_OBJ);
         }
         OrBoardFeat(board, FEAT_BRIDGE_ANIM);
-        { void* ext=EnsureBoardExt(board); if(ext){ *(float*)((char*)ext+OFF_WINDMILL_X)=x; *(float*)((char*)ext+OFF_WINDMILL_Y)=y; *(float*)((char*)ext+OFF_WINDMILL_Z)=z; } }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
     }
@@ -4124,7 +4123,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_BreakBridgeCtor(mem, (int)board, x, y, z, meshVal);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            void* bbExt = GetBoardExt(board); if(bbExt) *(void **)((char *)bbExt + storeOff) = obj; else *(void **)((char *)board + storeOff) = obj;
+            void* bbExt = GetBoardExt(board); if(!bbExt) bbExt=ext;
+            if(bbExt) *(void **)((char *)bbExt + storeOff) = obj;
             renderOut = ((DWORD*)obj)[0x438];
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
