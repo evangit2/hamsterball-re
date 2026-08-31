@@ -5852,6 +5852,10 @@ static void ScanS1ReferencedMeshesForCollisions(void *board, void *ext, void *me
     *(DWORD *)(objDb + 0x89C + iter*4)=savedIter; // restore
 }
 
+/* DEPRECATED: wildcard folder sweep — replaced by ScanS1ReferencedMeshesForCollisions (targeted)
+ * Kept as #if 0 to avoid future hitch; do not re-enable without profiling.
+ */
+#if 0
 static void ScanLevelFolderForCollisions(void *board, void *ext, const char *basePath) {
     if (!board || !ext || !basePath || !basePath[0]) return;
     // extract dir from basePath (up to last slash)
@@ -5905,6 +5909,7 @@ static void ScanLevelFolderForCollisions(void *board, void *ext, const char *bas
     char lg2[96]; int cnt=*(int*)((char*)ext + OFF_COLLISION_COUNT);
     wsprintfA(lg2, "FolderScan done dir='%s' total N:/E:=%d", dir, cnt); DebugLog(lg2);
 }
+#endif // 0 — ScanLevelFolderForCollisions deprecated
 
 static void UniversalConstructor(void *board, int raceIndex) {
     void* ext = EnsureBoardExt(board);
@@ -6223,10 +6228,14 @@ static void __stdcall Hook_AdvanceRace(DWORD a1) {
 static void InstallExtFreeHook(void) {
     DWORD targetAddr = g_moduleBase + 0x00027080;
     unsigned char* orig = (unsigned char*)targetAddr;
-    if (IsBadReadPtr(orig, 6)) return;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery(orig, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    if (!(mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY))) return;
+    // RVA 0x27080 prologue varies by build (dump shows 3C AE FD FF at 0x26480 file-off, not 55 8B EC)
+    // Don't gate on exact bytes — log and continue
     if (orig[0]!=0x55 || orig[1]!=0x8B || orig[2]!=0xEC) {
-        DebugLog("InstallExtFreeHook: unexpected prologue, skipping");
-        return;
+        char dbg[64]; wsprintfA(dbg, "InstallExtFreeHook: prologue %02X %02X %02X (continuing)", orig[0], orig[1], orig[2]);
+        DebugLog(dbg);
     }
     g_advanceTrampoline = VirtualAlloc(NULL, 32, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!g_advanceTrampoline) return;
