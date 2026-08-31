@@ -3667,7 +3667,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     }
 
     /* ── TRAPDOOR (Tower) ── */
-    if (my_strnicmp(name, "TRAPDOOR", 8) == 0 && level != 13) {
+    if (my_strnicmp(name, "TRAPDOOR", 8) == 0) {
         void *mem = g_operatorNew(0x10F8);
         if (mem) {
             obj = g_TrapdoorCtor(mem, (int)board);
@@ -3796,14 +3796,12 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         return;
     }
 
-    /* ── BRIDGE (Expert, Intermediate, Master) ──
-    // S1 ensure bridge mesh for swapped files
-     * Expert: rotating spinner bridge
-     * Intermediate/Master: position-only bridge (breaking behavior via BBRIDGE S1 objects) */
-    if (my_strnicmp(name, "BRIDGE", 6) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level2-Bridge");
-        // For Intermediate the render is TIPPER: (Render+TipperVisual_Attach)
-        void* brMesh = *(void**)((char*)ext + UNI_BONK_STORE); // bridge keeps BONK_STORE
+    /* ── SAWBRIDGE (Expert cut-away spinner) — renamed from BRIDGE (level==8) ──
+     * S1: SAWBRIDGE1 / SAWBRIDGE2 (+ NEG) — was BRIDGE1/2 on Expert
+     * BRIDGE (drawbridge) is now Intermediate/Master only, level-gate removed */
+    if (my_strnicmp(name, "SAWBRIDGE", 9) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\\\Level2-Bridge");
+        void* brMesh = *(void**)((char*)ext + UNI_BONK_STORE);
         void* brRender = *(void**)((char*)ext + UNI_SAW1_OBJ);
         if (!brRender && brMesh) {
             void* mem = g_operatorNew(0x10D0);
@@ -3815,34 +3813,44 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
                 }
             }
         }
-        if (level == 8) {
-            /* Expert: Spinner_Level_ctor */
-            void *mem = g_operatorNew(0x10FC);
-            if (mem) {
-                obj = g_SpinnerLevelCtor(mem, (int)board, x, y, z, fparam);
-                DWORD *o = (DWORD *)obj;
-                renderOut = o[0x43D];
-                /* Store spinner objects in UNI_LIST_1 (initialized AthenaList),
-                 * NOT UNI_BRIDGE_ANGLE (a float field, not an AthenaList).
-                 * Previously: g_AthenaListAppend on UNI_BRIDGE_ANGLE would
-                 * corrupt bridge state machine fields. */
-                if (strstr(name, "1")) g_AthenaListAppend((void*)((char*)ext + UNI_LIST_1), (int)obj);
-                if (strstr(name, "2")) g_AthenaListAppend((void*)((char*)ext + UNI_LIST_2), (int)obj);
-                if (strstr(name, "NEG")) o[0x43E] = 0xBF800000;
-            }
-        } else {
-            /* Intermediate/Master: position only.
-             * Store pivot position at BRD_BRIDGE_PIVOT_* offsets.
-             * DO NOT write to UNI_BRIDGE_ANGLE/STATE — those hold the
-             * 45.0/0/50 state machine values initialized in the board ctor.
-             * The old code wrote position into angle/state, corrupting them. */
-            obj = *(void **)((char *)ext + UNI_BONK_STORE);
-            *(float *)((char *)ext + BRD_BRIDGE_PIVOT_X) = x;
-            *(float *)((char *)ext + BRD_BRIDGE_PIVOT_Y) = y;
-            *(float *)((char *)ext + BRD_BRIDGE_PIVOT_Z) = z;
-            if (!strstr(name, "(NOCOLLIDE)"))
-                renderOut = *(int *)((char *)ext + UNI_SAW1_OBJ);
+        /* Spinner_Level_ctor */
+        void *mem = g_operatorNew(0x10FC);
+        if (mem) {
+            obj = g_SpinnerLevelCtor(mem, (int)board, x, y, z, fparam);
+            DWORD *o = (DWORD *)obj;
+            renderOut = o[0x43D];
+            if (strstr(name, "1")) g_AthenaListAppend((void*)((char*)ext + UNI_LIST_1), (int)obj);
+            if (strstr(name, "2")) g_AthenaListAppend((void*)((char*)ext + UNI_LIST_2), (int)obj);
+            if (strstr(name, "NEG")) o[0x43E] = 0xBF800000;
         }
+        OrBoardFeat(board, FEAT_BRIDGE_ANIM);
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── BRIDGE (Intermediate/Master drawbridge, position-only) ──
+     * S1: BRIDGE / BRIDGE(NOCOLLIDE) — SAWBRIDGE is Expert spinner, handled above */
+    if (my_strnicmp(name, "BRIDGE", 6) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\\\Level2-Bridge");
+        void* brMesh = *(void**)((char*)ext + UNI_BONK_STORE);
+        void* brRender = *(void**)((char*)ext + UNI_SAW1_OBJ);
+        if (!brRender && brMesh) {
+            void* mem = g_operatorNew(0x10D0);
+            if (mem) {
+                void* robj = g_LevelRenderCtor(mem, brMesh);
+                if (robj) {
+                    g_TipperVisualAttach(robj, brMesh);
+                    *(void**)((char*)ext + UNI_SAW1_OBJ) = robj;
+                }
+            }
+        }
+        /* Intermediate/Master: position only — store pivot, no level check */
+        obj = *(void **)((char *)ext + UNI_BONK_STORE);
+        *(float *)((char *)ext + BRD_BRIDGE_PIVOT_X) = x;
+        *(float *)((char *)ext + BRD_BRIDGE_PIVOT_Y) = y;
+        *(float *)((char *)ext + BRD_BRIDGE_PIVOT_Z) = z;
+        if (!strstr(name, "(NOCOLLIDE)"))
+            renderOut = *(int *)((char *)ext + UNI_SAW1_OBJ);
         OrBoardFeat(board, FEAT_BRIDGE_ANIM);
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
@@ -3871,35 +3879,36 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         return;
     }
 
-    /* ── LIFTER (Odd, Up) ── */
+    /* ── DROPPER (Odd single lifer) — renamed from LIFTER (level==9) ──
+     * S1: DROPPER — was bare LIFTER on Odd */
+    if (my_strnicmp(name, "DROPPER", 7) == 0) {
+        void *mem = g_operatorNew(0x10FC);
+        if (mem) {
+            obj = g_OddLifterCtor(mem, (int)board, x, y, z);
+            g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            *(void **)((char *)ext + UNI_BONK_STORE) = obj;
+            renderOut = ((DWORD*)obj)[0x435];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── LIFTER (Up tubes) ──
+     * S1: LIFTER2, LIFTER3... — Up only, level-gate removed (name-driven) */
     if (my_strnicmp(name, "LIFTER", 6) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_LIFTER_MESH, "levels\\levelup-lifter");
-        if (level == 9) {
-            /* Odd: Odd_Lifter_ctor */
-            void *mem = g_operatorNew(0x10FC);
-            if (mem) {
-                obj = g_OddLifterCtor(mem, (int)board, x, y, z);
-                g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-                *(void **)((char *)ext + UNI_BONK_STORE) = obj;
-                renderOut = ((DWORD*)obj)[0x435];
-            }
-        } else {
-            /* Up: Lifter_ctor with number from name */
-            long num = atol(name + 6);
-            int meshVal = *(int*)((char*)ext + UNI_LIFTER_MESH);
-            if (!meshVal) { DebugLog("LIFTER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
-            void *mem = g_operatorNew(0x10F4);
-            if (mem) {
-                obj = g_LifterCtor(mem, (int)board, x, y, z, meshVal, num);
-                g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-                /* Dual-append to legacy board+0x436C for Up's RaceState handler.
-                 * The original Up RaceState iterates this list to call each
-                 * Lifter's Update() — without it, vacuum tubes are inert. */
-                if (level == 6) {
-                    g_AthenaListAppend((void*)((char*)board + 0x436C), (int)obj);
-                }
-                renderOut = ((DWORD*)obj)[0x438];
-            }
+        S1EnsureMeshWorld(board, ext, UNI_LIFTER_MESH, "levels\\\\levelup-lifter");
+        long num = atol(name + 6);
+        int meshVal = *(int*)((char*)ext + UNI_LIFTER_MESH);
+        if (!meshVal) { DebugLog("LIFTER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        void *mem = g_operatorNew(0x10F4);
+        if (mem) {
+            obj = g_LifterCtor(mem, (int)board, x, y, z, meshVal, num);
+            g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            /* Dual-append to legacy board+0x436C for Up's RaceState handler.
+             * Name-driven now — any LIFTER in any slot needs the list if meshed as Up.
+             * Keep unconditional (Up RaceState iterates 0x436C to call Lifter_Update). */
+            g_AthenaListAppend((void*)((char*)board + 0x436C), (int)obj);
+            renderOut = ((DWORD*)obj)[0x438];
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
@@ -4106,11 +4115,12 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         return;
     }
 
-    /* ── TRAPDOOR (Sky) ── */
-    if (my_strnicmp(name, "TRAPDOOR", 8) == 0 && level == 13) {
+    /* ── POPDOOR (Sky) — renamed from TRAPDOOR (level==13) ──
+     * S1: POPDOOR — was TRAPDOOR on Sky (Rotator) */
+    if (my_strnicmp(name, "POPDOOR", 7) == 0) {
         float dat = *(float *)(g_moduleBase + 0xCF44C);
         int meshVal = *(int*)((char*)ext + UNI_NEON_DARK_COUNT);
-        if (!meshVal) { DebugLog("TRAPDOOR/Sky: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        if (!meshVal) { DebugLog("POPDOOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10F4);
         if (mem) {
             obj = g_RotatorCtor(mem, (int)board, x, y, z, dat - fparam, meshVal);
