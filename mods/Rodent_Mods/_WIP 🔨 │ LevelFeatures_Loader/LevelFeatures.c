@@ -644,19 +644,17 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
  * All values below have been corrected to actual byte offsets.) */
 
 /* Bridge animation (Intermediate) — render obj + pivot point + state machine
- * meshWorld is stored at UNI_BONK_STORE (0x8620) by LoadExtraMeshes/InitBridge.
- * The original game calls meshWorld->vtable[0x16] and [0x15] for rendering,
- * NOT the renderObj. Pivot reuses windmill position offsets (never coexist). */
+ * meshWorld is stored at UNI_BONK_STORE (0x8620) by LoadExtraMeshes/InitBridge. */
 #define BRD_BRIDGE_RENDER   UNI_BONK_STORE  /* meshWorld ptr (0x8620) */
-#define BRD_BRIDGE_PIVOT_X  UNI_WINDMILL_X  /* float: bridge pivot X (0x8640) */
-#define BRD_BRIDGE_PIVOT_Y  UNI_WINDMILL_Y  /* float: bridge pivot Y (0x8644) */
-#define BRD_BRIDGE_PIVOT_Z  UNI_WINDMILL_Z  /* float: bridge pivot Z (0x8648) */
+#define BRD_BRIDGE_PIVOT_X  UNI_BRIDGE_PIVOT_X  /* float: bridge pivot X (0xB998) */
+#define BRD_BRIDGE_PIVOT_Y  UNI_BRIDGE_PIVOT_Y  /* float: bridge pivot Y (0xB99C) */
+#define BRD_BRIDGE_PIVOT_Z  UNI_BRIDGE_PIVOT_Z  /* float: bridge pivot Z (0xB9A0) */
 #define BRD_BRIDGE_ANGLE    UNI_BRIDGE_ANGLE   /* float: current tilt angle (starts 45.0) */
 #define BRD_BRIDGE_STATE    UNI_BRIDGE_STATE   /* int: 0=wait, 1=tilt down, 2=wait, 3=tilt back */
 #define BRD_BRIDGE_COUNTER  UNI_BRIDGE_COUNTER /* int: frame counter for current state */
 
-/* Windmill (Tower) — dedicated offsets (no overlap with bridge) */
-#define BRD_WM_RENDER       UNI_MESH_4   /* windmill render object ptr */
+/* Windmill (Tower) — dedicated offsets */
+#define BRD_WM_RENDER       UNI_WM_RENDER   /* windmill render object ptr (0xB9D8) */
 #define BRD_WM_POS_X        UNI_WINDMILL_X      /* float: windmill X */
 #define BRD_WM_POS_Y        UNI_WINDMILL_Y      /* float: windmill Y */
 #define BRD_WM_POS_Z        UNI_WINDMILL_Z      /* float: windmill Z */
@@ -666,12 +664,12 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define BRD_WM_COUNTER       UNI_WINDMILL_COUNTER /* int: frame counter */
 #define BRD_WM_DECAY_VAL     UNI_WINDMILL_DECAY   /* float: decay value for pause state */
 
-/* BadBall spawner (Odd) */
-#define BRD_BB_FLAG         UNI_MESH_1   /* byte: spawn enabled flag */
-#define BRD_BB_COUNTER       UNI_MESH_2   /* int: frames until next spawn */
-#define BRD_BB_TOTAL         UNI_MESH_3   /* int: total spawned so far */
-#define BRD_BB_LAST_IDX      UNI_BITE_SPEED      /* int: last spawn position index (avoid repeats) */
-#define BRD_BB_POS_TABLE     UNI_MESH_4   /* 3×3 float table (36 bytes) */
+/* BadBall spawner (Odd) — dedicated slots in 0xB9A4+ tail */
+#define BRD_BB_FLAG         UNI_BB_FLAG      /* byte: spawn enabled flag (0xB9A4) */
+#define BRD_BB_COUNTER       UNI_BB_COUNTER  /* int: frames until next spawn (0xB9A8) */
+#define BRD_BB_TOTAL         UNI_BB_TOTAL    /* int: total spawned so far (0xB9AC) */
+#define BRD_BB_LAST_IDX      UNI_BB_LAST_IDX /* int: last spawn position index (0xB9B0) */
+#define BRD_BB_POS_TABLE     UNI_BB_POS_TABLE /* 3x3 float table, 36B (0xB9B4) */
 
 /* Swirl (Dizzy) — offset mapping aligned with original game.
  * Original: primary=board+0x4BA8 (WaterWheel), secondary=board+0x4BC4 (Swirl).
@@ -860,6 +858,23 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_POPCYL_MESH_BASE 0xB940  /* PopCylinder meshes (2*4) */
 #define UNI_BBRIDGE1_MESH    0xB948  /* BBridge1 mesh (Master) */
 #define UNI_BBRIDGE2_MESH    0xB94C  /* BBridge2 mesh (Master) */
+
+/* ── Clobber-fix: dedicated slots in free tail 0xB990+ (were sharing 0x85E8/85F0/8638/863C/8640) ──
+ * FALLOUT1 was storing at BRIDGE_COUNTER (0x863C), Toob Saw2 at BRIDGE_STATE (0x8638),
+ * bridge pivot at WINDMILL_X (0x8640), and BadBall table at MESH_4 (0x85F0, 36B overflow
+ * into MESH_5..13 which are swirl/windmill state). All now have private slots. */
+#define UNI_SAW2_TOOB_OBJ    0xB990  /* Saw2 Toob ALERTSAW3 object (was BRIDGE_STATE) */
+#define UNI_FALLOUT_OBJ      0xB994  /* Fallout1 object (was BRIDGE_COUNTER) */
+#define UNI_BRIDGE_PIVOT_X   0xB998  /* Bridge pivot X (was WINDMILL_X) */
+#define UNI_BRIDGE_PIVOT_Y   0xB99C  /* Bridge pivot Y */
+#define UNI_BRIDGE_PIVOT_Z   0xB9A0  /* Bridge pivot Z */
+#define UNI_BB_FLAG          0xB9A4  /* BadBall spawn flag (was MESH_1) */
+#define UNI_BB_COUNTER       0xB9A8  /* BadBall spawn counter (was MESH_2, clobbered swirl angle) */
+#define UNI_BB_TOTAL         0xB9AC  /* BadBall total spawned (was MESH_3) */
+#define UNI_BB_LAST_IDX      0xB9B0  /* BadBall last pos idx (was BITE_SPEED 0x8664) */
+#define UNI_BB_POS_TABLE     0xB9B4  /* BadBall 3x3 spawn pos table, 36B (was MESH_4 overflow) */
+#define UNI_WM_RENDER        0xB9D8  /* Windmill render obj (was MESH_4) */
+/* Next free: 0xB9DC, tail to 0xC000 = 0x624 bytes remaining */
 
 /* Sky popcyl array (16 × 4 = 64 bytes) */
 #define UNI_SKY_POPCYL_BASE 0x8700
@@ -3953,7 +3968,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_Saw2Ctor(mem, (int)board, x, y, z, meshVal, pathObj);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            *(void **)((char *)ext + UNI_BRIDGE_STATE) = obj;
+            *(void **)((char *)ext + UNI_SAW2_TOOB_OBJ) = obj;
             renderOut = ((DWORD*)obj)[0x435];
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
@@ -3968,7 +3983,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_FalloutCtor(mem, (int)board, x, y, z, meshVal);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            *(void **)((char *)ext + UNI_BRIDGE_COUNTER) = obj;
+            *(void **)((char *)ext + UNI_FALLOUT_OBJ) = obj;
             renderOut = ((DWORD*)obj)[0x435];
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
@@ -4889,7 +4904,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     /* ── Toob: E:ALERTSAW3 (renamed from ALERTSAW2) ── */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW3)) && my_stricmp(name, "E:ALERTSAW3") == 0) {
         if (difficulty != 0) {
-            int saw2Obj = *(int *)((char *)ext + UNI_BRIDGE_STATE);
+            int saw2Obj = *(int *)((char *)ext + UNI_SAW2_TOOB_OBJ);
             if (saw2Obj) *(BYTE *)(saw2Obj + 0x110C) = 1;
         }
     }
