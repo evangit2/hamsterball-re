@@ -876,7 +876,12 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_BB_POS_TABLE     0xB9B4  /* BadBall 3x3 spawn pos table, 36B (was MESH_4 overflow) */
 #define UNI_WM_RENDER        0xB9D8  /* Windmill render obj (was MESH_4) */
 #define UNI_BLOCKDAWG3_MESH  0xB9E0  /* Blockdawg3 mesh (Toob, split from B904) */
-/* Next free: 0xB9E4, tail to 0xC000 = 0x620 bytes remaining */
+#define UNI_SPEEDCYLINDER_MESH 0xB9E4 /* SpeedCylinder mesh (Up, split from LIFTER B908) */
+#define UNI_TIMEBUTTON_MESH  0xB9E8  /* TimeButton mesh (Up, split from MESH_5 0x85F4 alias) */
+#define UNI_SAW_TOOB_OBJ     0xB9EC  /* Saw Toob instance (was BRIDGE_ANGLE 0x8634 clobber) */
+#define UNI_BBRIDGE1_OBJ     0xB9F0  /* BBridge1 instance (was MESH_7 0x85FC clobber) */
+#define UNI_BBRIDGE2_OBJ     0xB9F4  /* BBridge2 instance (was MESH_8 0x8600) */
+/* Next free: 0xB9F8, tail to 0xC000 = 0x608 bytes remaining */
 
 /* Sky popcyl array (16 × 4 = 64 bytes) */
 #define UNI_SKY_POPCYL_BASE 0x8700
@@ -3972,6 +3977,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── SPINNY (Toob) ── */
     if (my_strnicmp(name, "SPINNY", 6) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_SPINNY_MESH, "Levels\\\\Level8-Spinny");
         int meshVal = *(int*)((char*)ext + UNI_SPINNY_MESH);
         if (!meshVal) { DebugLog("SPINNY: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1508);
@@ -3987,13 +3993,14 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── SAW (Toob) ── */
     if (my_stricmp(name, "SAW") == 0 && difficulty != 0) {
         int pathObj = g_LevelFindObjectByName(meshWorld, "SAWPATH");
+        S1EnsureMeshWorld(board, ext, UNI_SAW_MESH, "Levels\\\\Level8-Saw");
         int meshVal = *(int*)((char*)ext + UNI_SAW_MESH);
         if (!meshVal) { DebugLog("SAW: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1110);
         if (mem) {
             obj = g_SawCtor(mem, (int)board, x, y, z, meshVal, pathObj);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            *(void **)((char *)ext + UNI_BRIDGE_ANGLE) = obj;
+            *(void **)((char *)ext + UNI_SAW_TOOB_OBJ) = obj;
             renderOut = ((DWORD*)obj)[0x435];
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
@@ -4003,6 +4010,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── SAW2 (Toob) ── */
     if (my_stricmp(name, "SAW2") == 0 && difficulty != 0) {
         int pathObj = g_LevelFindObjectByName(meshWorld, "SMALLSAWPATH");
+        S1EnsureMeshWorld(board, ext, UNI_SAW_MESH, "Levels\\\\Level8-Saw");
         int meshVal = *(int*)((char*)ext + UNI_SAW_MESH);
         if (!meshVal) { DebugLog("SAW2: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1118);
@@ -4018,6 +4026,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── FALLOUT1 (Toob) ── */
     if (my_strnicmp(name, "FALLOUT1", 8) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_FALLOUT_MESH, "Levels\\\\Level8-Fallout");
         int meshVal = *(int*)((char*)ext + UNI_FALLOUT_MESH);
         if (!meshVal) { DebugLog("FALLOUT1: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10E8);
@@ -4035,6 +4044,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "BLOCKDAWG", 9) == 0 && difficulty != 0) {
         int dawgNum = name[9] - '0';
         int meshOff = (dawgNum==1) ? UNI_BLOCKDAWG1_MESH : (dawgNum==3) ? UNI_BLOCKDAWG3_MESH : UNI_BLOCKDAWG2_MESH;
+        { const char *_bdPath = (dawgNum==1) ? "Levels\\\\Level8-Blockdawg1" : (dawgNum==3) ? "Levels\\\\Level8-Blockdawg3" : "Levels\\\\Level8-Blockdawg2"; S1EnsureMeshWorld(board, ext, meshOff, _bdPath); }
         void* bExt2 = GetBoardExt(board); if (!bExt2) bExt2 = ext;
         int meshVal = bExt2 ? *(int*)((char*)bExt2 + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("BLOCKDAWG: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -4095,6 +4105,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── NEONPLATFORM (Neon) ── */
     if (my_strnicmp(name, "NEONPLATFORM", 12) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_SAW2_OBJ, "Levels\\\\LevelDark-NeonPlatform");
         int meshVal = *(int*)((char*)ext + UNI_SAW2_OBJ);
         if (!meshVal) { DebugLog("NEONPLATFORM: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10EC);
@@ -4111,6 +4122,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "DFLOOR", 6) == 0 && name[6] >= '1' && name[6] <= '4') {
         int dNum = name[6] - '0';
         int meshOff = UNI_DFLOOR_BASE + (dNum-1) * 4;
+        { const char *_dfPath = (dNum==1) ? "Levels\\\\LevelDark-DFloor1" : (dNum==2) ? "Levels\\\\LevelDark-DFloor2" : (dNum==3) ? "Levels\\\\LevelDark-DFloor3" : "Levels\\\\LevelDark-DFloor4"; S1EnsureMeshWorld(board, ext, meshOff, _dfPath); }
         void *dExt = GetBoardExt(board); if (!dExt) dExt = ext;
         int meshVal = dExt ? *(int*)((char*)dExt + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("DFLOOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -4135,6 +4147,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── TRODE (Neon) ── */
     if (my_strnicmp(name, "TRODE", 5) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_BRIDGE_COUNTER, "Levels\\\\LevelDark-Trode");
         int meshVal = *(int*)((char*)ext + UNI_BRIDGE_COUNTER);
         if (!meshVal) { DebugLog("TRODE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1104);
@@ -4155,6 +4168,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             if (idx >= 0 && idx < 16) {
                 int meshIdx = idx & 1;
                 int meshOff = UNI_POPCYL_MESH_BASE + meshIdx * 4;
+                { const char *_pcPath = (meshIdx==0) ? "levels\\\\level9-popcylinder1" : "levels\\\\level9-popcylinder2"; S1EnsureMeshWorld(board, ext, meshOff, _pcPath); }
                 void* pExt = GetBoardExt(board); if (!pExt) pExt = ext;
                 int meshVal = pExt ? *(int*)((char*)pExt + meshOff) : *(int*)((char*)ext + meshOff);
                 if (!meshVal) { DebugLog("POPCYLINDER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -4175,6 +4189,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
      * S1: POPDOOR — was TRAPDOOR on Sky (Rotator) */
     if (my_strnicmp(name, "POPDOOR", 7) == 0) {
         float dat = *(float *)(g_moduleBase + 0xCF44C);
+        S1EnsureMeshWorld(board, ext, UNI_SKY_TRAPDOOR, "levels\\\\level9-trapdoor");
         int meshVal = *(int*)((char*)ext + UNI_SKY_TRAPDOOR);
         if (!meshVal) { DebugLog("POPDOOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10F4);
@@ -4182,6 +4197,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             obj = g_RotatorCtor(mem, (int)board, x, y, z, dat - fparam, meshVal);
             *(void **)((char *)ext + UNI_NEON_TRAPDOOR) = obj;
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            g_AthenaListAppend((void*)((char*)ext + UNI_TRAPDOOR_LIST), (int)obj);
             renderOut = ((DWORD*)obj)[0x43C];
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
@@ -4190,7 +4206,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── SPEEDCYLINDER (Up) ── */
     if (my_strnicmp(name, "SPEEDCYLINDER", 13) == 0) {
-        int meshVal = *(int*)((char*)ext + UNI_LIFTER_MESH);
+        S1EnsureMeshWorld(board, ext, UNI_SPEEDCYLINDER_MESH, "levels\\\\levelup-speedcylinder");
+        int meshVal = *(int*)((char*)ext + UNI_SPEEDCYLINDER_MESH);
         if (!meshVal) { DebugLog("SPEEDCYLINDER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x150C);
         if (mem) {
@@ -4205,7 +4222,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── TIMEBUTTON (Up) ── */
     if (my_strnicmp(name, "TIMEBUTTON", 10) == 0) {
-        int meshVal = *(int*)((char*)ext + UNI_MESH_5);
+        S1EnsureMeshWorld(board, ext, UNI_TIMEBUTTON_MESH, "levels\\\\levelup-button");
+        int meshVal = *(int*)((char*)ext + UNI_TIMEBUTTON_MESH);
         if (!meshVal) { DebugLog("TIMEBUTTON: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10E8);
         if (mem) {
@@ -4219,6 +4237,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── LOOPER (Impossible) ── */
     if (my_strnicmp(name, "LOOPER", 6) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_LOOPER_MESH, "Levels\\\\LevelImpossible-Looper");
         int meshVal = *(int*)((char*)ext + UNI_LOOPER_MESH);
         if (!meshVal) { DebugLog("LOOPER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1500);
@@ -4233,6 +4252,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── GEAR (Impossible) ── */
     if (my_strnicmp(name, "GEAR", 4) == 0 && my_strnicmp(name, "BIGGEAR", 7) != 0) {
+        S1EnsureMeshWorld(board, ext, UNI_GEAR_MESH, "Levels\\\\LevelImpossible-Gear");
         int meshVal = *(int*)((char*)ext + UNI_GEAR_MESH);
         if (!meshVal) { DebugLog("GEAR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1514);
@@ -4247,6 +4267,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── BIGGEAR (Impossible) ── */
     if (my_strnicmp(name, "BIGGEAR", 7) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_BIGGEAR_MESH, "Levels\\\\LevelImpossible-BigGear");
         int meshVal = *(int*)((char*)ext + UNI_BIGGEAR_MESH);
         if (!meshVal) { DebugLog("BIGGEAR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1514);
@@ -4264,6 +4285,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── ROTATOR (Impossible) ── */
     if (my_strnicmp(name, "ROTATOR", 7) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_ROTATOR_MESH, "Levels\\\\LevelImpossible-Rotator");
         int meshVal = *(int*)((char*)ext + UNI_ROTATOR_MESH);
         if (!meshVal) { DebugLog("ROTATOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1508);
@@ -4282,6 +4304,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── PENDULUM (Impossible) ── */
     if (my_strnicmp(name, "PENDULUM", 8) == 0) {
+        S1EnsureMeshWorld(board, ext, UNI_PENDULUM_MESH, "Levels\\\\LevelImpossible-Pendulum");
         int meshVal = *(int*)((char*)ext + UNI_PENDULUM_MESH);
         if (!meshVal) { DebugLog("PENDULUM: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1504);
@@ -4298,7 +4321,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "BBRIDGE", 7) == 0) {
         int bNum = name[7] - '0';
         int meshOff = (bNum == 1) ? UNI_BBRIDGE1_MESH : UNI_BBRIDGE2_MESH;
-        int storeOff = (bNum == 1) ? UNI_MESH_7 : UNI_MESH_8; // instance store keeps UNI_MESH_7/8 (dedup not needed for instance)
+        int storeOff = (bNum == 1) ? UNI_BBRIDGE1_OBJ : UNI_BBRIDGE2_OBJ;
+        S1EnsureMeshWorld(board, ext, meshOff, (bNum == 1) ? "Levels\\\\Level10-Bridge1" : "Levels\\\\Level10-Bridge2");
         void* bbExt2 = GetBoardExt(board); if (!bbExt2) bbExt2 = ext;
         int meshVal = bbExt2 ? *(int*)((char*)bbExt2 + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("BBRIDGE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -4974,16 +4998,22 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         }
     }
 
-    /* ── Expert: E:ACTIVATESAW1 ── */
+    /* ── Expert: E:ACTIVATESAW1 (fallback to B8F4 dedup) ── */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_ACTIVATESAW1)) && my_stricmp(name, "E:ACTIVATESAW1") == 0) {
-        if (difficulty != 0 && g_SawActivate)
-            g_SawActivate(*(int *)((char *)ext + UNI_SAW1_OBJ));
+        if (difficulty != 0 && g_SawActivate) {
+            int saw1 = *(int *)((char *)ext + UNI_SAWBLADE1_OBJ);
+            if (!saw1) saw1 = *(int *)((char *)ext + UNI_SAW1_OBJ);
+            g_SawActivate(saw1);
+        }
     }
 
     /* ── Expert: E:ACTIVATESAW2 ── */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_ACTIVATESAW2)) && my_stricmp(name, "E:ACTIVATESAW2") == 0) {
-        if (difficulty != 0 && g_SawActivate)
-            g_SawActivate(*(int *)((char *)ext + UNI_SAW2_OBJ));
+        if (difficulty != 0 && g_SawActivate) {
+            int saw2 = *(int *)((char *)ext + UNI_SAWBLADE2_OBJ);
+            if (!saw2) saw2 = *(int *)((char *)ext + UNI_SAW2_OBJ);
+            g_SawActivate(saw2);
+        }
     }
 
     /* ── Expert: E:ALERTJUDGES ── */
