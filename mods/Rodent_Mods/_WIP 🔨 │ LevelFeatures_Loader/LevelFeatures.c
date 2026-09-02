@@ -2076,9 +2076,9 @@ static void Feature_BridgeAnimation(void *board, int level) {
     anglePtr = (float*)((char*)ext + UNI_BRIDGE_ANGLE);
     statePtr = (int*)((char*)ext + UNI_BRIDGE_STATE);
     counterPtr = (int*)((char*)ext + UNI_BRIDGE_COUNTER);
-    pivotX = (float*)((char*)ext + UNI_WINDMILL_X);
-    pivotY = (float*)((char*)ext + UNI_WINDMILL_Y);
-    pivotZ = (float*)((char*)ext + UNI_WINDMILL_Z);
+    pivotX = (float*)((char*)ext + UNI_BRIDGE_PIVOT_X);
+    pivotY = (float*)((char*)ext + UNI_BRIDGE_PIVOT_Y);
+    pivotZ = (float*)((char*)ext + UNI_BRIDGE_PIVOT_Z);
     if (!renderObj) return;
     int state = *statePtr;
     switch (state) {
@@ -2457,9 +2457,9 @@ static void Feature_Windmill(void *board, int level) {
     posX = (float*)((char*)ext + UNI_WINDMILL_X);
     posY = (float*)((char*)ext + UNI_WINDMILL_Y);
     posZ = (float*)((char*)ext + UNI_WINDMILL_Z);
-    renderPtr = (DWORD*)((char*)ext + UNI_BONK_STORE);
-    /* Also migrate legacy OFF_* windmill render pointer if present. */
-    if (!*renderPtr && *(DWORD*)((char*)ext+OFF_BONK_STORE)) *renderPtr = *(DWORD*)((char*)ext+OFF_BONK_STORE);
+    renderPtr = (DWORD*)((char*)ext + REND_TOWER_WINDMILL);
+    /* Fallback for legacy BONK_STORE alias during migration. */
+    if (!*renderPtr && *(DWORD*)((char*)ext+UNI_BONK_STORE)) *renderPtr = *(DWORD*)((char*)ext+UNI_BONK_STORE);
     float rotSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 1.0f;
     *anglePtr = *anglePtr + rotSpeed;
     {
@@ -3596,6 +3596,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
              * UNI_MESH_3 (0x85EC) is a mesh SLOT, not an AthenaList — appending to it
              * clobbers mesh pointers at 0x8620-0x862C via the iter array. */
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            /* Restore missing Gluebie list append (board+0x4378) — original does both */
+            g_AthenaListAppend((void*)((char*)board + 0x4378), (int)obj);
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
@@ -3613,7 +3615,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             DWORD *o = (DWORD *)obj;
             memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
             int listOff = UNI_CATAPULT_LIST;
-            g_AthenaListAppend((void*)((char*)board + listOff), (int)obj);
+            g_AthenaListAppend((void*)((char*)ext + listOff), (int)obj);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             renderOut = o[0x435];
         }
@@ -3706,9 +3708,10 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── CHOMPER (Tower) ── */
     if (my_strnicmp(name, "CHOMPER", 7) == 0) {
-        /* Store chomper mesh pointer in dedicated render offset */
-        /* CHOMPER mesh now at UNI_CHOMPER_MESH; REND_TOWER_CHOMPER set below */
-        /* dedup: no shared UNI_MESH_8 read */
+        /* Load Chomper mesh if not already loaded */
+        S1EnsureMeshNode(board, ext, UNI_CHOMPER_MESH, "Meshes\\Chomper");
+        void *chomperMesh = *(void **)((char *)ext + UNI_CHOMPER_MESH);
+        if (chomperMesh) *(DWORD *)((char *)ext + REND_TOWER_CHOMPER) = (DWORD)chomperMesh;
         /* Store position in dedicated tower render offsets */
         *(float *)((char *)ext + REND_TOWER_CHOMP_X) = x;
         *(float *)((char *)ext + REND_TOWER_CHOMP_Y) = y;
@@ -4134,7 +4137,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
      * S1: POPDOOR — was TRAPDOOR on Sky (Rotator) */
     if (my_strnicmp(name, "POPDOOR", 7) == 0) {
         float dat = *(float *)(g_moduleBase + 0xCF44C);
-        int meshVal = *(int*)((char*)ext + UNI_NEON_DARK_COUNT);
+        int meshVal = *(int*)((char*)ext + UNI_SKY_TRAPDOOR);
         if (!meshVal) { DebugLog("POPDOOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10F4);
         if (mem) {
@@ -4292,6 +4295,22 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         *(float *)((char *)ext + REND_GLASS_S2_Z) = z;
         *(DWORD *)((char *)ext + REND_GLASS_TRANSP2) = 0xC2B40000; /* -90.0f */
         *(char *)((char *)ext + REND_GLASS_FLAG2) = 0;
+        *(int*)out1 = 0; *(int*)out2 = 0;
+        return;
+    }
+
+    /* ── TARBUBBLE (Dizzy) ──
+     * S1: TARBUBBLE — DizzyBoard_Update uses board+0x11E4 list.
+     * Mod stores into ext+UNI_TARBUBBLE_LIST (0x9430) so Feature_SwirlZones can spawn bubbles. */
+    if (my_strnicmp(name, "TARBUBBLE", 9) == 0) {
+        void *entry = g_operatorNew(0x20);
+        if (entry) {
+            memset(entry, 0, 0x20);
+            *(float *)((char *)entry + 0x04) = x;
+            *(float *)((char *)entry + 0x08) = y;
+            *(float *)((char *)entry + 0x0C) = z;
+            g_AthenaListAppend((void *)((char *)ext + UNI_TARBUBBLE_LIST), (int)entry);
+        }
         *(int*)out1 = 0; *(int*)out2 = 0;
         return;
     }
@@ -4875,7 +4894,8 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     if ((*(BYTE*)((char*)ext + COLL_FLAG_CALLHAMMER)) && my_stricmp(name, "E:CALLHAMMER") == 0) {
         if (difficulty != 0 && g_CreateBonkPopup) {
             void *be = GetBoardExt(board); if (!be) be = ext;
-            int bonkObj = be ? *(int*)((char*)be + UNI_BONK_STORE) : *(int*)((char*)ext + UNI_BONK_STORE);
+            int bonkObj = be ? *(int*)((char*)be + UNI_BONK_MESH) : *(int*)((char*)ext + UNI_BONK_MESH);
+            if (!bonkObj) bonkObj = be ? *(int*)((char*)be + UNI_BONK_STORE) : *(int*)((char*)ext + UNI_BONK_STORE);
             g_CreateBonkPopup(bonkObj);
         }
     }
@@ -4884,21 +4904,28 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     if ((*(BYTE*)((char*)ext + COLL_FLAG_HAMMERCHASE)) && my_stricmp(name, "E:HAMMERCHASE") == 0) {
         if (difficulty != 0 && g_HammerChaseStart) {
             void *be2 = GetBoardExt(board); if (!be2) be2 = ext;
-            int bonkObj2 = be2 ? *(int*)((char*)be2 + UNI_BONK_STORE) : *(int*)((char*)ext + UNI_BONK_STORE);
+            int bonkObj2 = be2 ? *(int*)((char*)be2 + UNI_BONK_MESH) : *(int*)((char*)ext + UNI_BONK_MESH);
+            if (!bonkObj2) bonkObj2 = be2 ? *(int*)((char*)be2 + UNI_BONK_STORE) : *(int*)((char*)ext + UNI_BONK_STORE);
             g_HammerChaseStart(bonkObj2);
         }
     }
 
     /* ── Expert: E:ALERTSAW1 ── */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW1)) && my_stricmp(name, "E:ALERTSAW1") == 0) {
-        if (difficulty != 0 && g_SawAlertActivate)
-            g_SawAlertActivate(*(int *)((char *)ext + UNI_SAW1_OBJ));
+        if (difficulty != 0 && g_SawAlertActivate) {
+            int saw1 = *(int *)((char *)ext + UNI_SAWBLADE1_OBJ);
+            if (!saw1) saw1 = *(int *)((char *)ext + UNI_SAW1_OBJ);
+            g_SawAlertActivate(saw1);
+        }
     }
 
     /* ── Expert: E:ALERTSAW2 ── */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW2)) && my_stricmp(name, "E:ALERTSAW2") == 0) {
-        if (difficulty != 0 && g_SawAlertActivate)
-            g_SawAlertActivate(*(int *)((char *)ext + UNI_SAW2_OBJ));
+        if (difficulty != 0 && g_SawAlertActivate) {
+            int saw2 = *(int *)((char *)ext + UNI_SAWBLADE2_OBJ);
+            if (!saw2) saw2 = *(int *)((char *)ext + UNI_SAW2_OBJ);
+            g_SawAlertActivate(saw2);
+        }
     }
 
     /* ── Toob: E:ALERTSAW3 (renamed from ALERTSAW2) ── */
