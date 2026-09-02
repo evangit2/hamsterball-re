@@ -852,7 +852,8 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_BLOCKDAWG1_MESH  0xB900  /* Blockdawg1 mesh */
 #define UNI_BLOCKDAWG2_MESH  0xB904  /* Blockdawg2 mesh */
 #define UNI_LIFTER_MESH      0xB908  /* Lifter/SpeedCyl mesh (Up) */
-#define UNI_ROTATOR_MESH     0xB90C  /* Rotator/Pendulum mesh (Impossible) */
+#define UNI_ROTATOR_MESH     0xB90C  /* Rotator mesh (Impossible) */
+#define UNI_PENDULUM_MESH    0xB9DC  /* Pendulum mesh (Impossible, split from Rotator) */
 #define UNI_DFLOOR_BASE      0xB910  /* DFloor1-4 meshes (4*4=16B: B910/B914/B918/B91C) */
 #define UNI_WOBBLY_BASE      0xB920  /* Wobbly1-7 meshes (7*4=28B: B920..B93C) */
 #define UNI_POPCYL_MESH_BASE 0xB940  /* PopCylinder meshes (2*4) */
@@ -874,7 +875,8 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_BB_LAST_IDX      0xB9B0  /* BadBall last pos idx (was BITE_SPEED 0x8664) */
 #define UNI_BB_POS_TABLE     0xB9B4  /* BadBall 3x3 spawn pos table, 36B (was MESH_4 overflow) */
 #define UNI_WM_RENDER        0xB9D8  /* Windmill render obj (was MESH_4) */
-/* Next free: 0xB9DC, tail to 0xC000 = 0x624 bytes remaining */
+#define UNI_BLOCKDAWG3_MESH  0xB9E0  /* Blockdawg3 mesh (Toob, split from B904) */
+/* Next free: 0xB9E4, tail to 0xC000 = 0x620 bytes remaining */
 
 /* Sky popcyl array (16 × 4 = 64 bytes) */
 #define UNI_SKY_POPCYL_BASE 0x8700
@@ -1060,22 +1062,22 @@ static LevelData g_levelData[16] = {
     {"Toob",0x004D0E78,"Board (Toob)","TOOB RACE","TOOBRACE","Rodenthood",{0.5f,0.5f,1.0f},"levels\\level8",{"0x86C8:Levels\\Level8-Spinny","0x86CC:Levels\\Level8-Saw","0x86D0:Levels\\Level8-Fallout","0x85EC:Levels\\Level8-Blockdawg1","0x85F0:Levels\\Level8-Blockdawg2"},5,0x856,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{UNI_BRIDGE_ANGLE,UNI_BRIDGE_STATE,UNI_BRIDGE_COUNTER,0},{0},0,0},
     /* 11=Wobbly */
-    {"Wobbly",0x004D0D38,"Board (Wobbly)","WOBBLY RACE","WOBBLYRACE","Hamster Chase",{0.62f,0.84f,0.30f},"levels\\level7",{"0x8620:Levels\\Level7-Wobbly1","0x8624:Levels\\Level7-Wobbly2","0x8628:Levels\\Level7-Wobbly3","0x862C:Levels\\Level7-Wobbly4","0x8630:Levels\\Level7-Wobbly5","0x8634:Levels\\Level7-Wobbly6","0x8638:Levels\\Level7-Wobbly7"},7,0x857,
+    {"Wobbly",0x004D0D38,"Board (Wobbly)","WOBBLY RACE","WOBBLYRACE","Hamster Chase",{0.62f,0.84f,0.30f},"levels\\level7",{"0xB920:Levels\\Level7-Wobbly1","0xB924:Levels\\Level7-Wobbly2","0xB928:Levels\\Level7-Wobbly3","0xB92C:Levels\\Level7-Wobbly4","0xB930:Levels\\Level7-Wobbly5","0xB934:Levels\\Level7-Wobbly6","0xB938:Levels\\Level7-Wobbly7"},7,0x857,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 12=Glass */
     {"Glass",0x004D1F90,"Board (Glass)","GLASS RACE","GLASSRACE","Glass Theme",{1.0f,0.0f,1.0f},"levels\\levelglass",{},0,0,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 13=Sky */
-    {"Sky",0x004D0FC8,"Board (Sky)","SKY RACE","SKYRACE","Bucky Break",{0.0f,0.5f,1.0f},"levels\\level9",{"0xA8B0:MESH:meshes\\skypillar","0x8680:MESH:meshes\\magnifyingglass","0x8638:levels\\level9-popcylinder1","0x863C:levels\\level9-popcylinder2","0x8668:levels\\level9-trapdoor","0xA8B4:SPRITE:textures\\clouds.png"},6,0x858,
+    {"Sky",0x004D0FC8,"Board (Sky)","SKY RACE","SKYRACE","Bucky Break",{0.0f,0.5f,1.0f},"levels\\level9",{"0xA8B0:MESH:meshes\\skypillar","0x8680:MESH:meshes\\magnifyingglass","0x8638:levels\\level9-popcylinder1","0x863C:levels\\level9-popcylinder2","0x8678:levels\\level9-trapdoor","0xA8B4:SPRITE:textures\\clouds.png"},6,0x858,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{UNI_MAGNIFYING_GLASS,UNI_POPCYL_COUNTER,UNI_PEG_COUNT,0},{0},0,0},
     /* 14=Master — stripped down: only bridge + breaking bridge pieces.
      * Master's unique objects (Tipper, PopCylinder, BlockDawg, Catapult, Gluebie)
      * are handled by their standard level implementations, not Master special cases.
      * BBRIDGE1/2 are the Master-specific breaking bridge pieces. */
-    {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x8620:Levels\\Level2-Bridge","0x8628:RENDER","0x85F4:Levels\\Level10-Bridge1","0x85F8:Levels\\Level10-Bridge2"},4,0x859,
+    {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x8620:Levels\\Level2-Bridge","0x8628:RENDER","0xB948:Levels\\Level10-Bridge1","0xB94C:Levels\\Level10-Bridge2"},4,0x859,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,UNI_BRIDGE_COUNTER,0,0,0x29C0,0x449C4000},
     /* 15=Impossible */
-    {"Impossible",0x004D21C0,"Board (Impossible)","IMPOSSIBLE RACE","IMPOSSIBLERACE","Impossible Theme",{1.0f,0.0f,0.0f},"levels\\levelimpossible",{"0x86D8:Levels\\LevelImpossible-Looper","0x86DC:Levels\\LevelImpossible-Gear","0x86E0:Levels\\LevelImpossible-BigGear","0x85EC:Levels\\LevelImpossible-Rotator","0x85F0:Levels\\LevelImpossible-Pendulum"},5,0,
+    {"Impossible",0x004D21C0,"Board (Impossible)","IMPOSSIBLE RACE","IMPOSSIBLERACE","Impossible Theme",{1.0f,0.0f,0.0f},"levels\\levelimpossible",{"0x86D8:Levels\\LevelImpossible-Looper","0x86DC:Levels\\LevelImpossible-Gear","0x86E0:Levels\\LevelImpossible-BigGear","0xB90C:Levels\\LevelImpossible-Rotator","0xB9DC:Levels\\LevelImpossible-Pendulum"},5,0,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0,0x4348,1,0,0},
 };
 
@@ -3376,8 +3378,12 @@ void __fastcall UniversalRaceState(void *board) {
      *   Up  (lvl 6):  iterates lifter AthenaList, calls each Lifter_Update
      *   Neon(lvl 7):  calls vtable[1] on render objects at board+0x436C/0x4370
      *   Beginner(2):  decays 8 float timers at board+0x642C-0x6448
-     * Without this call, lifters don't animate, vacuum events never fire, etc. */
-    if (level >= 1 && level <= 15 && g_origRaceState[level]) {
+     * Without this call, lifters don't animate, vacuum events never fire, etc.
+     * Beginner is skipped — orig decays board+0x642C while Feature_BumperDecay
+     * decays ext+0x85C0 (UNI_BUMPER_LIT); calling both double-decays and desyncs. */
+    if (level == 2) {
+        /* skip 0x420240 — FEAT_BUMPER_DECAY handles ext path */
+    } else if (level >= 1 && level <= 15 && g_origRaceState[level]) {
         g_origRaceState[level](board);
     }
 
@@ -3847,8 +3853,40 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     }
 
     /* ── BRIDGE (Intermediate/Master drawbridge, position-only) ──
-     * S1: BRIDGE / BRIDGE(NOCOLLIDE) — SAWBRIDGE is Expert spinner, handled above */
+     * S1: BRIDGE / BRIDGE(NOCOLLIDE) — SAWBRIDGE is Expert spinner, handled above
+     * Vanilla level5 has S1 name "BRIDGE" but expects Spinner_Level_ctor;
+     * Intermediate BRIDGE is pos-only. Dispatch by level to handle both files. */
     if (my_strnicmp(name, "BRIDGE", 6) == 0) {
+        int _lvl = GetCurrentLevel(board);
+        if (_lvl == 8 && my_strnicmp(name, "SAWBRIDGE", 9) != 0) {
+            /* Expert vanilla "BRIDGE" — treat as SAWBRIDGE spinner */
+            S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\\\Level2-Bridge");
+            void* brMesh2 = *(void**)((char*)ext + UNI_BONK_STORE);
+            void* brRender2 = *(void**)((char*)ext + UNI_SAW1_OBJ);
+            if (!brRender2 && brMesh2) {
+                void* mem = g_operatorNew(0x10D0);
+                if (mem) {
+                    void* robj = g_LevelRenderCtor(mem, brMesh2);
+                    if (robj) {
+                        g_TipperVisualAttach(robj, brMesh2);
+                        *(void**)((char*)ext + UNI_SAW1_OBJ) = robj;
+                    }
+                }
+            }
+            void *mem = g_operatorNew(0x10FC);
+            if (mem) {
+                obj = g_SpinnerLevelCtor(mem, (int)board, x, y, z, fparam);
+                DWORD *o = (DWORD *)obj;
+                renderOut = o[0x43D];
+                /* Vanilla BRIDGE has no 1/2 suffix — append to LIST_1 by default */
+                if (strstr(name, "2")) g_AthenaListAppend((void*)((char*)ext + UNI_LIST_2), (int)obj);
+                else g_AthenaListAppend((void*)((char*)ext + UNI_LIST_1), (int)obj);
+                if (strstr(name, "NEG")) o[0x43E] = 0xBF800000;
+            }
+            OrBoardFeat(board, FEAT_BRIDGE_ANIM);
+            *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+            return;
+        }
         S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\\\Level2-Bridge");
         void* brMesh = *(void**)((char*)ext + UNI_BONK_STORE);
         void* brRender = *(void**)((char*)ext + UNI_SAW1_OBJ);
@@ -3996,7 +4034,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── BLOCKDAWG1/2/3 (Toob) ── */
     if (my_strnicmp(name, "BLOCKDAWG", 9) == 0 && difficulty != 0) {
         int dawgNum = name[9] - '0';
-        int meshOff = (dawgNum==1) ? UNI_BLOCKDAWG1_MESH : UNI_BLOCKDAWG2_MESH;
+        int meshOff = (dawgNum==1) ? UNI_BLOCKDAWG1_MESH : (dawgNum==3) ? UNI_BLOCKDAWG3_MESH : UNI_BLOCKDAWG2_MESH;
         void* bExt2 = GetBoardExt(board); if (!bExt2) bExt2 = ext;
         int meshVal = bExt2 ? *(int*)((char*)bExt2 + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("BLOCKDAWG: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -4244,7 +4282,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── PENDULUM (Impossible) ── */
     if (my_strnicmp(name, "PENDULUM", 8) == 0) {
-        int meshVal = *(int*)((char*)ext + UNI_ROTATOR_MESH);
+        int meshVal = *(int*)((char*)ext + UNI_PENDULUM_MESH);
         if (!meshVal) { DebugLog("PENDULUM: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1504);
         if (mem) {
