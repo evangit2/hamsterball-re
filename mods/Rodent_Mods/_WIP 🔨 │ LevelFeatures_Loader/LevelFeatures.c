@@ -908,7 +908,7 @@ static int IsS1CollisionEnabled(void *board, const char *eventName);
 #define UNI_LIST_7    0xA470
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Dedicated Render Data Section (0xA880–0xA8C4, 68 bytes)
+ * Dedicated Render Data Section (0xA880–0xA8D0, 80 bytes)
  *
  * These offsets are used exclusively by UniversalRender's feature blocks.
  * They are separate from the shared UNI_MESH_* / UNI_BONK_STORE / etc. slots
@@ -1053,7 +1053,7 @@ static LevelData g_levelData[16] = {
     {"Dizzy",0x004D0890,"Board (Dizzy)","DIZZY RACE","DIZZYRACE","Dizzy!",{0.0f,1.0f,0.0f},"levels\\level3",{"0x85E0:Levels\\Level3-WaterWheel","0x85E4:RENDER","0x85F8:Levels\\Level3-Swirl","0x860C:RENDER","0x86C0:Levels\\Level3-Tipper","0x86C4:RENDER","0x86D4:Levels\\Level3-Gluebie"},7,0x851,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0,0,0},{0},0,0},
     /* 5=Tower */
-    {"Tower",0x004D0A08,"Board (Tower)","TOWER RACE","TOWERRACE","Happy Rush",{1.0f,0.75f,0.0f},"levels\\level4",{"0x8620:Levels\\Level4-Catapult","0x8628:Levels\\Level4-Drawbridge","0x85F4:MESH:Meshes\\YellowLink","0x85EC:Levels\\Level4-Mace","0x85F0:Levels\\Level4-Windmill","0x8600:MESH:Meshes\\Chomper","0x861C:Levels\\Level4-Turret"},7,0,
+    {"Tower",0x004D0A08,"Board (Tower)","TOWER RACE","TOWERRACE","Happy Rush",{1.0f,0.75f,0.0f},"levels\\level4",{"0x8620:Levels\\Level4-Catapult","0x8628:Levels\\Level4-Drawbridge","0x85F4:MESH:Meshes\\YellowLink","0x85EC:Levels\\Level4-Mace","0x85F0:Levels\\Level4-Windmill","0x8600:MESH:Meshes\\Chomper","0x861C:Levels\\Level4-Turret"},7,0x852,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{UNI_BITE_SPEED,UNI_BITE_STATE,0},{0},0,0},
     /* 6=Up */
     {"Up",0x004D11A0,"Board (Up)","UP RACE","UPRACE","Up Race",{1.0f,0.0f,1.0f},"levels\\levelup",{"0x85EC:levels\\levelup-lifter","0x85F0:levels\\levelup-speedcylinder","0x85F4:levels\\levelup-button"},3,0x853,
@@ -1068,7 +1068,7 @@ static LevelData g_levelData[16] = {
     {"Odd",0x004D0BC0,"Board (Odd)","ODD RACE","ODDRACE","Ninja Hamster",{1.0f,0.5f,0.0f},"levels\\level6",{},0,0x855,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0},
     /* 10=Toob */
-    {"Toob",0x004D0E78,"Board (Toob)","TOOB RACE","TOOBRACE","Rodenthood",{0.5f,0.5f,1.0f},"levels\\level8",{"0x86C8:Levels\\Level8-Spinny","0x86CC:Levels\\Level8-Saw","0x86D0:Levels\\Level8-Fallout","0x85EC:Levels\\Level8-Blockdawg1","0x85F0:Levels\\Level8-Blockdawg2"},5,0x856,
+    {"Toob",0x004D0E78,"Board (Toob)","TOOB RACE","TOOBRACE","Rodenthood",{0.5f,0.5f,1.0f},"levels\\level8",{"0x86C8:Levels\\Level8-Spinny","0x86CC:Levels\\Level8-Saw","0x86D0:Levels\\Level8-Fallout","0x85EC:Levels\\Level8-BlockDawg1","0x85F0:Levels\\Level8-BlockDawg2"},5,0x856,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{UNI_BRIDGE_ANGLE,UNI_BRIDGE_STATE,UNI_BRIDGE_COUNTER,0},{0},0,0},
     /* 11=Wobbly */
     {"Wobbly",0x004D0D38,"Board (Wobbly)","WOBBLY RACE","WOBBLYRACE","Hamster Chase",{0.62f,0.84f,0.30f},"levels\\level7",{"0xB920:Levels\\Level7-Wobbly1","0xB924:Levels\\Level7-Wobbly2","0xB928:Levels\\Level7-Wobbly3","0xB92C:Levels\\Level7-Wobbly4","0xB930:Levels\\Level7-Wobbly5","0xB934:Levels\\Level7-Wobbly6","0xB938:Levels\\Level7-Wobbly7"},7,0x857,
@@ -3849,7 +3849,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
      * S1: SAWBRIDGE1 / SAWBRIDGE2 (+ NEG) — was BRIDGE1/2 on Expert
      * BRIDGE (drawbridge) is now Intermediate/Master only, level-gate removed */
     if (my_strnicmp(name, "SAWBRIDGE", 9) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\\\Level2-Bridge");
+        S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level2-Bridge");
         void* brMesh = *(void**)((char*)ext + UNI_BONK_STORE);
         void* brRender = *(void**)((char*)ext + UNI_SAW1_OBJ);
         if (!brRender && brMesh) {
@@ -3885,7 +3885,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         int _lvl = GetCurrentLevel(board);
         if (_lvl == 8 && my_strnicmp(name, "SAWBRIDGE", 9) != 0) {
             /* Expert vanilla "BRIDGE" — treat as SAWBRIDGE spinner */
-            S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\\\Level2-Bridge");
+            S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level2-Bridge");
             void* brMesh2 = *(void**)((char*)ext + UNI_BONK_STORE);
             void* brRender2 = *(void**)((char*)ext + UNI_SAW1_OBJ);
             if (!brRender2 && brMesh2) {
@@ -3912,7 +3912,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
             return;
         }
-        S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\\\Level2-Bridge");
+        S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level2-Bridge");
         void* brMesh = *(void**)((char*)ext + UNI_BONK_STORE);
         void* brRender = *(void**)((char*)ext + UNI_SAW1_OBJ);
         if (!brRender && brMesh) {
@@ -3990,7 +3990,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── LIFTER (Up tubes) ──
      * S1: LIFTER2, LIFTER3... — Up only, level-gate removed (name-driven) */
     if (my_strnicmp(name, "LIFTER", 6) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_LIFTER_MESH, "levels\\\\levelup-lifter");
+        S1EnsureMeshWorld(board, ext, UNI_LIFTER_MESH, "Levels\\LevelUp-Lifter");
         long num = atol(name + 6);
         int meshVal = *(int*)((char*)ext + UNI_LIFTER_MESH);
         if (!meshVal) { DebugLog("LIFTER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -4010,7 +4010,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── SPINNY (Toob) ── */
     if (my_strnicmp(name, "SPINNY", 6) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_SPINNY_MESH, "Levels\\\\Level8-Spinny");
+        S1EnsureMeshWorld(board, ext, UNI_SPINNY_MESH, "Levels\\Level8-Spinny");
         int meshVal = *(int*)((char*)ext + UNI_SPINNY_MESH);
         if (!meshVal) { DebugLog("SPINNY: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1508);
@@ -4026,7 +4026,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── SAW (Toob) ── */
     if (my_stricmp(name, "SAW") == 0 && difficulty != 0) {
         int pathObj = g_LevelFindObjectByName(meshWorld, "SAWPATH");
-        S1EnsureMeshWorld(board, ext, UNI_SAW_MESH, "Levels\\\\Level8-Saw");
+        S1EnsureMeshWorld(board, ext, UNI_SAW_MESH, "Levels\\Level8-Saw");
         int meshVal = *(int*)((char*)ext + UNI_SAW_MESH);
         if (!meshVal) { DebugLog("SAW: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1110);
@@ -4043,7 +4043,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     /* ── SAW2 (Toob) ── */
     if (my_stricmp(name, "SAW2") == 0 && difficulty != 0) {
         int pathObj = g_LevelFindObjectByName(meshWorld, "SMALLSAWPATH");
-        S1EnsureMeshWorld(board, ext, UNI_SAW_MESH, "Levels\\\\Level8-Saw");
+        S1EnsureMeshWorld(board, ext, UNI_SAW_MESH, "Levels\\Level8-Saw");
         int meshVal = *(int*)((char*)ext + UNI_SAW_MESH);
         if (!meshVal) { DebugLog("SAW2: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1118);
@@ -4059,7 +4059,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── FALLOUT1 (Toob) ── */
     if (my_strnicmp(name, "FALLOUT1", 8) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_FALLOUT_MESH, "Levels\\\\Level8-Fallout");
+        S1EnsureMeshWorld(board, ext, UNI_FALLOUT_MESH, "Levels\\Level8-Fallout");
         int meshVal = *(int*)((char*)ext + UNI_FALLOUT_MESH);
         if (!meshVal) { DebugLog("FALLOUT1: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10E8);
@@ -4077,7 +4077,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "BLOCKDAWG", 9) == 0 && difficulty != 0) {
         int dawgNum = name[9] - '0';
         int meshOff = (dawgNum==1) ? UNI_BLOCKDAWG1_MESH : (dawgNum==3) ? UNI_BLOCKDAWG3_MESH : UNI_BLOCKDAWG2_MESH;
-        { const char *_bdPath = (dawgNum==1) ? "Levels\\\\Level8-Blockdawg1" : (dawgNum==3) ? "Levels\\\\Level8-Blockdawg3" : "Levels\\\\Level8-Blockdawg2"; S1EnsureMeshWorld(board, ext, meshOff, _bdPath); }
+        { const char *_bdPath = (dawgNum==1) ? "Levels\\Level8-BlockDawg1" : (dawgNum==3) ? "Levels\\Level8-BlockDawg2" : "Levels\\Level8-BlockDawg2"; S1EnsureMeshWorld(board, ext, meshOff, _bdPath); }
         void* bExt2 = GetBoardExt(board); if (!bExt2) bExt2 = ext;
         int meshVal = bExt2 ? *(int*)((char*)bExt2 + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("BLOCKDAWG: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -4099,7 +4099,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "WOBBLY", 6) == 0 && name[6] >= '1' && name[6] <= '7') {
         int wNum = name[6] - '0';
         int meshOff = UNI_WOBBLY_BASE + (wNum-1) * 4;
-        { const char *_wPath = (wNum==1) ? "Levels\\\\Level7-Wobbly1" : (wNum==2) ? "Levels\\\\Level7-Wobbly2" : (wNum==3) ? "Levels\\\\Level7-Wobbly3" : (wNum==4) ? "Levels\\\\Level7-Wobbly4" : (wNum==5) ? "Levels\\\\Level7-Wobbly5" : (wNum==6) ? "Levels\\\\Level7-Wobbly6" : "Levels\\\\Level7-Wobbly7"; S1EnsureMeshWorld(board, ext, meshOff, _wPath); }
+        { const char *_wPath = (wNum==1) ? "Levels\\Level7-Wobbly1" : (wNum==2) ? "Levels\\Level7-Wobbly2" : (wNum==3) ? "Levels\\Level7-Wobbly3" : (wNum==4) ? "Levels\\Level7-Wobbly4" : (wNum==5) ? "Levels\\Level7-Wobbly5" : (wNum==6) ? "Levels\\Level7-Wobbly6" : "Levels\\Level7-Wobbly7"; S1EnsureMeshWorld(board, ext, meshOff, _wPath); }
         void* wExt = GetBoardExt(board); if (!wExt) wExt = ext;
         int meshVal = wExt ? *(int*)((char*)wExt + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("WOBBLY: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -4139,7 +4139,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── NEONPLATFORM (Neon) ── */
     if (my_strnicmp(name, "NEONPLATFORM", 12) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_SAW2_OBJ, "Levels\\\\LevelDark-NeonPlatform");
+        S1EnsureMeshWorld(board, ext, UNI_SAW2_OBJ, "Levels\\LevelDark-NeonPlatform");
         int meshVal = *(int*)((char*)ext + UNI_SAW2_OBJ);
         if (!meshVal) { DebugLog("NEONPLATFORM: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10EC);
@@ -4156,7 +4156,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "DFLOOR", 6) == 0 && name[6] >= '1' && name[6] <= '4') {
         int dNum = name[6] - '0';
         int meshOff = UNI_DFLOOR_BASE + (dNum-1) * 4;
-        { const char *_dfPath = (dNum==1) ? "Levels\\\\LevelDark-DFloor1" : (dNum==2) ? "Levels\\\\LevelDark-DFloor2" : (dNum==3) ? "Levels\\\\LevelDark-DFloor3" : "Levels\\\\LevelDark-DFloor4"; S1EnsureMeshWorld(board, ext, meshOff, _dfPath); }
+        { const char *_dfPath = (dNum==1) ? "Levels\\LevelDark-DFloor1" : (dNum==2) ? "Levels\\LevelDark-DFloor2" : (dNum==3) ? "Levels\\LevelDark-DFloor3" : "Levels\\LevelDark-DFloor4"; S1EnsureMeshWorld(board, ext, meshOff, _dfPath); }
         void *dExt = GetBoardExt(board); if (!dExt) dExt = ext;
         int meshVal = dExt ? *(int*)((char*)dExt + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("DFLOOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -4181,7 +4181,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── TRODE (Neon) ── */
     if (my_strnicmp(name, "TRODE", 5) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_BRIDGE_COUNTER, "Levels\\\\LevelDark-Trode");
+        S1EnsureMeshWorld(board, ext, UNI_BRIDGE_COUNTER, "Levels\\LevelDark-Trode");
         int meshVal = *(int*)((char*)ext + UNI_BRIDGE_COUNTER);
         if (!meshVal) { DebugLog("TRODE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1104);
@@ -4202,7 +4202,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             if (idx >= 0 && idx < 16) {
                 int meshIdx = idx & 1;
                 int meshOff = UNI_POPCYL_MESH_BASE + meshIdx * 4;
-                { const char *_pcPath = (meshIdx==0) ? "levels\\\\level9-popcylinder1" : "levels\\\\level9-popcylinder2"; S1EnsureMeshWorld(board, ext, meshOff, _pcPath); }
+                { const char *_pcPath = (meshIdx==0) ? "Levels\\Level9-PopCylinder1" : "Levels\\Level9-PopCylinder2"; S1EnsureMeshWorld(board, ext, meshOff, _pcPath); }
                 void* pExt = GetBoardExt(board); if (!pExt) pExt = ext;
                 int meshVal = pExt ? *(int*)((char*)pExt + meshOff) : *(int*)((char*)ext + meshOff);
                 if (!meshVal) { DebugLog("POPCYLINDER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -4223,7 +4223,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
      * S1 vanilla name is TRAPDOOR (Sky_CreateDynamicObjects 0x410AD0 line 79); POPDOOR accepted for new files */
     if ((my_strnicmp(name, "POPDOOR", 7) == 0) || (my_strnicmp(name, "TRAPDOOR", 8) == 0 && GetCurrentLevel(board) == 13)) {
         float dat = *(float *)(g_moduleBase + 0xCF44C);
-        S1EnsureMeshWorld(board, ext, UNI_SKY_TRAPDOOR, "levels\\\\level9-trapdoor");
+        S1EnsureMeshWorld(board, ext, UNI_SKY_TRAPDOOR, "Levels\\Level9-TrapDoor");
         int meshVal = *(int*)((char*)ext + UNI_SKY_TRAPDOOR);
         if (!meshVal) { DebugLog("POPDOOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10F4);
@@ -4240,7 +4240,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── SPEEDCYLINDER (Up) ── */
     if (my_strnicmp(name, "SPEEDCYLINDER", 13) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_SPEEDCYLINDER_MESH, "levels\\\\levelup-speedcylinder");
+        S1EnsureMeshWorld(board, ext, UNI_SPEEDCYLINDER_MESH, "Levels\\LevelUp-SpeedCylinder");
         int meshVal = *(int*)((char*)ext + UNI_SPEEDCYLINDER_MESH);
         if (!meshVal) { DebugLog("SPEEDCYLINDER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x150C);
@@ -4256,7 +4256,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── TIMEBUTTON (Up) ── */
     if (my_strnicmp(name, "TIMEBUTTON", 10) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_TIMEBUTTON_MESH, "levels\\\\levelup-button");
+        S1EnsureMeshWorld(board, ext, UNI_TIMEBUTTON_MESH, "Levels\\LevelUp-Button");
         int meshVal = *(int*)((char*)ext + UNI_TIMEBUTTON_MESH);
         if (!meshVal) { DebugLog("TIMEBUTTON: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10E8);
@@ -4271,7 +4271,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── LOOPER (Impossible) ── */
     if (my_strnicmp(name, "LOOPER", 6) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_LOOPER_MESH, "Levels\\\\LevelImpossible-Looper");
+        S1EnsureMeshWorld(board, ext, UNI_LOOPER_MESH, "Levels\\LevelImpossible-Looper");
         int meshVal = *(int*)((char*)ext + UNI_LOOPER_MESH);
         if (!meshVal) { DebugLog("LOOPER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1500);
@@ -4286,7 +4286,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── GEAR (Impossible) ── */
     if (my_strnicmp(name, "GEAR", 4) == 0 && my_strnicmp(name, "BIGGEAR", 7) != 0) {
-        S1EnsureMeshWorld(board, ext, UNI_GEAR_MESH, "Levels\\\\LevelImpossible-Gear");
+        S1EnsureMeshWorld(board, ext, UNI_GEAR_MESH, "Levels\\LevelImpossible-Gear");
         int meshVal = *(int*)((char*)ext + UNI_GEAR_MESH);
         if (!meshVal) { DebugLog("GEAR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1514);
@@ -4301,7 +4301,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── BIGGEAR (Impossible) ── */
     if (my_strnicmp(name, "BIGGEAR", 7) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_BIGGEAR_MESH, "Levels\\\\LevelImpossible-BigGear");
+        S1EnsureMeshWorld(board, ext, UNI_BIGGEAR_MESH, "Levels\\LevelImpossible-BigGear");
         int meshVal = *(int*)((char*)ext + UNI_BIGGEAR_MESH);
         if (!meshVal) { DebugLog("BIGGEAR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1514);
@@ -4319,7 +4319,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── ROTATOR (Impossible) ── */
     if (my_strnicmp(name, "ROTATOR", 7) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_ROTATOR_MESH, "Levels\\\\LevelImpossible-Rotator");
+        S1EnsureMeshWorld(board, ext, UNI_ROTATOR_MESH, "Levels\\LevelImpossible-Rotator");
         int meshVal = *(int*)((char*)ext + UNI_ROTATOR_MESH);
         if (!meshVal) { DebugLog("ROTATOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1508);
@@ -4338,7 +4338,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── PENDULUM (Impossible) ── */
     if (my_strnicmp(name, "PENDULUM", 8) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_PENDULUM_MESH, "Levels\\\\LevelImpossible-Pendulum");
+        S1EnsureMeshWorld(board, ext, UNI_PENDULUM_MESH, "Levels\\LevelImpossible-Pendulum");
         int meshVal = *(int*)((char*)ext + UNI_PENDULUM_MESH);
         if (!meshVal) { DebugLog("PENDULUM: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1504);
@@ -4356,7 +4356,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         int bNum = name[7] - '0';
         int meshOff = (bNum == 1) ? UNI_BBRIDGE1_MESH : UNI_BBRIDGE2_MESH;
         int storeOff = (bNum == 1) ? UNI_BBRIDGE1_OBJ : UNI_BBRIDGE2_OBJ;
-        S1EnsureMeshWorld(board, ext, meshOff, (bNum == 1) ? "Levels\\\\Level10-Bridge1" : "Levels\\\\Level10-Bridge2");
+        S1EnsureMeshWorld(board, ext, meshOff, (bNum == 1) ? "Levels\\Level10-Bridge1" : "Levels\\Level10-Bridge2");
         void* bbExt2 = GetBoardExt(board); if (!bbExt2) bbExt2 = ext;
         int meshVal = bbExt2 ? *(int*)((char*)bbExt2 + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("BBRIDGE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -4680,7 +4680,9 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             *(float *)(phys + 0xCAC) = vz;
         }
         long bumperNum = atol(name + 8);
-        // Require N:BUMPERn with 1-8 digit — plain "N:BUMPER" (no number) is not a valid bumper mesh
+        // Orig writes slot 0 (atol("")=0 -> board+0x6428) but slot 0 is never decayed
+        // (decay covers 0x642C+) nor rendered (render reads 0..7 of lit 1..8); no vanilla
+        // file uses bare N:BUMPER, so skipping the write is behavior-preserving.
         if (name[8] < '1' || name[8] > '8' || name[9] != '\0') goto call_global;
         bumperNum = name[8] - '0';
         DWORD litBase = UNI_BUMPER_LIT;
@@ -4700,7 +4702,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Dizzy: N:WATERWHEEL ── */
-    if ((*(BYTE*)((char*)ext + COLL_FLAG_WATERWHEEL)) && my_stricmp(name, "N:WATERWHEEL") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_WATERWHEEL)) && my_strnicmp(name, "N:WATERWHEEL", 12) == 0) {
         *(BYTE *)((char *)ball + 0x778) = 1;
         return; /* Dizzy returns early */
     }
@@ -5877,7 +5879,7 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
             // Expert/Impossible family — handled via S1Ensure* in CreateDynamicObjects
         }
         if (my_strnicmp(name, "CLOUDSCAPE", 10)==0) {
-            S1EnsureSprite(board, ext, REND_SKY_SPRITE, "textures\\\\clouds.png");
+            S1EnsureSprite(board, ext, REND_SKY_SPRITE, "Textures\\Clouds.png");
         }
         // Option B: every N:/E: S1 ref auto-enables its collision event for this board
         if ((name[0]=='N' || name[0]=='E') && name[1]==':') {
@@ -5981,19 +5983,47 @@ static void ScanS1ReferencedMeshesForCollisions(void *board, void *ext, void *me
             if (my_strnicmp(name, "Meshes\\", 7)==0) isPath=1;
             if (my_strnicmp(name, "levels\\", 7)==0) isPath=1;
         }
-        if (!isPath) continue;
+        if (!isPath) {
+            /* Bare S1 names own sub-mesh files carrying N:/E: tokens (vanilla mains
+             * contain zero Levels\\ path strings). Fall back to the known owner file. */
+            static const char *s_subMeshFallback =
+                "CATAPULT\0Levels\\Level4-Catapult\0" "MACE\0Levels\\Level4-Mace\0" "DRAWBRIDGE\0Levels\\Level4-Drawbridge\0" "WINDMILL\0Levels\\Level4-Windmill\0"
+                "TRAPDOOR\0Levels\\Level9-TrapDoor\0" "TURRET\0Levels\\Level4-Turret\0" "CHOMPER\0Meshes\\Chomper\0" "TIPPER\0Levels\\Level3-Tipper\0"
+                "GLUEBIE\0Levels\\Level3-Gluebie\0" "SWIRL\0Levels\\Level3-Swirl\0" "WATERWHEEL\0Levels\\Level3-WaterWheel\0" "WHEELEMBED\0Levels\\Level3-WaterWheel\0"
+                "SAWBRIDGE\0Levels\\Level2-Bridge\0" "SAW\0Levels\\Level8-Saw\0" "BBRIDGE\0Levels\\Level10-Bridge1\0" "SPINNY\0Levels\\Level8-Spinny\0"
+                "SAW\0Levels\\Level8-Saw\0" "FALLOUT\0Levels\\Level8-Fallout\0" "BLOCKDAWG\0Levels\\Level8-BlockDawg1\0" "LIFTER\0Levels\\LevelUp-Lifter\0"
+                "DROPPER\0Levels\\LevelUp-Lifter\0" "SPEEDCYLINDER\0Levels\\LevelUp-SpeedCylinder\0" "TIMEBUTTON\0Levels\\LevelUp-Button\0" "NEONPLATFORM\0Levels\\LevelDark-NeonPlatform\0"
+                "DFLOOR\0Levels\\LevelDark-DFloor1\0" "TRODE\0Levels\\LevelDark-Trode\0" "POPCYLINDER\0Levels\\Level9-PopCylinder1\0" "POPDOOR\0Levels\\Level9-TrapDoor\0"
+                "CLOUDSCAPE\0Levels\\Level9-PopCylinder1\0" "WOBBLY\0Levels\\Level7-Wobbly1\0" "WAVY\0Levels\\Level7-Wavy1\0" "LOOPER\0Levels\\LevelImpossible-Looper\0"
+                "GEAR\0Levels\\LevelImpossible-Gear\0" "BIGGEAR\0Levels\\LevelImpossible-BigGear\0" "ROTATOR\0Levels\\LevelImpossible-Rotator\0" "PENDULUM\0Levels\\LevelImpossible-Pendulum\0"
+                "BONK\0Levels\\Level2-Bridge\0" "FAN\0Levels\\Level2-Bridge\0" "BELL\0Levels\\Level2-Bridge\0" "JUDGE\0Levels\\Level2-Bridge\0";
+            for (const char *f = s_subMeshFallback; *f; ) {
+                int pl = strlen(name) < strlen(f) ? strlen(name) : strlen(f);
+                (void)pl;
+                size_t pn = 0; while (f[pn]) pn++;
+                if (my_strnicmp(name, f, pn) == 0) {
+                    const char *mp = f + pn + 1;
+                    ScanFileForCollisions(board, ext, mp);
+                    { char me[MAX_PATH]; strcpy(me, mp); strcat(me, ".MESHWORLD");
+                      ScanFileForCollisions(board, ext, me); }
+                    break;
+                }
+                f += pn + 1; { size_t ml = strlen(f); f += ml + 1; }
+            }
+            continue;
+        }
         // name is like "Levels\\Level3-WaterWheel" or "Meshes\\Chomper" etc. Scan that file.
         char tryPath[MAX_PATH];
         // If name already contains "levels\", use as-is; else prepend "levels\"
         if (my_strnicmp(name, "levels\\", 7)==0 || my_strnicmp(name, "levels/", 7)==0) {
             strcpy(tryPath, name);
         } else {
-            // Many S1 refs are bare "Levels\\..." which maps to "levels\\..."
-            // Normalize: ensure lower levels prefix
-            if (my_strnicmp(name, "Levels\\", 7)==0) {
+            // S1 refs are already PascalCase ("Levels\\...", "Meshes\\...") matching disk.
+            // Do NOT lowercase: ext4/Wine is case-sensitive. Use name as-is.
+            if (0) {
                 strcpy(tryPath, "levels\\");
                 strcat(tryPath, name+7);
-            } else if (my_strnicmp(name, "Meshes\\", 7)==0) {
+            } else if (0) {
                 strcpy(tryPath, "meshes\\");
                 strcat(tryPath, name+7);
             } else {
