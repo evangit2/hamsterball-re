@@ -543,6 +543,9 @@ static FUN_0044fa90_t             g_CreateTarBubble = NULL;
 static FUN_0044fb50_t             g_CreateSplashParticle = NULL;
 static FUN_00405190_t             g_RemoveBall = NULL;
 static CPUID_RNG_t                g_RNG = NULL;
+/* Wave table fns (defined later) — forward declare for UniversalRenderImpl Tower bob */
+typedef float (__thiscall *Wave_Fn_t)(void *table, float angle);
+static Wave_Fn_t                  g_WaveSin = NULL;
 /* g_RNG_raw declared earlier (before RNG_call) */
 static BadBall_ctor_t             g_BadBallCtor = NULL;
 static Ball_SetTrajectory_t       g_BallSetTrajectory = NULL;
@@ -881,7 +884,8 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_SAW_TOOB_OBJ     0xB9EC  /* Saw Toob instance (was BRIDGE_ANGLE 0x8634 clobber) */
 #define UNI_BBRIDGE1_OBJ     0xB9F0  /* BBridge1 instance (was MESH_7 0x85FC clobber) */
 #define UNI_BBRIDGE2_OBJ     0xB9F4  /* BBridge2 instance (was MESH_8 0x8600) */
-/* Next free: 0xB9F8, tail to 0xC000 = 0x608 bytes remaining */
+#define UNI_CHOMP_TIMER      0xB9F8  /* Chomper Wave_Sin timer (mirror board+0x43A4, +=3.0/frame) */
+/* Next free: 0xB9FC, tail to 0xC000 = 0x604 bytes remaining */
 
 /* Sky popcyl array (16 × 4 = 64 bytes) */
 #define UNI_SKY_POPCYL_BASE 0x8700
@@ -2469,6 +2473,7 @@ static void Feature_Windmill(void *board, int level) {
     if (!*renderPtr && *(DWORD*)((char*)ext+UNI_BONK_STORE)) *renderPtr = *(DWORD*)((char*)ext+UNI_BONK_STORE);
     float rotSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 1.0f;
     *anglePtr = *anglePtr + rotSpeed;
+    *(float*)((char*)ext + UNI_CHOMP_TIMER) += 3.0f; /* mirror board+0x43A4 (_DAT_004CF418) */
     {
         int angleInt = (int)*anglePtr;
         if (angleInt % 0x5A == 0x2D) {
@@ -2939,9 +2944,9 @@ void UniversalRenderImpl(void *board) {
                 if (scaleFn) scaleFn((DWORD)timerBuf, 0x3f933333, 0x3f933333, 0x3f933333);
             }
 
-            /* Gfx_ScaleZ(-rotation) */
-            float rotation = *(float *)((char *)ext + UNI_WINDMILL_ANGLE);
-            if (g_GfxScaleZ) g_GfxScaleZ(gfx, -rotation);
+            /* Gfx_ScaleZ(-board[0x43A0]) — chomper-state float, NOT windmill angle (0x40DFA0) */
+            float chompState = *(float *)((char *)ext + UNI_WINDMILL_SPEED);
+            if (g_GfxScaleZ) g_GfxScaleZ(gfx, -chompState);
 
             /* Render windmill render obj via vtable[0x08] */
             DWORD windmillRender = *(DWORD *)((char *)ext + REND_TOWER_WINDMILL);
@@ -2953,8 +2958,9 @@ void UniversalRenderImpl(void *board) {
                 }
             }
 
-            /* Gfx_SetPosition(0, 0, 0) — Y position was always 0 in original */
-            if (g_GfxSetPosition) g_GfxSetPosition(gfx, 0.0f, 0.0f, 0.0f);
+            /* Gfx_SetPosition(0, board[0x43B0], 0) then (0, Wave_Sin(0x4F7188, 0x43A4)*10.0, 0) (0x40DFA0) */
+            if (g_GfxSetPosition) g_GfxSetPosition(gfx, 0.0f, *(float *)((char *)ext + UNI_WINDMILL_DECAY), 0.0f);
+            if (g_GfxSetPosition && g_WaveSin) g_GfxSetPosition(gfx, 0.0f, g_WaveSin((void *)0x4F7188, *(float *)((char *)ext + UNI_CHOMP_TIMER)) * 10.0f, 0.0f);
 
             /* Render Chomper mesh via meshWorld->vtable[0x1C] */
             DWORD chomperMesh = *(DWORD *)((char *)ext + REND_TOWER_CHOMPER);
@@ -2972,9 +2978,9 @@ void UniversalRenderImpl(void *board) {
                     (void (__thiscall *)(DWORD, float, float, float))timerVtbl[6];
                 if (scaleFn) scaleFn((DWORD)timerBuf, 0x3f933333, 0x3f933333, 0x3f933333);
             }
-            if (g_GfxScaleZ) g_GfxScaleZ(gfx, -rotation);
+            if (g_GfxScaleZ) g_GfxScaleZ(gfx, -chompState);
             if (g_GfxScaleX) g_GfxScaleX(gfx, 180.0f);
-            if (g_GfxSetPosition) g_GfxSetPosition(gfx, -10.0f, 0.0f, 0.0f);
+            if (g_GfxSetPosition) g_GfxSetPosition(gfx, -35.0f, 0.0f, 0.0f); /* 0xC20C0000 (0x40DFA0) */
 
             /* Render turret render obj from dedicated offset */
             DWORD turretRender = *(DWORD *)((char *)ext + REND_TOWER_TURRET);
@@ -2986,8 +2992,9 @@ void UniversalRenderImpl(void *board) {
                 }
             }
 
-            /* Reset position + render Chomper again */
-            if (g_GfxSetPosition) g_GfxSetPosition(gfx, 0.0f, 0.0f, 0.0f);
+            /* Reset position + Wave_Sin bob + render Chomper again (0x40DFA0) */
+            if (g_GfxSetPosition) g_GfxSetPosition(gfx, 0.0f, *(float *)((char *)ext + UNI_WINDMILL_DECAY), 0.0f);
+            if (g_GfxSetPosition && g_WaveSin) g_GfxSetPosition(gfx, 0.0f, g_WaveSin((void *)0x4F7188, *(float *)((char *)ext + UNI_CHOMP_TIMER)) * 10.0f, 0.0f);
             if (meshWorld && !IsBadReadPtr((void *)meshWorld, 0x1C) && chomperMesh) {
                 DWORD *vtbl = *(DWORD **)meshWorld;
                 if (vtbl) {
@@ -3465,6 +3472,19 @@ static void* S1EnsureMeshNode(void* board, void* ext, DWORD offset, const char* 
     if (node) *(void**)((char*)ext + offset) = node;
     return node;
 }
+static void* S1EnsureSprite(void* board, void* ext, DWORD offset, const char* path) {
+    void* cur = *(void**)((char*)ext + offset);
+    if (cur) return cur;
+    DWORD app = *(DWORD*)((char*)board + BOARD_APP_PTR);
+    if (!app || IsBadReadPtr((void*)app, 0x200)) return NULL;
+    void* gfx = *(void**)((char*)app + 0x174);
+    if (!gfx || !g_operatorNew || !g_SpriteCtor) return NULL;
+    void* mem = g_operatorNew(0x110);
+    if (!mem) return NULL;
+    void* spr = g_SpriteCtor(mem, gfx, path);
+    if (spr) *(void**)((char*)ext + offset) = spr;
+    return spr;
+}
 
 void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out1, void *out2, int *s1data) {
     if (!name || !out1 || !out2 || !s1data) return;
@@ -3694,8 +3714,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         return;
     }
 
-    /* ── TRAPDOOR (Tower) ── */
-    if (my_strnicmp(name, "TRAPDOOR", 8) == 0) {
+    /* ── TRAPDOOR (Tower, level!=13) ── — Sky TRAPDOOR (level 13) uses Rotator POPDOOR path below */
+    if (my_strnicmp(name, "TRAPDOOR", 8) == 0 && GetCurrentLevel(board) != 13) {
         void *mem = g_operatorNew(0x10F8);
         if (mem) {
             obj = g_TrapdoorCtor(mem, (int)board);
@@ -3954,6 +3974,19 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         return;
     }
 
+    /* ── LIFTER (Odd vanilla alias) ── — vanilla Odd S1 is bare LIFTER -> Odd_Lifter_ctor when level==9 */
+    if (my_strnicmp(name, "LIFTER", 6) == 0 && GetCurrentLevel(board) == 9 && my_strnicmp(name, "DROPPER", 7) != 0) {
+        void *mem = g_operatorNew(0x10FC);
+        if (mem) {
+            obj = g_OddLifterCtor(mem, (int)board, x, y, z);
+            g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            *(void **)((char *)ext + UNI_BONK_STORE) = obj;
+            renderOut = ((DWORD*)obj)[0x435];
+        }
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
     /* ── LIFTER (Up tubes) ──
      * S1: LIFTER2, LIFTER3... — Up only, level-gate removed (name-driven) */
     if (my_strnicmp(name, "LIFTER", 6) == 0) {
@@ -4066,6 +4099,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "WOBBLY", 6) == 0 && name[6] >= '1' && name[6] <= '7') {
         int wNum = name[6] - '0';
         int meshOff = UNI_WOBBLY_BASE + (wNum-1) * 4;
+        { const char *_wPath = (wNum==1) ? "Levels\\\\Level7-Wobbly1" : (wNum==2) ? "Levels\\\\Level7-Wobbly2" : (wNum==3) ? "Levels\\\\Level7-Wobbly3" : (wNum==4) ? "Levels\\\\Level7-Wobbly4" : (wNum==5) ? "Levels\\\\Level7-Wobbly5" : (wNum==6) ? "Levels\\\\Level7-Wobbly6" : "Levels\\\\Level7-Wobbly7"; S1EnsureMeshWorld(board, ext, meshOff, _wPath); }
         void* wExt = GetBoardExt(board); if (!wExt) wExt = ext;
         int meshVal = wExt ? *(int*)((char*)wExt + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("WOBBLY: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -4185,9 +4219,9 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         return;
     }
 
-    /* ── POPDOOR (Sky) — renamed from TRAPDOOR (level==13) ──
-     * S1: POPDOOR — was TRAPDOOR on Sky (Rotator) */
-    if (my_strnicmp(name, "POPDOOR", 7) == 0) {
+    /* ── POPDOOR/TRAPDOOR (Sky Rotator, level==13) ──
+     * S1 vanilla name is TRAPDOOR (Sky_CreateDynamicObjects 0x410AD0 line 79); POPDOOR accepted for new files */
+    if ((my_strnicmp(name, "POPDOOR", 7) == 0) || (my_strnicmp(name, "TRAPDOOR", 8) == 0 && GetCurrentLevel(board) == 13)) {
         float dat = *(float *)(g_moduleBase + 0xCF44C);
         S1EnsureMeshWorld(board, ext, UNI_SKY_TRAPDOOR, "levels\\\\level9-trapdoor");
         int meshVal = *(int*)((char*)ext + UNI_SKY_TRAPDOOR);
@@ -4516,7 +4550,7 @@ typedef void (__thiscall *Audio_PlayMusic_t)(void *musicDevice, const char *name
 typedef float (__thiscall *Difficulty_GetTimeModifier_t)(int app, float time);
 typedef char *__cdecl (*AthenaString_Format_t)(int obj, const char *fmt);
 typedef void (__cdecl *AthenaString_SprintfToBuffer_t)(char *buf, const char *fmt);
-typedef float (__thiscall *Wave_Fn_t)(void *table, float angle);
+/* (Wave_Fn_t typedef lives near top) */
 typedef void (__thiscall *Scene_RegisterObject_t)(void *gfx, int playerSlot, int *obj);
 typedef void (__thiscall *AthenaList_RemoveByValue_t)(void *list, int item);
 typedef void (__fastcall *NeonPlatform_Activate_t)(int obj);
@@ -4569,7 +4603,8 @@ static Difficulty_GetTimeModifier_t g_DifficultyGetTimeModifier = NULL;
 static AthenaString_Format_t       g_AthenaStringFormat = NULL;
 static AthenaString_SprintfToBuffer_t g_AthenaStringSprintfToBuffer = NULL;
 static Wave_Fn_t                   g_WaveCos = NULL;
-static Wave_Fn_t                   g_WaveSin = NULL;
+/* g_WaveSin forward-declared near top (used by UniversalRenderImpl Tower bob) */
+/* (Wave_Fn_t typedef lives near top) */
 static Scene_RegisterObject_t      g_SceneRegisterObject = NULL;
 static AthenaList_RemoveByValue_t  g_AthenaListRemoveByValue = NULL;
 static NeonPlatform_Activate_t     g_NeonPlatformActivate = NULL;
@@ -4990,8 +5025,8 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         }
     }
 
-    /* ── Toob: E:ALERTSAW3 (renamed from ALERTSAW2) ── */
-    if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW3)) && my_stricmp(name, "E:ALERTSAW3") == 0) {
+    /* ── Toob: E:ALERTSAW2 vanilla + E:ALERTSAW3 renamed ── — vanilla Toob files use ALERTSAW2 */
+    if ((((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW3)) && my_stricmp(name, "E:ALERTSAW3") == 0)) || (GetCurrentLevel(board) == 10 && my_stricmp(name, "E:ALERTSAW2") == 0)) {
         if (difficulty != 0) {
             int saw2Obj = *(int *)((char *)ext + UNI_SAW2_TOOB_OBJ);
             if (saw2Obj) *(BYTE *)(saw2Obj + 0x110C) = 1;
@@ -5835,8 +5870,14 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
         if (my_strnicmp(name, "WOBBLY", 6)==0 || my_strnicmp(name, "WAVY", 4)==0) {
             // Wobbly family — no feat flag but S1 presence proves level intent
         }
+        if (my_strnicmp(name, "POPCYLINDER", 11)==0 || my_strnicmp(name, "POPDOOR", 7)==0 || my_strnicmp(name, "CLOUDSCAPE", 10)==0) {
+            OrBoardFeat(board, FEAT_SKY_POPCYL);
+        }
         if (my_strnicmp(name, "BONK", 4)==0 || my_strnicmp(name, "FAN", 3)==0 || my_strnicmp(name, "SAWBLADE", 8)==0 || my_strnicmp(name, "BELL", 4)==0 || my_strnicmp(name, "JUDGE", 5)==0 || my_strnicmp(name, "SPINNER", 7)==0 || my_strnicmp(name, "LOOPER", 6)==0 || my_strnicmp(name, "GEAR", 4)==0 || my_strnicmp(name, "PENDULUM", 8)==0 || my_strnicmp(name, "ROTATOR", 7)==0) {
             // Expert/Impossible family — handled via S1Ensure* in CreateDynamicObjects
+        }
+        if (my_strnicmp(name, "CLOUDSCAPE", 10)==0) {
+            S1EnsureSprite(board, ext, REND_SKY_SPRITE, "textures\\\\clouds.png");
         }
         // Option B: every N:/E: S1 ref auto-enables its collision event for this board
         if ((name[0]=='N' || name[0]=='E') && name[1]==':') {
