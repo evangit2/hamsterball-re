@@ -13,7 +13,7 @@ The game has 30 `PUSH imm32` instructions (0x68 opcode) that push level path str
 ## Installation
 
 1. Rename the original `bass.dll` to `bass_real.dll`
-2. Copy this mod's `bass.dll` and `mkn_custom_filenames.txt` to the game folder (if the txt is missing, the mod creates a default one next to the DLL on first launch)
+2. Copy this mod's `mkn_custom_filenames.dll` to the game folder as `bass.dll` (if the txt is missing, the mod creates a default one next to the DLL on first launch)
 3. Launch the game
 
 ## Uninstallation
