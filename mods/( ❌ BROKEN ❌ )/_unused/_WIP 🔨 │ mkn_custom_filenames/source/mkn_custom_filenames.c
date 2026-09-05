@@ -1,8 +1,8 @@
 /*
- * custom_filenames — Custom Race & Arena Level Loader
+ * mkn_custom_filenames — Custom Race & Arena Level Loader
  * ====================================================
  *
- * Reads "custom_filenames.txt" from the game directory and replaces the
+ * Reads "mkn_custom_filenames.txt" from the game directory and replaces the
  * hard-coded level path strings that are PUSHed onto the stack before
  * LoadMeshWorld / Scene_SetupLevelN calls.
  *
@@ -14,11 +14,12 @@
  * We allocate our own strings (e.g. "levels\\custom_level") in this DLL's
  * memory and overwrite the 4-byte immediate in each PUSH to point to it.
  *
- * The user edits custom_filenames.txt to:
+ * The user edits mkn_custom_filenames.txt to:
  *   1. Rename a level: change "level1" to "my_level" → loads "levels\\my_level.meshworld"
  *   2. Reorder levels: swap entries 3 and 7 → Intermediate takes Neon's slot and vice versa
  *
- * If custom_filenames.txt is missing, the game runs with default level names — no changes.
+ * If mkn_custom_filenames.txt is missing, a default one is created next to
+ * this DLL, then defaults are used for this run.
  *
  * The " A" prefix before "levels\level5" in the original binary is part of a
  * multi-purpose data block. Our patch points to the clean "levels\level5" string
@@ -36,7 +37,7 @@
  * Use file-based logging instead. */
 static void mod_log(const char *fmt, ...) {
     FILE *f = NULL;
-    if (fopen_s(&f, "custom_filenames_log.txt", "a") != 0 || !f) return;
+    if (fopen_s(&f, "mkn_custom_filenames_log.txt", "a") != 0 || !f) return;
     va_list args;
     va_start(args, fmt);
     vfprintf(f, fmt, args);
@@ -47,6 +48,7 @@ static void mod_log(const char *fmt, ...) {
 
 /* ── BASS proxy exports (REQUIRED — all 10 game imports) ────────────── */
 static HMODULE g_hRealBass = NULL;
+static HMODULE g_hSelf = NULL;   /* own DLL handle (for config path next to DLL) */
 
 typedef int  (__stdcall *BASS_ChannelSetAttributes_t)(DWORD, float, int, int);
 static BASS_ChannelSetAttributes_t real_BASS_ChannelSetAttributes = NULL;
@@ -169,7 +171,7 @@ static const DWORD g_arena_push_rvas[15] = {
 static char g_race_strings[15][MAX_LEVEL_NAME + 16];   /* "levels\" + name + "\0" */
 static char g_arena_strings[15][MAX_LEVEL_NAME + 16];
 
-/* ── Parse custom_filenames.txt ───────────────────────────────────── */
+/* ── Parse mkn_custom_filenames.txt ───────────────────────────────────── */
 
 static void trim(char *s) {
     /* Trim leading whitespace */
@@ -191,7 +193,7 @@ static int parse_config(const char *config_path,
     int parsed_races = 0, parsed_arenas = 0;
 
     if (fopen_s(&f, config_path, "r") != 0 || !f) {
-        mod_log("[custom_filenames] Could not open config file: %s — using defaults", config_path);
+        mod_log("[mkn_custom_filenames] Could not open config file: %s — using defaults", config_path);
         return 0;
     }
 
@@ -248,7 +250,7 @@ static int parse_config(const char *config_path,
 
     fclose(f);
 
-    mod_log("[custom_filenames] Parsed %d races, %d arenas", parsed_races, parsed_arenas);
+    mod_log("[mkn_custom_filenames] Parsed %d races, %d arenas", parsed_races, parsed_arenas);
     for (int i = 0; i < 15 && i < parsed_races; i++) {
         mod_log("  Race #%d: %s", i+1, race_names[i]);
     }
@@ -271,7 +273,7 @@ static void patch_push_instruction(DWORD push_rva, const char *new_string) {
 
     /* Verify it's a PUSH imm32 (0x68) */
     if (*((BYTE*)push_addr) != 0x68) {
-        mod_log("[custom_filenames] WARNING: expected 0x68 at RVA 0x%05x, got 0x%02x — skipping",
+        mod_log("[mkn_custom_filenames] WARNING: expected 0x68 at RVA 0x%05x, got 0x%02x — skipping",
                  push_rva, *((BYTE*)push_addr));
         return;
     }
@@ -286,28 +288,117 @@ static void patch_push_instruction(DWORD push_rva, const char *new_string) {
     }
 }
 
-static void apply_custom_filenames(void) {
+/* ── Default config (written next to DLL if txt missing) ────────────── */
+
+static const char kDefaultConfig[] =
+    "# mkn_custom_filenames — Tournament & Practice & Arena Level Configuration\r\n"
+    "# Lines starting with # are comments. Blank lines are ignored.\r\n"
+    "# Format: <slot>=<level filename>\r\n"
+    "# Rearrange entries to change the tournament/arena order.\r\n"
+    "# Delete or comment out a line to use the game's default for that slot.\r\n"
+    "#\r\n"
+    "# NOTE: Tournament and Practice modes share the same 15 level files.\r\n"
+    "\r\n"
+    "TOURNAMENT_RACES:\r\n"
+    "1=level1\r\n"
+    "2=levelcascade\r\n"
+    "3=level2\r\n"
+    "4=level3\r\n"
+    "5=level4\r\n"
+    "6=levelup\r\n"
+    "7=leveldark\r\n"
+    "8=level5\r\n"
+    "9=level6\r\n"
+    "10=level8\r\n"
+    "11=level7\r\n"
+    "12=levelglass\r\n"
+    "13=level9\r\n"
+    "14=level10\r\n"
+    "15=levelimpossible\r\n"
+    "\r\n"
+    "PRACTICE_RACES:\r\n"
+    "1=level1\r\n"
+    "2=levelcascade\r\n"
+    "3=level2\r\n"
+    "4=level3\r\n"
+    "5=level4\r\n"
+    "6=levelup\r\n"
+    "7=leveldark\r\n"
+    "8=level5\r\n"
+    "9=level6\r\n"
+    "10=level8\r\n"
+    "11=level7\r\n"
+    "12=levelglass\r\n"
+    "13=level9\r\n"
+    "14=level10\r\n"
+    "15=levelimpossible\r\n"
+    "\r\n"
+    "ARENAS:\r\n"
+    "1=arena-WarmUp\r\n"
+    "2=arena-beginner\r\n"
+    "3=arena-intermediate\r\n"
+    "4=arena-dizzy\r\n"
+    "5=arena-tower\r\n"
+    "6=arena-up\r\n"
+    "7=arena-neon\r\n"
+    "8=arena-expert\r\n"
+    "9=arena-Odd\r\n"
+    "10=arena-Toob\r\n"
+    "11=arena-Wobbly\r\n"
+    "12=arena-glass\r\n"
+    "13=arena-Sky\r\n"
+    "14=arena-Master\r\n"
+    "15=arena-impossible\r\n";
+
+/* If path does not exist, create it with defaults. Runs before parse. */
+static void ensure_config_exists(const char *path) {
+    if (GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES) return;
+    FILE *f = NULL;
+    if (fopen_s(&f, path, "w") != 0 || !f) {
+        mod_log("[mkn_custom_filenames] Could not create default config: %s", path);
+        return;
+    }
+    fputs(kDefaultConfig, f);
+    fclose(f);
+    mod_log("[mkn_custom_filenames] Created default config: %s", path);
+}
+
+static void apply_mkn_custom_filenames(void) {
     char config_path[MAX_PATH];
 
-    /* Get game directory from Hamsterball.exe module path */
-    HMODULE hExe = GetModuleHandleA("Hamsterball.exe");
-    if (hExe) {
-        char exe_path[MAX_PATH];
-        if (GetModuleFileNameA(hExe, exe_path, MAX_PATH) > 0) {
-            /* Extract directory */
-            char *last_slash = strrchr(exe_path, '\\');
-            if (last_slash) {
-                *(last_slash + 1) = '\0';
-                snprintf(config_path, MAX_PATH, "%scustom_filenames.txt", exe_path);
-            } else {
-                strcpy_s(config_path, MAX_PATH, "custom_filenames.txt");
-            }
+    /* Config lives next to THIS dll (bass.dll proxy in game dir). */
+    if (g_hSelf && GetModuleFileNameA(g_hSelf, config_path, MAX_PATH) > 0) {
+        char *last_slash = strrchr(config_path, '\\');
+        if (last_slash) {
+            *(last_slash + 1) = '\0';
+            strncat(config_path, "mkn_custom_filenames.txt",
+                    MAX_PATH - strlen(config_path) - 1);
         } else {
-            strcpy_s(config_path, MAX_PATH, "custom_filenames.txt");
+            strcpy_s(config_path, MAX_PATH, "mkn_custom_filenames.txt");
         }
     } else {
-        strcpy_s(config_path, MAX_PATH, "custom_filenames.txt");
+        /* Fallback: game directory from Hamsterball.exe module path */
+        HMODULE hExe = GetModuleHandleA("Hamsterball.exe");
+        if (hExe) {
+            char exe_path[MAX_PATH];
+            if (GetModuleFileNameA(hExe, exe_path, MAX_PATH) > 0) {
+                char *last_slash = strrchr(exe_path, '\\');
+                if (last_slash) {
+                    *(last_slash + 1) = '\0';
+                    snprintf(config_path, MAX_PATH, "%smkn_custom_filenames.txt", exe_path);
+                } else {
+                    strcpy_s(config_path, MAX_PATH, "mkn_custom_filenames.txt");
+                }
+            } else {
+                strcpy_s(config_path, MAX_PATH, "mkn_custom_filenames.txt");
+            }
+        } else {
+            strcpy_s(config_path, MAX_PATH, "mkn_custom_filenames.txt");
+        }
     }
+
+    /* Create default txt next to DLL on first run */
+    ensure_config_exists(config_path);
 
     /* Initialize with defaults (in case config is missing or incomplete) */
     static const char *default_races[15] = {
@@ -379,8 +470,9 @@ static void init_bass_proxy(void) {
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
     switch (fdwReason) {
         case DLL_PROCESS_ATTACH:
+            g_hSelf = (HMODULE)hinstDLL;
             init_bass_proxy();
-            apply_custom_filenames();
+            apply_mkn_custom_filenames();
             break;
     }
     return TRUE;

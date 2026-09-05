@@ -1,4 +1,4 @@
-# Custom Filenames — Custom Race & Arena Level Loader
+# mkn_custom_filenames — Custom Race & Arena Level Loader
 
 Customize which MESHWORLD file is loaded for each race and arena slot, and rearrange the tournament/arena order. Edit a simple text file — no code changes needed.
 
@@ -6,14 +6,14 @@ Customize which MESHWORLD file is loaded for each race and arena slot, and rearr
 
 The game has 30 `PUSH imm32` instructions (0x68 opcode) that push level path strings like `"levels\level1"` or `"levels\arena-WarmUp"` onto the stack before calling `LoadMeshWorld`. This mod:
 
-1. Reads `custom_filenames.txt` from the game directory at startup
+1. Reads `mkn_custom_filenames.txt` from the game directory at startup
 2. Allocates new strings in DLL memory (e.g. `"levels\my_custom_level"`)
 3. Overwrites the 4-byte string pointer in each PUSH instruction to point to the new string
 
 ## Installation
 
 1. Rename the original `bass.dll` to `bass_real.dll`
-2. Copy this mod's `bass.dll` and `custom_filenames.txt` to the game folder
+2. Copy this mod's `bass.dll` and `mkn_custom_filenames.txt` to the game folder (if the txt is missing, the mod creates a default one next to the DLL on first launch)
 3. Launch the game
 
 ## Uninstallation
@@ -23,7 +23,7 @@ The game has 30 `PUSH imm32` instructions (0x68 opcode) that push level path str
 
 ## Config File Format
 
-Edit `custom_filenames.txt`:
+Edit `mkn_custom_filenames.txt`:
 
 ```
 TOURNAMENT_RACES:
@@ -97,7 +97,7 @@ Now Dizzy Race (level3) is the first race, Warm-up (level1) is second, Beginner 
 - **Patch count**: 30 PUSH instruction immediate overwrites (15 tournament races + 15 practice races + 15 arenas — but note: tournament and practice share the same 15 level files, so 30 total patches)
 - **Config parser**: Simple line-based text parser with `TOURNAMENT_RACES:` / `PRACTICE_RACES:` / `ARENAS:` sections
 - **Memory**: Custom strings allocated in DLL's static memory (persists for game lifetime)
-- **Logging**: Writes `custom_filenames_log.txt` to the game directory on load
+- **Logging**: Writes `mkn_custom_filenames_log.txt` to the game directory on load
 - **Crash test**: Passed — game runs 87+ seconds on Wine/Xvfb with all 30 patches applied
 
 ### Patch Addresses (RVA)

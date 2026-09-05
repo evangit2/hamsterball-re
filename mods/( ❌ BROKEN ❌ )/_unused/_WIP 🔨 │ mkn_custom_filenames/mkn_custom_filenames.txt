@@ -1,4 +1,4 @@
-# Custom Filenames — Tournament & Practice & Arena Level Configuration
+# mkn_custom_filenames — Tournament & Practice & Arena Level Configuration
 # =================================================================
 # Lines starting with # are comments. Blank lines are ignored.
 # Format: <slot>=<level filename>
