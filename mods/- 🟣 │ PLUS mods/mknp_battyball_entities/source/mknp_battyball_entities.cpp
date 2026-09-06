@@ -81,6 +81,9 @@
 #define SO_POS_X            0x08     /* light position (direct write) */
 #define SO_POS_Y            0x0C
 #define SO_POS_Z            0x10
+#define SO_POSV_X           0xB8     /* position_vec cluster */
+#define SO_POSV_Y           0xBC
+#define SO_POSV_Z           0xC0
 #define SO_EMIT_R           0x94     /* emitter color RGBA */
 #define SO_EMIT_G           0x98
 #define SO_EMIT_B           0x9C
@@ -911,6 +914,24 @@ static void native_register(DWORD gfx, int slot, DWORD obj) {
         : "eax", "edx", "ecx", "memory");
 }
 
+/* vtable[1] = SetPosition(x,y,z), __thiscall. Scene_SetupLevelDark calls
+ * this (never writes +0x08 directly) — mirror it exactly. */
+static void native_setpos(DWORD obj, float x, float y, float z) {
+    DWORD fn;
+    if (!obj || IsBadReadPtr((void*)obj, 8)) return;
+    fn = *(DWORD*)(*(DWORD*)obj + 4);
+    if (!fn || IsBadReadPtr((void*)fn, 1)) return;
+    __asm__ __volatile__(
+        "pushl %3\n\t"
+        "pushl %2\n\t"
+        "pushl %1\n\t"
+        "movl %0, %%ecx\n\t"
+        "call *%4\n\t"
+        : : "r"(obj), "m"(x), "m"(y), "m"(z), "r"(fn)
+        : "eax", "edx", "ecx", "memory");
+}
+
+/* vtable[1] helper above; gfx accessor below */
 static DWORD gfx_device(void) {
     DWORD app;
     DWORD gfx;
@@ -931,12 +952,16 @@ static void write_light_fields(DWORD obj, int li, int vis) {
     *(float*)((char*)obj + SO_POS_X) = g_light_pos[li][0];
     *(float*)((char*)obj + SO_POS_Y) = g_light_pos[li][1];
     *(float*)((char*)obj + SO_POS_Z) = g_light_pos[li][2];
+    *(float*)((char*)obj + SO_POSV_X) = g_light_pos[li][0];
+    *(float*)((char*)obj + SO_POSV_Y) = g_light_pos[li][1];
+    *(float*)((char*)obj + SO_POSV_Z) = g_light_pos[li][2];
     *(float*)((char*)obj + SO_RANGE) = g_light_range;
     *(BYTE*)((char*)obj + SO_VISIBLE) = (BYTE)(vis ? 1 : 0);
 }
 
-/* Runs in text_render (render thread). job 1 = build, 2 = refresh. */
-static void service_light_job(DWORD board) {
+/* Runs in text_render (render thread). job 1 = build, 2 = refresh.
+ * quiet=1 skips per-light logs (periodic re-assert). */
+static void service_light_job(DWORD board, int quiet) {
     DWORD gfx;
     int i, vis, hi;
     if (g_job == 0 || board != g_job_board) return;
@@ -973,18 +998,26 @@ static void service_light_job(DWORD board) {
                 g_light_objs[i] = obj;
             }
             write_light_fields(obj, i, vis);
+            native_setpos(obj, g_light_pos[i][0], g_light_pos[i][1],
+                          g_light_pos[i][2]);
             native_register(gfx, LIGHT_SLOT_BASE + i, obj);
-            snprintf(lbuf, sizeof(lbuf),
-                     "  LIGHT%d: slot %d src=%s pos=(%d,%d,%d) col=(%d,%d,%d) vis=%d",
-                     i, LIGHT_SLOT_BASE + i,
-                     g_light_src[i] ? "POINT" : "S3",
-                     (int)g_light_pos[i][0], (int)g_light_pos[i][1],
-                     (int)g_light_pos[i][2],
-                     (int)(g_light_col[i][0] * 100.0f),
-                     (int)(g_light_col[i][1] * 100.0f),
-                     (int)(g_light_col[i][2] * 100.0f),
-                     vis);
-            log_mod(lbuf);
+            if (!quiet) {
+                DWORD slotptr = gfx + GFX_LIGHT_SLOTS +
+                                (DWORD)(LIGHT_SLOT_BASE + i) * 4;
+                int ok = (!IsBadReadPtr((void*)slotptr, 4) &&
+                          *(DWORD*)slotptr == obj) ? 1 : 0;
+                snprintf(lbuf, sizeof(lbuf),
+                         "  LIGHT%d: slot %d src=%s pos=(%d,%d,%d) col=(%d,%d,%d) vis=%d ok=%d",
+                         i, LIGHT_SLOT_BASE + i,
+                         g_light_src[i] ? "POINT" : "S3",
+                         (int)g_light_pos[i][0], (int)g_light_pos[i][1],
+                         (int)g_light_pos[i][2],
+                         (int)(g_light_col[i][0] * 100.0f),
+                         (int)(g_light_col[i][1] * 100.0f),
+                         (int)(g_light_col[i][2] * 100.0f),
+                         vis, ok);
+                log_mod(lbuf);
+            }
         } else if (obj) {
             /* stale slot from a richer level: switch off, keep alive */
             *(BYTE*)((char*)obj + SO_VISIBLE) = 0;
@@ -1380,12 +1413,20 @@ static void __thiscall event_collide(void*, void*, char* name) {
         }
     }
 }
+static int g_reassert = 0;   /* frames since last slot re-assert */
 static void __thiscall text_render(void*) {
     DWORD board;
-    if (g_job == 0) return;
     board = player_board();
     if (!board || IsBadReadPtr((void*)board, 0x4400)) return;
-    service_light_job(board);
+    if (g_job != 0) { service_light_job(board, 0); return; }
+    /* retry wipes slots via ResetObjectSlots: re-assert ~every 2s */
+    if ((g_light_count || g_light_used) && board == g_job_board) {
+        g_reassert++;
+        if ((g_reassert & 127) == 0) {
+            g_job = 2;
+            service_light_job(board, 1);
+        }
+    }
 }
 static void __thiscall ball_bump(void*, void*, void*) {}
 
