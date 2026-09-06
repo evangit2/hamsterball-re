@@ -21,21 +21,18 @@ Switches only move list membership (hide old, show next): no disk, no
 rebuild, so high speeds stay smooth. Full destroy happens at level quit,
 toggle-off, or board change.
 
-## Own meshes (v1a+)
+## Own meshes (v1m+)
 
-Each `REF:GRIDxx` point spawns **its own mesh**, taken from the CURRENT
-level file only — no shared `testcube` needed. At level start the mod finds
-the on-disk file matching the loaded level (S1 fingerprint, same rule as
-the per-level speed table), extracts the geom for each ref into
-`levels\mknp_grid<N>.MESHWORLD` (centroid at origin), and spawns that.
-Other files in `levels\` (backups, old versions) are never searched, and
-stale `mknp_grid<N>` temps are deleted when the current level has no match.
+Each `GRIDxx` ref point spawns its mesh from a file: ref `GRID01`
+(or `REF:GRID01`, `GRID01(NOCOLLIDE)`, ...) loads `levels\Grid01.MESHWORLD`,
+`GRID02` loads `levels\Grid02.MESHWORLD`, and so on. The number is the
+digits right after `GRID` in the S1 ref name. Whatever the file holds
+(mesh, affixes) applies natively at load. Old `mknp_grid<N>` temps are
+deleted at level start (no longer used).
 
-Name matching per ref tries every form in order (`GRID01(NOCOLLIDE)` →
-`GRID01` → `REF:GRID01` → `REF:GRID01(NOCOLLIDE)`), so S1 refs with affixes
-find level geoms named `REF:GRIDxx`. The log shows which form matched
-(`own mesh OK [Level2 as REF:GRID01]`).
-The geom name is kept verbatim, so **affix rules apply natively**:
+If `GridNN.MESHWORLD` is missing, the point falls back to `testcube`
+(if present in `levels\`), else it is skipped with a log line. Missing
+meshes never crash.
 
 - name has `(NOCOLLIDE)` → visual only, ball passes through
 - otherwise → solid, ball stands on it
