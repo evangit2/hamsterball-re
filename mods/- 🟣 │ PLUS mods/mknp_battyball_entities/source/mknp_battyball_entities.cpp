@@ -47,6 +47,8 @@
 #define strncpy nc_strncpy
 #define snprintf nc_snprintf
 
+#include "gridmesh.h"
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Game addresses + offsets (verified against mknp_custom_entities / Hamsterball.exe)
  * ═══════════════════════════════════════════════════════════════════════════ */
@@ -158,8 +160,12 @@ static int   g_spawned_count = 0;
 static float g_pts_x[MAX_GRID_POINTS];
 static float g_pts_y[MAX_GRID_POINTS];
 static float g_pts_z[MAX_GRID_POINTS];
+static char  g_grid_names[MAX_GRID_POINTS][32];   /* S1 ref name per point */
+static char  g_grid_mesh[MAX_GRID_POINTS][MAX_PATH]; /* ctor path of own mesh */
+static int   g_grid_own[MAX_GRID_POINTS];         /* 1 = own mesh extracted */
 static int   g_grid_count = 0;
 static int   g_scan_logged = 0;   /* 1 after first detailed scan dump */
+static char  g_levels_dir[MAX_PATH];  /* game levels\ dir, trailing backslash */
 
 /* Active level / board the current cycle belongs to */
 static DWORD g_active_board = 0;
@@ -330,6 +336,15 @@ static int find_grid_points(DWORD board) {
                 g_pts_x[g_grid_count] = *(float*)(entry + S1ENTRY_POS_X);
                 g_pts_y[g_grid_count] = *(float*)(entry + S1ENTRY_POS_Y);
                 g_pts_z[g_grid_count] = *(float*)(entry + S1ENTRY_POS_Z);
+                {
+                    int ni = 0;
+                    g_grid_names[g_grid_count][0] = '\0';
+                    while (ni < 31 && name[ni]) {
+                        g_grid_names[g_grid_count][ni] = name[ni];
+                        ni++;
+                    }
+                    g_grid_names[g_grid_count][ni] = '\0';
+                }
                 g_grid_count++;
             }
         } else {
@@ -348,12 +363,18 @@ static int find_grid_points(DWORD board) {
 /* ═══════════════════════════════════════════════════════════════════════════
  * Spawn / despawn (mirrors cEnt_spawn_testcube_at / cEnt_despawn_object)
  * ═══════════════════════════════════════════════════════════════════════════ */
-static void spawn_grid_cube(DWORD board, float px, float py, float pz, int grid_num) {
+static void spawn_grid_cube(DWORD board, float px, float py, float pz,
+                            int grid_num, const char* mesh_path) {
     if (!board) return;
 
-    if (!mesh_file_present()) {
+    const char* path = mesh_path;
+    if (!path || !path[0]) {
+        /* fallback: shared testcube mesh */
+        path = mesh_file_present() ? g_mesh_path : NULL;
+    }
+    if (!path) {
         char mbuf[64];
-        snprintf(mbuf, sizeof(mbuf), "  GRID: no testcube mesh, skip %d",
+        snprintf(mbuf, sizeof(mbuf), "  GRID: no mesh for %d, skip",
                  grid_num);
         log_mod(mbuf);
         return;
@@ -368,7 +389,7 @@ static void spawn_grid_cube(DWORD board, float px, float py, float pz, int grid_
     void* mesh = g_op_new(MESHWORLD_SIZE);
     if (!mesh) { log_mod("  GRID: failed to alloc mesh"); return; }
     memset(mesh, 0, MESHWORLD_SIZE);
-    void* loaded = g_mw_ctor(mesh, (void*)gfx_device, g_mesh_path);
+    void* loaded = g_mw_ctor(mesh, (void*)gfx_device, path);
     if (!loaded) { log_mod("  GRID: MeshWorld_ctor failed"); return; }
 
     /* Allocate + construct PopCylinder object */
@@ -397,13 +418,13 @@ static void spawn_grid_cube(DWORD board, float px, float py, float pz, int grid_
     }
 
     char buf[96];
-    snprintf(buf, sizeof(buf), "  GRID: spawned testcube(GRID%d) at (%d,%d,%d) obj=0x%X",
-             grid_num, (int)px, (int)py, (int)pz, (DWORD)obj);
+    snprintf(buf, sizeof(buf), "  GRID: spawned %s at (%d,%d,%d) obj=0x%X",
+             path, (int)px, (int)py, (int)pz, (DWORD)obj);
     log_mod(buf);
 
     if (g_spawned_count < MAX_SPAWNED) {
         g_spawned_objs[g_spawned_count] = (DWORD)obj;
-        snprintf(g_spawned_names[g_spawned_count], 32, "testcube(GRID%d)", grid_num);
+        snprintf(g_spawned_names[g_spawned_count], 32, "%s", path);
         g_spawned_count++;
     }
 }
@@ -458,6 +479,49 @@ static void despawn_all(DWORD board) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Per-GRID own meshes: extract each ref's geom from a levels\ file into
+ * levels\mknp_grid<N>.MESHWORLD, rebased to origin. Affix rules (NOCOLLIDE
+ * => non-solid) apply natively when the game loads the temp file.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static void extract_grid_meshes(void) {
+    int i;
+    for (i = 0; i < g_grid_count; i++) g_grid_own[i] = 0;
+    if (!g_levels_dir[0]) {
+        log_mod("  GRID: levels dir unknown, testcube fallback");
+        return;
+    }
+    for (i = 0; i < g_grid_count; i++) {
+        const char* full = g_grid_names[i];
+        const char* stripped = full;
+        char abs[MAX_PATH];
+        char xbuf[96];
+        if (stripped[0] == 'R' && stripped[1] == 'E' &&
+            stripped[2] == 'F' && stripped[3] == ':')
+            stripped += 4;
+        snprintf(g_grid_mesh[i], sizeof(g_grid_mesh[i]),
+                 "levels\\mknp_grid%d", i + 1);
+        snprintf(abs, sizeof(abs), "%smknp_grid%d.MESHWORLD",
+                 g_levels_dir, i + 1);
+        if (gm_find_and_extract(g_levels_dir, full, stripped, abs)) {
+            g_grid_own[i] = 1;
+            snprintf(xbuf, sizeof(xbuf), "  GRID%d %s: own mesh OK",
+                     i + 1, full);
+        } else {
+            snprintf(xbuf, sizeof(xbuf), "  GRID%d %s: no lib mesh",
+                     i + 1, full);
+        }
+        log_mod(xbuf);
+    }
+}
+
+static const char* mesh_for(int idx) {
+    if (idx >= 0 && idx < g_grid_count && g_grid_own[idx] &&
+        g_grid_mesh[idx][0])
+        return g_grid_mesh[idx];
+    return mesh_file_present() ? g_mesh_path : NULL;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Level-start: scan GRID points and begin the cycle with GRID01
  * ═══════════════════════════════════════════════════════════════════════════ */
 static void start_grid_cycle(DWORD board) {
@@ -479,7 +543,9 @@ static void start_grid_cycle(DWORD board) {
             log_mod(pbuf);
         }
         g_current_grid = 1;
-        spawn_grid_cube(board, g_pts_x[0], g_pts_y[0], g_pts_z[0], 1);
+        extract_grid_meshes();
+        spawn_grid_cube(board, g_pts_x[0], g_pts_y[0], g_pts_z[0], 1,
+                        mesh_for(0));
         g_last_switch_tick = GetTickCount();
         g_cycle_started = true;
     } else {
@@ -531,6 +597,28 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
                 break;
             }
             /* if source is gone but dest already exists, nothing to do */
+        }
+
+        /* Resolve the game levels\ dir (trailing backslash) for mesh extract */
+        g_levels_dir[0] = '\0';
+        {
+            char d0[MAX_PATH], d1[MAX_PATH];
+            snprintf(d0, sizeof(d0), "%s\\levels\\", mod_path);
+            snprintf(d1, sizeof(d1), "%s\\..\\levels\\", mod_path);
+            char probe[MAX_PATH];
+            DWORD fa;
+            snprintf(probe, sizeof(probe), "%s\\levels", mod_path);
+            fa = GetFileAttributesA(probe);
+            if (fa != INVALID_FILE_ATTRIBUTES &&
+                (fa & FILE_ATTRIBUTE_DIRECTORY)) {
+                strncpy(g_levels_dir, d0, MAX_PATH);
+            } else {
+                snprintf(probe, sizeof(probe), "%s\\..\\levels", mod_path);
+                fa = GetFileAttributesA(probe);
+                if (fa != INVALID_FILE_ATTRIBUTES &&
+                    (fa & FILE_ATTRIBUTE_DIRECTORY))
+                    strncpy(g_levels_dir, d1, MAX_PATH);
+            }
         }
     }
 
@@ -625,7 +713,8 @@ static void __thiscall game_update(void*) {
 
     despawn_all(board);
     int idx = g_current_grid - 1;
-    spawn_grid_cube(board, g_pts_x[idx], g_pts_y[idx], g_pts_z[idx], g_current_grid);
+    spawn_grid_cube(board, g_pts_x[idx], g_pts_y[idx], g_pts_z[idx],
+                    g_current_grid, mesh_for(idx));
     {
         char pbuf[96];
         snprintf(pbuf, sizeof(pbuf), "POST spawned=%d upd=%d rnd=%d",
