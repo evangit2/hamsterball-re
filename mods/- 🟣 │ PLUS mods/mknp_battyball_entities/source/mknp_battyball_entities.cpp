@@ -911,10 +911,12 @@ static int read_level_lights(const char* path) {
 }
 
 /* Find first S6 geom whose name contains `needle` (case-insens), copy its
- * material diffuse RGB (file mat+16/20/24). Returns 1 found, 0 not. */
+ * material diffuse RGB (file mat+16/20/24) + aux triple (mat+32/36/40,
+ * emissive-or-specular: fallback glow source). Returns 1 found, 0 not. */
 typedef struct {
     const char* needle;
     float rgb[3];
+    float aux[3];
     int hit;
     int nodes;
 } LightFind;
@@ -953,6 +955,9 @@ static int light_node(GmCur* c, LightFind* f) {
                     memcpy(&f->rgb[0], matp + 16, 4);
                     memcpy(&f->rgb[1], matp + 20, 4);
                     memcpy(&f->rgb[2], matp + 24, 4);
+                    memcpy(&f->aux[0], matp + 32, 4);
+                    memcpy(&f->aux[1], matp + 36, 4);
+                    memcpy(&f->aux[2], matp + 40, 4);
                     f->hit = 1;
                     return 2;
                 }
@@ -987,7 +992,7 @@ static int light_node(GmCur* c, LightFind* f) {
 }
 
 static int read_geom_diffuse(const char* path, const char* needle,
-                             float* rgb) {
+                             float* rgb, float* aux) {
     unsigned len = 0;
     unsigned char* data;
     GmCur c;
@@ -1008,6 +1013,7 @@ static int read_geom_diffuse(const char* path, const char* needle,
     f.hit = 0;
     f.nodes = 0;
     f.rgb[0] = f.rgb[1] = f.rgb[2] = 1.0f;
+    f.aux[0] = f.aux[1] = f.aux[2] = 0.0f;
     r = light_node(&c, &f);
     if (r != 1 && r != 2) {
         free(data);
@@ -1020,6 +1026,11 @@ static int read_geom_diffuse(const char* path, const char* needle,
     rgb[0] = f.rgb[0];
     rgb[1] = f.rgb[1];
     rgb[2] = f.rgb[2];
+    if (aux) {
+        aux[0] = f.aux[0];
+        aux[1] = f.aux[1];
+        aux[2] = f.aux[2];
+    }
     free(data);
     return 1;
 }
@@ -1256,18 +1267,33 @@ static void start_lights(DWORD board) {
         char pbuf[128];
         float mr = 1.0f, mg = 1.0f, mb = 1.0f;
         float rgb[3];
+        float auxt[3] = { 0.0f, 0.0f, 0.0f };
         int got = 0;
+        const char* csrc = "white";
         g_light_pos[li][0] = g_ppt_x[i] + LIGHT_TEST_DX;   /* TEMP +10 X */
         g_light_pos[li][1] = g_ppt_y[i];
         g_light_pos[li][2] = g_ppt_z[i];
-        if (have_file && read_geom_diffuse(cur, g_ppt_name[i], rgb)) {
+        if (have_file && read_geom_diffuse(cur, g_ppt_name[i], rgb, auxt)) {
             if (rgb[0] >= 0.0f && rgb[0] <= 10.0f &&
                 rgb[1] >= 0.0f && rgb[1] <= 10.0f &&
-                rgb[2] >= 0.0f && rgb[2] <= 10.0f) {
+                rgb[2] >= 0.0f && rgb[2] <= 10.0f &&
+                (rgb[0] + rgb[1] + rgb[2]) > 0.0001f) {
                 mr = rgb[0];
                 mg = rgb[1];
                 mb = rgb[2];
                 got = 1;
+                csrc = "dif";
+            } else if (auxt[0] >= 0.0f && auxt[0] <= 10.0f &&
+                       auxt[1] >= 0.0f && auxt[1] <= 10.0f &&
+                       auxt[2] >= 0.0f && auxt[2] <= 10.0f &&
+                       (auxt[0] + auxt[1] + auxt[2]) > 0.0001f) {
+                /* black diffuse (bad export): fall back to aux triple
+                 * (emissive-or-specular) so the lamp still glows */
+                mr = auxt[0];
+                mg = auxt[1];
+                mb = auxt[2];
+                got = 1;
+                csrc = "aux";
             }
         }
         g_light_col[li][0] = mr * g_light_intensity * LIGHT_OUTPUT_TRIM;
@@ -1279,11 +1305,11 @@ static void start_lights(DWORD board) {
         g_light_src[li] = 1;
         g_light_count++;
         snprintf(pbuf, sizeof(pbuf),
-                 "  LIGHT: POINT ref %d %s at (%d,%d,%d) mat=(%d,%d,%d)%s",
+                 "  LIGHT: POINT ref %d %s at (%d,%d,%d) mat=(%d,%d,%d) %s%s",
                  i + 1, g_ppt_name[i],
                  (int)g_ppt_x[i], (int)g_ppt_y[i], (int)g_ppt_z[i],
                  (int)(mr * 100.0f), (int)(mg * 100.0f),
-                 (int)(mb * 100.0f), got ? "" : " no-mat");
+                 (int)(mb * 100.0f), csrc, got ? "" : " no-mat");
         log_mod(pbuf);
     }
     snprintf(nbuf, sizeof(nbuf), "  LIGHT: %d point light(s)", g_light_count);
