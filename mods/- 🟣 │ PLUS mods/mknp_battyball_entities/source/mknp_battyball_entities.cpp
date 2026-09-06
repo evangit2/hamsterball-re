@@ -416,7 +416,7 @@ static void* create_grid_cube(DWORD board, float px, float py, float pz,
     }
     if (!path) {
         char mbuf[64];
-        snprintf(mbuf, sizeof(mbuf), "  GRID: no mesh for %d, skip",
+        snprintf(mbuf, sizeof(mbuf), "  GRID: no mesh for %d, skip (no own, no testcube)",
                  grid_num);
         log_mod(mbuf);
         return NULL;
@@ -707,6 +707,8 @@ static void start_grid_cycle(DWORD board) {
         }
         g_current_grid = 0;   /* index into g_order (set below) */
         extract_grid_meshes();
+        log_mod(mesh_file_present() ? "  GRID testcube: present (fallback OK)"
+                                    : "  GRID testcube: MISSING in levels\\");
         /* preload every point once; cycle only moves list membership */
         for (int si = 0; si < MAX_SPAWNED; si++) g_spawned_objs[si] = 0;
         g_spawned_count = 0;
@@ -781,13 +783,16 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
         char cand[2][MAX_PATH];
         snprintf(cand[0], sizeof(cand[0]), "%s\\levels\\testcube.MESHWORLD", mod_path);
         snprintf(cand[1], sizeof(cand[1]), "%s\\..\\levels\\testcube.MESHWORLD", mod_path);
-        for (int i = 0; i < 2; i++) {
-            /* only copy if the source exists */
-            if (GetFileAttributesA(src) != INVALID_FILE_ATTRIBUTES) {
-                CopyFileA(src, cand[i], FALSE);
-                break;
-            }
-            /* if source is gone but dest already exists, nothing to do */
+        if (GetFileAttributesA(src) == INVALID_FILE_ATTRIBUTES) {
+            log_mod("  GRID testcube: src MISSING next to DLL");
+        } else if (GetFileAttributesA(cand[0]) != INVALID_FILE_ATTRIBUTES ||
+                   GetFileAttributesA(cand[1]) != INVALID_FILE_ATTRIBUTES) {
+            log_mod("  GRID testcube: already in levels\\");
+        } else if (CopyFileA(src, cand[0], FALSE) ||
+                   CopyFileA(src, cand[1], FALSE)) {
+            log_mod("  GRID testcube: installed to levels\\");
+        } else {
+            log_mod("  GRID testcube: copy FAILED");
         }
 
         /* Resolve the game levels\ dir (trailing backslash) for mesh extract */
