@@ -26,18 +26,23 @@ toggle-off, or board change.
 Each `REF:GRIDxx` point spawns **its own mesh**, taken from the CURRENT
 level file only — no shared `testcube` needed. At level start the mod finds
 the on-disk file matching the loaded level (S1 fingerprint, same rule as
-the per-level speed table), extracts the geom named like the ref
-(`REF:GRID01`, else stripped `GRID01`) into `levels\mknp_grid<N>.MESHWORLD`
-(centroid at origin), and spawns that. Other files in `levels\` (backups,
-old versions) are never searched, and stale `mknp_grid<N>` temps are deleted
-when the current level has no match.
+the per-level speed table), extracts the geom for each ref into
+`levels\mknp_grid<N>.MESHWORLD` (centroid at origin), and spawns that.
+Other files in `levels\` (backups, old versions) are never searched, and
+stale `mknp_grid<N>` temps are deleted when the current level has no match.
+
+Name matching per ref tries every form in order (`GRID01(NOCOLLIDE)` →
+`GRID01` → `REF:GRID01` → `REF:GRID01(NOCOLLIDE)`), so S1 refs with affixes
+find level geoms named `REF:GRIDxx`. The log shows which form matched
+(`own mesh OK [Level2 as REF:GRID01]`).
 The geom name is kept verbatim, so **affix rules apply natively**:
 
 - name has `(NOCOLLIDE)` → visual only, ball passes through
 - otherwise → solid, ball stands on it
 
-If no matching geom is found, the point falls back to `testcube` (if present),
-else it is skipped with a log line. Missing meshes never crash.
+If no matching geom is found in the current level file, the point is
+skipped with a log line. Missing meshes never crash. (The old `testcube`
+fallback is disabled — level geoms only.)
 
 ## Per-level speed (`mknp_battyball_entities_set.jsonc`)
 

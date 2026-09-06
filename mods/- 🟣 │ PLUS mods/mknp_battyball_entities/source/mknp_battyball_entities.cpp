@@ -416,7 +416,7 @@ static void* create_grid_cube(DWORD board, float px, float py, float pz,
     }
     if (!path) {
         char mbuf[64];
-        snprintf(mbuf, sizeof(mbuf), "  GRID: no mesh for %d, skip (no own, no testcube)",
+        snprintf(mbuf, sizeof(mbuf), "  GRID: no mesh for %d, skip",
                  grid_num);
         log_mod(mbuf);
         return NULL;
@@ -626,12 +626,14 @@ static void extract_grid_meshes(void) {
     for (i = 0; i < g_grid_count; i++) {
         const char* full = g_grid_names[i];
         const char* stripped = full;
+        const char* matched = NULL;
         char base[32];
         char base_stripped[32];
+        char refbase[40];
+        char reffull[72];
         char abs[MAX_PATH];
-        char xbuf[128];
+        char xbuf[160];
         int bi = 0;
-        int ok = 0;
         if (stripped[0] == 'R' && stripped[1] == 'E' &&
             stripped[2] == 'F' && stripped[3] == ':')
             stripped += 4;
@@ -653,20 +655,36 @@ static void extract_grid_meshes(void) {
             }
             base_stripped[bj] = '\0';
         }
+        /* level geoms are named "REF:GRIDxx" while S1 refs may carry
+         * affixes ("GRID01(NOCOLLIDE)"), so try every form in order */
+        snprintf(refbase, sizeof(refbase), "REF:%s",
+                 base_stripped[0] ? base_stripped : base);
+        snprintf(reffull, sizeof(reffull), "REF:%s", full);
         snprintf(g_grid_mesh[i], sizeof(g_grid_mesh[i]),
                  "levels\\mknp_grid%d", i + 1);
         snprintf(abs, sizeof(abs), "%smknp_grid%d.MESHWORLD",
                  g_levels_dir, i + 1);
-        ok = gm_extract_from(g_cur_level_file, full, stripped, abs);
-        if (!ok && base[0] && base_stripped[0] &&
-            (strcmp(base, full) != 0 ||
-             strcmp(base_stripped, stripped) != 0))
-            ok = gm_extract_from(g_cur_level_file, base, base_stripped,
-                                 abs);
-        if (ok) {
+        if (gm_extract_from(g_cur_level_file, full, stripped, abs)) {
+            matched = full;
+        } else if (base[0] && base_stripped[0] &&
+                   (strcmp(base, full) != 0 ||
+                    strcmp(base_stripped, stripped) != 0) &&
+                   gm_extract_from(g_cur_level_file, base, base_stripped,
+                                   abs)) {
+            matched = base_stripped[0] ? (const char*)base_stripped
+                                       : (const char*)base;
+        } else if (gm_extract_from(g_cur_level_file, refbase, refbase,
+                                   abs)) {
+            matched = refbase;
+        } else if (strcmp(reffull, refbase) != 0 &&
+                   gm_extract_from(g_cur_level_file, reffull, reffull,
+                                   abs)) {
+            matched = reffull;
+        }
+        if (matched) {
             g_grid_own[i] = 1;
-            snprintf(xbuf, sizeof(xbuf), "  GRID%d %s: own mesh OK [%s]",
-                     i + 1, full, curbase);
+            snprintf(xbuf, sizeof(xbuf), "  GRID%d %s: own mesh OK [%s as %s]",
+                     i + 1, full, curbase, matched);
         } else {
             DeleteFileA(abs);   /* kill stale temp so old mesh can't linger */
             snprintf(xbuf, sizeof(xbuf), "  GRID%d %s: no mesh in %s",
@@ -680,7 +698,7 @@ static const char* mesh_for(int idx) {
     if (idx >= 0 && idx < g_grid_count && g_grid_own[idx] &&
         g_grid_mesh[idx][0])
         return g_grid_mesh[idx];
-    return mesh_file_present() ? g_mesh_path : NULL;
+    return NULL;   /* level geoms only — no testcube fallback */
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -707,8 +725,6 @@ static void start_grid_cycle(DWORD board) {
         }
         g_current_grid = 0;   /* index into g_order (set below) */
         extract_grid_meshes();
-        log_mod(mesh_file_present() ? "  GRID testcube: present (fallback OK)"
-                                    : "  GRID testcube: MISSING in levels\\");
         /* preload every point once; cycle only moves list membership */
         for (int si = 0; si < MAX_SPAWNED; si++) g_spawned_objs[si] = 0;
         g_spawned_count = 0;
@@ -783,17 +799,12 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
         char cand[2][MAX_PATH];
         snprintf(cand[0], sizeof(cand[0]), "%s\\levels\\testcube.MESHWORLD", mod_path);
         snprintf(cand[1], sizeof(cand[1]), "%s\\..\\levels\\testcube.MESHWORLD", mod_path);
-        if (GetFileAttributesA(src) == INVALID_FILE_ATTRIBUTES) {
-            log_mod("  GRID testcube: src MISSING next to DLL");
-        } else if (GetFileAttributesA(cand[0]) != INVALID_FILE_ATTRIBUTES ||
-                   GetFileAttributesA(cand[1]) != INVALID_FILE_ATTRIBUTES) {
-            log_mod("  GRID testcube: already in levels\\");
-        } else if (CopyFileA(src, cand[0], FALSE) ||
-                   CopyFileA(src, cand[1], FALSE)) {
-            log_mod("  GRID testcube: installed to levels\\");
-        } else {
-            log_mod("  GRID testcube: copy FAILED");
-        }
+        /* Seed testcube.MESHWORLD into levels\ if missing (fallback
+         * currently disabled — kept for later). Silent. */
+        if (GetFileAttributesA(src) != INVALID_FILE_ATTRIBUTES &&
+            GetFileAttributesA(cand[0]) == INVALID_FILE_ATTRIBUTES &&
+            GetFileAttributesA(cand[1]) == INVALID_FILE_ATTRIBUTES)
+            CopyFileA(src, cand[0], FALSE);
 
         /* Resolve the game levels\ dir (trailing backslash) for mesh extract */
         g_levels_dir[0] = '\0';
