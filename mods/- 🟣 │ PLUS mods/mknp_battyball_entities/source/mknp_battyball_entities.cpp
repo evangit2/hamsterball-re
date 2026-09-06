@@ -1619,11 +1619,53 @@ static void __thiscall event_collide(void*, void*, char* name) {
     }
 }
 static int g_reassert = 0;   /* frames since last slot re-assert */
+static DWORD g_last_pin_log = 0;   /* throttle for re-pin lines */
+/* Something per-frame drags light objects to the ball. Hold our ground:
+ * if a used slot's position differs from its parsed spot, drag it back
+ * (log throttled). Runs every frame in text_render (render thread). */
+static void pin_lights(DWORD board, DWORD gfx) {
+    int i, hi, vis;
+    DWORD now;
+    (void)board;
+    vis = (g_lights_on && g_light_vis) ? 1 : 0;
+    hi = g_light_used;
+    if (g_light_count - 1 > hi) hi = g_light_count - 1;
+    now = GetTickCount();
+    for (i = 0; i <= hi && i < MAX_LIGHTS; i++) {
+        DWORD obj = g_light_objs[i];
+        float ox, oy, oz;
+        if (i >= g_light_count) continue;
+        if (!obj || IsBadReadPtr((void*)obj, SCENEOBJECT_SIZE)) continue;
+        ox = *(float*)((char*)obj + SO_POS_X);
+        oy = *(float*)((char*)obj + SO_POS_Y);
+        oz = *(float*)((char*)obj + SO_POS_Z);
+        if (ox != g_light_pos[i][0] || oy != g_light_pos[i][1] ||
+            oz != g_light_pos[i][2]) {
+            if ((int)(now - g_last_pin_log) >= 500) {
+                char pbuf[128];
+                snprintf(pbuf, sizeof(pbuf),
+                         "  LIGHT%d: re-pin (was %d,%d,%d)",
+                         i, (int)ox, (int)oy, (int)oz);
+                log_mod(pbuf);
+                g_last_pin_log = now;
+            }
+            write_light_fields(obj, i, vis);
+            native_setpos(obj, g_light_pos[i][0], g_light_pos[i][1],
+                          g_light_pos[i][2]);
+            native_register(gfx, LIGHT_SLOT_BASE + i, obj);
+        }
+    }
+}
 static void __thiscall text_render(void*) {
     DWORD board;
+    DWORD gfx;
     board = player_board();
     if (!board || IsBadReadPtr((void*)board, 0x4400)) return;
     if (g_job != 0) { service_light_job(board, 0); return; }
+    gfx = gfx_device();
+    if (!gfx) return;
+    if ((g_light_count || g_light_used) && board == g_job_board)
+        pin_lights(board, gfx);
     /* retry wipes slots via ResetObjectSlots: re-assert ~every 2s */
     if ((g_light_count || g_light_used) && board == g_job_board) {
         g_reassert++;
