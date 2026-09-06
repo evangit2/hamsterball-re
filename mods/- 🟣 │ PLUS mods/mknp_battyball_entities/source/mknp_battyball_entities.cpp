@@ -175,6 +175,7 @@ static int   g_board_ready_delay = 0;   /* frames to wait for level build after 
 
 /* Time-based cycle state */
 static DWORD g_last_switch_tick = 0;    /* GetTickCount() when current cube spawned */
+static DWORD g_prev_tick = 0;           /* last frame tick (pause freeze math) */
 static int   g_current_grid = 1;        /* 1-based current GRID (1 = GRID01) */
 static bool  g_cycle_started = false;
 
@@ -570,6 +571,7 @@ static void start_grid_cycle(DWORD board) {
         spawn_grid_cube(board, g_pts_x[0], g_pts_y[0], g_pts_z[0], 1,
                         mesh_for(0));
         g_last_switch_tick = GetTickCount();
+        g_prev_tick = g_last_switch_tick;
         g_cycle_started = true;
     } else {
         log_mod("  No GRID points found");
@@ -715,14 +717,18 @@ static void __thiscall game_update(void*) {
         return;
     }
 
-    /* Pause gate: freeze the cycle clock while paused, resume seamlessly */
+    /* Pause gate: freeze cycle progress while paused (resume continues
+     * exactly where it left off — paused time never counts, never resets) */
     {
         DWORD now = GetTickCount();
+        if (!g_prev_tick) g_prev_tick = now;
         if (!IsBadReadPtr((void*)(board + BOARD_PAUSED), 4) &&
             *(int*)(board + BOARD_PAUSED)) {
-            g_last_switch_tick = now;
+            g_last_switch_tick += (now - g_prev_tick);
+            g_prev_tick = now;
             return;
         }
+        g_prev_tick = now;
     }
 
     /* Time-based cycling (slider seconds x per-level multiplier) */
@@ -758,6 +764,7 @@ static void __thiscall game_update(void*) {
         log_mod(pbuf);
     }
     g_last_switch_tick = now;
+    g_prev_tick = now;
 }
 
 static void __thiscall ball_update(void*, void*) {}
