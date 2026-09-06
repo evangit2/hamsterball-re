@@ -24,6 +24,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <stdlib.h>
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * BASS Proxy Exports
@@ -161,6 +162,26 @@ static void load_real_bass(void)
 /* Time-trial name table: 15 race-name pointers read by GetLevelName(idx).
  * Patch entries to our buffers so TT follows config. Index 15+ untouched. */
 #define LEVEL_NAME_TABLE 0x004F7080
+/* Board HUD/intro/results draw board+0x29B4 every frame (0x41B7E5).
+ * We point it at our live buffers so in-game names follow the txt. */
+/* Default level files per level id (matches mkn_custom_filenames defaults).
+ * Maps a loaded board back to its SLOT when files are swapped. */
+static const char *g_race_files[NUM_LEVELS] = {
+    "level1", "levelcascade", "level2", "level3", "level4", "levelup",
+    "leveldark", "level5", "level6", "level8", "level7", "levelglass",
+    "level9", "level10", "levelimpossible"
+};
+static const char *g_arena_files[NUM_LEVELS] = {
+    "arena-WarmUp", "arena-beginner", "arena-intermediate", "arena-dizzy",
+    "arena-tower", "arena-up", "arena-neon", "arena-expert", "arena-Odd",
+    "arena-Toob", "arena-Wobbly", "arena-glass", "arena-Sky", "arena-Master",
+    "arena-impossible"
+};
+/* slot_of_id[id] = slot whose file currently loads this level's file.
+ * Identity until mkn_custom_filenames.txt says otherwise. */
+static int g_race_slot[NUM_LEVELS];
+static int g_arena_slot[NUM_LEVELS];
+static int g_slots_init = 0;
 
 typedef struct {
     const char *name;       /* config key name */
@@ -640,6 +661,92 @@ static DWORD find_board(void) {
     return 0;
 }
 
+/* ── mkn_custom_filenames slot map ────────────────────────────────────
+ * Reads mkn_custom_filenames.txt (same folder) so slot identity survives
+ * swapped level files. Absent/unparseable = identity mapping. */
+static void read_filename_slots(void) {
+    int i;
+    if (!g_slots_init) {
+        for (i = 0; i < NUM_LEVELS; i++) {
+            g_race_slot[i] = i;
+            g_arena_slot[i] = i;
+        }
+        g_slots_init = 1;
+    }
+    for (i = 0; i < NUM_LEVELS; i++) {
+        g_race_slot[i] = i;
+        g_arena_slot[i] = i;
+    }
+
+    char path[MAX_PATH];
+    lstrcpyA(path, g_config_path);
+    char *p = strrchr(path, '\\');
+    if (p) lstrcpyA(p + 1, "mkn_custom_filenames.txt");
+    else lstrcpyA(path, "mkn_custom_filenames.txt");
+
+    HANDLE h = CreateFileA(path, GENERIC_READ,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE,
+                           NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return;
+
+    char buf[8192] = {0};
+    DWORD bytesRead = 0;
+    ReadFile(h, buf, sizeof(buf) - 1, &bytesRead, NULL);
+    CloseHandle(h);
+    if (bytesRead == 0) return;
+
+    int section = 0;  /* 0=none, 1=races, 2=arenas */
+    char *q = buf;
+    while (*q) {
+        char *nl = q;
+        while (*nl && *nl != '\n') nl++;
+        char saved = *nl;
+        *nl = '\0';
+
+        char *line = q;
+        while (*line == ' ' || *line == '\t') line++;
+        if (*line == '#' || *line == ';' || *line == '\0' ||
+            *line == '\r') {
+            /* comment/blank: maybe a section header */
+        } else {
+            /* Section header? ("XXX_RACES:" / "ARENAS:") */
+            char *colon = strchr(line, ':');
+            char *eq = strchr(line, '=');
+            if (colon && !eq) {
+                if (strstr(line, "ARENA")) section = 2;
+                else if (strstr(line, "RACE")) section = 1;
+            } else if (eq && section) {
+                *eq = '\0';
+                int slot = atoi(line) - 1;
+                char *file = eq + 1;
+                while (*file == ' ' || *file == '\t') file++;
+                char *end = file + lstrlenA(file) - 1;
+                while (end > file && (*end == ' ' || *end == '\t' ||
+                       *end == '\r')) {
+                    *end = '\0';
+                    end--;
+                }
+                if (slot >= 0 && slot < NUM_LEVELS && *file) {
+                    int k;
+                    if (section == 1) {
+                        for (k = 0; k < NUM_LEVELS; k++)
+                            if (str_eq_ci(file, g_race_files[k]))
+                                g_race_slot[k] = slot;
+                    } else {
+                        for (k = 0; k < NUM_LEVELS; k++)
+                            if (str_eq_ci(file, g_arena_files[k]))
+                                g_arena_slot[k] = slot;
+                    }
+                }
+            }
+        }
+
+        *nl = saved;
+        if (*nl == '\n') nl++;
+        q = nl;
+    }
+}
+
 static void apply_board_colors(void) {
     DWORD board = find_board();
     if (!board) return;
@@ -647,22 +754,60 @@ static void apply_board_colors(void) {
     char *board_name = *(char**)(board + 0x29B4);
     if (!board_name || IsBadReadPtr(board_name, 4)) return;
 
-    /* Try matching level names first, then arena names */
-    ColorEntry *colors = NULL;
-    for (int i = 0; i < NUM_LEVELS; i++) {
+    /* id = loaded file's level. Match statics first, then live buffers
+     * (board+0x29B4 already points at a buffer after our first swap). */
+    int id = -1, arena = 0, i;
+    for (i = 0; i < NUM_LEVELS; i++) {
         if (str_eq_ci(board_name, g_levels[i].board_name)) {
-            colors = &g_level_board_colors[i];
+            id = i;
             break;
         }
     }
-    if (!colors) {
-        for (int i = 0; i < NUM_LEVELS; i++) {
+    if (id < 0) {
+        for (i = 0; i < NUM_LEVELS; i++) {
             if (str_eq_ci(board_name, g_arenas[i].board_name)) {
-                colors = &g_arena_board_colors[i];
+                id = i;
+                arena = 1;
                 break;
             }
         }
     }
+    if (id < 0 && g_name_buffers) {
+        for (i = 0; i < NUM_LEVELS; i++) {
+            if (str_eq_ci(board_name, g_name_buffers + i * NAME_BUF_SIZE)) {
+                id = i;
+                break;
+            }
+        }
+    }
+    if (id < 0 && g_name_buffers) {
+        for (i = 0; i < NUM_LEVELS; i++) {
+            if (str_eq_ci(board_name,
+                          g_name_buffers + (15 + i) * NAME_BUF_SIZE)) {
+                id = i;
+                arena = 1;
+                break;
+            }
+        }
+    }
+    if (id < 0) return;
+
+    /* Slot identity survives swapped files via the mkn_ slot map */
+    int slot = arena ? g_arena_slot[id] : g_race_slot[id];
+    if (slot < 0 || slot >= NUM_LEVELS) slot = id;
+    ColorEntry *colors = arena ? &g_arena_board_colors[slot]
+                               : &g_level_board_colors[slot];
+
+    /* In-game name: point HUD/intro/results at the slot's live buffer */
+    if (g_name_buffers) {
+        char *buf = g_name_buffers +
+                    (arena ? (15 + slot) : slot) * NAME_BUF_SIZE;
+        if (!IsBadWritePtr((void*)(board + 0x29B4), 4) &&
+            *(char**)(board + 0x29B4) != buf) {
+            *(char**)(board + 0x29B4) = buf;
+        }
+    }
+
     if (!colors || !colors->valid) return;
 
     float r = ((colors->rgb >> 16) & 0xFF) / 255.0f;
@@ -816,6 +961,7 @@ static DWORD WINAPI color_thread(LPVOID param) {
         DWORD now = GetTickCount();
         if (now - last_config_check > 2000) {
             read_config();
+            read_filename_slots();
             patch_menu_colors(g_levels, g_level_menu_colors);
             patch_menu_colors(g_arenas, g_arena_menu_colors);
             update_name_buffers();
