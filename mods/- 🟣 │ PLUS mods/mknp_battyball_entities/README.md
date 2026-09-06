@@ -16,6 +16,11 @@ GRID01 -> GRID02 -> ... -> GRIDnn -> GRID01 -> ...
 
 Every **`grid_speed`** seconds, the current cube is despawned (removed from the update/render/collision lists, collision object destroyed) and the next one is spawned.
 
+All GRID objects are **preloaded once at level start** (mesh load + construct).
+Switches only move list membership (hide old, show next): no disk, no
+rebuild, so high speeds stay smooth. Full destroy happens at level quit,
+toggle-off, or board change.
+
 ## Own meshes (v1a+)
 
 Each `REF:GRIDxx` point spawns **its own mesh**, taken from the level files —
