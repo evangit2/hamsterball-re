@@ -96,6 +96,8 @@
 #define LIGHT_SLOT_BASE     4        /* Neon owns 0-1, S3 re-registers from 0 */
 #define LIGHT_TYPE_POINT    1
 #define LIGHT_INTENSITY     5.0f     /* default material-color multiplier */
+#define LIGHT_OUTPUT_TRIM   0.5f     /* POINT pools were washing the follower;
+                                      * halve output (slider 5.0 ~= old 2.5) */
 #define LIGHT_TEST_DX       0.0f     /* offset test done: glow is native */
 
 /* Level offsets */
@@ -1261,12 +1263,12 @@ static void start_lights(DWORD board) {
                 got = 1;
             }
         }
-        g_light_col[li][0] = mr * g_light_intensity;
-        g_light_col[li][1] = mg * g_light_intensity;
-        g_light_col[li][2] = mb * g_light_intensity;
-        g_light_mat[li][0] = mr;
-        g_light_mat[li][1] = mg;
-        g_light_mat[li][2] = mb;
+        g_light_col[li][0] = mr * g_light_intensity * LIGHT_OUTPUT_TRIM;
+        g_light_col[li][1] = mg * g_light_intensity * LIGHT_OUTPUT_TRIM;
+        g_light_col[li][2] = mb * g_light_intensity * LIGHT_OUTPUT_TRIM;
+        g_light_mat[li][0] = mr * LIGHT_OUTPUT_TRIM;
+        g_light_mat[li][1] = mg * LIGHT_OUTPUT_TRIM;
+        g_light_mat[li][2] = mb * LIGHT_OUTPUT_TRIM;
         g_light_src[li] = 1;
         g_light_count++;
         snprintf(pbuf, sizeof(pbuf),
