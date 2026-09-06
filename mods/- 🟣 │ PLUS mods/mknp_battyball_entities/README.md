@@ -73,6 +73,20 @@ every level start, so edits apply on next level load.
 |---|---|---|---|---|
 | Toggle | `BATTY_ENTITIES` | ON | - | Master switch. When OFF, despawns all grid cubes. |
 | Slider | `BATTY_GRID_SPEED` | 3.0 | 0.5–30.0 | Seconds each GRID point stays visible before cycling. |
+| Toggle | `BATTY_LIGHTS` | ON | - | Master switch for native point lights. |
+| Slider | `BATTY_LIGHT_RANGE` | 400.0 | 50–3000 | Light range (native default 400). |
+
+## Point lights (v1p+)
+
+Each level file's S3 `DISTANTLIGHT`s become native D3D point lights:
+at level start the mod matches the on-disk file (S1 fingerprint), reads
+light position (file x,z,y → game x,y,z) + color, creates native
+`SceneObject`s exactly like `Scene_SetupLevelDark` does for Neon
+(`+0xD0=1` POINT, emitter +0x94, range +0xCC), and registers them in gfx
+slots 4–7. The engine itself drives D3D — the mod never calls D3D
+functions. Ambient is never touched (darkness stays file-side).
+`E:LIGHTSOFF` / `E:LIGHTSON` toggle the mod lights like the native ones.
+First 4 lights win; extras are logged and skipped.
 
 ## Level setup
 
