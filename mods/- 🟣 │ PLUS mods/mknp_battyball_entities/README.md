@@ -92,7 +92,9 @@ slots 4–7. Position is set via native `vtable[1]` SetPosition (like
 `Scene_SetupLevelDark` — never bare `+0x08` writes alone). RefreshLight
 `0x46B670` builds the D3DLIGHT8 in-object at `+0x20`: true Range field is
 `+0x68` (written by mod — the game never does), `+0xB8` is specular
-(never touched). The engine itself drives D3D — the mod never calls D3D
+(never touched). RefreshLight bakes `Att2=0.04` every call — the mod
+zeroes that constant once (`Att2 patch`), else `1/(1+0.04d^2)` attenuation
+eats the light (0.0003 at 288 units). The engine itself drives D3D — the mod never calls D3D
 functions. Slots re-assert ~every 2s (race retry wipes them). Ambient is never touched (darkness stays file-side).
 `E:LIGHTSOFF` / `E:LIGHTSON` toggle the mod lights like the native ones.
 First 4 lights win; extras are logged and skipped.
