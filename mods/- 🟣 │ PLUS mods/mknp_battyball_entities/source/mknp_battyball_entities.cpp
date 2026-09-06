@@ -1150,11 +1150,18 @@ static void patch_attenuation(void) {
 
 /* Runs in text_render (render thread). job 1 = build, 2 = refresh.
  * quiet=1 skips per-light logs (periodic re-assert). */
+#define LIGHT_NOEMIT_DIAG 1   /* v1af: emit NOTHING (no objs/registers/Att
+                               * patch). Isolates hooks+logging vs photons. */
 static void service_light_job(DWORD board, int quiet) {
     DWORD gfx;
     int i, vis, hi;
     if (g_job == 0 || board != g_job_board) return;
     if (!g_light_count && !g_light_used) { g_job = 0; return; }
+#ifdef LIGHT_NOEMIT_DIAG
+    if (!quiet) log_mod("  LIGHT: emit disabled (diag, no photons)");
+    g_job = 0;
+    return;
+#endif
     gfx = gfx_device();
     if (!gfx) return;   /* retry next frame */
     patch_attenuation();   /* one-time: restore Att1 0.04 */
