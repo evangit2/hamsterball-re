@@ -911,8 +911,9 @@ static int read_level_lights(const char* path) {
 }
 
 /* Find first S6 geom whose name contains `needle` (case-insens), copy its
- * material diffuse RGB (file mat+16/20/24) + aux triple (mat+32/36/40,
- * emissive-or-specular: fallback glow source). Returns 1 found, 0 not. */
+ * material diffuse RGB (file mat+16/20/24) + emissive RGB (mat+48/52/56).
+ * S6 order per MESHWORLD_BINARY_FORMAT_OFFICIAL: Ambient/Diffuse/Specular/
+ * Emissive quads (+0/+16/+32/+48) + Power. Returns 1 found, 0 not. */
 typedef struct {
     const char* needle;
     float rgb[3];
@@ -955,9 +956,9 @@ static int light_node(GmCur* c, LightFind* f) {
                     memcpy(&f->rgb[0], matp + 16, 4);
                     memcpy(&f->rgb[1], matp + 20, 4);
                     memcpy(&f->rgb[2], matp + 24, 4);
-                    memcpy(&f->aux[0], matp + 32, 4);
-                    memcpy(&f->aux[1], matp + 36, 4);
-                    memcpy(&f->aux[2], matp + 40, 4);
+                    memcpy(&f->aux[0], matp + 48, 4);
+                    memcpy(&f->aux[1], matp + 52, 4);
+                    memcpy(&f->aux[2], matp + 56, 4);
                     f->hit = 1;
                     return 2;
                 }
@@ -1274,26 +1275,27 @@ static void start_lights(DWORD board) {
         g_light_pos[li][1] = g_ppt_y[i];
         g_light_pos[li][2] = g_ppt_z[i];
         if (have_file && read_geom_diffuse(cur, g_ppt_name[i], rgb, auxt)) {
-            if (rgb[0] >= 0.0f && rgb[0] <= 10.0f &&
-                rgb[1] >= 0.0f && rgb[1] <= 10.0f &&
-                rgb[2] >= 0.0f && rgb[2] <= 10.0f &&
-                (rgb[0] + rgb[1] + rgb[2]) > 0.0001f) {
+            if (auxt[0] >= 0.0f && auxt[0] <= 10.0f &&
+                auxt[1] >= 0.0f && auxt[1] <= 10.0f &&
+                auxt[2] >= 0.0f && auxt[2] <= 10.0f &&
+                (auxt[0] + auxt[1] + auxt[2]) > 0.0001f) {
+                /* primary: emissive (the glow paint). LevelD green lives
+                 * here: mat+48/52/56 = (0,1,0.003). */
+                mr = auxt[0];
+                mg = auxt[1];
+                mb = auxt[2];
+                got = 1;
+                csrc = "emi";
+            } else if (rgb[0] >= 0.0f && rgb[0] <= 10.0f &&
+                       rgb[1] >= 0.0f && rgb[1] <= 10.0f &&
+                       rgb[2] >= 0.0f && rgb[2] <= 10.0f &&
+                       (rgb[0] + rgb[1] + rgb[2]) > 0.0001f) {
+                /* fallback: diffuse (older files paint this instead) */
                 mr = rgb[0];
                 mg = rgb[1];
                 mb = rgb[2];
                 got = 1;
                 csrc = "dif";
-            } else if (auxt[0] >= 0.0f && auxt[0] <= 10.0f &&
-                       auxt[1] >= 0.0f && auxt[1] <= 10.0f &&
-                       auxt[2] >= 0.0f && auxt[2] <= 10.0f &&
-                       (auxt[0] + auxt[1] + auxt[2]) > 0.0001f) {
-                /* black diffuse (bad export): fall back to aux triple
-                 * (emissive-or-specular) so the lamp still glows */
-                mr = auxt[0];
-                mg = auxt[1];
-                mb = auxt[2];
-                got = 1;
-                csrc = "aux";
             }
         }
         g_light_col[li][0] = mr * g_light_intensity * LIGHT_OUTPUT_TRIM;
