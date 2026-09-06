@@ -30,9 +30,9 @@ digits right after `GRID` in the S1 ref name. Whatever the file holds
 (mesh, affixes) applies natively at load. Old `mknp_grid<N>` temps are
 deleted at level start (no longer used).
 
-If `GridNN.MESHWORLD` is missing, the point falls back to `testcube`
-(if present in `levels\`), else it is skipped with a log line. Missing
-meshes never crash.
+If `GridNN.MESHWORLD` is missing or fails validation (must parse, >=1
+geom), the point falls back to `testcube` (if present in `levels\`), else
+it is skipped with a log line. Missing meshes never crash.
 
 - name has `(NOCOLLIDE)` → visual only, ball passes through
 - otherwise → solid, ball stands on it
