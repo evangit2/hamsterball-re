@@ -72,6 +72,7 @@
 #define BOARD_COLLISION_LIST 0x10EC  /* collision objects list */
 #define BOARD_SCENE_OBJ     0x8B0    /* SceneObject chain */
 #define BOARD_SCENE_UPDATE_LIST 0x8B8
+#define BOARD_PAUSED        0x874    /* nonzero while game paused */
 
 /* Level offsets */
 #define LEVEL_SCENEOBJECT   0x480    /* SceneObject ptr */
@@ -712,6 +713,16 @@ static void __thiscall game_update(void*) {
         if (g_board_ready_delay > 0) { g_board_ready_delay--; return; }
         start_grid_cycle(board);
         return;
+    }
+
+    /* Pause gate: freeze the cycle clock while paused, resume seamlessly */
+    {
+        DWORD now = GetTickCount();
+        if (!IsBadReadPtr((void*)(board + BOARD_PAUSED), 4) &&
+            *(int*)(board + BOARD_PAUSED)) {
+            g_last_switch_tick = now;
+            return;
+        }
     }
 
     /* Time-based cycling (slider seconds x per-level multiplier) */
