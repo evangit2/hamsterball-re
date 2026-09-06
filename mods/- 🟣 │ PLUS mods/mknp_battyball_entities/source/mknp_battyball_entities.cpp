@@ -1093,7 +1093,12 @@ static void write_light_fields(DWORD obj, int li, int vis) {
  * now RESTORES the byte pattern (repairs a v1u-v1aa-patched exe in case
  * the pattern was already zeroed this session) and is otherwise a no-op. */
 static void patch_attenuation(void) {
-    static int done = 0;
+    /* RETIRED v1ah: fresh exe image always carries stock bytes (in-memory
+     * zeroing could never persist), and pattern-matching risks writing a
+     * coincidental site on foreign exe versions. No-op by design. */
+    log_mod("  LIGHT: Att patch retired (no-op)");
+    return;
+    static int done = 0;   /* dead, keeps later refs declared */
     HMODULE exe;
     DWORD peoff, sec, s;
     WORD ns;
