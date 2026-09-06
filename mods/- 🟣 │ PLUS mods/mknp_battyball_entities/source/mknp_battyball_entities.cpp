@@ -74,6 +74,25 @@
 #define BOARD_SCENE_UPDATE_LIST 0x8B8
 #define BOARD_PAUSED        0x874    /* nonzero while game paused */
 
+/* Native light objects (Ghidra-verified: Scene_SetupLevelDark 0x416270) */
+#define SCENEOBJECT_SIZE    0xD4
+#define SCENEOBJECT_CTOR    0x0046B4F0   /* __thiscall(this, gfx), RET 4 */
+#define SCENE_REGISTEROBJECT 0x00453BD0  /* __thiscall(gfx, slot, obj), RET 8 */
+#define SO_POS_X            0x08     /* light position (direct write) */
+#define SO_POS_Y            0x0C
+#define SO_POS_Z            0x10
+#define SO_EMIT_R           0x94     /* emitter color RGBA */
+#define SO_EMIT_G           0x98
+#define SO_EMIT_B           0x9C
+#define SO_EMIT_A           0xA0
+#define SO_VISIBLE          0x88
+#define SO_RANGE            0xCC
+#define SO_TYPE             0xD0     /* 1 = D3DLIGHT_POINT (SDK truth) */
+#define GFX_LIGHT_SLOTS     0x710    /* 8 SceneObject* slots */
+#define MAX_LIGHTS          4
+#define LIGHT_SLOT_BASE     4        /* Neon owns 0-1, S3 re-registers from 0 */
+#define LIGHT_TYPE_POINT    1
+
 /* Level offsets */
 #define LEVEL_SCENEOBJECT   0x480    /* SceneObject ptr */
 
@@ -177,6 +196,18 @@ static char  g_levels_dir[MAX_PATH];  /* game levels\ dir, trailing backslash */
 /* Active level / board the current cycle belongs to */
 static DWORD g_active_board = 0;
 static int   g_board_ready_delay = 0;   /* frames to wait for level build after board change */
+
+/* Native point lights (S3 DISTANTLIGHTs -> SceneObjects in gfx slots) */
+static DWORD g_light_objs[MAX_LIGHTS];   /* never freed, reused per level */
+static float g_light_pos[MAX_LIGHTS][3]; /* game coords */
+static float g_light_col[MAX_LIGHTS][3];
+static int   g_light_count = 0;          /* parsed (clamped to MAX_LIGHTS) */
+static int   g_light_used = 0;           /* slots currently registered */
+static int   g_light_vis = 1;            /* 0 while LIGHTSOFF */
+static bool  g_lights_on = true;         /* BATTY_LIGHTS toggle */
+static float g_light_range = 400.0f;     /* BATTY_LIGHT_RANGE slider */
+static int   g_job = 0;                  /* text_render job: 0 none 1 build 2 refresh */
+static DWORD g_job_board = 0;
 
 /* Time-based cycle state */
 static DWORD g_last_switch_tick = 0;    /* GetTickCount() when current cube spawned */
@@ -665,6 +696,273 @@ static const char* mesh_for(int idx) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Native point lights: S3 DISTANTLIGHTs -> SceneObjects in gfx slots 4-7.
+ * Mirrors Scene_SetupLevelDark exactly (op_new 0xD4, ctor, +0xD0=1 POINT,
+ * emitter +0x94, pos +0x08, range +0xCC, RegisterObject). The ONLY native
+ * call is RegisterObject (it runs RefreshLight internally); every other
+ * field is written directly. Calls run in text_render (render thread);
+ * onGameUpdate only writes plain fields and raises jobs.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Locate the on-disk level file matching the runtime S1 (hash+count). */
+static int find_current_level_file(char* out, unsigned cap) {
+    static char files[GM_MAX_LIST][MAX_PATH];
+    int n, i;
+    if (!g_levels_dir[0] || !g_s1_count) return 0;
+    n = gm_list_mw(g_levels_dir, files, GM_MAX_LIST);
+    for (i = 0; i < n; i++) {
+        unsigned len = 0;
+        unsigned char* d;
+        int fc = 0;
+        unsigned fh;
+        if (gm_name_is_temp(files[i])) continue;
+        d = gm_read_file(files[i], &len);
+        if (!d) continue;
+        fh = gm_s1_hash(d, len, &fc);
+        free(d);
+        if (fc == g_s1_count && fh == g_s1_hash) {
+            unsigned k = 0;
+            while (k + 1 < cap && files[i][k]) {
+                out[k] = files[i][k];
+                k++;
+            }
+            out[k] = '\0';
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Parse S3 lights + S4 ambient from a level file. Stores up to MAX_LIGHTS
+ * (pos swizzled file x,z,y -> game x,y,z). Returns light count or -1. */
+static int read_level_lights(const char* path) {
+    unsigned len = 0;
+    unsigned char* d = gm_read_file(path, &len);
+    GmCur c;
+    int i, n, total = 0;
+    if (!d) return -1;
+    c.p = d;
+    c.end = d + len;
+    /* S1 skip (mirror gm_s1_hash walk) */
+    if (c.end - c.p < 4) { free(d); return -1; }
+    n = gm_i32(&c);
+    if (n < 0 || n > 100000) { free(d); return -1; }
+    for (i = 0; i < n; i++) {
+        int ln;
+        if (!gm_need(&c, 4)) { free(d); return -1; }
+        ln = gm_i32(&c);
+        if (ln < 1 || ln > 1024 || !gm_need(&c, (unsigned)ln)) { free(d); return -1; }
+        c.p += (unsigned)ln;
+        if (!gm_need(&c, 24 + 4)) { free(d); return -1; }
+        c.p += 24;
+        {
+            unsigned char hm = *c.p;
+            c.p += 4;
+            if (hm) {
+                unsigned ht;
+                if (!gm_need(&c, 64 + 4 + 4 + 4)) { free(d); return -1; }
+                c.p += 64 + 4 + 4;
+                ht = gm_u32(&c);
+                if (ht == 1) {
+                    int tl;
+                    if (!gm_need(&c, 4)) { free(d); return -1; }
+                    tl = gm_i32(&c);
+                    if (tl < 1 || tl > 1024 || !gm_need(&c, (unsigned)tl)) { free(d); return -1; }
+                    c.p += (unsigned)tl;
+                }
+            }
+        }
+    }
+    /* S2 skip */
+    if (!gm_need(&c, 4)) { free(d); return -1; }
+    n = gm_i32(&c);
+    if (n < 0 || n > 100000) { free(d); return -1; }
+    for (i = 0; i < n; i++) {
+        int dl, pc;
+        if (!gm_need(&c, 4)) { free(d); return -1; }
+        dl = gm_i32(&c);
+        if (dl < 0 || dl > 1000000 || !gm_need(&c, (unsigned)dl + 4)) { free(d); return -1; }
+        c.p += (unsigned)dl;
+        pc = gm_i32(&c);
+        if (pc < 0 || pc > 1000000 || !gm_need(&c, (unsigned)pc * 12u)) { free(d); return -1; }
+        c.p += (unsigned)pc * 12u;
+    }
+    /* S3 lights */
+    if (!gm_need(&c, 4)) { free(d); return -1; }
+    n = gm_i32(&c);
+    if (n < 0 || n > 64) { free(d); return -1; }
+    g_light_count = 0;
+    for (i = 0; i < n; i++) {
+        int t;
+        float v[9];
+        int k;
+        if (!gm_need(&c, 4 + 36)) { free(d); return -1; }
+        t = gm_i32(&c);
+        for (k = 0; k < 9; k++) v[k] = gm_f32(&c);
+        if (t != 0) continue;   /* only DISTANTLIGHT for now */
+        if (total < MAX_LIGHTS) {
+            g_light_pos[total][0] = v[0];
+            g_light_pos[total][1] = v[2];   /* file x,z,y -> game x,y,z */
+            g_light_pos[total][2] = v[1];
+            g_light_col[total][0] = v[6];
+            g_light_col[total][1] = v[7];
+            g_light_col[total][2] = v[8];
+            total++;
+        }
+    }
+    g_light_count = total;
+    /* S4 ambient (log only — never touched) */
+    if (gm_need(&c, 24)) {
+        float bg0 = 0, bg1 = 0, bg2 = 0, am0 = 0, am1 = 0, am2 = 0;
+        bg0 = gm_f32(&c); bg1 = gm_f32(&c); bg2 = gm_f32(&c);
+        am0 = gm_f32(&c); am1 = gm_f32(&c); am2 = gm_f32(&c);
+        {
+            char abuf[96];
+            snprintf(abuf, sizeof(abuf), "  LIGHT ambient=(%.2f,%.2f,%.2f) bg=(%.2f,%.2f,%.2f)",
+                     am0, am1, am2, bg0, bg1, bg2);
+            log_mod(abuf);
+        }
+    }
+    free(d);
+    return total;
+}
+
+/* __thiscall wrappers (MinGW asm caves). Callee-cleanup (RET 4/8). */
+static DWORD native_new_sceneobject(DWORD gfx) {
+    DWORD obj = g_op_new(SCENEOBJECT_SIZE);
+    DWORD fn = SCENEOBJECT_CTOR;
+    DWORD ret = 0;
+    if (!obj) return 0;
+    memset(obj, 0, SCENEOBJECT_SIZE);
+    __asm__ __volatile__(
+        "pushl %2\n\t"
+        "movl %1, %%ecx\n\t"
+        "call *%3\n\t"
+        "movl %%eax, %0\n\t"
+        : "=r"(ret) : "r"(obj), "r"(gfx), "r"(fn)
+        : "eax", "edx", "ecx", "memory");
+    return ret;
+}
+
+static void native_register(DWORD gfx, int slot, DWORD obj) {
+    DWORD fn = SCENE_REGISTEROBJECT;
+    __asm__ __volatile__(
+        "pushl %2\n\t"
+        "pushl %1\n\t"
+        "movl %0, %%ecx\n\t"
+        "call *%3\n\t"
+        : : "r"(gfx), "r"((DWORD)slot), "r"(obj), "r"(fn)
+        : "eax", "edx", "ecx", "memory");
+}
+
+static DWORD gfx_device(void) {
+    DWORD app;
+    DWORD gfx;
+    if (!g_api) return 0;
+    app = (DWORD)HBAPI(g_api).GetApp();
+    if (!app || IsBadReadPtr((void*)app, 0x700)) return 0;
+    gfx = *(DWORD*)(app + APP_GFX_DEVICE);
+    if (!gfx || IsBadReadPtr((void*)gfx, 0x800)) return 0;
+    return gfx;
+}
+
+static void write_light_fields(DWORD obj, int li, int vis) {
+    *(int*)((char*)obj + SO_TYPE) = LIGHT_TYPE_POINT;
+    *(float*)((char*)obj + SO_EMIT_R) = g_light_col[li][0];
+    *(float*)((char*)obj + SO_EMIT_G) = g_light_col[li][1];
+    *(float*)((char*)obj + SO_EMIT_B) = g_light_col[li][2];
+    *(float*)((char*)obj + SO_EMIT_A) = 1.0f;
+    *(float*)((char*)obj + SO_POS_X) = g_light_pos[li][0];
+    *(float*)((char*)obj + SO_POS_Y) = g_light_pos[li][1];
+    *(float*)((char*)obj + SO_POS_Z) = g_light_pos[li][2];
+    *(float*)((char*)obj + SO_RANGE) = g_light_range;
+    *(BYTE*)((char*)obj + SO_VISIBLE) = (BYTE)(vis ? 1 : 0);
+}
+
+/* Runs in text_render (render thread). job 1 = build, 2 = refresh. */
+static void service_light_job(DWORD board) {
+    DWORD gfx;
+    int i, vis, hi;
+    if (g_job == 0 || board != g_job_board) return;
+    if (!g_light_count && !g_light_used) { g_job = 0; return; }
+    gfx = gfx_device();
+    if (!gfx) return;   /* retry next frame */
+    vis = (g_lights_on && g_light_vis) ? 1 : 0;
+    hi = g_light_used;
+    if (g_job == 3) {
+        /* level end: switch every used slot off, keep objects alive */
+        for (i = 0; i <= hi && i < MAX_LIGHTS; i++) {
+            if (g_light_objs[i]) {
+                *(BYTE*)((char*)g_light_objs[i] + SO_VISIBLE) = 0;
+                native_register(gfx, LIGHT_SLOT_BASE + i, g_light_objs[i]);
+            }
+        }
+        log_mod("  LIGHT: level end, slots off");
+        g_job = 0;
+        return;
+    }
+    if (g_light_count - 1 > hi) hi = g_light_count - 1;
+    for (i = 0; i <= hi && i < MAX_LIGHTS; i++) {
+        DWORD obj = g_light_objs[i];
+        char lbuf[128];
+        if (i < g_light_count) {
+            if (!obj) {
+                obj = native_new_sceneobject(gfx);
+                if (!obj || IsBadReadPtr((void*)obj, SCENEOBJECT_SIZE)) {
+                    snprintf(lbuf, sizeof(lbuf), "  LIGHT%d: ctor failed", i);
+                    log_mod(lbuf);
+                    g_light_objs[i] = 0;
+                    continue;
+                }
+                g_light_objs[i] = obj;
+            }
+            write_light_fields(obj, i, vis);
+            native_register(gfx, LIGHT_SLOT_BASE + i, obj);
+            snprintf(lbuf, sizeof(lbuf),
+                     "  LIGHT%d: slot %d pos=(%d,%d,%d) col=(%.2f,%.2f,%.2f) vis=%d",
+                     i, LIGHT_SLOT_BASE + i,
+                     (int)g_light_pos[i][0], (int)g_light_pos[i][1],
+                     (int)g_light_pos[i][2],
+                     g_light_col[i][0], g_light_col[i][1], g_light_col[i][2],
+                     vis);
+            log_mod(lbuf);
+        } else if (obj) {
+            /* stale slot from a richer level: switch off, keep alive */
+            *(BYTE*)((char*)obj + SO_VISIBLE) = 0;
+            native_register(gfx, LIGHT_SLOT_BASE + i, obj);
+        }
+    }
+    g_light_used = hi;
+    g_job = 0;
+}
+
+/* Parse current level lights, raise build job. Runs in onGameUpdate. */
+static void start_lights(DWORD board) {
+    char cur[MAX_PATH];
+    int n;
+    g_light_count = 0;
+    g_light_vis = 1;
+    cur[0] = '\0';
+    if (!find_current_level_file(cur, sizeof(cur))) {
+        log_mod("  LIGHT: level file unknown, no lights");
+        return;
+    }
+    n = read_level_lights(cur);
+    if (n < 0) {
+        log_mod("  LIGHT: parse failed, no lights");
+        return;
+    }
+    {
+        char nbuf[64];
+        snprintf(nbuf, sizeof(nbuf), "  LIGHT: %d point light(s)", n);
+        log_mod(nbuf);
+    }
+    if (!n) return;
+    g_job = 1;
+    g_job_board = board;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Level-start: scan GRID points and begin the cycle with GRID01
  * ═══════════════════════════════════════════════════════════════════════════ */
 static void start_grid_cycle(DWORD board) {
@@ -675,6 +973,7 @@ static void start_grid_cycle(DWORD board) {
     g_spawned_count = 0;
 
     int count = find_grid_points(board);
+    start_lights(board);
     if (count > 0) {
         char buf[64];
         g_mult = gridset_level_mult(g_levels_dir, g_s1_hash, g_s1_count);
@@ -819,6 +1118,14 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
     s1.lowerBound = 0.5f; s1.upperBound = 30.0f; s1.stepSize = 0.5f; s1.decimalPlaces = 1;
     HBAPI(api).CreateSlider(s1, (HamsterballAPI*)thisptr);
 
+    CustomButton btn2("BATTY_LIGHTS", "Batty Point Lights");
+    btn2.defaultState = true;
+    HBAPI(api).CreateToggleButton(btn2, (HamsterballAPI*)thisptr);
+
+    CustomSlider s2("BATTY_LIGHT_RANGE", "Light Range", 400.0f);
+    s2.lowerBound = 50.0f; s2.upperBound = 3000.0f; s2.stepSize = 10.0f; s2.decimalPlaces = 0;
+    HBAPI(api).CreateSlider(s2, (HamsterballAPI*)thisptr);
+
     log_mod("INIT Battyball Entities v1 (mod loaded)");
 }
 
@@ -830,11 +1137,30 @@ static void __thiscall button_toggle(void*, const char* id, bool state) {
             despawn_all(board);
             g_cycle_started = false;
         }
+    } else if (strcmp(id, "BATTY_LIGHTS") == 0) {
+        g_lights_on = state;
+        {
+            char lbuf[48];
+            snprintf(lbuf, sizeof(lbuf), "  LIGHT: toggle %s",
+                     state ? "ON" : "OFF");
+            log_mod(lbuf);
+        }
+        if (g_light_used || g_light_count) {
+            g_job = 2;
+            g_job_board = player_board();
+        }
     }
 }
 
 static void __thiscall slider_change(void*, const char* id, float value) {
     if (strcmp(id, "BATTY_GRID_SPEED") == 0) g_speed = value;
+    else if (strcmp(id, "BATTY_LIGHT_RANGE") == 0) {
+        g_light_range = value < 10.0f ? 10.0f : value;
+        if (g_light_used || g_light_count) {
+            g_job = 2;
+            g_job_board = player_board();
+        }
+    }
 }
 
 static void __thiscall level_start(void*) {
@@ -851,6 +1177,10 @@ static void __thiscall scene_end(void*) {
     despawn_all(board);
     g_cycle_started = false;
     g_active_board = 0;
+    if (g_light_used && board) {
+        g_job = 3;
+        g_job_board = board;
+    }
 }
 
 static void __thiscall game_update(void*) {
@@ -941,8 +1271,39 @@ static void __thiscall game_update(void*) {
 static void __thiscall ball_update(void*, void*) {}
 static void __thiscall render_apply(void*, void*, float*) {}
 static void __thiscall cycle_option_change(void*, const char*, const char*) {}
-static void __thiscall event_collide(void*, void*, char*) {}
-static void __thiscall text_render(void*) {}
+static void __thiscall event_collide(void*, void*, char* name) {
+    char c0;
+    if (!name || IsBadReadPtr(name, 12)) return;
+    c0 = name[0];
+    if ((c0 != 'E' && c0 != 'e') || name[1] != ':') return;
+    /* E:LIGHTSOFF (11) / E:LIGHTSON (10): mirror native behavior */
+    if (strncmp(name + 2, "LIGHTSOFF", 9) == 0) {
+        if (g_light_vis) {
+            g_light_vis = 0;
+            log_mod("  LIGHT: E:LIGHTSOFF -> off");
+            if (g_light_used || g_light_count) {
+                g_job = 2;
+                g_job_board = player_board();
+            }
+        }
+    } else if (strncmp(name + 2, "LIGHTSON", 8) == 0) {
+        if (!g_light_vis) {
+            g_light_vis = 1;
+            log_mod("  LIGHT: E:LIGHTSON -> on");
+            if (g_light_used || g_light_count) {
+                g_job = 2;
+                g_job_board = player_board();
+            }
+        }
+    }
+}
+static void __thiscall text_render(void*) {
+    DWORD board;
+    if (g_job == 0) return;
+    board = player_board();
+    if (!board || IsBadReadPtr((void*)board, 0x4400)) return;
+    service_light_job(board);
+}
 static void __thiscall ball_bump(void*, void*, void*) {}
 
 /* 17-entry vtable (HB+ v2.0/v2.1) */
