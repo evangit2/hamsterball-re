@@ -98,6 +98,10 @@ eats the light (0.0003 at 288 units). The engine itself drives D3D — the mod n
 functions. Slots re-assert ~every 2s (race retry wipes them). Ambient is never touched (darkness stays file-side).
 `E:LIGHTSOFF` / `E:LIGHTSON` toggle the mod lights like the native ones.
 First 4 lights win; extras are logged and skipped.
+`Light Intensity` slider rescales POINT pools live (S3 file lights keep
+designer values); output is trimmed 0.5x so pools don't wash the follower.
+Disasm audit (0x453BD0/0x46B4F0/0x46B670): register, ctor and refresh are
+strictly per-object/per-slot — the mod cannot alter native slots 0-1.
 
 ## Level setup
 
