@@ -560,9 +560,11 @@ static int gm_name_is_temp(const char* fname) {
 }
 
 /* Find first levels\ file (not our temp) holding geom want1/want2, extract
- * rebased to origin into outpath. levels_dir ends with \ (or /). */
-static int gm_find_and_extract(const char* levels_dir, const char* want1,
-                               const char* want2, const char* outpath) {
+ * rebased to origin into outpath. levels_dir ends with \ (or /).
+ * out_src gets the source basename (for logging); may be NULL. */
+static int gm_find_and_extract_src(const char* levels_dir, const char* want1,
+                               const char* want2, const char* outpath,
+                               char* out_src, unsigned src_cap) {
     static char files[GM_MAX_LIST][MAX_PATH];
     int n = gm_list_mw(levels_dir, files, GM_MAX_LIST);
     int i;
@@ -571,9 +573,40 @@ static int gm_find_and_extract(const char* levels_dir, const char* want1,
         if (gm_name_is_temp(files[i])) continue;
         sz = gm_file_size(files[i]);
         if (sz == (DWORD)-1 || sz > GM_MAX_FILE || sz < 64) continue;
-        if (gm_extract(files[i], want1, want2, outpath)) return 1;
+        if (gm_extract(files[i], want1, want2, outpath)) {
+            if (out_src && src_cap) {
+                const char* b = files[i];
+                const char* p = files[i];
+                unsigned k = 0;
+                while (*p) {
+                    if (*p == '\\' || *p == '/') b = p + 1;
+                    p++;
+                }
+                while (k + 1 < src_cap && b[k]) {
+                    out_src[k] = b[k];
+                    k++;
+                }
+                out_src[k] = '\0';
+            }
+            return 1;
+        }
     }
     return 0;
+}
+
+/* Same, without source reporting (kept for callers that don't log). */
+static int gm_find_and_extract(const char* levels_dir, const char* want1,
+                               const char* want2, const char* outpath) {
+    return gm_find_and_extract_src(levels_dir, want1, want2, outpath,
+                                   (char*)0, 0);
+}
+
+/* Extract from ONE specific file. Returns 1 on success. */
+static int gm_extract_from(const char* mwpath, const char* want1,
+                           const char* want2, const char* outpath) {
+    DWORD sz = gm_file_size(mwpath);
+    if (sz == (DWORD)-1 || sz > GM_MAX_FILE || sz < 64) return 0;
+    return gm_extract(mwpath, want1, want2, outpath);
 }
 /* FNV-1a over S1 (count + every ref name, no NUL). Runtime side feeds the
  * same stream, so equal hash + equal count identifies the level file. */
