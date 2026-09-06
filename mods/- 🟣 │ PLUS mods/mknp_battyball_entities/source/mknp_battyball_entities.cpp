@@ -96,7 +96,7 @@
 #define LIGHT_SLOT_BASE     4        /* Neon owns 0-1, S3 re-registers from 0 */
 #define LIGHT_TYPE_POINT    1
 #define LIGHT_INTENSITY     5.0f     /* fixed material-color multiplier */
-#define LIGHT_TEST_DX       200.0f   /* TEMP test: shift POINT lights +X */
+#define LIGHT_TEST_DX       0.0f     /* offset test done: glow is native */
 
 /* Level offsets */
 #define LEVEL_SCENEOBJECT   0x480    /* SceneObject ptr */
@@ -1043,21 +1043,12 @@ static void native_register(DWORD gfx, int slot, DWORD obj) {
         : "eax", "edx", "ecx", "memory");
 }
 
-/* vtable[1] = SetPosition(x,y,z), __thiscall. Scene_SetupLevelDark calls
- * this (never writes +0x08 directly) — mirror it exactly. */
+/* vtable[1] of the light vtable (0x4D934C) is 0x46B650, a conditional
+ * destroy-helper — NOT SetPosition (real SetPosition is vtable[2] =
+ * 0x46B490, but direct +0x08 writes already verify ok=1, so never call
+ * any vtable slot for position). Kept for reference; DO NOT USE. */
 static void native_setpos(DWORD obj, float x, float y, float z) {
-    DWORD fn;
-    if (!obj || IsBadReadPtr((void*)obj, 8)) return;
-    fn = *(DWORD*)(*(DWORD*)obj + 4);
-    if (!fn || IsBadReadPtr((void*)fn, 1)) return;
-    __asm__ __volatile__(
-        "pushl %3\n\t"
-        "pushl %2\n\t"
-        "pushl %1\n\t"
-        "movl %0, %%ecx\n\t"
-        "call *%4\n\t"
-        : : "r"(obj), "m"(x), "m"(y), "m"(z), "r"(fn)
-        : "eax", "edx", "ecx", "memory");
+    (void)obj; (void)x; (void)y; (void)z;
 }
 
 /* vtable[1] helper above; gfx accessor below */
@@ -1086,10 +1077,12 @@ static void write_light_fields(DWORD obj, int li, int vis) {
     *(BYTE*)((char*)obj + SO_VISIBLE) = (BYTE)(vis ? 1 : 0);
 }
 
-/* RefreshLight bakes Att2=0.04 EVERY call (mov [esi+0x78],0x3D23D70A:
- * bytes C7 46 78 0A D7 23 3D). Attenuation 1/(1+0.04d^2): d=5->0.5,
- * d=50->0.01, d=288->0.0003 = invisible. Zero the imm32 once so point
- * lights shine to Range. Benefits native lights too (same function). */
+/* 0x46B7EA bakes Attenuation1=0.04 (mov [esi+0x78],0x3D23D70A — LINEAR
+ * falloff 1/(0.04d), NOT squared). REVERTED: zeroing it blasted native
+ * follower lights to full range AND made our Att0=Att1=Att2=0 (div-by-0).
+ * Natural 0.04 falloff is plenty visible with bright colors. This function
+ * now RESTORES the byte pattern (repairs a v1u-v1aa-patched exe in case
+ * the pattern was already zeroed this session) and is otherwise a no-op. */
 static void patch_attenuation(void) {
     static int done = 0;
     HMODULE exe;
@@ -1125,14 +1118,16 @@ static void patch_attenuation(void) {
         end = p + vsize - 7;
         for (; p < end; p++) {
             if (p[0] == 0xC7 && p[1] == 0x46 && p[2] == 0x78 &&
-                p[3] == 0x0A && p[4] == 0xD7 &&
-                p[5] == 0x23 && p[6] == 0x3D) {
+                ((p[3] == 0x0A && p[4] == 0xD7 &&
+                  p[5] == 0x23 && p[6] == 0x3D) ||   /* stock 0.04 */
+                 (p[3] == 0 && p[4] == 0 &&
+                  p[5] == 0 && p[6] == 0))) {        /* v1u-v1aa zeroed */
                 DWORD oldp = 0;
                 if (VirtualProtect(p + 3, 4, PAGE_EXECUTE_READWRITE,
                                    &oldp)) {
-                    p[3] = 0;
-                    p[4] = 0;
-                    p[5] = 0;
+                    p[3] = 0x0A;
+                    p[4] = 0xD7;
+                    p[5] = 0x23;
                     p[6] = 0;
                     VirtualProtect(p + 3, 4, oldp, &oldp);
                     FlushInstructionCache(GetCurrentProcess(), p, 7);
@@ -1142,7 +1137,7 @@ static void patch_attenuation(void) {
         }
         break;
     }
-    snprintf(lbuf, sizeof(lbuf), "  LIGHT: Att2 patch x%d", found);
+    snprintf(lbuf, sizeof(lbuf), "  LIGHT: Att1 restore x%d", found);
     log_mod(lbuf);
 }
 
@@ -1155,7 +1150,7 @@ static void service_light_job(DWORD board, int quiet) {
     if (!g_light_count && !g_light_used) { g_job = 0; return; }
     gfx = gfx_device();
     if (!gfx) return;   /* retry next frame */
-    patch_attenuation();   /* one-time: Att2 0.04 -> 0 */
+    patch_attenuation();   /* one-time: restore Att1 0.04 */
     vis = (g_lights_on && g_light_vis) ? 1 : 0;
     hi = g_light_used;
     if (g_job == 3) {
@@ -1671,6 +1666,27 @@ static void light_frame(void) {
     DWORD gfx;
     board = player_board();
     if (!board || IsBadReadPtr((void*)board, 0x4400)) return;
+    /* board can be recreated after load (load-board vs race-board): adopt
+     * the live one so pin/reassert guards keep running, re-register ours */
+    if ((g_light_count || g_light_used) && g_job == 0 &&
+        board != g_job_board) {
+        char abuf[64];
+        DWORD gfxa = gfx_device();
+        int i;
+        g_job_board = board;
+        snprintf(abuf, sizeof(abuf), "  LIGHT: adopt board 0x%X", board);
+        log_mod(abuf);
+        if (gfxa) {
+            int vis = (g_lights_on && g_light_vis) ? 1 : 0;
+            for (i = 0; i < g_light_count && i < MAX_LIGHTS; i++) {
+                DWORD obj = g_light_objs[i];
+                if (!obj ||
+                    IsBadReadPtr((void*)obj, SCENEOBJECT_SIZE)) continue;
+                write_light_fields(obj, i, vis);
+                native_register(gfxa, LIGHT_SLOT_BASE + i, obj);
+            }
+        }
+    }
     /* heartbeat FIRST (before gfx check): silence itself is data */
     {
         DWORD now = GetTickCount();
@@ -1690,23 +1706,36 @@ static void light_frame(void) {
     g_frames++;
     /* slot detail ~1/sec (frame cadence): swap detector */
     if ((g_frames % 60) == 0) {
-        char hbuf[160];
-        DWORD s4 = 0;
+        char hbuf[192];
+        DWORD s4 = 0, s0 = 0;
         float fx = 0.0f, fy = 0.0f, fz = 0.0f;
-        int i;
-            if (!IsBadReadPtr((void*)(gfx + GFX_LIGHT_SLOTS), 32))
+        float nx = 0.0f, ny = 0.0f, nz = 0.0f;
+        int i, tp = -9, vs = -9;
+            if (!IsBadReadPtr((void*)(gfx + GFX_LIGHT_SLOTS), 32)) {
                 s4 = *(DWORD*)(gfx + GFX_LIGHT_SLOTS + 4 * 4);
+                s0 = *(DWORD*)(gfx + GFX_LIGHT_SLOTS);
+            }
             if (!g_seen_slot4) g_seen_slot4 = s4;
             if (g_light_used >= 0 && g_light_objs[0] &&
                 !IsBadReadPtr((void*)g_light_objs[0], SCENEOBJECT_SIZE)) {
                 fx = *(float*)((char*)g_light_objs[0] + SO_POS_X);
                 fy = *(float*)((char*)g_light_objs[0] + SO_POS_Y);
                 fz = *(float*)((char*)g_light_objs[0] + SO_POS_Z);
+                tp = *(int*)((char*)g_light_objs[0] + SO_TYPE);
+                vs = *(BYTE*)((char*)g_light_objs[0] + SO_VISIBLE);
+            }
+            if (s0 && !IsBadReadPtr((void*)s0, SCENEOBJECT_SIZE)) {
+                nx = *(float*)((char*)s0 + SO_POS_X);
+                ny = *(float*)((char*)s0 + SO_POS_Y);
+                nz = *(float*)((char*)s0 + SO_POS_Z);
             }
             snprintf(hbuf, sizeof(hbuf),
-                     "  LIGHT: beat f=%u slot4=0x%X obj0=0x%X pos=(%d,%d,%d)%s",
+                     "  LIGHT: beat f=%u slot4=0x%X obj0=0x%X pos=(%d,%d,%d) arr=(%d,%d,%d) t=%d v=%d s0=(%d,%d,%d)%s",
                      g_frames, s4, g_light_objs[0],
                      (int)fx, (int)fy, (int)fz,
+                     (int)g_light_pos[0][0], (int)g_light_pos[0][1],
+                     (int)g_light_pos[0][2], tp, vs,
+                     (int)nx, (int)ny, (int)nz,
                      (s4 && s4 != g_seen_slot4) ? " SWAPPED" : "");
             log_mod(hbuf);
             /* on swap, fingerprint all 8 slots once */
