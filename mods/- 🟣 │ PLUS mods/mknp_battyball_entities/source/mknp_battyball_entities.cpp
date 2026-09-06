@@ -124,6 +124,31 @@ static float    g_speed   = GRID_SPEED_DEFAULT;
 /* Mesh path — testcube.MESHWORLD is copied to levels\ at init */
 static char g_mesh_path[] = "levels\\testcube";
 
+static HMODULE mod_self(void);
+
+static int mesh_file_present(void) {
+char full[MAX_PATH];
+full[0] = '\0';
+HMODULE self = mod_self();
+if (self) GetModuleFileNameA(self, full, MAX_PATH);
+if (!full[0]) GetModuleFileNameA(NULL, full, MAX_PATH);
+/* game root = exe dir; levels\ under it */
+char* slash = NULL;
+for (char* p = full; *p; p++) if (*p == '\\') slash = p;
+if (slash) {
+    /* DLL may sit in Mods\: exe dir is one up from Mods, else same dir */
+    *(slash + 1) = '\0';
+    char cand[MAX_PATH];
+    snprintf(cand, sizeof(cand), "%slevels\\testcube.MESHWORLD", full);
+    if (GetFileAttributesA(cand) != INVALID_FILE_ATTRIBUTES) return 1;
+    snprintf(cand, sizeof(cand), "%s..\\levels\\testcube.MESHWORLD", full);
+    if (GetFileAttributesA(cand) != INVALID_FILE_ATTRIBUTES) return 1;
+    return 0;
+}
+return GetFileAttributesA("levels\\testcube.MESHWORLD") !=
+       INVALID_FILE_ATTRIBUTES;
+}
+
 /* Spawned object registry (for despawn) */
 static DWORD g_spawned_objs[MAX_SPAWNED];
 static char  g_spawned_names[MAX_SPAWNED][32];
@@ -326,6 +351,14 @@ static int find_grid_points(DWORD board) {
 static void spawn_grid_cube(DWORD board, float px, float py, float pz, int grid_num) {
     if (!board) return;
 
+    if (!mesh_file_present()) {
+        char mbuf[64];
+        snprintf(mbuf, sizeof(mbuf), "  GRID: no testcube mesh, skip %d",
+                 grid_num);
+        log_mod(mbuf);
+        return;
+    }
+
     DWORD app = g_api ? (DWORD)HBAPI(g_api).GetApp() : 0;
     if (!app || IsBadReadPtr((void*)app, 4)) { log_mod("  GRID: app=NULL"); return; }
     DWORD gfx_device = *(DWORD*)(app + APP_GFX_DEVICE);
@@ -364,13 +397,13 @@ static void spawn_grid_cube(DWORD board, float px, float py, float pz, int grid_
     }
 
     char buf[96];
-    snprintf(buf, sizeof(buf), "  GRID: spawned testcube(GRID%02d) at (%.1f,%.1f,%.1f) obj=0x%08X",
-             grid_num, px, py, pz, (DWORD)obj);
+    snprintf(buf, sizeof(buf), "  GRID: spawned testcube(GRID%d) at (%d,%d,%d) obj=0x%X",
+             grid_num, (int)px, (int)py, (int)pz, (DWORD)obj);
     log_mod(buf);
 
     if (g_spawned_count < MAX_SPAWNED) {
         g_spawned_objs[g_spawned_count] = (DWORD)obj;
-        snprintf(g_spawned_names[g_spawned_count], 32, "testcube(GRID%02d)", grid_num);
+        snprintf(g_spawned_names[g_spawned_count], 32, "testcube(GRID%d)", grid_num);
         g_spawned_count++;
     }
 }
@@ -437,12 +470,12 @@ static void start_grid_cycle(DWORD board) {
     int count = find_grid_points(board);
     if (count > 0) {
         char buf[64];
-        snprintf(buf, sizeof(buf), "  Found %d GRID points, starting cycle (speed=%.1fs)", count, g_speed);
+        snprintf(buf, sizeof(buf), "  Found %d GRID points, starting cycle (speed=%dms)", count, (int)(g_speed * 1000.0f));
         log_mod(buf);
         for (int pi = 0; pi < count; pi++) {
             char pbuf[96];
-            snprintf(pbuf, sizeof(pbuf), "  PT %d (%.1f,%.1f,%.1f)",
-                     pi + 1, g_pts_x[pi], g_pts_y[pi], g_pts_z[pi]);
+            snprintf(pbuf, sizeof(pbuf), "  PT %d (%d,%d,%d)",
+                     pi + 1, (int)g_pts_x[pi], (int)g_pts_y[pi], (int)g_pts_z[pi]);
             log_mod(pbuf);
         }
         g_current_grid = 1;
