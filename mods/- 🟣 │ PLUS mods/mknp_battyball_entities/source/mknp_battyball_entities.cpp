@@ -95,7 +95,7 @@
 #define MAX_LIGHTS          4
 #define LIGHT_SLOT_BASE     4        /* Neon owns 0-1, S3 re-registers from 0 */
 #define LIGHT_TYPE_POINT    1
-#define LIGHT_INTENSITY     5.0f     /* fixed material-color multiplier */
+#define LIGHT_INTENSITY     5.0f     /* default material-color multiplier */
 #define LIGHT_TEST_DX       0.0f     /* offset test done: glow is native */
 
 /* Level offsets */
@@ -206,12 +206,14 @@ static int   g_board_ready_delay = 0;   /* frames to wait for level build after 
 static DWORD g_light_objs[MAX_LIGHTS];   /* never freed, reused per level */
 static float g_light_pos[MAX_LIGHTS][3]; /* game coords */
 static float g_light_col[MAX_LIGHTS][3];
+static float g_light_mat[MAX_LIGHTS][3]; /* raw material ratio (pre-gain) */
 static int   g_light_src[MAX_LIGHTS];    /* 0 = S3 file light, 1 = POINT ref */
 static int   g_light_count = 0;          /* parsed (clamped to MAX_LIGHTS) */
 static int   g_light_used = 0;           /* slots currently registered */
 static int   g_light_vis = 1;            /* 0 while LIGHTSOFF */
 static bool  g_lights_on = true;         /* BATTY_LIGHTS toggle */
 static float g_light_range = 400.0f;     /* BATTY_LIGHT_RANGE slider */
+static float g_light_intensity = LIGHT_INTENSITY; /* BATTY_LIGHT_INTENSITY */
 static int   g_job = 0;                  /* text_render job: 0 none 1 build 2 refresh */
 static DWORD g_job_board = 0;
 
@@ -877,6 +879,9 @@ static int read_level_lights(const char* path) {
             g_light_col[total][0] = v[6];
             g_light_col[total][1] = v[7];
             g_light_col[total][2] = v[8];
+            g_light_mat[total][0] = v[6] / g_light_intensity;
+            g_light_mat[total][1] = v[7] / g_light_intensity;
+            g_light_mat[total][2] = v[8] / g_light_intensity;
             g_light_src[total] = 0;         /* S3 file light */
             total++;
         }
@@ -1256,9 +1261,12 @@ static void start_lights(DWORD board) {
                 got = 1;
             }
         }
-        g_light_col[li][0] = mr * LIGHT_INTENSITY;
-        g_light_col[li][1] = mg * LIGHT_INTENSITY;
-        g_light_col[li][2] = mb * LIGHT_INTENSITY;
+        g_light_col[li][0] = mr * g_light_intensity;
+        g_light_col[li][1] = mg * g_light_intensity;
+        g_light_col[li][2] = mb * g_light_intensity;
+        g_light_mat[li][0] = mr;
+        g_light_mat[li][1] = mg;
+        g_light_mat[li][2] = mb;
         g_light_src[li] = 1;
         g_light_count++;
         snprintf(pbuf, sizeof(pbuf),
@@ -1443,6 +1451,10 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
     s2.lowerBound = 50.0f; s2.upperBound = 3000.0f; s2.stepSize = 10.0f; s2.decimalPlaces = 0;
     HBAPI(api).CreateSlider(s2, (HamsterballAPI*)thisptr);
 
+    CustomSlider s3("BATTY_LIGHT_INTENSITY", "Light Intensity", LIGHT_INTENSITY);
+    s3.lowerBound = 0.0f; s3.upperBound = 20.0f; s3.stepSize = 0.5f; s3.decimalPlaces = 1;
+    HBAPI(api).CreateSlider(s3, (HamsterballAPI*)thisptr);
+
     log_mod("INIT Battyball Entities v1 (mod loaded)");
 }
 
@@ -1473,6 +1485,20 @@ static void __thiscall slider_change(void*, const char* id, float value) {
     if (strcmp(id, "BATTY_GRID_SPEED") == 0) g_speed = value;
     else if (strcmp(id, "BATTY_LIGHT_RANGE") == 0) {
         g_light_range = value < 10.0f ? 10.0f : value;
+        if (g_light_used || g_light_count) {
+            g_job = 2;
+            g_job_board = player_board();
+        }
+    }
+    else if (strcmp(id, "BATTY_LIGHT_INTENSITY") == 0) {
+        int i;
+        g_light_intensity = value < 0.0f ? 0.0f : value;
+        /* rescale parsed colors from stored material ratios (no re-parse) */
+        for (i = 0; i < g_light_count && i < MAX_LIGHTS; i++) {
+            g_light_col[i][0] = g_light_mat[i][0] * g_light_intensity;
+            g_light_col[i][1] = g_light_mat[i][1] * g_light_intensity;
+            g_light_col[i][2] = g_light_mat[i][2] * g_light_intensity;
+        }
         if (g_light_used || g_light_count) {
             g_job = 2;
             g_job_board = player_board();
