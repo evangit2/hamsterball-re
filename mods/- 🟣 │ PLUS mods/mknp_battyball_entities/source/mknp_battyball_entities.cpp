@@ -134,6 +134,7 @@ static float g_pts_x[MAX_GRID_POINTS];
 static float g_pts_y[MAX_GRID_POINTS];
 static float g_pts_z[MAX_GRID_POINTS];
 static int   g_grid_count = 0;
+static int   g_scan_logged = 0;   /* 1 after first detailed scan dump */
 
 /* Active level / board the current cycle belongs to */
 static DWORD g_active_board = 0;
@@ -243,18 +244,60 @@ static int find_grid_points(DWORD board) {
     DWORD sceneobj = get_sceneobj(board);
     if (!sceneobj) { log_mod("  GRID: sceneobj=NULL"); return 0; }
 
+    DWORD level = get_level(board);
+    char bname[32];
+    bname[0] = '\0';
+    if (!IsBadReadPtr((void*)(board + 0x29B4), 4)) {
+        char* bn = *(char**)(board + 0x29B4);
+        if (bn && !IsBadReadPtr(bn, 24)) {
+            int bi = 0;
+            while (bi < 31 && bn[bi]) { bname[bi] = bn[bi]; bi++; }
+            bname[bi] = '\0';
+        }
+    }
+
     DWORD s1_list = sceneobj + SCENEOBJ_S1_OFF;
-    if (IsBadReadPtr((void*)(s1_list + ALIST_COUNT), 4)) return 0;
+    if (IsBadReadPtr((void*)(s1_list + ALIST_COUNT), 4)) {
+        log_mod("  GRID: s1_list unreadable");
+        return 0;
+    }
     int s1_count = *(int*)(s1_list + ALIST_COUNT);
+    DWORD* s1_data = NULL;
+    if (!IsBadReadPtr((void*)(s1_list + ALIST_ITEMS), 4))
+        s1_data = *(DWORD**)(s1_list + ALIST_ITEMS);
+    {
+        char dbuf[128];
+        snprintf(dbuf, sizeof(dbuf),
+                 "  S1 board=0x%X lvl=0x%X sc=0x%X cnt=%d data=0x%X nm=%s",
+                 board, level, sceneobj, s1_count, (DWORD)s1_data, bname);
+        if (!g_scan_logged) log_mod(dbuf);
+        g_scan_logged = 1;
+    }
     if (s1_count <= 0 || s1_count > 1000) return 0;
 
-    DWORD* s1_data = *(DWORD**)(s1_list + ALIST_ITEMS);
     if (!s1_data || IsBadReadPtr(s1_data, s1_count * 4)) return 0;
 
+    int dumped = 0;
     for (int i = 0; i < s1_count && g_grid_count < MAX_GRID_POINTS; i++) {
         DWORD entry = s1_data[i];
         if (!entry || entry < 0x10000) continue;
         if (IsBadReadPtr((void*)entry, 16)) continue;
+
+        if (!g_scan_logged && dumped < 3) {
+            char nbuf[28];
+            nbuf[0] = '\0';
+            char* nm = *(char**)(entry + S1ENTRY_NAME);
+            if (nm && !IsBadReadPtr(nm, 20)) {
+                int ni = 0;
+                while (ni < 27 && nm[ni]) { nbuf[ni] = nm[ni]; ni++; }
+                nbuf[ni] = '\0';
+            }
+            char ebuf[96];
+            snprintf(ebuf, sizeof(ebuf), "  E%d=0x%X nm=%s",
+                     i, entry, nbuf);
+            log_mod(ebuf);
+            dumped++;
+        }
 
         char* name = *(char**)(entry + S1ENTRY_NAME);
         if (name && !IsBadReadPtr(name, 5)) {
@@ -513,6 +556,7 @@ static void __thiscall game_update(void*) {
                  board, g_active_board);
         log_mod(bbuf);
         g_active_board = board;
+        g_scan_logged = 0;
         g_board_ready_delay = 40;   /* wait ~40 frames for the level to finish building */
         g_cycle_started = false;
         g_spawned_count = 0;
