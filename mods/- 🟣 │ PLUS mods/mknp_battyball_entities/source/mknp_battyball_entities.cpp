@@ -1671,19 +1671,29 @@ static void light_frame(void) {
     DWORD gfx;
     board = player_board();
     if (!board || IsBadReadPtr((void*)board, 0x4400)) return;
+    /* heartbeat FIRST (before gfx check): silence itself is data */
+    {
+        DWORD now = GetTickCount();
+        if ((int)(now - g_last_beat) >= 1000) {
+            char hbuf[96];
+            DWORD gfx0 = gfx_device();
+            g_last_beat = now;
+            snprintf(hbuf, sizeof(hbuf),
+                     "  LIGHT: beat f=%u job=%d board=0x%X gfx=0x%X",
+                     g_frames, g_job, board, gfx0);
+            log_mod(hbuf);
+        }
+    }
     if (g_job != 0) { service_light_job(board, 0); return; }
     gfx = gfx_device();
     if (!gfx) return;
     g_frames++;
-    /* heartbeat 1/sec: proves text_render rate + catches slot swaps */
-    {
-        DWORD now = GetTickCount();
-        if ((int)(now - g_last_beat) >= 1000) {
-            char hbuf[160];
-            DWORD s4 = 0;
-            float fx = 0.0f, fy = 0.0f, fz = 0.0f;
-            int i;
-            g_last_beat = now;
+    /* slot detail ~1/sec (frame cadence): swap detector */
+    if ((g_frames % 60) == 0) {
+        char hbuf[160];
+        DWORD s4 = 0;
+        float fx = 0.0f, fy = 0.0f, fz = 0.0f;
+        int i;
             if (!IsBadReadPtr((void*)(gfx + GFX_LIGHT_SLOTS), 32))
                 s4 = *(DWORD*)(gfx + GFX_LIGHT_SLOTS + 4 * 4);
             if (!g_seen_slot4) g_seen_slot4 = s4;
@@ -1716,7 +1726,6 @@ static void light_frame(void) {
                     log_mod(sbuf);
                 }
             }
-        }
     }
     if ((g_light_count || g_light_used) && board == g_job_board)
         pin_lights(board, gfx);
