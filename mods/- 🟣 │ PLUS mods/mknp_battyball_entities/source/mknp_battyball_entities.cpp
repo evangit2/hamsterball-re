@@ -1195,7 +1195,7 @@ static void service_light_job(DWORD board, int quiet) {
                 int ok = (!IsBadReadPtr((void*)slotptr, 4) &&
                           *(DWORD*)slotptr == obj) ? 1 : 0;
                 snprintf(lbuf, sizeof(lbuf),
-                         "  LIGHT%d: slot %d src=%s pos=(%d,%d,%d) col=(%d,%d,%d) vis=%d ok=%d",
+                         "  LIGHT%d: slot %d src=%s pos=(%d,%d,%d) col=(%d,%d,%d) vis=%d ok=%d gain=%d",
                          i, LIGHT_SLOT_BASE + i,
                          g_light_src[i] ? "POINT" : "S3",
                          (int)g_light_pos[i][0], (int)g_light_pos[i][1],
@@ -1203,7 +1203,7 @@ static void service_light_job(DWORD board, int quiet) {
                          (int)(g_light_col[i][0] * 100.0f),
                          (int)(g_light_col[i][1] * 100.0f),
                          (int)(g_light_col[i][2] * 100.0f),
-                         vis, ok);
+                         vis, ok, (int)(g_light_intensity * 10.0f));
                 log_mod(lbuf);
             }
         } else if (obj) {
@@ -1492,7 +1492,11 @@ static void __thiscall slider_change(void*, const char* id, float value) {
     }
     else if (strcmp(id, "BATTY_LIGHT_INTENSITY") == 0) {
         int i;
+        char ibuf[48];
         g_light_intensity = value < 0.0f ? 0.0f : value;
+        snprintf(ibuf, sizeof(ibuf), "  LIGHT: intensity %d",
+                 (int)(g_light_intensity * 10.0f));
+        log_mod(ibuf);
         /* rescale parsed colors from stored material ratios (no re-parse) */
         for (i = 0; i < g_light_count && i < MAX_LIGHTS; i++) {
             g_light_col[i][0] = g_light_mat[i][0] * g_light_intensity;
