@@ -96,7 +96,7 @@
 #define LIGHT_SLOT_BASE     4        /* Neon owns 0-1, S3 re-registers from 0 */
 #define LIGHT_TYPE_POINT    1
 #define LIGHT_INTENSITY     5.0f     /* fixed material-color multiplier */
-#define LIGHT_TEST_DX       10.0f    /* TEMP test: shift POINT lights +X */
+#define LIGHT_TEST_DX       200.0f   /* TEMP test: shift POINT lights +X */
 
 /* Level offsets */
 #define LEVEL_SCENEOBJECT   0x480    /* SceneObject ptr */
