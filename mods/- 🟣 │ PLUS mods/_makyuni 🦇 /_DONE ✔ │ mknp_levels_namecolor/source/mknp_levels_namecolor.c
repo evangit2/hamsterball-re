@@ -10,6 +10,7 @@
  *   4. ARENA colors (timer blot during gameplay) — runtime polling board+0x1508
  *   5. ARENA menu colors (arena selection text) — patching PUSH floats in ArenaMenu_ctor
  *   6. ARENA names (arena selection text string) — patching PUSH string pointers
+ *   7. TIME TRIAL names — redirecting the shared table at 0x4F7080 to buffers
  *
  * Config file: mknp_levels_namecolor.txt (next to bass.dll)
  * Sections: [LEVELS] and [ARENAS]
@@ -157,6 +158,9 @@ static void load_real_bass(void)
 #define BOARD_COLOR_A    0x1514
 #define NUM_LEVELS       15
 #define NAME_BUF_SIZE    64
+/* Time-trial name table: 15 race-name pointers read by GetLevelName(idx).
+ * Patch entries to our buffers so TT follows config. Index 15+ untouched. */
+#define LEVEL_NAME_TABLE 0x004F7080
 
 typedef struct {
     const char *name;       /* config key name */
@@ -581,6 +585,12 @@ static void init_name_buffers(void) {
         char *buf = g_name_buffers + (15 + i) * NAME_BUF_SIZE;
         lstrcpyA(buf, g_arenas[i].default_name);
         patch_dword(g_arenas[i].name_push_addr + 1, (DWORD)buf);
+    }
+    /* Redirect the shared level-name table (Time Trials etc.) at init.
+     * Buffers refresh live via update_name_buffers(), so TT follows edits. */
+    for (int i = 0; i < NUM_LEVELS; i++) {
+        patch_dword(LEVEL_NAME_TABLE + (DWORD)(i * 4),
+                    (DWORD)(g_name_buffers + i * NAME_BUF_SIZE));
     }
 }
 
