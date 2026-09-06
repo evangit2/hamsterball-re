@@ -728,7 +728,7 @@ static void __thiscall game_update(void*) {
     /* Time-based cycling (slider seconds x per-level multiplier) */
     DWORD now = GetTickCount();
     int wait_ms = (int)(g_speed * g_mult * 1000.0f);
-    if (wait_ms < 500) wait_ms = 500;
+    if (wait_ms < 10) wait_ms = 10;
     if ((int)(now - g_last_switch_tick) < wait_ms) return;
 
     /* Advance to next GRID */
