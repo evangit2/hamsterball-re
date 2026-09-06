@@ -210,7 +210,7 @@ static float g_light_range = 400.0f;     /* BATTY_LIGHT_RANGE slider */
 static int   g_job = 0;                  /* text_render job: 0 none 1 build 2 refresh */
 static DWORD g_job_board = 0;
 
-/* POINTnn S1 ref positions (case-insensitive match) for ref-driven lights */
+/* POINT/LIGHT S1 ref positions (case-insensitive) for ref-driven lights */
 static float g_ppt_x[MAX_LIGHTS];
 static float g_ppt_y[MAX_LIGHTS];
 static float g_ppt_z[MAX_LIGHTS];
@@ -235,6 +235,13 @@ static const char* nc_istrstr(const char* hay, const char* needle) {
         if (k == nl) return h;
     }
     return NULL;
+}
+
+/* True if an S1 ref name marks a light (POINT01, Point01, LIGHT01...). */
+static int is_light_ref(const char* nm) {
+    if (nc_istrstr(nm, "POINT") != NULL) return 1;
+    if (nc_istrstr(nm, "LIGHT") != NULL) return 1;
+    return 0;
 }
 
 /* Time-based cycle state */
@@ -449,8 +456,7 @@ static int find_grid_points(DWORD board) {
                 }
                 g_grid_count++;
             }
-            if (nc_istrstr(name, "POINT") != NULL &&
-                g_ppt_count < MAX_LIGHTS) {
+            if (is_light_ref(name) && g_ppt_count < MAX_LIGHTS) {
                 g_ppt_x[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_X);
                 g_ppt_y[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_Y);
                 g_ppt_z[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_Z);
@@ -465,7 +471,7 @@ static int find_grid_points(DWORD board) {
                 g_pts_z[g_grid_count] = *(float*)(entry + S1ENTRY_POS_Z);
                 g_grid_count++;
             }
-            if (nc_istrstr((const char*)entry, "POINT") != NULL &&
+            if (is_light_ref((const char*)entry) &&
                 g_ppt_count < MAX_LIGHTS) {
                 g_ppt_x[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_X);
                 g_ppt_y[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_Y);
@@ -1007,6 +1013,12 @@ static void start_lights(DWORD board) {
         if (n < 0) log_mod("  LIGHT: parse failed, S3 skipped");
     }
     /* POINTnn refs (white) fill whatever slots S3 left free */
+    {
+        char cbuf[64];
+        snprintf(cbuf, sizeof(cbuf), "  LIGHT: %d POINT/LIGHT ref(s) in S1",
+                 g_ppt_count);
+        log_mod(cbuf);
+    }
     for (i = 0; i < g_ppt_count && g_light_count < MAX_LIGHTS; i++) {
         int li = g_light_count;
         char pbuf[96];
