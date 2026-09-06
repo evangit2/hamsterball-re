@@ -179,6 +179,7 @@ static int   g_board_ready_delay = 0;   /* frames to wait for level build after 
 /* Time-based cycle state */
 static DWORD g_last_switch_tick = 0;    /* GetTickCount() when current cube spawned */
 static DWORD g_prev_tick = 0;           /* last frame tick (pause freeze math) */
+static DWORD g_last_switch_log = 0;     /* last SWITCH line (log throttle) */
 static int   g_current_grid = 1;        /* 1-based current GRID (1 = GRID01) */
 static bool  g_cycle_started = false;
 
@@ -217,20 +218,31 @@ static HMODULE mod_self(void) {
     return g_module;
 }
 
-static void log_mod(const char* msg) {
-    char path[MAX_PATH];
-    path[0] = '\0';
+static char g_log_path[MAX_PATH];   /* resolved once at init */
+
+static void resolve_log_path(char* out) {
+    out[0] = '\0';
     HMODULE self = mod_self();
-    if (self) GetModuleFileNameA(self, path, MAX_PATH);
-    if (!path[0]) GetModuleFileNameA(NULL, path, MAX_PATH);
+    if (self) GetModuleFileNameA(self, out, MAX_PATH);
+    if (!out[0]) GetModuleFileNameA(NULL, out, MAX_PATH);
     char* slash = NULL;
-    for (char* p = path; *p; p++) if (*p == '\\') slash = p;
+    for (char* p = out; *p; p++) if (*p == '\\') slash = p;
     if (slash) {
         strncpy(slash + 1, "mknp_battyball_entities.log",
-                MAX_PATH - (slash + 1 - path) - 1);
+                MAX_PATH - (slash + 1 - out) - 1);
     } else {
-        strncpy(path, "mknp_battyball_entities.log", MAX_PATH - 1);
+        strncpy(out, "mknp_battyball_entities.log", MAX_PATH - 1);
+        out[MAX_PATH - 1] = '\0';
+    }
+}
+
+static void log_mod(const char* msg) {
+    char path[MAX_PATH];
+    if (g_log_path[0]) {
+        strncpy(path, g_log_path, MAX_PATH);
         path[MAX_PATH - 1] = '\0';
+    } else {
+        resolve_log_path(path);
     }
     HANDLE f = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL,
                            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -653,6 +665,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
     MEMORY_BASIC_INFORMATION mbi;
     VirtualQuery((void*)&init_impl, &mbi, sizeof(mbi));
     g_module = (HMODULE)mbi.AllocationBase;
+    resolve_log_path(g_log_path);
 
     /* Copy testcube.MESHWORLD (next to DLL) into the game's levels\ folder.
      * The DLL sits in Mods\; levels\ is one level up in the game root. */
@@ -793,32 +806,39 @@ static void __thiscall game_update(void*) {
     if (wait_ms < 10) wait_ms = 10;
     if ((int)(now - g_last_switch_tick) < wait_ms) return;
 
-    /* Advance to next GRID (show/hide only — everything preloaded) */
+    /* Advance to next GRID (show/hide only — everything preloaded).
+     * Frame-skipping: if several intervals elapsed, jump them in ONE
+     * hide/show pair. Switch logs throttled to ~2/sec at high speed. */
     if (!g_order_count) return;
     {
         int old_ord = g_current_grid;
-        int new_ord = old_ord + 1;
-        char sbuf[128];
-        if (new_ord >= g_order_count) new_ord = 0;
-        snprintf(sbuf, sizeof(sbuf), "SWITCH %d->%d (pts=%d preloaded=%d upd=%d rnd=%d)",
-                 g_order[old_ord] + 1, g_order[new_ord] + 1,
-                 g_grid_count, g_spawned_count,
-                 list_count(board + BOARD_UPDATE_LIST),
-                 list_count(board + BOARD_RENDER_LIST));
-        log_mod(sbuf);
+        int new_ord;
+        int steps = 1;
+        int elapsed = (int)(now - g_last_switch_tick);
+        if (wait_ms > 0) {
+            steps = elapsed / wait_ms;
+            if (steps < 1) steps = 1;
+            if (steps > 64) steps = 64;
+        }
+        new_ord = (old_ord + steps) % g_order_count;
+        if ((int)(now - g_last_switch_log) >= 500 || steps > 1) {
+            char sbuf[128];
+            snprintf(sbuf, sizeof(sbuf), "SWITCH %d->%d (pts=%d preloaded=%d upd=%d rnd=%d skip=%d)",
+                     g_order[old_ord] + 1, g_order[new_ord] + 1,
+                     g_grid_count, g_spawned_count,
+                     list_count(board + BOARD_UPDATE_LIST),
+                     list_count(board + BOARD_RENDER_LIST),
+                     steps - 1);
+            log_mod(sbuf);
+            g_last_switch_log = now;
+        }
         g_current_grid = new_ord;
-        grid_hide(board, g_spawned_objs[g_order[old_ord]]);
-        grid_show(board, g_spawned_objs[g_order[new_ord]]);
+        if (new_ord != old_ord) {
+            grid_hide(board, g_spawned_objs[g_order[old_ord]]);
+            grid_show(board, g_spawned_objs[g_order[new_ord]]);
+        }
+        g_last_switch_tick += (DWORD)(steps * wait_ms);
     }
-    {
-        char pbuf[96];
-        snprintf(pbuf, sizeof(pbuf), "POST preloaded=%d upd=%d rnd=%d",
-                 g_spawned_count,
-                 list_count(board + BOARD_UPDATE_LIST),
-                 list_count(board + BOARD_RENDER_LIST));
-        log_mod(pbuf);
-    }
-    g_last_switch_tick = now;
     g_prev_tick = now;
 }
 
