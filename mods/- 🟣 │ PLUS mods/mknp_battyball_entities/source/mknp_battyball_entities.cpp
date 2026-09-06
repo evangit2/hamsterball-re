@@ -168,6 +168,8 @@ static float g_pts_z[MAX_GRID_POINTS];
 static char  g_grid_names[MAX_GRID_POINTS][32];   /* S1 ref name per point */
 static char  g_grid_mesh[MAX_GRID_POINTS][MAX_PATH]; /* ctor path of own mesh */
 static int   g_grid_own[MAX_GRID_POINTS];         /* 1 = own mesh extracted */
+static int   g_grid_num[MAX_GRID_POINTS];         /* numeric GRID id (sort key) */
+static char  g_grid_digits[MAX_GRID_POINTS][8];   /* digit string ("01") */
 static int   g_grid_count = 0;
 static int   g_scan_logged = 0;   /* 1 after first detailed scan dump */
 static char  g_levels_dir[MAX_PATH];  /* game levels\ dir, trailing backslash */
@@ -605,11 +607,28 @@ static void resolve_grid_files(void) {
     for (i = 0; i < g_grid_count; i++) {
         char digits[8];
         char xbuf[128];
+        int num = 9999;
         if (!grid_number(g_grid_names[i], digits, sizeof(digits))) {
+            digits[0] = '\0';
+            g_grid_num[i] = num;
+            g_grid_digits[i][0] = '\0';
             snprintf(xbuf, sizeof(xbuf), "  GRID%d %s: no number, skip",
                      i + 1, g_grid_names[i]);
             log_mod(xbuf);
             continue;
+        }
+        for (int di = 0; digits[di]; di++) {
+            if (num == 9999) num = 0;
+            num = num * 10 + (digits[di] - '0');
+        }
+        g_grid_num[i] = num;
+        {
+            int ki = 0;
+            while (ki < 7 && digits[ki]) {
+                g_grid_digits[i][ki] = digits[ki];
+                ki++;
+            }
+            g_grid_digits[i][ki] = '\0';
         }
         snprintf(g_grid_mesh[i], sizeof(g_grid_mesh[i]),
                  "levels\\Grid%s", digits);
@@ -693,6 +712,25 @@ static void start_grid_cycle(DWORD board) {
              * rescan levels\ + reload files continuously (extreme slowdown) */
             g_cycle_started = true;
             return;
+        }
+        /* numeric order: GRID01->GRID02->... regardless of S1 list order */
+        for (int si = 1; si < g_order_count; si++) {
+            int key = g_order[si];
+            int sj = si - 1;
+            while (sj >= 0 && g_grid_num[g_order[sj]] > g_grid_num[key]) {
+                g_order[sj + 1] = g_order[sj];
+                sj--;
+            }
+            g_order[sj + 1] = key;
+        }
+        {
+            char obuf[160];
+            int oi = 0;
+            oi += snprintf(obuf + oi, sizeof(obuf) - oi, "  GRID order:");
+            for (int qi = 0; qi < g_order_count && oi < 140; qi++)
+                oi += snprintf(obuf + oi, sizeof(obuf) - oi, " %s",
+                               g_grid_digits[g_order[qi]]);
+            log_mod(obuf);
         }
         g_current_grid = 0;   /* index into g_order */
         grid_show(board, g_spawned_objs[g_order[0]]);
@@ -881,8 +919,8 @@ static void __thiscall game_update(void*) {
         new_ord = (old_ord + steps) % g_order_count;
         if ((int)(now - g_last_switch_log) >= 500 || steps > 1) {
             char sbuf[128];
-            snprintf(sbuf, sizeof(sbuf), "SWITCH %d->%d (pts=%d preloaded=%d upd=%d rnd=%d skip=%d)",
-                     g_order[old_ord] + 1, g_order[new_ord] + 1,
+            snprintf(sbuf, sizeof(sbuf), "SWITCH GRID%s->GRID%s (pts=%d preloaded=%d upd=%d rnd=%d skip=%d)",
+                     g_grid_digits[g_order[old_ord]], g_grid_digits[g_order[new_ord]],
                      g_grid_count, g_spawned_count,
                      list_count(board + BOARD_UPDATE_LIST),
                      list_count(board + BOARD_RENDER_LIST),
