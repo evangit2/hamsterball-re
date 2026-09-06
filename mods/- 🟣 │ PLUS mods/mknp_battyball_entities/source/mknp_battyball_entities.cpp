@@ -171,24 +171,56 @@ static DWORD player_board(void) {
     return (DWORD)scene;
 }
 
+static HMODULE mod_self(void) {
+    if (g_module) return g_module;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery((void*)mod_self, &mbi, sizeof(mbi)))
+        g_module = (HMODULE)mbi.AllocationBase;
+    return g_module;
+}
+
 static void log_mod(const char* msg) {
-    if (!g_module) return;
     char path[MAX_PATH];
-    GetModuleFileNameA(g_module, path, MAX_PATH);
-    /* strip filename -> folder */
-    char* slash = path;
+    path[0] = '\0';
+    HMODULE self = mod_self();
+    if (self) GetModuleFileNameA(self, path, MAX_PATH);
+    if (!path[0]) GetModuleFileNameA(NULL, path, MAX_PATH);
+    char* slash = NULL;
     for (char* p = path; *p; p++) if (*p == '\\') slash = p;
-    *slash = '\0';
-    strncpy(slash + 1, "mknp_battyball_entities.log", MAX_PATH - (slash + 1 - path) - 1);
+    if (slash) {
+        strncpy(slash + 1, "mknp_battyball_entities.log",
+                MAX_PATH - (slash + 1 - path) - 1);
+    } else {
+        strncpy(path, "mknp_battyball_entities.log", MAX_PATH - 1);
+        path[MAX_PATH - 1] = '\0';
+    }
     HANDLE f = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_READ, NULL,
                            OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (f != INVALID_HANDLE_VALUE) {
-        SetFilePointer(f, 0, NULL, FILE_END);
-        DWORD wrote = 0;
-        WriteFile(f, msg, (DWORD)strlen(msg), &wrote, NULL);
-        WriteFile(f, "\r\n", 2, &wrote, NULL);
-        CloseHandle(f);
+    if (f == INVALID_HANDLE_VALUE) {
+        /* Fallback: game dir via exe path */
+        char exep[MAX_PATH];
+        if (GetModuleFileNameA(NULL, exep, MAX_PATH) > 0) {
+            char* s2 = NULL;
+            for (char* p = exep; *p; p++) if (*p == '\\') s2 = p;
+            if (s2) {
+                strncpy(s2 + 1, "mknp_battyball_entities.log",
+                        MAX_PATH - (s2 + 1 - exep) - 1);
+                f = CreateFileA(exep, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                                OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+            }
+        }
+        if (f == INVALID_HANDLE_VALUE) return;
     }
+    SetFilePointer(f, 0, NULL, FILE_END);
+    DWORD wrote = 0;
+    WriteFile(f, msg, (DWORD)strlen(msg), &wrote, NULL);
+    WriteFile(f, "\r\n", 2, &wrote, NULL);
+    CloseHandle(f);
+}
+
+static int list_count(DWORD list) {
+    if (!list || IsBadReadPtr((void*)(list + ALIST_COUNT), 4)) return -1;
+    return *(int*)(list + ALIST_COUNT);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -364,6 +396,12 @@ static void start_grid_cycle(DWORD board) {
         char buf[64];
         snprintf(buf, sizeof(buf), "  Found %d GRID points, starting cycle (speed=%.1fs)", count, g_speed);
         log_mod(buf);
+        for (int pi = 0; pi < count; pi++) {
+            char pbuf[96];
+            snprintf(pbuf, sizeof(pbuf), "  PT %d (%.1f,%.1f,%.1f)",
+                     pi + 1, g_pts_x[pi], g_pts_y[pi], g_pts_z[pi]);
+            log_mod(pbuf);
+        }
         g_current_grid = 1;
         spawn_grid_cube(board, g_pts_x[0], g_pts_y[0], g_pts_z[0], 1);
         g_last_switch_tick = GetTickCount();
@@ -427,6 +465,8 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
     CustomSlider s1("BATTY_GRID_SPEED", "Grid Speed (s)", GRID_SPEED_DEFAULT);
     s1.lowerBound = 0.5f; s1.upperBound = 30.0f; s1.stepSize = 0.5f; s1.decimalPlaces = 1;
     HBAPI(api).CreateSlider(s1, (HamsterballAPI*)thisptr);
+
+    log_mod("INIT Battyball Entities v1 (mod loaded)");
 }
 
 static void __thiscall button_toggle(void*, const char* id, bool state) {
@@ -468,6 +508,10 @@ static void __thiscall game_update(void*) {
 
     /* Detect board change (new level loaded, or tournament board reuse) */
     if (board != g_active_board) {
+        char bbuf[64];
+        snprintf(bbuf, sizeof(bbuf), "NEWBOARD 0x%08X (was 0x%08X)",
+                 board, g_active_board);
+        log_mod(bbuf);
         g_active_board = board;
         g_board_ready_delay = 40;   /* wait ~40 frames for the level to finish building */
         g_cycle_started = false;
@@ -489,12 +533,30 @@ static void __thiscall game_update(void*) {
     if ((int)(now - g_last_switch_tick) < wait_ms) return;
 
     /* Advance to next GRID */
+    {
+        char sbuf[128];
+        snprintf(sbuf, sizeof(sbuf), "SWITCH %d->%d (pts=%d spawned=%d upd=%d rnd=%d)",
+                 g_current_grid,
+                 g_current_grid + 1 > g_grid_count ? 1 : g_current_grid + 1,
+                 g_grid_count, g_spawned_count,
+                 list_count(board + BOARD_UPDATE_LIST),
+                 list_count(board + BOARD_RENDER_LIST));
+        log_mod(sbuf);
+    }
     g_current_grid++;
     if (g_current_grid > g_grid_count) g_current_grid = 1;
 
     despawn_all(board);
     int idx = g_current_grid - 1;
     spawn_grid_cube(board, g_pts_x[idx], g_pts_y[idx], g_pts_z[idx], g_current_grid);
+    {
+        char pbuf[96];
+        snprintf(pbuf, sizeof(pbuf), "POST spawned=%d upd=%d rnd=%d",
+                 g_spawned_count,
+                 list_count(board + BOARD_UPDATE_LIST),
+                 list_count(board + BOARD_RENDER_LIST));
+        log_mod(pbuf);
+    }
     g_last_switch_tick = now;
 }
 
