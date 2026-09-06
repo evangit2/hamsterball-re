@@ -575,5 +575,60 @@ static int gm_find_and_extract(const char* levels_dir, const char* want1,
     }
     return 0;
 }
+/* FNV-1a over S1 (count + every ref name, no NUL). Runtime side feeds the
+ * same stream, so equal hash + equal count identifies the level file. */
+static unsigned gm_s1_hash(const unsigned char* data, unsigned len,
+                           int* out_count) {
+    GmCur c;
+    unsigned h = 2166136261u;
+    int n, i;
+    if (out_count) *out_count = 0;
+    if (!data || len < 4) return 0;
+    c.p = data;
+    c.end = data + len;
+    n = gm_i32(&c);
+    if (n < 0 || n > 100000) return 0;
+    if (out_count) *out_count = n;
+    h ^= (unsigned)(n & 0xFF);
+    h *= 16777619u;
+    h ^= (unsigned)((n >> 8) & 0xFF);
+    h *= 16777619u;
+    h ^= (unsigned)((n >> 16) & 0xFF);
+    h *= 16777619u;
+    h ^= (unsigned)((n >> 24) & 0xFF);
+    h *= 16777619u;
+    for (i = 0; i < n; i++) {
+        int ln, k;
+        if (!gm_need(&c, 4)) return 0;
+        ln = gm_i32(&c);
+        if (ln < 1 || ln > 1024 || !gm_need(&c, (unsigned)ln)) return 0;
+        for (k = 0; k < ln - 1; k++) {
+            h ^= c.p[k];
+            h *= 16777619u;
+        }
+        c.p += (unsigned)ln;
+        if (!gm_need(&c, 24 + 4)) return 0;
+        c.p += 24;
+        {
+            unsigned char hm = *c.p;
+            c.p += 4;
+            if (hm) {
+                unsigned ht;
+                int tl;
+                if (!gm_need(&c, 64 + 4 + 4 + 4)) return 0;
+                c.p += 64 + 4 + 4;
+                ht = gm_u32(&c);
+                if (ht == 1) {
+                    if (!gm_need(&c, 4)) return 0;
+                    tl = gm_i32(&c);
+                    if (tl < 1 || tl > 1024 || !gm_need(&c, (unsigned)tl))
+                        return 0;
+                    c.p += (unsigned)tl;
+                }
+            }
+        }
+    }
+    return h;
+}
 
 #endif /* GRIDMESH_H */

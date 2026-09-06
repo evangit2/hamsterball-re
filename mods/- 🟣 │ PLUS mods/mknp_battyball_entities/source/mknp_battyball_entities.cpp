@@ -48,6 +48,7 @@
 #define snprintf nc_snprintf
 
 #include "gridmesh.h"
+#include "gridset.h"
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Game addresses + offsets (verified against mknp_custom_entities / Hamsterball.exe)
@@ -272,6 +273,8 @@ static DWORD get_sceneobj(DWORD board) {
 
 static int find_grid_points(DWORD board) {
     g_grid_count = 0;
+    g_s1_hash = 2166136261u;
+    g_s1_count = 0;
     DWORD sceneobj = get_sceneobj(board);
     if (!sceneobj) { log_mod("  GRID: sceneobj=NULL"); return 0; }
 
@@ -308,11 +311,29 @@ static int find_grid_points(DWORD board) {
 
     if (!s1_data || IsBadReadPtr(s1_data, s1_count * 4)) return 0;
 
+    g_s1_count = s1_count;
+    s1_feed_byte((unsigned char)(s1_count & 0xFF));
+    s1_feed_byte((unsigned char)((s1_count >> 8) & 0xFF));
+    s1_feed_byte((unsigned char)((s1_count >> 16) & 0xFF));
+    s1_feed_byte((unsigned char)((s1_count >> 24) & 0xFF));
+
     int dumped = 0;
     for (int i = 0; i < s1_count && g_grid_count < MAX_GRID_POINTS; i++) {
         DWORD entry = s1_data[i];
         if (!entry || entry < 0x10000) continue;
         if (IsBadReadPtr((void*)entry, 16)) continue;
+
+        /* fingerprint: every readable ref name feeds the level hash */
+        {
+            char* hn = *(char**)(entry + S1ENTRY_NAME);
+            if (hn && !IsBadReadPtr(hn, 64)) {
+                int hi = 0;
+                while (hi < 63 && hn[hi]) {
+                    s1_feed_byte((unsigned char)hn[hi]);
+                    hi++;
+                }
+            }
+        }
 
         if (!g_scan_logged && dumped < 3) {
             char nbuf[28];
@@ -534,7 +555,8 @@ static void start_grid_cycle(DWORD board) {
     int count = find_grid_points(board);
     if (count > 0) {
         char buf[64];
-        snprintf(buf, sizeof(buf), "  Found %d GRID points, starting cycle (speed=%dms)", count, (int)(g_speed * 1000.0f));
+        g_mult = gridset_level_mult(g_levels_dir, g_s1_hash, g_s1_count);
+        snprintf(buf, sizeof(buf), "  Found %d GRID points, starting cycle (speed=%dms)", count, (int)(g_speed * g_mult * 1000.0f));
         log_mod(buf);
         for (int pi = 0; pi < count; pi++) {
             char pbuf[96];
@@ -583,6 +605,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
         char* slash = mod_path;
         for (char* p = mod_path; *p; p++) if (*p == '\\') slash = p;
         *slash = '\0';   /* folder containing the DLL */
+        gridset_init(mod_path);
         char src[MAX_PATH];
         snprintf(src, sizeof(src), "%s\\testcube.MESHWORLD", mod_path);
 
@@ -691,9 +714,9 @@ static void __thiscall game_update(void*) {
         return;
     }
 
-    /* Time-based cycling */
+    /* Time-based cycling (slider seconds x per-level multiplier) */
     DWORD now = GetTickCount();
-    int wait_ms = (int)(g_speed * 1000);
+    int wait_ms = (int)(g_speed * g_mult * 1000.0f);
     if (wait_ms < 500) wait_ms = 500;
     if ((int)(now - g_last_switch_tick) < wait_ms) return;
 
