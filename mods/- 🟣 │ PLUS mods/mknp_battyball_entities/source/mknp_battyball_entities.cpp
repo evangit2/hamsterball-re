@@ -101,7 +101,7 @@
 /* Config defaults */
 #define GRID_SPEED_DEFAULT  3.0f
 #define MAX_GRID_POINTS     32
-#define MAX_SPAWNED         16
+#define MAX_SPAWNED         32   /* one preloaded slot per GRID point */
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Native function typedefs
@@ -157,6 +157,9 @@ return GetFileAttributesA("levels\\testcube.MESHWORLD") !=
 static DWORD g_spawned_objs[MAX_SPAWNED];
 static char  g_spawned_names[MAX_SPAWNED][32];
 static int   g_spawned_count = 0;
+/* Cycle order: point indices that preloaded OK (skips mesh-less points) */
+static int   g_order[MAX_GRID_POINTS];
+static int   g_order_count = 0;
 
 /* GRID points found in the current level */
 static float g_pts_x[MAX_GRID_POINTS];
@@ -384,11 +387,15 @@ static int find_grid_points(DWORD board) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Spawn / despawn (mirrors cEnt_spawn_testcube_at / cEnt_despawn_object)
+ * Preload model: all GRID objects are created once at level start (mesh
+ * load + ctor). Switches only move list membership (show/hide) — no disk,
+ * no ctor/dtor. Full destroy happens at level quit (despawn_all).
  * ═══════════════════════════════════════════════════════════════════════════ */
-static void spawn_grid_cube(DWORD board, float px, float py, float pz,
-                            int grid_num, const char* mesh_path) {
-    if (!board) return;
+
+/* Create the object for a GRID point (NOT list-registered). NULL on failure. */
+static void* create_grid_cube(DWORD board, float px, float py, float pz,
+                              int grid_num, const char* mesh_path) {
+    if (!board) return NULL;
 
     const char* path = mesh_path;
     if (!path || !path[0]) {
@@ -400,55 +407,79 @@ static void spawn_grid_cube(DWORD board, float px, float py, float pz,
         snprintf(mbuf, sizeof(mbuf), "  GRID: no mesh for %d, skip",
                  grid_num);
         log_mod(mbuf);
-        return;
+        return NULL;
     }
 
     DWORD app = g_api ? (DWORD)HBAPI(g_api).GetApp() : 0;
-    if (!app || IsBadReadPtr((void*)app, 4)) { log_mod("  GRID: app=NULL"); return; }
+    if (!app || IsBadReadPtr((void*)app, 4)) { log_mod("  GRID: app=NULL"); return NULL; }
     DWORD gfx_device = *(DWORD*)(app + APP_GFX_DEVICE);
-    if (!gfx_device || IsBadReadPtr((void*)gfx_device, 4)) { log_mod("  GRID: gfx_device=NULL"); return; }
+    if (!gfx_device || IsBadReadPtr((void*)gfx_device, 4)) { log_mod("  GRID: gfx_device=NULL"); return NULL; }
 
     /* Load mesh via MeshWorld_ctor */
     void* mesh = g_op_new(MESHWORLD_SIZE);
-    if (!mesh) { log_mod("  GRID: failed to alloc mesh"); return; }
+    if (!mesh) { log_mod("  GRID: failed to alloc mesh"); return NULL; }
     memset(mesh, 0, MESHWORLD_SIZE);
     void* loaded = g_mw_ctor(mesh, (void*)gfx_device, path);
-    if (!loaded) { log_mod("  GRID: MeshWorld_ctor failed"); return; }
+    if (!loaded) { log_mod("  GRID: MeshWorld_ctor failed"); return NULL; }
 
     /* Allocate + construct PopCylinder object */
     void* obj = g_op_new(POPCYLINDER_SIZE);
-    if (!obj) { log_mod("  GRID: failed to alloc PopCylinder"); return; }
+    if (!obj) { log_mod("  GRID: failed to alloc PopCylinder"); return NULL; }
     memset(obj, 0, POPCYLINDER_SIZE);
     void* result = g_pc_ctor(obj, (void*)board, px, py, pz, mesh);
-    if (!result) { log_mod("  GRID: PopCylinder_ctor failed"); return; }
-
-    /* Register into the game's update / render / collision lists */
-    g_append((void*)(board + BOARD_UPDATE_LIST), obj);
-    g_append((void*)(board + BOARD_RENDER_LIST), obj);
-
-    DWORD col_obj = *(DWORD*)((char*)obj + PC_COLLISION_OBJ);
-    if (col_obj) {
-        g_append((void*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
-        DWORD scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
-        if (scene_col) g_append((void*)(scene_col + 0x18), (void*)col_obj);
-    }
-
-    /* scene spatial tree */
-    DWORD level = get_level(board);
-    if (level) {
-        DWORD sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
-        if (sceneobj) g_append((void*)(sceneobj + 0x1C), obj);
-    }
+    if (!result) { log_mod("  GRID: PopCylinder_ctor failed"); return NULL; }
 
     char buf[96];
-    snprintf(buf, sizeof(buf), "  GRID: spawned %s at (%d,%d,%d) obj=0x%X",
+    snprintf(buf, sizeof(buf), "  GRID: preloaded %s at (%d,%d,%d) obj=0x%X",
              path, (int)px, (int)py, (int)pz, (DWORD)obj);
     log_mod(buf);
+    return obj;
+}
 
-    if (g_spawned_count < MAX_SPAWNED) {
-        g_spawned_objs[g_spawned_count] = (DWORD)obj;
-        snprintf(g_spawned_names[g_spawned_count], 32, "%s", path);
-        g_spawned_count++;
+/* Show: register a preloaded object into update/render/collision lists */
+static void grid_show(DWORD board, DWORD obj) {
+    DWORD col_obj;
+    DWORD scene_col;
+    DWORD level;
+    DWORD sceneobj;
+    if (!board || !obj) return;
+    if (IsBadReadPtr((void*)obj, 0x10D0)) return;
+    g_append((void*)(board + BOARD_UPDATE_LIST), (void*)obj);
+    g_append((void*)(board + BOARD_RENDER_LIST), (void*)obj);
+    col_obj = *(DWORD*)((char*)obj + PC_COLLISION_OBJ);
+    if (col_obj) {
+        g_append((void*)(board + BOARD_COLLISION_LIST), (void*)col_obj);
+        scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
+        if (scene_col) g_append((void*)(scene_col + 0x18), (void*)col_obj);
+    }
+    level = get_level(board);
+    if (level) {
+        sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
+        if (sceneobj) g_append((void*)(sceneobj + 0x1C), (void*)obj);
+    }
+}
+
+/* Hide: unregister from all lists, object stays alive for later show */
+static void grid_hide(DWORD board, DWORD obj) {
+    DWORD col_obj;
+    DWORD scene_col;
+    DWORD level;
+    DWORD sceneobj;
+    if (!board || !obj) return;
+    if (IsBadReadPtr((void*)obj, 0x10D0)) return;
+    col_obj = *(DWORD*)((char*)obj + PC_COLLISION_OBJ);
+    if (col_obj) {
+        g_remove((void*)(board + BOARD_COLLISION_LIST), (int)col_obj);
+        scene_col = *(DWORD*)(board + BOARD_SCENE_OBJ);
+        if (scene_col) g_remove((void*)(scene_col + 0x18), (int)col_obj);
+    }
+    g_remove((void*)(board + BOARD_UPDATE_LIST), (int)obj);
+    g_remove((void*)(board + BOARD_SCENE_UPDATE_LIST), (int)obj);
+    g_remove((void*)(board + BOARD_RENDER_LIST), (int)obj);
+    level = get_level(board);
+    if (level) {
+        sceneobj = *(DWORD*)(level + LEVEL_SCENEOBJECT);
+        if (sceneobj) g_remove((void*)(sceneobj + 0x1C), (int)obj);
     }
 }
 
@@ -491,14 +522,15 @@ static void despawn_object(DWORD board, DWORD obj) {
 }
 
 static void despawn_all(DWORD board) {
-    while (g_spawned_count > 0) {
-        despawn_object(board, g_spawned_objs[0]);
-        for (int j = 0; j < g_spawned_count - 1; j++) {
-            g_spawned_objs[j] = g_spawned_objs[j + 1];
-            strncpy(g_spawned_names[j], g_spawned_names[j + 1], 32);
+    int i;
+    for (i = 0; i < MAX_SPAWNED; i++) {
+        if (g_spawned_objs[i]) {
+            despawn_object(board, g_spawned_objs[i]);
+            g_spawned_objs[i] = 0;
         }
-        g_spawned_count--;
     }
+    g_spawned_count = 0;
+    g_order_count = 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -566,10 +598,32 @@ static void start_grid_cycle(DWORD board) {
                      pi + 1, (int)g_pts_x[pi], (int)g_pts_y[pi], (int)g_pts_z[pi]);
             log_mod(pbuf);
         }
-        g_current_grid = 1;
+        g_current_grid = 0;   /* index into g_order (set below) */
         extract_grid_meshes();
-        spawn_grid_cube(board, g_pts_x[0], g_pts_y[0], g_pts_z[0], 1,
-                        mesh_for(0));
+        /* preload every point once; cycle only moves list membership */
+        for (int si = 0; si < MAX_SPAWNED; si++) g_spawned_objs[si] = 0;
+        g_spawned_count = 0;
+        g_order_count = 0;
+        for (int pi = 0; pi < count; pi++) {
+            void* obj = create_grid_cube(board, g_pts_x[pi], g_pts_y[pi],
+                                         g_pts_z[pi], pi + 1, mesh_for(pi));
+            if (obj) {
+                g_spawned_objs[pi] = (DWORD)obj;
+                g_order[g_order_count++] = pi;
+                g_spawned_count++;
+            } else {
+                char fbuf[64];
+                snprintf(fbuf, sizeof(fbuf), "  GRID%d: preload failed",
+                         pi + 1);
+                log_mod(fbuf);
+            }
+        }
+        if (!g_order_count) {
+            log_mod("  GRID: nothing preloaded, no cycle");
+            return;
+        }
+        g_current_grid = 0;   /* index into g_order */
+        grid_show(board, g_spawned_objs[g_order[0]]);
         g_last_switch_tick = GetTickCount();
         g_prev_tick = g_last_switch_tick;
         g_cycle_started = true;
@@ -680,6 +734,7 @@ static void __thiscall level_start(void*) {
     g_cycle_started = false;
     g_grid_count = 0;
     g_spawned_count = 0;
+    g_order_count = 0;
 }
 
 static void __thiscall scene_end(void*) {
@@ -708,6 +763,7 @@ static void __thiscall game_update(void*) {
         g_cycle_started = false;
         g_spawned_count = 0;
         g_grid_count = 0;
+        g_order_count = 0;
         return;
     }
 
@@ -737,27 +793,26 @@ static void __thiscall game_update(void*) {
     if (wait_ms < 10) wait_ms = 10;
     if ((int)(now - g_last_switch_tick) < wait_ms) return;
 
-    /* Advance to next GRID */
+    /* Advance to next GRID (show/hide only — everything preloaded) */
+    if (!g_order_count) return;
     {
+        int old_ord = g_current_grid;
+        int new_ord = old_ord + 1;
         char sbuf[128];
-        snprintf(sbuf, sizeof(sbuf), "SWITCH %d->%d (pts=%d spawned=%d upd=%d rnd=%d)",
-                 g_current_grid,
-                 g_current_grid + 1 > g_grid_count ? 1 : g_current_grid + 1,
+        if (new_ord >= g_order_count) new_ord = 0;
+        snprintf(sbuf, sizeof(sbuf), "SWITCH %d->%d (pts=%d preloaded=%d upd=%d rnd=%d)",
+                 g_order[old_ord] + 1, g_order[new_ord] + 1,
                  g_grid_count, g_spawned_count,
                  list_count(board + BOARD_UPDATE_LIST),
                  list_count(board + BOARD_RENDER_LIST));
         log_mod(sbuf);
+        g_current_grid = new_ord;
+        grid_hide(board, g_spawned_objs[g_order[old_ord]]);
+        grid_show(board, g_spawned_objs[g_order[new_ord]]);
     }
-    g_current_grid++;
-    if (g_current_grid > g_grid_count) g_current_grid = 1;
-
-    despawn_all(board);
-    int idx = g_current_grid - 1;
-    spawn_grid_cube(board, g_pts_x[idx], g_pts_y[idx], g_pts_z[idx],
-                    g_current_grid, mesh_for(idx));
     {
         char pbuf[96];
-        snprintf(pbuf, sizeof(pbuf), "POST spawned=%d upd=%d rnd=%d",
+        snprintf(pbuf, sizeof(pbuf), "POST preloaded=%d upd=%d rnd=%d",
                  g_spawned_count,
                  list_count(board + BOARD_UPDATE_LIST),
                  list_count(board + BOARD_RENDER_LIST));
