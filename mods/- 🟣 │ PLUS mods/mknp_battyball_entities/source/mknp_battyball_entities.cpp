@@ -201,6 +201,7 @@ static int   g_board_ready_delay = 0;   /* frames to wait for level build after 
 static DWORD g_light_objs[MAX_LIGHTS];   /* never freed, reused per level */
 static float g_light_pos[MAX_LIGHTS][3]; /* game coords */
 static float g_light_col[MAX_LIGHTS][3];
+static int   g_light_src[MAX_LIGHTS];    /* 0 = S3 file light, 1 = POINT ref */
 static int   g_light_count = 0;          /* parsed (clamped to MAX_LIGHTS) */
 static int   g_light_used = 0;           /* slots currently registered */
 static int   g_light_vis = 1;            /* 0 while LIGHTSOFF */
@@ -208,6 +209,33 @@ static bool  g_lights_on = true;         /* BATTY_LIGHTS toggle */
 static float g_light_range = 400.0f;     /* BATTY_LIGHT_RANGE slider */
 static int   g_job = 0;                  /* text_render job: 0 none 1 build 2 refresh */
 static DWORD g_job_board = 0;
+
+/* POINTnn S1 ref positions (case-insensitive match) for ref-driven lights */
+static float g_ppt_x[MAX_LIGHTS];
+static float g_ppt_y[MAX_LIGHTS];
+static float g_ppt_z[MAX_LIGHTS];
+static int   g_ppt_count = 0;
+
+/* Case-insensitive substring search — POINT refs may be "Point01". */
+static const char* nc_istrstr(const char* hay, const char* needle) {
+    size_t nl;
+    const char* h;
+    if (!hay || !needle) return NULL;
+    nl = strlen(needle);
+    if (nl == 0) return hay;
+    for (h = hay; *h; h++) {
+        size_t k = 0;
+        while (k < nl && h[k]) {
+            char a = h[k], b = needle[k];
+            if (a >= 'a' && a <= 'z') a -= 32;
+            if (b >= 'a' && b <= 'z') b -= 32;
+            if (a != b) break;
+            k++;
+        }
+        if (k == nl) return h;
+    }
+    return NULL;
+}
 
 /* Time-based cycle state */
 static DWORD g_last_switch_tick = 0;    /* GetTickCount() when current cube spawned */
@@ -323,6 +351,7 @@ static DWORD get_sceneobj(DWORD board) {
 
 static int find_grid_points(DWORD board) {
     g_grid_count = 0;
+    g_ppt_count = 0;
     g_s1_hash = 2166136261u;
     g_s1_count = 0;
     DWORD sceneobj = get_sceneobj(board);
@@ -368,7 +397,8 @@ static int find_grid_points(DWORD board) {
     s1_feed_byte((unsigned char)((s1_count >> 24) & 0xFF));
 
     int dumped = 0;
-    for (int i = 0; i < s1_count && g_grid_count < MAX_GRID_POINTS; i++) {
+    for (int i = 0; i < s1_count &&
+         (g_grid_count < MAX_GRID_POINTS || g_ppt_count < MAX_LIGHTS); i++) {
         DWORD entry = s1_data[i];
         if (!entry || entry < 0x10000) continue;
         if (IsBadReadPtr((void*)entry, 16)) continue;
@@ -403,7 +433,8 @@ static int find_grid_points(DWORD board) {
 
         char* name = *(char**)(entry + S1ENTRY_NAME);
         if (name && !IsBadReadPtr(name, 5)) {
-            if (nc_strstr(name, "GRID") != NULL) {
+            if (nc_strstr(name, "GRID") != NULL &&
+                g_grid_count < MAX_GRID_POINTS) {
                 g_pts_x[g_grid_count] = *(float*)(entry + S1ENTRY_POS_X);
                 g_pts_y[g_grid_count] = *(float*)(entry + S1ENTRY_POS_Y);
                 g_pts_z[g_grid_count] = *(float*)(entry + S1ENTRY_POS_Z);
@@ -418,13 +449,28 @@ static int find_grid_points(DWORD board) {
                 }
                 g_grid_count++;
             }
+            if (nc_istrstr(name, "POINT") != NULL &&
+                g_ppt_count < MAX_LIGHTS) {
+                g_ppt_x[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_X);
+                g_ppt_y[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_Y);
+                g_ppt_z[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_Z);
+                g_ppt_count++;
+            }
         } else {
             /* name might be an inline char array */
-            if (nc_strstr((const char*)entry, "GRID") != NULL) {
+            if (nc_strstr((const char*)entry, "GRID") != NULL &&
+                g_grid_count < MAX_GRID_POINTS) {
                 g_pts_x[g_grid_count] = *(float*)(entry + S1ENTRY_POS_X);
                 g_pts_y[g_grid_count] = *(float*)(entry + S1ENTRY_POS_Y);
                 g_pts_z[g_grid_count] = *(float*)(entry + S1ENTRY_POS_Z);
                 g_grid_count++;
+            }
+            if (nc_istrstr((const char*)entry, "POINT") != NULL &&
+                g_ppt_count < MAX_LIGHTS) {
+                g_ppt_x[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_X);
+                g_ppt_y[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_Y);
+                g_ppt_z[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_Z);
+                g_ppt_count++;
             }
         }
     }
@@ -807,6 +853,7 @@ static int read_level_lights(const char* path) {
             g_light_col[total][0] = v[6];
             g_light_col[total][1] = v[7];
             g_light_col[total][2] = v[8];
+            g_light_src[total] = 0;         /* S3 file light */
             total++;
         }
     }
@@ -817,9 +864,12 @@ static int read_level_lights(const char* path) {
         bg0 = gm_f32(&c); bg1 = gm_f32(&c); bg2 = gm_f32(&c);
         am0 = gm_f32(&c); am1 = gm_f32(&c); am2 = gm_f32(&c);
         {
+            /* nocrt snprintf has no %.2f — log hundredths as ints */
             char abuf[96];
-            snprintf(abuf, sizeof(abuf), "  LIGHT ambient=(%.2f,%.2f,%.2f) bg=(%.2f,%.2f,%.2f)",
-                     am0, am1, am2, bg0, bg1, bg2);
+            snprintf(abuf, sizeof(abuf), "  LIGHT ambient=(%d,%d,%d) bg=(%d,%d,%d)",
+                     (int)(am0 * 100.0f), (int)(am1 * 100.0f),
+                     (int)(am2 * 100.0f), (int)(bg0 * 100.0f),
+                     (int)(bg1 * 100.0f), (int)(bg2 * 100.0f));
             log_mod(abuf);
         }
     }
@@ -919,11 +969,14 @@ static void service_light_job(DWORD board) {
             write_light_fields(obj, i, vis);
             native_register(gfx, LIGHT_SLOT_BASE + i, obj);
             snprintf(lbuf, sizeof(lbuf),
-                     "  LIGHT%d: slot %d pos=(%d,%d,%d) col=(%.2f,%.2f,%.2f) vis=%d",
+                     "  LIGHT%d: slot %d src=%s pos=(%d,%d,%d) col=(%d,%d,%d) vis=%d",
                      i, LIGHT_SLOT_BASE + i,
+                     g_light_src[i] ? "POINT" : "S3",
                      (int)g_light_pos[i][0], (int)g_light_pos[i][1],
                      (int)g_light_pos[i][2],
-                     g_light_col[i][0], g_light_col[i][1], g_light_col[i][2],
+                     (int)(g_light_col[i][0] * 100.0f),
+                     (int)(g_light_col[i][1] * 100.0f),
+                     (int)(g_light_col[i][2] * 100.0f),
                      vis);
             log_mod(lbuf);
         } else if (obj) {
@@ -936,28 +989,43 @@ static void service_light_job(DWORD board) {
     g_job = 0;
 }
 
-/* Parse current level lights, raise build job. Runs in onGameUpdate. */
+/* Parse current level lights (S3 file lights, then POINTnn S1 refs as
+ * white lights in remaining slots), raise build job. Runs in onGameUpdate,
+ * ONCE per board (called from start_grid_cycle). */
 static void start_lights(DWORD board) {
     char cur[MAX_PATH];
-    int n;
+    int n, i;
+    char nbuf[64];
     g_light_count = 0;
     g_light_vis = 1;
     cur[0] = '\0';
     if (!find_current_level_file(cur, sizeof(cur))) {
-        log_mod("  LIGHT: level file unknown, no lights");
-        return;
+        log_mod("  LIGHT: level file unknown, S3 skipped");
+        n = -1;
+    } else {
+        n = read_level_lights(cur);
+        if (n < 0) log_mod("  LIGHT: parse failed, S3 skipped");
     }
-    n = read_level_lights(cur);
-    if (n < 0) {
-        log_mod("  LIGHT: parse failed, no lights");
-        return;
+    /* POINTnn refs (white) fill whatever slots S3 left free */
+    for (i = 0; i < g_ppt_count && g_light_count < MAX_LIGHTS; i++) {
+        int li = g_light_count;
+        char pbuf[96];
+        g_light_pos[li][0] = g_ppt_x[i];
+        g_light_pos[li][1] = g_ppt_y[i];
+        g_light_pos[li][2] = g_ppt_z[i];
+        g_light_col[li][0] = 1.0f;
+        g_light_col[li][1] = 1.0f;
+        g_light_col[li][2] = 1.0f;
+        g_light_src[li] = 1;
+        g_light_count++;
+        snprintf(pbuf, sizeof(pbuf), "  LIGHT: POINT ref %d at (%d,%d,%d)",
+                 i + 1, (int)g_ppt_x[i], (int)g_ppt_y[i],
+                 (int)g_ppt_z[i]);
+        log_mod(pbuf);
     }
-    {
-        char nbuf[64];
-        snprintf(nbuf, sizeof(nbuf), "  LIGHT: %d point light(s)", n);
-        log_mod(nbuf);
-    }
-    if (!n) return;
+    snprintf(nbuf, sizeof(nbuf), "  LIGHT: %d point light(s)", g_light_count);
+    log_mod(nbuf);
+    if (!g_light_count) return;
     g_job = 1;
     g_job_board = board;
 }
@@ -1038,6 +1106,9 @@ static void start_grid_cycle(DWORD board) {
         g_cycle_started = true;
     } else {
         log_mod("  No GRID points found");
+        /* stay dead until board change — retrying every frame would rescan
+         * levels\ + reparse files continuously (extreme slowdown, log spam) */
+        g_cycle_started = true;
     }
 }
 

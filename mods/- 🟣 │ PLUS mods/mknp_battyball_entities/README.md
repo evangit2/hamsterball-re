@@ -78,7 +78,9 @@ every level start, so edits apply on next level load.
 
 ## Point lights (v1p+)
 
-Each level file's S3 `DISTANTLIGHT`s become native D3D point lights:
+Each level file's S3 `DISTANTLIGHT`s become native D3D point lights,
+plus any S1 ref with `POINT` in its name (`POINT01`, `Point01`, ...) becomes
+a white point light at its position (S3 first, POINT refs fill free slots).
 at level start the mod matches the on-disk file (S1 fingerprint), reads
 light position (file x,z,y → game x,y,z) + color, creates native
 `SceneObject`s exactly like `Scene_SetupLevelDark` does for Neon
