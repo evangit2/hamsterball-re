@@ -546,15 +546,81 @@ static void despawn_all(DWORD board) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Per-GRID own meshes: extract each ref's geom from a levels\ file into
- * levels\mknp_grid<N>.MESHWORLD, rebased to origin. Affix rules (NOCOLLIDE
- * => non-solid) apply natively when the game loads the temp file.
+ * Per-GRID own meshes: extract each ref's geom from the CURRENT level file
+ * only into levels\mknp_grid<N>.MESHWORLD, rebased to origin. Affix rules
+ * (NOCOLLIDE => non-solid) apply natively when the game loads the temp file.
+ * Current file = S1 fingerprint match (same rule as gridset_level_mult), so
+ * old geoms in backups/other levels never leak in. Stale temp files are
+ * deleted when the current level has no match (testcube fallback / skip).
  * ═══════════════════════════════════════════════════════════════════════════ */
+static char g_cur_level_file[MAX_PATH];
+
+/* Locate the on-disk level file matching the runtime S1 (hash+count). */
+static int find_current_level_file(char* out, unsigned cap) {
+    static char files[GM_MAX_LIST][MAX_PATH];
+    int n, i;
+    if (!g_levels_dir[0] || !g_s1_count) return 0;
+    n = gm_list_mw(g_levels_dir, files, GM_MAX_LIST);
+    for (i = 0; i < n; i++) {
+        unsigned len = 0;
+        unsigned char* d;
+        int fc = 0;
+        unsigned fh;
+        if (gm_name_is_temp(files[i])) continue;
+        d = gm_read_file(files[i], &len);
+        if (!d) continue;
+        fh = gm_s1_hash(d, len, &fc);
+        free(d);
+        if (fc == g_s1_count && fh == g_s1_hash) {
+            unsigned k = 0;
+            while (k + 1 < cap && files[i][k]) {
+                out[k] = files[i][k];
+                k++;
+            }
+            out[k] = '\0';
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void cur_basename(const char* p, char* out, unsigned cap) {
+    const char* b = p;
+    const char* q = p;
+    unsigned k = 0;
+    while (*q) {
+        if (*q == '\\' || *q == '/') b = q + 1;
+        q++;
+    }
+    while (k + 1 < cap && b[k]) {
+        out[k] = b[k];
+        k++;
+    }
+    out[k] = '\0';
+}
+
 static void extract_grid_meshes(void) {
     int i;
+    int have_cur = 0;
+    char curbase[64];
     for (i = 0; i < g_grid_count; i++) g_grid_own[i] = 0;
     if (!g_levels_dir[0]) {
         log_mod("  GRID: levels dir unknown, testcube fallback");
+        return;
+    }
+    g_cur_level_file[0] = '\0';
+    have_cur = find_current_level_file(g_cur_level_file,
+                                       sizeof(g_cur_level_file));
+    if (have_cur) {
+        cur_basename(g_cur_level_file, curbase, sizeof(curbase));
+        {
+            char sbuf[96];
+            snprintf(sbuf, sizeof(sbuf), "  GRID src: %s (current only)",
+                     curbase);
+            log_mod(sbuf);
+        }
+    } else {
+        log_mod("  GRID src: unknown level, testcube fallback");
         return;
     }
     for (i = 0; i < g_grid_count; i++) {
@@ -563,13 +629,14 @@ static void extract_grid_meshes(void) {
         char base[32];
         char base_stripped[32];
         char abs[MAX_PATH];
-        char xbuf[96];
+        char xbuf[128];
         int bi = 0;
+        int ok = 0;
         if (stripped[0] == 'R' && stripped[1] == 'E' &&
             stripped[2] == 'F' && stripped[3] == ':')
             stripped += 4;
         /* affix-cut copies ("GRID01(NOCOLLIDE)" -> "GRID01") for matching;
-         * the extracted file keeps the LIBRARY geom's own name/affix */
+         * the extracted file keeps the CURRENT level geom's own name/affix */
         while (bi < 31 && full[bi] && full[bi] != '(') {
             base[bi] = full[bi];
             bi++;
@@ -590,17 +657,20 @@ static void extract_grid_meshes(void) {
                  "levels\\mknp_grid%d", i + 1);
         snprintf(abs, sizeof(abs), "%smknp_grid%d.MESHWORLD",
                  g_levels_dir, i + 1);
-        if (gm_find_and_extract(g_levels_dir, full, stripped, abs) ||
-            (base[0] && base_stripped[0] &&
-             (strcmp(base, full) != 0 ||
-              strcmp(base_stripped, stripped) != 0) &&
-             gm_find_and_extract(g_levels_dir, base, base_stripped, abs))) {
+        ok = gm_extract_from(g_cur_level_file, full, stripped, abs);
+        if (!ok && base[0] && base_stripped[0] &&
+            (strcmp(base, full) != 0 ||
+             strcmp(base_stripped, stripped) != 0))
+            ok = gm_extract_from(g_cur_level_file, base, base_stripped,
+                                 abs);
+        if (ok) {
             g_grid_own[i] = 1;
-            snprintf(xbuf, sizeof(xbuf), "  GRID%d %s: own mesh OK",
-                     i + 1, full);
+            snprintf(xbuf, sizeof(xbuf), "  GRID%d %s: own mesh OK [%s]",
+                     i + 1, full, curbase);
         } else {
-            snprintf(xbuf, sizeof(xbuf), "  GRID%d %s: no lib mesh",
-                     i + 1, full);
+            DeleteFileA(abs);   /* kill stale temp so old mesh can't linger */
+            snprintf(xbuf, sizeof(xbuf), "  GRID%d %s: no mesh in %s",
+                     i + 1, full, curbase);
         }
         log_mod(xbuf);
     }

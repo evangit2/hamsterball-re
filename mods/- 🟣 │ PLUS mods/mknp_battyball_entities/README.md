@@ -23,10 +23,14 @@ toggle-off, or board change.
 
 ## Own meshes (v1a+)
 
-Each `REF:GRIDxx` point spawns **its own mesh**, taken from the level files —
-no shared `testcube` needed. At level start the mod scans `levels\*.MESHWORLD`
-for a geom named like the ref (`REF:GRID01`, else stripped `GRID01`), extracts
-it into `levels\mknp_grid<N>.MESHWORLD` (centroid at origin), and spawns that.
+Each `REF:GRIDxx` point spawns **its own mesh**, taken from the CURRENT
+level file only — no shared `testcube` needed. At level start the mod finds
+the on-disk file matching the loaded level (S1 fingerprint, same rule as
+the per-level speed table), extracts the geom named like the ref
+(`REF:GRID01`, else stripped `GRID01`) into `levels\mknp_grid<N>.MESHWORLD`
+(centroid at origin), and spawns that. Other files in `levels\` (backups,
+old versions) are never searched, and stale `mknp_grid<N>` temps are deleted
+when the current level has no match.
 The geom name is kept verbatim, so **affix rules apply natively**:
 
 - name has `(NOCOLLIDE)` → visual only, ball passes through
