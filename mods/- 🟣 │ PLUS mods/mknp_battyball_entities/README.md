@@ -16,6 +16,20 @@ GRID01 -> GRID02 -> ... -> GRIDnn -> GRID01 -> ...
 
 Every **`grid_speed`** seconds, the current cube is despawned (removed from the update/render/collision lists, collision object destroyed) and the next one is spawned.
 
+## Own meshes (v1a+)
+
+Each `REF:GRIDxx` point spawns **its own mesh**, taken from the level files —
+no shared `testcube` needed. At level start the mod scans `levels\*.MESHWORLD`
+for a geom named like the ref (`REF:GRID01`, else stripped `GRID01`), extracts
+it into `levels\mknp_grid<N>.MESHWORLD` (centroid at origin), and spawns that.
+The geom name is kept verbatim, so **affix rules apply natively**:
+
+- name has `(NOCOLLIDE)` → visual only, ball passes through
+- otherwise → solid, ball stands on it
+
+If no matching geom is found, the point falls back to `testcube` (if present),
+else it is skipped with a log line. Missing meshes never crash.
+
 ## Features
 
 - **Native spawning mechanics** identical to `mknp_custom_entities`:
