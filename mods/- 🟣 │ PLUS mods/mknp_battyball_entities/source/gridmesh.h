@@ -608,6 +608,78 @@ static int gm_extract_from(const char* mwpath, const char* want1,
     if (sz == (DWORD)-1 || sz > GM_MAX_FILE || sz < 64) return 0;
     return gm_extract(mwpath, want1, want2, outpath);
 }
+
+/* List every S6 geom name in a memory image: cb(name, namelen, ctx) per
+ * geom. Returns geom count, or -1 when the S1..S5 prefix won't parse
+ * (diagnostic: tells "names absent" apart from "file unreadable"). */
+typedef void (*gm_list_cb)(const unsigned char* name, int namelen,
+                           void* ctx);
+
+static int gm_list_node(GmCur* c, gm_list_cb cb, void* ctx, int* count,
+                        int* nodes) {
+    int sub, mbc, i;
+    if (++(*nodes) > GM_MAX_NODES) return 0;
+    if (!gm_need(c, 28)) return 0;
+    c->p += 24;
+    sub = gm_i32(c);
+    if (sub < 1) {
+        if (!gm_need(c, 4)) return 0;
+        mbc = gm_i32(c);
+        if (mbc < 0 || mbc > 100000) return 0;
+        for (i = 0; i < mbc; i++) {
+            int ln, sc;
+            const unsigned char* nm;
+            if (!gm_need(c, 4)) return 0;
+            ln = gm_i32(c);
+            if (ln < 1 || ln > 1024 || !gm_need(c, (unsigned)ln)) return 0;
+            nm = c->p;
+            c->p += (unsigned)ln;
+            if (!gm_need(c, 72 + 4)) return 0;
+            c->p += 72;
+            {
+                unsigned ht = gm_u32(c);
+                if (ht == 1) {
+                    int tl;
+                    if (!gm_need(c, 4)) return 0;
+                    tl = gm_i32(c);
+                    if (tl < 1 || tl > 1024 || !gm_need(c, (unsigned)tl))
+                        return 0;
+                    c->p += (unsigned)tl;
+                }
+            }
+            if (!gm_need(c, 4)) return 0;
+            sc = gm_i32(c);
+            if (sc < 0 || sc > 1000000) return 0;
+            if (!gm_need(c, (unsigned)sc * 8u)) return 0;
+            c->p += (unsigned)sc * 8u;
+            (*count)++;
+            if (cb) cb(nm, ln, ctx);
+        }
+        return 1;
+    }
+    {
+        int k;
+        if (sub > 100000) return 0;
+        for (k = 0; k < sub; k++) {
+            int r = gm_list_node(c, cb, ctx, count, nodes);
+            if (r != 1) return r;
+        }
+    }
+    return 1;
+}
+
+static int gm_list_geoms(const unsigned char* data, unsigned len,
+                         gm_list_cb cb, void* ctx) {
+    GmCur c;
+    const unsigned char* vbuf = 0;
+    int nverts = 0, count = 0, nodes = 0;
+    if (!data || len < 64) return -1;
+    c.p = data;
+    c.end = data + len;
+    if (!gm_skip_to_s6(&c, &vbuf, &nverts)) return -1;
+    if (!gm_list_node(&c, cb, ctx, &count, &nodes)) return -1;
+    return count;
+}
 /* FNV-1a over S1 (count + every ref name, no NUL). Runtime side feeds the
  * same stream, so equal hash + equal count identifies the level file. */
 static unsigned gm_s1_hash(const unsigned char* data, unsigned len,

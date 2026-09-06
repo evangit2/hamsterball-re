@@ -599,6 +599,52 @@ static void cur_basename(const char* p, char* out, unsigned cap) {
     out[k] = '\0';
 }
 
+/* S6 dump context + callback: logs each geom name (cap N, counts all). */
+typedef struct { int shown; int cap; } DumpCtx;
+static void dump_name_cb(const unsigned char* name, int namelen,
+                         void* ctx) {
+    DumpCtx* dc = (DumpCtx*)ctx;
+    if (dc->shown < dc->cap) {
+        char nbuf[64];
+        char lbuf[96];
+        int k = 0;
+        while (k < 63 && k < namelen - 1 && name[k]) {
+            nbuf[k] = (char)name[k];
+            k++;
+        }
+        nbuf[k] = '\0';
+        snprintf(lbuf, sizeof(lbuf), "  S6[%d]=%s", dc->shown, nbuf);
+        log_mod(lbuf);
+    }
+    dc->shown++;
+}
+
+static void dump_level_geoms(const char* curfile) {
+    unsigned dlen = 0;
+    unsigned char* d = gm_read_file(curfile, &dlen);
+    if (!d) {
+        log_mod("  GRID S6: file unreadable");
+        return;
+    }
+    {
+        DumpCtx dc;
+        int total;
+        char cbuf[64];
+        dc.shown = 0;
+        dc.cap = 60;
+        total = gm_list_geoms(d, dlen, dump_name_cb, &dc);
+        free(d);
+        if (total < 0)
+            snprintf(cbuf, sizeof(cbuf), "  GRID S6: PARSE FAILED");
+        else if (total > dc.cap)
+            snprintf(cbuf, sizeof(cbuf), "  GRID S6: %d geoms (first 60 shown)",
+                     total);
+        else
+            snprintf(cbuf, sizeof(cbuf), "  GRID S6: %d geoms", total);
+        log_mod(cbuf);
+    }
+}
+
 static void extract_grid_meshes(void) {
     int i;
     int have_cur = 0;
@@ -619,8 +665,9 @@ static void extract_grid_meshes(void) {
                      curbase);
             log_mod(sbuf);
         }
+        dump_level_geoms(g_cur_level_file);
     } else {
-        log_mod("  GRID src: unknown level, testcube fallback");
+        log_mod("  GRID src: unknown level, skip");
         return;
     }
     for (i = 0; i < g_grid_count; i++) {
