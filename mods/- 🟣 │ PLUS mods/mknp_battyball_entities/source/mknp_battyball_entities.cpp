@@ -98,6 +98,8 @@
 #define LIGHT_INTENSITY     5.0f     /* default material-color multiplier */
 #define LIGHT_OUTPUT_TRIM   0.5f     /* POINT pools were washing the follower;
                                       * halve output (slider 5.0 ~= old 2.5) */
+#define LIGHT_RANGE_SCALE   0.5f     /* tighter pools: less overlap with the
+                                      * ball path (slider 400 ~= 200 felt) */
 #define LIGHT_TEST_DX       0.0f     /* offset test done: glow is native */
 
 /* Level offsets */
@@ -214,7 +216,7 @@ static int   g_light_count = 0;          /* parsed (clamped to MAX_LIGHTS) */
 static int   g_light_used = 0;           /* slots currently registered */
 static int   g_light_vis = 1;            /* 0 while LIGHTSOFF */
 static bool  g_lights_on = true;         /* BATTY_LIGHTS toggle */
-static float g_light_range = 400.0f;     /* BATTY_LIGHT_RANGE slider */
+static float g_light_range = 400.0f * LIGHT_RANGE_SCALE; /* felt, slider x0.5 */
 static float g_light_intensity = LIGHT_INTENSITY; /* BATTY_LIGHT_INTENSITY */
 static int   g_job = 0;                  /* text_render job: 0 none 1 build 2 refresh */
 static DWORD g_job_board = 0;
@@ -1150,18 +1152,11 @@ static void patch_attenuation(void) {
 
 /* Runs in text_render (render thread). job 1 = build, 2 = refresh.
  * quiet=1 skips per-light logs (periodic re-assert). */
-#define LIGHT_NOEMIT_DIAG 1   /* v1af: emit NOTHING (no objs/registers/Att
-                               * patch). Isolates hooks+logging vs photons. */
 static void service_light_job(DWORD board, int quiet) {
     DWORD gfx;
     int i, vis, hi;
     if (g_job == 0 || board != g_job_board) return;
     if (!g_light_count && !g_light_used) { g_job = 0; return; }
-#ifdef LIGHT_NOEMIT_DIAG
-    if (!quiet) log_mod("  LIGHT: emit disabled (diag, no photons)");
-    g_job = 0;
-    return;
-#endif
     gfx = gfx_device();
     if (!gfx) return;   /* retry next frame */
     patch_attenuation();   /* one-time: restore Att1 0.04 */
@@ -1494,6 +1489,7 @@ static void __thiscall slider_change(void*, const char* id, float value) {
     if (strcmp(id, "BATTY_GRID_SPEED") == 0) g_speed = value;
     else if (strcmp(id, "BATTY_LIGHT_RANGE") == 0) {
         g_light_range = value < 10.0f ? 10.0f : value;
+        g_light_range *= LIGHT_RANGE_SCALE;   /* felt range = half shown */
         if (g_light_used || g_light_count) {
             g_job = 2;
             g_job_board = player_board();
