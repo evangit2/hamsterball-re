@@ -30,6 +30,21 @@ The geom name is kept verbatim, so **affix rules apply natively**:
 If no matching geom is found, the point falls back to `testcube` (if present),
 else it is skipped with a log line. Missing meshes never crash.
 
+## Per-level speed (`mknp_battyball_entities_set.jsonc`)
+
+The mod auto-creates `mknp_battyball_entities_set.jsonc` next to the DLL on
+first run (default: every level `1.0`). Each `levelN` value **multiplies** the
+HB+ `grid_speed` slider for that level file:
+
+```jsonc
+"grid_speed", { "level1": 1.0, "level2": 2.0, ... }
+```
+
+`level2 = 2.0` with slider `3.0s` = `6.0s` per switch on that level.
+Level identity is an S1 fingerprint, so renamed and swapped files still match.
+Extra keys (e.g. `levelup`, `levelcascade`) work if you add them. Reloaded
+every level start, so edits apply on next level load.
+
 ## Features
 
 - **Native spawning mechanics** identical to `mknp_custom_entities`:
