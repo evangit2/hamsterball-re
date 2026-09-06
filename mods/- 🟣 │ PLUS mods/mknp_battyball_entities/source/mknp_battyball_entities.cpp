@@ -78,12 +78,12 @@
 #define SCENEOBJECT_SIZE    0xD4
 #define SCENEOBJECT_CTOR    0x0046B4F0   /* __thiscall(this, gfx), RET 4 */
 #define SCENE_REGISTEROBJECT 0x00453BD0  /* __thiscall(gfx, slot, obj), RET 8 */
-#define SO_POS_X            0x08     /* light position (direct write) */
+#define SO_POS_X            0x08     /* light position (SetPosition target) */
 #define SO_POS_Y            0x0C
 #define SO_POS_Z            0x10
-#define SO_POSV_X           0xB8     /* position_vec cluster */
-#define SO_POSV_Y           0xBC
-#define SO_POSV_Z           0xC0
+/* RefreshLight 0x46B670 builds D3DLIGHT8 in-object at +0x20: true Range
+ * field = +0x68 (game NEVER writes it — +0xCC lands on Falloff). */
+#define SO_RANGE_REAL       0x68     /* true D3D Range: MUST be set */
 #define SO_EMIT_R           0x94     /* emitter color RGBA */
 #define SO_EMIT_G           0x98
 #define SO_EMIT_B           0x9C
@@ -1080,9 +1080,7 @@ static void write_light_fields(DWORD obj, int li, int vis) {
     *(float*)((char*)obj + SO_POS_X) = g_light_pos[li][0];
     *(float*)((char*)obj + SO_POS_Y) = g_light_pos[li][1];
     *(float*)((char*)obj + SO_POS_Z) = g_light_pos[li][2];
-    *(float*)((char*)obj + SO_POSV_X) = g_light_pos[li][0];
-    *(float*)((char*)obj + SO_POSV_Y) = g_light_pos[li][1];
-    *(float*)((char*)obj + SO_POSV_Z) = g_light_pos[li][2];
+    *(float*)((char*)obj + SO_RANGE_REAL) = g_light_range;
     *(float*)((char*)obj + SO_RANGE) = g_light_range;
     *(BYTE*)((char*)obj + SO_VISIBLE) = (BYTE)(vis ? 1 : 0);
 }

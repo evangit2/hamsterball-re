@@ -89,8 +89,10 @@ light position (file x,z,y → game x,y,z) + color, creates native
 `SceneObject`s exactly like `Scene_SetupLevelDark` does for Neon
 (`+0xD0=1` POINT, emitter +0x94, range +0xCC), and registers them in gfx
 slots 4–7. Position is set via native `vtable[1]` SetPosition (like
-`Scene_SetupLevelDark` — never bare `+0x08` writes alone), plus `+0xB8`
-mirror. The engine itself drives D3D — the mod never calls D3D
+`Scene_SetupLevelDark` — never bare `+0x08` writes alone). RefreshLight
+`0x46B670` builds the D3DLIGHT8 in-object at `+0x20`: true Range field is
+`+0x68` (written by mod — the game never does), `+0xB8` is specular
+(never touched). The engine itself drives D3D — the mod never calls D3D
 functions. Slots re-assert ~every 2s (race retry wipes them). Ambient is never touched (darkness stays file-side).
 `E:LIGHTSOFF` / `E:LIGHTSON` toggle the mod lights like the native ones.
 First 4 lights win; extras are logged and skipped.
