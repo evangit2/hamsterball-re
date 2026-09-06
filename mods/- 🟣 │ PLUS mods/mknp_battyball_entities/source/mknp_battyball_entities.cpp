@@ -560,16 +560,41 @@ static void extract_grid_meshes(void) {
     for (i = 0; i < g_grid_count; i++) {
         const char* full = g_grid_names[i];
         const char* stripped = full;
+        char base[32];
+        char base_stripped[32];
         char abs[MAX_PATH];
         char xbuf[96];
+        int bi = 0;
         if (stripped[0] == 'R' && stripped[1] == 'E' &&
             stripped[2] == 'F' && stripped[3] == ':')
             stripped += 4;
+        /* affix-cut copies ("GRID01(NOCOLLIDE)" -> "GRID01") for matching;
+         * the extracted file keeps the LIBRARY geom's own name/affix */
+        while (bi < 31 && full[bi] && full[bi] != '(') {
+            base[bi] = full[bi];
+            bi++;
+        }
+        base[bi] = '\0';
+        {
+            const char* bs = base;
+            int bj = 0;
+            if (bs[0] == 'R' && bs[1] == 'E' && bs[2] == 'F' && bs[3] == ':')
+                bs += 4;
+            while (bj < 31 && bs[bj]) {
+                base_stripped[bj] = bs[bj];
+                bj++;
+            }
+            base_stripped[bj] = '\0';
+        }
         snprintf(g_grid_mesh[i], sizeof(g_grid_mesh[i]),
                  "levels\\mknp_grid%d", i + 1);
         snprintf(abs, sizeof(abs), "%smknp_grid%d.MESHWORLD",
                  g_levels_dir, i + 1);
-        if (gm_find_and_extract(g_levels_dir, full, stripped, abs)) {
+        if (gm_find_and_extract(g_levels_dir, full, stripped, abs) ||
+            (base[0] && base_stripped[0] &&
+             (strcmp(base, full) != 0 ||
+              strcmp(base_stripped, stripped) != 0) &&
+             gm_find_and_extract(g_levels_dir, base, base_stripped, abs))) {
             g_grid_own[i] = 1;
             snprintf(xbuf, sizeof(xbuf), "  GRID%d %s: own mesh OK",
                      i + 1, full);
@@ -632,6 +657,9 @@ static void start_grid_cycle(DWORD board) {
         }
         if (!g_order_count) {
             log_mod("  GRID: nothing preloaded, no cycle");
+            /* stay dead until board change — retrying every frame would
+             * rescan levels\ + reload files continuously (extreme slowdown) */
+            g_cycle_started = true;
             return;
         }
         g_current_grid = 0;   /* index into g_order */
