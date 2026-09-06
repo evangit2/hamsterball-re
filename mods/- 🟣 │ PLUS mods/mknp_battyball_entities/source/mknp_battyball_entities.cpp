@@ -95,6 +95,7 @@
 #define MAX_LIGHTS          4
 #define LIGHT_SLOT_BASE     4        /* Neon owns 0-1, S3 re-registers from 0 */
 #define LIGHT_TYPE_POINT    1
+#define LIGHT_INTENSITY     5.0f     /* fixed material-color multiplier */
 
 /* Level offsets */
 #define LEVEL_SCENEOBJECT   0x480    /* SceneObject ptr */
@@ -213,10 +214,11 @@ static float g_light_range = 400.0f;     /* BATTY_LIGHT_RANGE slider */
 static int   g_job = 0;                  /* text_render job: 0 none 1 build 2 refresh */
 static DWORD g_job_board = 0;
 
-/* POINT/LIGHT S1 ref positions (case-insensitive) for ref-driven lights */
+/* POINTLIGHTxx S1 ref positions (case-insensitive) for ref-driven lights */
 static float g_ppt_x[MAX_LIGHTS];
 static float g_ppt_y[MAX_LIGHTS];
 static float g_ppt_z[MAX_LIGHTS];
+static char  g_ppt_name[MAX_LIGHTS][32];  /* S1 ref name (mesh lookup key) */
 static int   g_ppt_count = 0;
 
 /* Case-insensitive substring search — POINT refs may be "Point01". */
@@ -240,8 +242,9 @@ static const char* nc_istrstr(const char* hay, const char* needle) {
     return NULL;
 }
 
-/* True if an S1 ref name marks a light (POINT01, Point01, LIGHT01...). */
+/* True if an S1 ref name marks a light (Pointlight01, POINT01...). */
 static int is_light_ref(const char* nm) {
+    if (nc_istrstr(nm, "POINTLIGHT") != NULL) return 1;
     if (nc_istrstr(nm, "POINT") != NULL) return 1;
     if (nc_istrstr(nm, "LIGHT") != NULL) return 1;
     return 0;
@@ -460,9 +463,17 @@ static int find_grid_points(DWORD board) {
                 g_grid_count++;
             }
             if (is_light_ref(name) && g_ppt_count < MAX_LIGHTS) {
-                g_ppt_x[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_X);
-                g_ppt_y[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_Y);
-                g_ppt_z[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_Z);
+                int pi = g_ppt_count;
+                int ni = 0;
+                g_ppt_x[pi] = *(float*)(entry + S1ENTRY_POS_X);
+                g_ppt_y[pi] = *(float*)(entry + S1ENTRY_POS_Y);
+                g_ppt_z[pi] = *(float*)(entry + S1ENTRY_POS_Z);
+                g_ppt_name[pi][0] = '\0';
+                while (ni < 31 && name[ni]) {
+                    g_ppt_name[pi][ni] = name[ni];
+                    ni++;
+                }
+                g_ppt_name[pi][ni] = '\0';
                 g_ppt_count++;
             }
         } else {
@@ -479,6 +490,7 @@ static int find_grid_points(DWORD board) {
                 g_ppt_x[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_X);
                 g_ppt_y[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_Y);
                 g_ppt_z[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_Z);
+                g_ppt_name[g_ppt_count][0] = '\0';   /* no clean name */
                 g_ppt_count++;
             }
         }
@@ -851,10 +863,12 @@ static int read_level_lights(const char* path) {
         int t;
         float v[9];
         int k;
-        if (!gm_need(&c, 4 + 36)) { free(d); return -1; }
+        if (!gm_need(&c, 4)) { free(d); return -1; }
         t = gm_i32(&c);
+        /* bare type entries carry no payload (mirrors gm_skip_to_s6) */
+        if (t != 0) continue;
+        if (!gm_need(&c, 36)) { free(d); return -1; }
         for (k = 0; k < 9; k++) v[k] = gm_f32(&c);
-        if (t != 0) continue;   /* only DISTANTLIGHT for now */
         if (total < MAX_LIGHTS) {
             g_light_pos[total][0] = v[0];
             g_light_pos[total][1] = v[2];   /* file x,z,y -> game x,y,z */
@@ -884,6 +898,120 @@ static int read_level_lights(const char* path) {
     }
     free(d);
     return total;
+}
+
+/* Find first S6 geom whose name contains `needle` (case-insens), copy its
+ * material diffuse RGB (file mat+16/20/24). Returns 1 found, 0 not. */
+typedef struct {
+    const char* needle;
+    float rgb[3];
+    int hit;
+    int nodes;
+} LightFind;
+
+static int light_node(GmCur* c, LightFind* f) {
+    int sub, mbc, i;
+    if (++f->nodes > GM_MAX_NODES) return 0;
+    if (!gm_need(c, 28)) return 0;
+    c->p += 24;
+    sub = gm_i32(c);
+    if (sub < 1) {
+        if (!gm_need(c, 4)) return 0;
+        mbc = gm_i32(c);
+        if (mbc < 0 || mbc > 100000) return 0;
+        for (i = 0; i < mbc; i++) {
+            int ln, sc;
+            const unsigned char* nm;
+            const unsigned char* matp;
+            unsigned ht;
+            if (!gm_need(c, 4)) return 0;
+            ln = gm_i32(c);
+            if (ln < 1 || ln > 1024 || !gm_need(c, (unsigned)ln)) return 0;
+            nm = c->p;
+            c->p += (unsigned)ln;
+            matp = c->p;
+            if (!gm_need(c, 72 + 4)) return 0;
+            if (!f->hit) {
+                char tmp[64];
+                int k = 0;
+                while (k < ln && k < 63) {
+                    tmp[k] = (char)nm[k];
+                    k++;
+                }
+                tmp[k] = '\0';
+                if (nc_istrstr(tmp, f->needle) != NULL) {
+                    memcpy(&f->rgb[0], matp + 16, 4);
+                    memcpy(&f->rgb[1], matp + 20, 4);
+                    memcpy(&f->rgb[2], matp + 24, 4);
+                    f->hit = 1;
+                    return 2;
+                }
+            }
+            c->p += 72;
+            ht = gm_u32(c);
+            if (ht == 1) {
+                int tl;
+                if (!gm_need(c, 4)) return 0;
+                tl = gm_i32(c);
+                if (tl < 1 || tl > 1024 || !gm_need(c, (unsigned)tl))
+                    return 0;
+                c->p += (unsigned)tl;
+            }
+            if (!gm_need(c, 4)) return 0;
+            sc = gm_i32(c);
+            if (sc < 0 || sc > 1000000) return 0;
+            if (!gm_need(c, (unsigned)sc * 8u)) return 0;
+            c->p += (unsigned)sc * 8u;
+        }
+        return 1;
+    }
+    {
+        int k;
+        if (sub > 100000) return 0;
+        for (k = 0; k < sub; k++) {
+            int r = light_node(c, f);
+            if (r != 1) return r;
+        }
+    }
+    return 1;
+}
+
+static int read_geom_diffuse(const char* path, const char* needle,
+                             float* rgb) {
+    unsigned len = 0;
+    unsigned char* data;
+    GmCur c;
+    const unsigned char* vbuf = 0;
+    int nverts = 0;
+    LightFind f;
+    int r;
+    if (!path || !path[0] || !needle || !needle[0]) return 0;
+    data = gm_read_file(path, &len);
+    if (!data) return 0;
+    c.p = data;
+    c.end = data + len;
+    if (!gm_skip_to_s6(&c, &vbuf, &nverts)) {
+        free(data);
+        return 0;
+    }
+    f.needle = needle;
+    f.hit = 0;
+    f.nodes = 0;
+    f.rgb[0] = f.rgb[1] = f.rgb[2] = 1.0f;
+    r = light_node(&c, &f);
+    if (r != 1 && r != 2) {
+        free(data);
+        return 0;
+    }
+    if (!f.hit) {
+        free(data);
+        return 0;
+    }
+    rgb[0] = f.rgb[0];
+    rgb[1] = f.rgb[1];
+    rgb[2] = f.rgb[2];
+    free(data);
+    return 1;
 }
 
 /* __thiscall wrappers (MinGW asm caves). Callee-cleanup (RET 4/8). */
@@ -1034,6 +1162,7 @@ static void service_light_job(DWORD board, int quiet) {
 static void start_lights(DWORD board) {
     char cur[MAX_PATH];
     int n, i;
+    int have_file = 0;
     char nbuf[64];
     g_light_count = 0;
     g_light_vis = 1;
@@ -1042,6 +1171,7 @@ static void start_lights(DWORD board) {
         log_mod("  LIGHT: level file unknown, S3 skipped");
         n = -1;
     } else {
+        have_file = 1;
         n = read_level_lights(cur);
         if (n < 0) log_mod("  LIGHT: parse failed, S3 skipped");
     }
@@ -1054,18 +1184,34 @@ static void start_lights(DWORD board) {
     }
     for (i = 0; i < g_ppt_count && g_light_count < MAX_LIGHTS; i++) {
         int li = g_light_count;
-        char pbuf[96];
+        char pbuf[128];
+        float mr = 1.0f, mg = 1.0f, mb = 1.0f;
+        float rgb[3];
+        int got = 0;
         g_light_pos[li][0] = g_ppt_x[i];
         g_light_pos[li][1] = g_ppt_y[i];
         g_light_pos[li][2] = g_ppt_z[i];
-        g_light_col[li][0] = 1.0f;
-        g_light_col[li][1] = 1.0f;
-        g_light_col[li][2] = 1.0f;
+        if (have_file && read_geom_diffuse(cur, g_ppt_name[i], rgb)) {
+            if (rgb[0] >= 0.0f && rgb[0] <= 10.0f &&
+                rgb[1] >= 0.0f && rgb[1] <= 10.0f &&
+                rgb[2] >= 0.0f && rgb[2] <= 10.0f) {
+                mr = rgb[0];
+                mg = rgb[1];
+                mb = rgb[2];
+                got = 1;
+            }
+        }
+        g_light_col[li][0] = mr * LIGHT_INTENSITY;
+        g_light_col[li][1] = mg * LIGHT_INTENSITY;
+        g_light_col[li][2] = mb * LIGHT_INTENSITY;
         g_light_src[li] = 1;
         g_light_count++;
-        snprintf(pbuf, sizeof(pbuf), "  LIGHT: POINT ref %d at (%d,%d,%d)",
-                 i + 1, (int)g_ppt_x[i], (int)g_ppt_y[i],
-                 (int)g_ppt_z[i]);
+        snprintf(pbuf, sizeof(pbuf),
+                 "  LIGHT: POINT ref %d %s at (%d,%d,%d) mat=(%d,%d,%d)%s",
+                 i + 1, g_ppt_name[i],
+                 (int)g_ppt_x[i], (int)g_ppt_y[i], (int)g_ppt_z[i],
+                 (int)(mr * 100.0f), (int)(mg * 100.0f),
+                 (int)(mb * 100.0f), got ? "" : " no-mat");
         log_mod(pbuf);
     }
     snprintf(nbuf, sizeof(nbuf), "  LIGHT: %d point light(s)", g_light_count);
