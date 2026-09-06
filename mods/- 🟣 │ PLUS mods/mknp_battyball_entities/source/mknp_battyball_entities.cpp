@@ -1085,6 +1085,66 @@ static void write_light_fields(DWORD obj, int li, int vis) {
     *(BYTE*)((char*)obj + SO_VISIBLE) = (BYTE)(vis ? 1 : 0);
 }
 
+/* RefreshLight bakes Att2=0.04 EVERY call (mov [esi+0x78],0x3D23D70A:
+ * bytes C7 46 78 0A D7 23 3D). Attenuation 1/(1+0.04d^2): d=5->0.5,
+ * d=50->0.01, d=288->0.0003 = invisible. Zero the imm32 once so point
+ * lights shine to Range. Benefits native lights too (same function). */
+static void patch_attenuation(void) {
+    static int done = 0;
+    HMODULE exe;
+    DWORD peoff, sec, s;
+    WORD ns;
+    int found = 0;
+    char lbuf[64];
+    if (done) return;
+    done = 1;
+    exe = GetModuleHandleA(NULL);
+    if (!exe) return;
+    if (IsBadReadPtr(exe, 64)) return;
+    peoff = *(DWORD*)((char*)exe + 0x3C);
+    if (peoff > 0x1000) return;
+    if (IsBadReadPtr((char*)exe + peoff, 64)) return;
+    if (*(DWORD*)((char*)exe + peoff) != 0x4550) return;  /* "PE\0\0" */
+    ns = *(WORD*)((char*)exe + peoff + 6);
+    sec = peoff + 248;
+    for (s = 0; s < ns && s < 16; s++) {
+        DWORD vaddr, vsize;
+        unsigned char* p;
+        unsigned char* end;
+        if (IsBadReadPtr((char*)exe + sec, 40)) break;
+        vsize = *(DWORD*)((char*)exe + sec + 8);
+        vaddr = *(DWORD*)((char*)exe + sec + 12);
+        /* RefreshLight RVA 0x6B670 must live in this section */
+        if (0x6B670 < vaddr || 0x6B670 >= vaddr + vsize) {
+            sec += 40;
+            continue;
+        }
+        if (IsBadReadPtr((char*)exe + vaddr, vsize)) break;
+        p = (unsigned char*)exe + vaddr;
+        end = p + vsize - 7;
+        for (; p < end; p++) {
+            if (p[0] == 0xC7 && p[1] == 0x46 && p[2] == 0x78 &&
+                p[3] == 0x0A && p[4] == 0xD7 &&
+                p[5] == 0x23 && p[6] == 0x3D) {
+                DWORD oldp = 0;
+                if (VirtualProtect(p + 3, 4, PAGE_EXECUTE_READWRITE,
+                                   &oldp)) {
+                    p[3] = 0;
+                    p[4] = 0;
+                    p[5] = 0;
+                    p[6] = 0;
+                    VirtualProtect(p + 3, 4, oldp, &oldp);
+                    FlushInstructionCache(GetCurrentProcess(), p, 7);
+                    found++;
+                }
+            }
+        }
+        break;
+    }
+    snprintf(lbuf, sizeof(lbuf), "  LIGHT: Att2 patch x%d", found);
+    log_mod(lbuf);
+}
+
 /* Runs in text_render (render thread). job 1 = build, 2 = refresh.
  * quiet=1 skips per-light logs (periodic re-assert). */
 static void service_light_job(DWORD board, int quiet) {
@@ -1094,6 +1154,7 @@ static void service_light_job(DWORD board, int quiet) {
     if (!g_light_count && !g_light_used) { g_job = 0; return; }
     gfx = gfx_device();
     if (!gfx) return;   /* retry next frame */
+    patch_attenuation();   /* one-time: Att2 0.04 -> 0 */
     vis = (g_lights_on && g_light_vis) ? 1 : 0;
     hi = g_light_used;
     if (g_job == 3) {
