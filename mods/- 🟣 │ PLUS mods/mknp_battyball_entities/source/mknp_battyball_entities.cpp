@@ -96,6 +96,7 @@
 #define LIGHT_SLOT_BASE     4        /* Neon owns 0-1, S3 re-registers from 0 */
 #define LIGHT_TYPE_POINT    1
 #define LIGHT_INTENSITY     5.0f     /* fixed material-color multiplier */
+#define LIGHT_TEST_DX       10.0f    /* TEMP test: shift POINT lights +X */
 
 /* Level offsets */
 #define LEVEL_SCENEOBJECT   0x480    /* SceneObject ptr */
@@ -1247,7 +1248,7 @@ static void start_lights(DWORD board) {
         float mr = 1.0f, mg = 1.0f, mb = 1.0f;
         float rgb[3];
         int got = 0;
-        g_light_pos[li][0] = g_ppt_x[i];
+        g_light_pos[li][0] = g_ppt_x[i] + LIGHT_TEST_DX;   /* TEMP +10 X */
         g_light_pos[li][1] = g_ppt_y[i];
         g_light_pos[li][2] = g_ppt_z[i];
         if (have_file && read_geom_diffuse(cur, g_ppt_name[i], rgb)) {
@@ -1504,6 +1505,8 @@ static void __thiscall scene_end(void*) {
     }
 }
 
+static void light_frame(void);   /* defined below (used by game_update) */
+
 static void __thiscall game_update(void*) {
     if (!g_enabled) return;
     if (!g_api) return;
@@ -1526,6 +1529,8 @@ static void __thiscall game_update(void*) {
         g_order_count = 0;
         return;
     }
+
+    light_frame();   /* pin/heartbeat/service also from game_update */
 
     if (!g_cycle_started) {
         if (g_board_ready_delay > 0) { g_board_ready_delay--; return; }
@@ -1659,7 +1664,9 @@ static void pin_lights(DWORD board, DWORD gfx) {
         }
     }
 }
-static void __thiscall text_render(void*) {
+/* Per-frame light service. Runs from BOTH text_render and onGameUpdate:
+ * text_render barely fires in-race, so game_update carries the pin. */
+static void light_frame(void) {
     DWORD board;
     DWORD gfx;
     board = player_board();
@@ -1721,6 +1728,9 @@ static void __thiscall text_render(void*) {
             service_light_job(board, 1);
         }
     }
+}
+static void __thiscall text_render(void*) {
+    light_frame();
 }
 static void __thiscall ball_bump(void*, void*, void*) {}
 
