@@ -1620,6 +1620,9 @@ static void __thiscall event_collide(void*, void*, char* name) {
 }
 static int g_reassert = 0;   /* frames since last slot re-assert */
 static DWORD g_last_pin_log = 0;   /* throttle for re-pin lines */
+static DWORD g_last_beat = 0;      /* last heartbeat tick */
+static DWORD g_frames = 0;         /* text_render call counter */
+static DWORD g_seen_slot4 = 0;     /* first slot4 ptr seen (swap detector) */
 /* Something per-frame drags light objects to the ball. Hold our ground:
  * if a used slot's position differs from its parsed spot, drag it back
  * (log throttled). Runs every frame in text_render (render thread). */
@@ -1664,6 +1667,50 @@ static void __thiscall text_render(void*) {
     if (g_job != 0) { service_light_job(board, 0); return; }
     gfx = gfx_device();
     if (!gfx) return;
+    g_frames++;
+    /* heartbeat 1/sec: proves text_render rate + catches slot swaps */
+    {
+        DWORD now = GetTickCount();
+        if ((int)(now - g_last_beat) >= 1000) {
+            char hbuf[160];
+            DWORD s4 = 0;
+            float fx = 0.0f, fy = 0.0f, fz = 0.0f;
+            int i;
+            g_last_beat = now;
+            if (!IsBadReadPtr((void*)(gfx + GFX_LIGHT_SLOTS), 32))
+                s4 = *(DWORD*)(gfx + GFX_LIGHT_SLOTS + 4 * 4);
+            if (!g_seen_slot4) g_seen_slot4 = s4;
+            if (g_light_used >= 0 && g_light_objs[0] &&
+                !IsBadReadPtr((void*)g_light_objs[0], SCENEOBJECT_SIZE)) {
+                fx = *(float*)((char*)g_light_objs[0] + SO_POS_X);
+                fy = *(float*)((char*)g_light_objs[0] + SO_POS_Y);
+                fz = *(float*)((char*)g_light_objs[0] + SO_POS_Z);
+            }
+            snprintf(hbuf, sizeof(hbuf),
+                     "  LIGHT: beat f=%u slot4=0x%X obj0=0x%X pos=(%d,%d,%d)%s",
+                     g_frames, s4, g_light_objs[0],
+                     (int)fx, (int)fy, (int)fz,
+                     (s4 && s4 != g_seen_slot4) ? " SWAPPED" : "");
+            log_mod(hbuf);
+            /* on swap, fingerprint all 8 slots once */
+            if (s4 && s4 != g_seen_slot4) {
+                g_seen_slot4 = s4;
+                for (i = 0; i < 8; i++) {
+                    char sbuf[96];
+                    DWORD so = *(DWORD*)(gfx + GFX_LIGHT_SLOTS + (DWORD)i * 4);
+                    int tp = -9, vs = -9;
+                    if (so && !IsBadReadPtr((void*)so, SCENEOBJECT_SIZE)) {
+                        tp = *(int*)((char*)so + SO_TYPE);
+                        vs = *(BYTE*)((char*)so + SO_VISIBLE);
+                    }
+                    snprintf(sbuf, sizeof(sbuf),
+                             "  LIGHT: slot %d obj=0x%X type=%d vis=%d",
+                             i, so, tp, vs);
+                    log_mod(sbuf);
+                }
+            }
+        }
+    }
     if ((g_light_count || g_light_used) && board == g_job_board)
         pin_lights(board, gfx);
     /* retry wipes slots via ResetObjectSlots: re-assert ~every 2s */
