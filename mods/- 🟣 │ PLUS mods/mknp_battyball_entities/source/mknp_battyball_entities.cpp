@@ -573,6 +573,21 @@ static int grid_number(const char* name, char* out, unsigned cap) {
     return 0;
 }
 
+/* Validate a GridNN file before handing it to MeshWorld_ctor: must parse
+ * S1..S6 and hold >=1 geom. Returns geom count, -1 when bad. A malformed
+ * file would crash the ctor (heap overrun), so bad files fall back. */
+static int validate_grid_file(const char* abs) {
+    unsigned dlen = 0;
+    unsigned char* d = gm_read_file(abs, &dlen);
+    if (!d) return -1;
+    {
+        int total = gm_list_geoms(d, dlen, NULL, NULL);
+        free(d);
+        if (total < 1) return -1;
+        return total;
+    }
+}
+
 static void resolve_grid_files(void) {
     int i;
     for (i = 0; i < g_grid_count; i++) g_grid_own[i] = 0;
@@ -607,9 +622,16 @@ static void resolve_grid_files(void) {
                 snprintf(xbuf, sizeof(xbuf), "  GRID%d %s: Grid%s.MESHWORLD MISSING",
                          i + 1, g_grid_names[i], digits);
             } else {
-                g_grid_own[i] = 1;
-                snprintf(xbuf, sizeof(xbuf), "  GRID%d %s: file Grid%s.MESHWORLD",
-                         i + 1, g_grid_names[i], digits);
+                int geoms = validate_grid_file(abs);
+                if (geoms < 0) {
+                    g_grid_own[i] = 0;
+                    snprintf(xbuf, sizeof(xbuf), "  GRID%d %s: Grid%s.BAD, fallback",
+                             i + 1, g_grid_names[i], digits);
+                } else {
+                    g_grid_own[i] = 1;
+                    snprintf(xbuf, sizeof(xbuf), "  GRID%d %s: file Grid%s (%d geoms)",
+                             i + 1, g_grid_names[i], digits, geoms);
+                }
             }
         }
         log_mod(xbuf);
