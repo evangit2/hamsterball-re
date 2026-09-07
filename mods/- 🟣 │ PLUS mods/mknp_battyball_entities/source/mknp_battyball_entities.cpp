@@ -96,9 +96,8 @@
 #define LIGHT_SLOT_BASE     4        /* Neon owns 0-1, S3 re-registers from 0 */
 #define LIGHT_TYPE_POINT    1
 #define LIGHT_INTENSITY     5.0f     /* default material-color multiplier */
-#define LIGHT_OUTPUT_TRIM   1.0f     /* RETIRED v1ap: no hidden output scale.
-                                      * emitter = emissive x alpha x gain/5,
-                                      * so Intensity 5.0 = raw 1:1 */
+#define LIGHT_OUTPUT_TRIM   10.0f    /* mat 1.0 -> emitter 10 at default
+                                      * gain 5 (mat x gain x trim / 5) */
 #define LIGHT_RANGE_SCALE   1.0f     /* felt range = shown range (0.5 hid
                                       * the pool: D3D hard-cuts beyond Range
                                       * and the ball runs 270-450 away) */
@@ -1362,12 +1361,12 @@ static void start_lights(DWORD board) {
             g_light_rng[li] = g_light_range;
             g_light_rngfix[li] = 0;
         }
-        g_light_col[li][0] = mr * g_light_intensity / LIGHT_INTENSITY;
-        g_light_col[li][1] = mg * g_light_intensity / LIGHT_INTENSITY;
-        g_light_col[li][2] = mb * g_light_intensity / LIGHT_INTENSITY;
-        g_light_mat[li][0] = mr / LIGHT_INTENSITY;
-        g_light_mat[li][1] = mg / LIGHT_INTENSITY;
-        g_light_mat[li][2] = mb / LIGHT_INTENSITY;
+        g_light_col[li][0] = mr * g_light_intensity * LIGHT_OUTPUT_TRIM / LIGHT_INTENSITY;
+        g_light_col[li][1] = mg * g_light_intensity * LIGHT_OUTPUT_TRIM / LIGHT_INTENSITY;
+        g_light_col[li][2] = mb * g_light_intensity * LIGHT_OUTPUT_TRIM / LIGHT_INTENSITY;
+        g_light_mat[li][0] = mr * LIGHT_OUTPUT_TRIM / LIGHT_INTENSITY;
+        g_light_mat[li][1] = mg * LIGHT_OUTPUT_TRIM / LIGHT_INTENSITY;
+        g_light_mat[li][2] = mb * LIGHT_OUTPUT_TRIM / LIGHT_INTENSITY;
         g_light_src[li] = 1;
         g_light_count++;
         snprintf(pbuf, sizeof(pbuf),
