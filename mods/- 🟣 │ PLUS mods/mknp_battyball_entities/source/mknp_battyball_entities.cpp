@@ -1554,7 +1554,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
     HBAPI(api).CreateSlider(s2, (HamsterballAPI*)thisptr);
 
     CustomSlider s3("BATTY_LIGHT_INTENSITY", "Light Intensity", LIGHT_INTENSITY);
-    s3.lowerBound = 0.0f; s3.upperBound = 20.0f; s3.stepSize = 0.5f; s3.decimalPlaces = 1;
+    s3.lowerBound = 0.0f; s3.upperBound = 100.0f; s3.stepSize = 0.5f; s3.decimalPlaces = 1;
     HBAPI(api).CreateSlider(s3, (HamsterballAPI*)thisptr);
 
     log_mod("INIT Battyball Entities v1 (mod loaded)");

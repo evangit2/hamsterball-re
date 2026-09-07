@@ -103,8 +103,10 @@ slider-proof range; suffix strips for lookup); fixture material name MUST
 contain the ref name (`mat_pointlight02...` glows for `Pointlight02`).
 Emissive RGB = color, emissive alpha = per-light gain (1.0 = same).
 Missing material -> unity white + `no-mat` tag, never blinding.
-`Light Intensity` slider is relative (5.0 = raw 1:1, 10 = x2).
+`Light Intensity` slider is relative (5.0 = raw 1:1, 10 = x2, to 100).
 Emitter = emissive x emissive-alpha x Intensity/5. No hidden scale.
+Unity emitters (~0.3) are dim past ~50 units under native 0.04 falloff:
+raise Intensity (or emissive alpha, to 10) for far-reaching pools.
 Felt range = shown slider (D3D cuts light beyond Range).
 Disasm audit (0x453BD0/0x46B4F0/0x46B670): register, ctor and refresh are
 strictly per-object/per-slot — the mod cannot alter native slots 0-1.
