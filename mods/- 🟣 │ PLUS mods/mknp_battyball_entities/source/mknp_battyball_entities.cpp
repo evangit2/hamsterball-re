@@ -92,8 +92,12 @@
 #define SO_RANGE            0xCC
 #define SO_TYPE             0xD0     /* 1 = D3DLIGHT_POINT (SDK truth) */
 #define GFX_LIGHT_SLOTS     0x710    /* 8 SceneObject* slots */
-#define MAX_LIGHTS          4
-#define LIGHT_SLOT_BASE     4        /* Neon owns 0-1, S3 re-registers from 0 */
+#define MAX_LIGHTS          7        /* gfx slots 1-7 (slot 0 = native
+                                      * follower, never touched). D3D8 caps
+                                      * at 8 simultaneous lights. */
+#define LIGHT_SLOT_BASE     1        /* slots 1-3 are P2-P4 follower slots:
+                                      * empty in solo; native-priority yield
+                                      * (claim_slot) defers if one fills */
 #define LIGHT_TYPE_POINT    1
 #define LIGHT_INTENSITY     5.0f     /* default material-color multiplier */
 #define LIGHT_OUTPUT_TRIM   10.0f    /* mat 1.0 -> emitter 10 at default
@@ -215,6 +219,7 @@ static float g_light_mat[MAX_LIGHTS][3]; /* raw material ratio (pre-gain) */
 static int   g_light_src[MAX_LIGHTS];    /* 0 = S3 file light, 1 = POINT ref */
 static float g_light_rng[MAX_LIGHTS];    /* per-light felt range */
 static int   g_light_rngfix[MAX_LIGHTS]; /* 1 = (Rnnn) suffix, slider-proof */
+static int   g_light_yield[MAX_LIGHTS];  /* 1 = slot native-held, deferred */
 static int   g_light_count = 0;          /* parsed (clamped to MAX_LIGHTS) */
 static int   g_light_used = 0;           /* slots currently registered */
 static int   g_light_vis = 1;            /* 0 while LIGHTSOFF */
@@ -231,6 +236,7 @@ static float g_ppt_z[MAX_LIGHTS];
 static char  g_ppt_name[MAX_LIGHTS][32];  /* S1 ref name (mesh lookup key) */
 static float g_ppt_rng[MAX_LIGHTS];       /* (Rnnn) suffix range, 0 = global */
 static int   g_ppt_count = 0;
+static int   g_ppt_total = 0;             /* refs found (kept capped) */
 
 /* Case-insensitive substring search — POINT refs may be "Point01". */
 static const char* nc_istrstr(const char* hay, const char* needle) {
@@ -376,6 +382,7 @@ static DWORD get_sceneobj(DWORD board) {
 static int find_grid_points(DWORD board) {
     g_grid_count = 0;
     g_ppt_count = 0;
+    g_ppt_total = 0;
     g_s1_hash = 2166136261u;
     g_s1_count = 0;
     DWORD sceneobj = get_sceneobj(board);
@@ -473,7 +480,9 @@ static int find_grid_points(DWORD board) {
                 }
                 g_grid_count++;
             }
-            if (is_light_ref(name) && g_ppt_count < MAX_LIGHTS) {
+            if (is_light_ref(name)) {
+                g_ppt_total++;
+                if (g_ppt_count < MAX_LIGHTS) {
                 int pi = g_ppt_count;
                 int ni = 0;
                 g_ppt_x[pi] = *(float*)(entry + S1ENTRY_POS_X);
@@ -512,6 +521,7 @@ static int find_grid_points(DWORD board) {
                     }
                 }
                 g_ppt_count++;
+                }
             }
         } else {
             /* name might be an inline char array */
@@ -522,13 +532,15 @@ static int find_grid_points(DWORD board) {
                 g_pts_z[g_grid_count] = *(float*)(entry + S1ENTRY_POS_Z);
                 g_grid_count++;
             }
-            if (is_light_ref((const char*)entry) &&
-                g_ppt_count < MAX_LIGHTS) {
+            if (is_light_ref((const char*)entry)) {
+                g_ppt_total++;
+                if (g_ppt_count < MAX_LIGHTS) {
                 g_ppt_x[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_X);
                 g_ppt_y[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_Y);
                 g_ppt_z[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_Z);
                 g_ppt_name[g_ppt_count][0] = '\0';   /* no clean name */
                 g_ppt_count++;
+                }
             }
         }
     }
@@ -1099,8 +1111,23 @@ static void native_register(DWORD gfx, int slot, DWORD obj) {
         : "eax", "edx", "ecx", "memory");
 }
 
+/* Native-priority slot claim. Registers obj ONLY if the slot is empty or
+ * already ours; if a native owns it (party follower joining late, S3
+ * re-register), we defer instead of clobbering. Returns 1 claimed. */
+static int claim_slot(DWORD gfx, int slot, DWORD obj) {
+    DWORD slotptr;
+    DWORD cur;
+    if (!gfx || IsBadReadPtr((void*)gfx, 0x800)) return 0;
+    slotptr = gfx + GFX_LIGHT_SLOTS + (DWORD)slot * 4;
+    if (IsBadReadPtr((void*)slotptr, 4)) return 0;
+    cur = *(DWORD*)slotptr;
+    if (cur != 0 && cur != obj) return 0;
+    native_register(gfx, slot, obj);
+    return 1;
+}
+
 /* vtable[1] of the light vtable (0x4D934C) is 0x46B650, a conditional
- * destroy-helper — NOT SetPosition (real SetPosition is vtable[2] =
+ * destroy-helper - NOT SetPosition (real SetPosition is vtable[2] =
  * 0x46B490, but direct +0x08 writes already verify ok=1, so never call
  * any vtable slot for position). Kept for reference; DO NOT USE. */
 static void native_setpos(DWORD obj, float x, float y, float z) {
@@ -1218,6 +1245,12 @@ static void service_light_job(DWORD board, int quiet) {
         /* level end: switch every used slot off, keep objects alive */
         for (i = 0; i <= hi && i < MAX_LIGHTS; i++) {
             if (g_light_objs[i]) {
+                DWORD slotptr = gfx + GFX_LIGHT_SLOTS +
+                                (DWORD)(LIGHT_SLOT_BASE + i) * 4;
+                DWORD cur = 0;
+                if (!IsBadReadPtr((void*)slotptr, 4))
+                    cur = *(DWORD*)slotptr;
+                if (cur != 0 && cur != g_light_objs[i]) continue;  /* native */
                 *(BYTE*)((char*)g_light_objs[i] + SO_VISIBLE) = 0;
                 native_register(gfx, LIGHT_SLOT_BASE + i, g_light_objs[i]);
             }
@@ -1244,7 +1277,21 @@ static void service_light_job(DWORD board, int quiet) {
             write_light_fields(obj, i, vis);
             native_setpos(obj, g_light_pos[i][0], g_light_pos[i][1],
                           g_light_pos[i][2]);
-            native_register(gfx, LIGHT_SLOT_BASE + i, obj);
+            if (claim_slot(gfx, LIGHT_SLOT_BASE + i, obj)) {
+                if (g_light_yield[i]) {
+                    g_light_yield[i] = 0;
+                    snprintf(lbuf, sizeof(lbuf),
+                             "  LIGHT%d: slot %d reclaimed",
+                             i, LIGHT_SLOT_BASE + i);
+                    log_mod(lbuf);
+                }
+            } else if (!g_light_yield[i]) {
+                g_light_yield[i] = 1;
+                snprintf(lbuf, sizeof(lbuf),
+                         "  LIGHT%d: slot %d native-held, yield",
+                         i, LIGHT_SLOT_BASE + i);
+                log_mod(lbuf);
+            }
             if (!quiet) {
                 DWORD slotptr = gfx + GFX_LIGHT_SLOTS +
                                 (DWORD)(LIGHT_SLOT_BASE + i) * 4;
@@ -1263,9 +1310,17 @@ static void service_light_job(DWORD board, int quiet) {
                 log_mod(lbuf);
             }
         } else if (obj) {
-            /* stale slot from a richer level: switch off, keep alive */
-            *(BYTE*)((char*)obj + SO_VISIBLE) = 0;
-            native_register(gfx, LIGHT_SLOT_BASE + i, obj);
+            /* stale slot from a richer level: switch off, keep alive
+             * (only if still ours — never touch a native-held slot) */
+            DWORD slotptr = gfx + GFX_LIGHT_SLOTS +
+                            (DWORD)(LIGHT_SLOT_BASE + i) * 4;
+            DWORD cur = 0;
+            if (!IsBadReadPtr((void*)slotptr, 4))
+                cur = *(DWORD*)slotptr;
+            if (cur == 0 || cur == obj) {
+                *(BYTE*)((char*)obj + SO_VISIBLE) = 0;
+                native_register(gfx, LIGHT_SLOT_BASE + i, obj);
+            }
         }
     }
     g_light_used = hi;
@@ -1298,8 +1353,10 @@ static void start_lights(DWORD board) {
     int n, i;
     int have_file = 0;
     char nbuf[64];
+    int yi;
     g_light_count = 0;
     g_light_vis = 1;
+    for (yi = 0; yi < MAX_LIGHTS; yi++) g_light_yield[yi] = 0;
     cur[0] = '\0';
     if (!find_current_level_file(cur, sizeof(cur))) {
         log_mod("  LIGHT: level file unknown, S3 skipped");
@@ -1309,11 +1366,11 @@ static void start_lights(DWORD board) {
         n = read_level_lights(cur);
         if (n < 0) log_mod("  LIGHT: parse failed, S3 skipped");
     }
-    /* POINTnn refs (white) fill whatever slots S3 left free */
+    /* POINTnn refs fill whatever slots S3 left free (first MAX win) */
     {
         char cbuf[64];
-        snprintf(cbuf, sizeof(cbuf), "  LIGHT: %d POINT/LIGHT ref(s) in S1",
-                 g_ppt_count);
+        snprintf(cbuf, sizeof(cbuf), "  LIGHT: %d POINT/LIGHT ref(s) in S1 (%d kept)",
+                 g_ppt_total, g_ppt_count);
         log_mod(cbuf);
     }
     for (i = 0; i < g_ppt_count && g_light_count < MAX_LIGHTS; i++) {
@@ -1773,9 +1830,42 @@ static void pin_lights(DWORD board, DWORD gfx) {
     now = GetTickCount();
     for (i = 0; i <= hi && i < MAX_LIGHTS; i++) {
         DWORD obj = g_light_objs[i];
+        DWORD slotptr;
+        DWORD cur = 0;
         float ox, oy, oz;
         if (i >= g_light_count) continue;
         if (!obj || IsBadReadPtr((void*)obj, SCENEOBJECT_SIZE)) continue;
+        /* native-priority: slot taken by a native since? yield / reclaim */
+        slotptr = gfx + GFX_LIGHT_SLOTS + (DWORD)(LIGHT_SLOT_BASE + i) * 4;
+        if (!IsBadReadPtr((void*)slotptr, 4)) cur = *(DWORD*)slotptr;
+        if (cur != 0 && cur != obj) {
+            if (!g_light_yield[i]) {
+                g_light_yield[i] = 1;
+                if ((int)(now - g_last_pin_log) >= 500) {
+                    char ybuf[64];
+                    snprintf(ybuf, sizeof(ybuf),
+                             "  LIGHT%d: slot %d native-held, yield", i,
+                             LIGHT_SLOT_BASE + i);
+                    log_mod(ybuf);
+                    g_last_pin_log = now;
+                }
+            }
+            continue;
+        }
+        if (g_light_yield[i] && cur == 0) {
+            g_light_yield[i] = 0;
+            write_light_fields(obj, i, vis);
+            claim_slot(gfx, LIGHT_SLOT_BASE + i, obj);
+            if ((int)(now - g_last_pin_log) >= 500) {
+                char rbuf[64];
+                snprintf(rbuf, sizeof(rbuf), "  LIGHT%d: slot %d reclaimed",
+                         i, LIGHT_SLOT_BASE + i);
+                log_mod(rbuf);
+                g_last_pin_log = now;
+            }
+            continue;
+        }
+        if (g_light_yield[i]) g_light_yield[i] = 0;
         ox = *(float*)((char*)obj + SO_POS_X);
         oy = *(float*)((char*)obj + SO_POS_Y);
         oz = *(float*)((char*)obj + SO_POS_Z);
@@ -1820,7 +1910,10 @@ static void light_frame(void) {
                 if (!obj ||
                     IsBadReadPtr((void*)obj, SCENEOBJECT_SIZE)) continue;
                 write_light_fields(obj, i, vis);
-                native_register(gfxa, LIGHT_SLOT_BASE + i, obj);
+                if (!claim_slot(gfxa, LIGHT_SLOT_BASE + i, obj))
+                    g_light_yield[i] = 1;
+                else
+                    g_light_yield[i] = 0;
             }
         }
     }

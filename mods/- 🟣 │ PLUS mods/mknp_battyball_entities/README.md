@@ -97,7 +97,9 @@ zeroes that constant once (`Att2 patch`), else `1/(1+0.04d^2)` attenuation
 eats the light (0.0003 at 288 units). The engine itself drives D3D — the mod never calls D3D
 functions. Slots re-assert ~every 2s (race retry wipes them). Ambient is never touched (darkness stays file-side).
 `E:LIGHTSOFF` / `E:LIGHTSON` toggle the mod lights like the native ones.
-First 4 lights win; extras are logged and skipped.
+First 7 lights win (slots 1-7); extras are logged and skipped.
+Slots 1-3 are P2-P4 follower slots: empty in solo, and native-priority
+yield defers ours the moment a native claims one (reclaims when freed).
 Naming rules: S1 ref `PointlightNN[(Rrange)]` (e.g. `Pointlight02(R200)`,
 slider-proof range; suffix strips for lookup); fixture material name MUST
 contain the ref name (`mat_pointlight02...` glows for `Pointlight02`).
