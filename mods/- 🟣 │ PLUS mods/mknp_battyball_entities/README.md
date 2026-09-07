@@ -98,6 +98,11 @@ eats the light (0.0003 at 288 units). The engine itself drives D3D — the mod n
 functions. Slots re-assert ~every 2s (race retry wipes them). Ambient is never touched (darkness stays file-side).
 `E:LIGHTSOFF` / `E:LIGHTSON` toggle the mod lights like the native ones.
 First 4 lights win; extras are logged and skipped.
+Naming rules: S1 ref `PointlightNN[(Rrange)]` (e.g. `Pointlight02(R200)`,
+slider-proof range; suffix strips for lookup); fixture material name MUST
+contain the ref name (`mat_pointlight02...` glows for `Pointlight02`).
+Emissive RGB = color, emissive alpha = per-light gain (1.0 = same).
+Missing material -> dim white emitter (5.0) + `no-mat` tag, never blinding.
 `Light Intensity` slider rescales POINT pools live (S3 file lights keep
 designer values); output trim x20 so mat 1.0 = emitter 100 at default gain.
 Felt range = shown slider (D3D cuts light beyond Range).

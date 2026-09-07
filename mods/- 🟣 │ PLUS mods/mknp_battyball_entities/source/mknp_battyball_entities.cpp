@@ -1319,7 +1319,8 @@ static void start_lights(DWORD board) {
     for (i = 0; i < g_ppt_count && g_light_count < MAX_LIGHTS; i++) {
         int li = g_light_count;
         char pbuf[128];
-        float mr = 1.0f, mg = 1.0f, mb = 1.0f;
+        float mr = 0.05f, mg = 0.05f, mb = 0.05f;   /* missing-mat fallback:
+                                                     dim white, never a nuke */
         float rgb[3];
         float auxt[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
         float mult = 1.0f;   /* emissive-alpha per-light gain */
