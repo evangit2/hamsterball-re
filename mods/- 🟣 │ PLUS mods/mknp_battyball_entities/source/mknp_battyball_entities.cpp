@@ -96,8 +96,8 @@
 #define LIGHT_SLOT_BASE     4        /* Neon owns 0-1, S3 re-registers from 0 */
 #define LIGHT_TYPE_POINT    1
 #define LIGHT_INTENSITY     5.0f     /* default material-color multiplier */
-#define LIGHT_OUTPUT_TRIM   0.5f     /* POINT pools were washing the follower;
-                                      * halve output (slider 5.0 ~= old 2.5) */
+#define LIGHT_OUTPUT_TRIM   20.0f    /* mat 1.0 -> emitter 100 at default
+                                      * gain 5 (mat x gain x trim) */
 #define LIGHT_RANGE_SCALE   0.5f     /* tighter pools: less overlap with the
                                       * ball path (slider 400 ~= 200 felt) */
 #define LIGHT_TEST_DX       0.0f     /* offset test done: glow is native */
