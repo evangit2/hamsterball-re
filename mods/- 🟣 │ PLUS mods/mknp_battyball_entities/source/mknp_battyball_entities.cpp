@@ -96,7 +96,7 @@
 #define LIGHT_SLOT_BASE     4        /* Neon owns 0-1, S3 re-registers from 0 */
 #define LIGHT_TYPE_POINT    1
 #define LIGHT_INTENSITY     5.0f     /* default material-color multiplier */
-#define LIGHT_OUTPUT_TRIM   20.0f    /* mat 1.0 -> emitter 100 at default
+#define LIGHT_OUTPUT_TRIM   2.0f     /* mat 1.0 -> emitter 10 at default
                                       * gain 5 (mat x gain x trim) */
 #define LIGHT_RANGE_SCALE   1.0f     /* felt range = shown range (0.5 hid
                                       * the pool: D3D hard-cuts beyond Range
