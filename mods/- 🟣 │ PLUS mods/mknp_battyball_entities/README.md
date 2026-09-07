@@ -100,6 +100,7 @@ functions. Slots re-assert ~every 2s (race retry wipes them). Ambient is never t
 First 4 lights win; extras are logged and skipped.
 `Light Intensity` slider rescales POINT pools live (S3 file lights keep
 designer values); output trim x20 so mat 1.0 = emitter 100 at default gain.
+Felt range = shown slider (D3D cuts light beyond Range).
 Disasm audit (0x453BD0/0x46B4F0/0x46B670): register, ctor and refresh are
 strictly per-object/per-slot — the mod cannot alter native slots 0-1.
 

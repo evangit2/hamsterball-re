@@ -98,8 +98,9 @@
 #define LIGHT_INTENSITY     5.0f     /* default material-color multiplier */
 #define LIGHT_OUTPUT_TRIM   20.0f    /* mat 1.0 -> emitter 100 at default
                                       * gain 5 (mat x gain x trim) */
-#define LIGHT_RANGE_SCALE   0.5f     /* tighter pools: less overlap with the
-                                      * ball path (slider 400 ~= 200 felt) */
+#define LIGHT_RANGE_SCALE   1.0f     /* felt range = shown range (0.5 hid
+                                      * the pool: D3D hard-cuts beyond Range
+                                      * and the ball runs 270-450 away) */
 #define LIGHT_TEST_DX       0.0f     /* offset test done: glow is native */
 
 /* Level offsets */
