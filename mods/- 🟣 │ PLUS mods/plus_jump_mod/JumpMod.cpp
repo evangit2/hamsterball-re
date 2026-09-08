@@ -122,7 +122,7 @@ public:
         }
 
         /* Raycast ground check: straight down from ball position */
-        Vec3 pos(ball->position.x, ball->position.y, ball->position.z);
+        Vec3 pos(ball->pos_x, ball->pos_y, ball->pos_z);
         Vec3 down(0.0f, -1.0f, 0.0f);
         float radius = ball->radius;
         float max_dist = radius * GROUND_SLOPE_FACTOR;
