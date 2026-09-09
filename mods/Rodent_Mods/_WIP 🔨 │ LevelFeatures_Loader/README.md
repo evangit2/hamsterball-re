@@ -173,6 +173,22 @@ i686-w64-mingw32-gcc -shared -o bass.dll LevelFeatures.c \
   bass.def -lwinmm -static-libgcc -Wl,--enable-stdcall-fixup -O2
 ```
 
+Source lives in `src/` as 9 chapters (one translation unit —
+`LevelFeatures.c` only `#include`s them, output is still a single
+`bass.dll`). Fix the bridge? Edit `src/lf_03_features.c` and rebuild:
+
+| Chapter | Contents |
+|---|---|
+| `lf_00_core.c` | RVAs, offsets, ext heap, globals, string/level/racefile helpers |
+| `lf_01_bumpers.c` | Bumper physics, game fn pointers, mesh path table |
+| `lf_02_ctor.c` | UniversalBoardCtorLogic + install thunks |
+| `lf_03_features.c` | InitBridge + Feature blocks (bridge/swirl/windmill/…) |
+| `lf_04_render_update.c` | Render + BoardUpdate + RaceState |
+| `lf_05_create.c` | S1Ensure + UniversalCreateDynamicObjects |
+| `lf_06_collision.c` | Collision config + UniversalDispatchCollision |
+| `lf_07_postscan.c` | PostSetup + S1/collision scans |
+| `lf_08_hooksmain.c` | Constructor + hooks + DebugLog + vtable + DllMain |
+
 ## Files
 
 - `bass.dll` — compiled mod (rename original bass.dll to bass_real.dll)
