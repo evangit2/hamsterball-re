@@ -582,6 +582,13 @@ void __fastcall UniversalRaceState(void *board) {
      * decays ext+0x85C0 (UNI_BUMPER_LIT); calling both double-decays and desyncs. */
     if (level == 2) {
         /* skip 0x420240 — FEAT_BUMPER_DECAY handles ext path */
+    } else if (level == 7) {
+        /* Neon RaceState (0x424790) positions board+0x436C/0x4370 followers.
+         * Only valid when Neon_PostSetup built them (S3-gap gate passed);
+         * otherwise the slots are NULL/garbage or foreign (never touch). */
+        if (Neon_IsActive(board) && g_origRaceState[level]) {
+            g_origRaceState[level](board);
+        }
     } else if (level >= 1 && level <= 15 && g_origRaceState[level]) {
         g_origRaceState[level](board);
     }

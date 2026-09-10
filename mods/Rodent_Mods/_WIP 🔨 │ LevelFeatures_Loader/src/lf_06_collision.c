@@ -507,17 +507,20 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         }
     }
 
-    /* ── Neon: E:LIGHTSOFF ── */
-    if ((*(BYTE*)((char*)ext + COLL_FLAG_LIGHTSOFF)) && my_strnicmp(name, "E:LIGHTSOFF", 10) == 0) {
+    /* ── Neon: E:LIGHTSOFF (S3-gap gated, board+0x436C[playerIdx]) ── */
+    if (Neon_IsActive(board) && (*(BYTE*)((char*)ext + COLL_FLAG_LIGHTSOFF)) && my_strnicmp(name, "E:LIGHTSOFF", 10) == 0) {
         if (*(int *)((char *)ball + 0x7B4) == 0) {
             if (g_SoundPlay3D && app) {
                 DWORD snd = *(DWORD *)(app + 0x528);
                 if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)ball + 0x164), *(float *)((char *)ball + 0x168), *(float *)((char *)ball + 0x16C));
             }
-            /* Call vtable[+0x10](0) on player's render obj */
-            void *lightExt = GetBoardExt(board); if (!lightExt) lightExt = ext;
-            DWORD *renderObj = lightExt ? *(DWORD **)((char *)lightExt + ball[6]*4 + UNI_BONK_STORE) : NULL;
-            if (!renderObj && lightExt) renderObj = *(DWORD **)((char *)lightExt + UNI_BONK_STORE);
+            /* Call vtable[+0x10](0) on player's follower light */
+            DWORD *renderObj = NULL;
+            int neon_pidx = ball[6];
+            if (neon_pidx < 0) neon_pidx = 0;
+            if (neon_pidx > 1) neon_pidx = 1;
+            if (BoardHasOffset(board, 0x436C + (DWORD)neon_pidx * 4, 4))
+                renderObj = *(DWORD **)((char *)board + 0x436C + (DWORD)neon_pidx * 4);
             if (renderObj) {
                 DWORD *vtbl = *(DWORD **)renderObj;
                 if (vtbl) {
@@ -526,7 +529,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                 }
                 if (g_SceneRegisterObject && app) {
                     void *gfx = *(void **)(app + 0x174);
-                    if (gfx) g_SceneRegisterObject(gfx, ball[6], (int *)renderObj);
+                    if (gfx) g_SceneRegisterObject(gfx, neon_pidx, (int *)renderObj);
                 }
             }
             if (*(int *)((char *)ext + UNI_NEON_TRAPDOOR) == 0 && g_AthenaListAppend) {
@@ -537,16 +540,19 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         }
     }
 
-    /* ── Neon: E:LIGHTSON ── */
-    if ((*(BYTE*)((char*)ext + COLL_FLAG_LIGHTSON)) && my_strnicmp(name, "E:LIGHTSON", 10) == 0) {
+    /* ── Neon: E:LIGHTSON (S3-gap gated, board+0x436C[playerIdx]) ── */
+    if (Neon_IsActive(board) && (*(BYTE*)((char*)ext + COLL_FLAG_LIGHTSON)) && my_strnicmp(name, "E:LIGHTSON", 10) == 0) {
         if (*(int *)((char *)ball + 0x7B8) == 0) {
             if (g_SoundPlay3D && app) {
                 DWORD snd = *(DWORD *)(app + 0x528);
                 if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)ball + 0x164), *(float *)((char *)ball + 0x168), *(float *)((char *)ball + 0x16C));
             }
-            void *lightExt2 = GetBoardExt(board); if (!lightExt2) lightExt2 = ext;
-            DWORD *renderObj = lightExt2 ? *(DWORD **)((char *)lightExt2 + ball[6]*4 + UNI_BONK_STORE) : NULL;
-            if (!renderObj && lightExt2) renderObj = *(DWORD **)((char *)lightExt2 + UNI_BONK_STORE);
+            DWORD *renderObj = NULL;
+            int neon_pidx = ball[6];
+            if (neon_pidx < 0) neon_pidx = 0;
+            if (neon_pidx > 1) neon_pidx = 1;
+            if (BoardHasOffset(board, 0x436C + (DWORD)neon_pidx * 4, 4))
+                renderObj = *(DWORD **)((char *)board + 0x436C + (DWORD)neon_pidx * 4);
             if (renderObj) {
                 DWORD *vtbl = *(DWORD **)renderObj;
                 if (vtbl) {
@@ -555,7 +561,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                 }
                 if (g_SceneRegisterObject && app) {
                     void *gfx = *(void **)(app + 0x174);
-                    if (gfx) g_SceneRegisterObject(gfx, ball[6], (int *)renderObj);
+                    if (gfx) g_SceneRegisterObject(gfx, neon_pidx, (int *)renderObj);
                 }
             }
             *(int *)((char *)ball + 0x7B8) = 100;

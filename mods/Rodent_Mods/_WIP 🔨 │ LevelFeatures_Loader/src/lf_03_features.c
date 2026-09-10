@@ -654,6 +654,9 @@ static void Feature_BumperDecay(void *board, int level) {
 static void Feature_NeonCamera(void *board, int level) {
     // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
     if (*(BYTE*)((char*)board+0x874)) return;
+    /* S3-gap gate (lf_10): only reposition followers we actually built.
+     * Native objects live at board+0x436C/0x4370 (NOT ext mesh slots). */
+    if (!Neon_IsActive(board)) return;
     void* ext = GetBoardExt(board);
     if (!ext) return;
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
@@ -666,8 +669,9 @@ static void Feature_NeonCamera(void *board, int level) {
     float ballY = *(float *)(ball + BALL_POS_Y_OFS);
     float ballZ = *(float *)(ball + BALL_POS_Z_OFS);
 
-    /* Position render object 1 (ext+UNI_BONK_STORE) */
-    DWORD render1 = *(DWORD *)((char *)ext + UNI_BONK_STORE);
+    /* Position P1 follower light (board+0x436C, built by Neon_PostSetup) */
+    DWORD render1 = BoardHasOffset(board, 0x436C, 4) ?
+        *(DWORD *)((char *)board + 0x436C) : 0;
     if (render1) {
         DWORD *vtbl = *(DWORD **)render1;
         if (vtbl) {
@@ -677,14 +681,15 @@ static void Feature_NeonCamera(void *board, int level) {
         }
     }
 
-    /* Position render object 2 (board+UNI_SAW1_OBJ) if App+0x677 is 0 */
+    /* Position P2 follower light (board+0x4370) if App+0x677 is 0 */
     if (!*(char *)(app + 0x677)) {
         DWORD ball2 = *(DWORD *)(app + 0x67C);
         if (ball2 && !IsBadReadPtr((void *)ball2, 0x200)) {
             float b2X = *(float *)(ball2 + BALL_POS_X_OFS);
             float b2Y = *(float *)(ball2 + BALL_POS_Y_OFS);
             float b2Z = *(float *)(ball2 + BALL_POS_Z_OFS);
-            DWORD render2 = *(DWORD *)((char *)ext + UNI_SAW1_OBJ);
+            DWORD render2 = BoardHasOffset(board, 0x4370, 4) ?
+                *(DWORD *)((char *)board + 0x4370) : 0;
             if (render2) {
                 DWORD *vtbl2 = *(DWORD **)render2;
                 if (vtbl2) {

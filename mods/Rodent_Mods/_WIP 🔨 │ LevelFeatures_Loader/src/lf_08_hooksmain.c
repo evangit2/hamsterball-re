@@ -195,6 +195,9 @@ static void UniversalConstructor(void *board, int raceIndex) {
 
     /* Step 6b: PENNANT* collection (see lf_09_pennants.c). */
     Pennant_PostSetup(board, ext, raceIndex);
+
+    /* Step 6c: Neon glow followers (see lf_10_neon.c) — S3-gap gated. */
+    Neon_PostSetup(board, ext, raceIndex, meshPath);
 }
 
 /* Must be non-static for asm reference */

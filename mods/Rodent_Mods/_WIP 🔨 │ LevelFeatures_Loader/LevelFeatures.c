@@ -15,6 +15,7 @@
  *  lf_07_postscan.c     - PostSetup + S1/collision scans
  *  lf_08_hooksmain.c    - constructor + hooks + DebugLog + vtable + DllMain
  *  lf_09_pennants.c      - per-name pennant routing (FLAG*=rect, PENNANT*=triangle)
+ *  lf_10_neon.c          - Neon glow follower lights, S3-gap gated (Step 6c)
  */
 #include "src/lf_00_core.c"
 #include "src/lf_01_bumpers.c"
@@ -26,3 +27,4 @@
 #include "src/lf_07_postscan.c"
 #include "src/lf_08_hooksmain.c"
 #include "src/lf_09_pennants.c"
+#include "src/lf_10_neon.c"
