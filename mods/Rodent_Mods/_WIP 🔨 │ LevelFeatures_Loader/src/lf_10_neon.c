@@ -268,6 +268,11 @@ static void Neon_PostSetup(void *board, void *ext, int raceIndex, const char *me
     int has;
     char dbg[192];
     if (!board || !ext || !meshPath || !meshPath[0]) return;
+    /* Every load starts inactive: ext can be a stale heap-reused entry from
+     * a previous board at the same address (retry path), so a leftover 1
+     * would aim per-frame code at garbage board slots. Build sets it below. */
+    if (ExtHasOffset(ext, UNI_NEON_GLOW_ACTIVE, 1))
+        *(BYTE *)((char *)ext + UNI_NEON_GLOW_ACTIVE) = 0;
     has = Neon_FileHasLights(meshPath);
     if (ExtHasOffset(ext, UNI_NEON_HAS_NATIVE, 1))
         *(BYTE *)((char *)ext + UNI_NEON_HAS_NATIVE) = has ? 1 : 0;
