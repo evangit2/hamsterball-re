@@ -1,0 +1,42 @@
+; Separate Music v01b (HB+) - one file per song
+; Usage: Track Name = file  (empty = play original Music.mo3)
+; Files live in the game's Music\ folder.
+; Missing file = original plays (safe).
+;
+; Races (defaults Level1..Level15):
+Cascade Race = Level1.mo3
+Cascade Race - No Intro = Level1.mo3
+Hamster Nation = Level2.mo3
+Hamster Nation - No Intro = Level2.mo3
+Gerbil Groove = Level3.mo3
+Gerbil Groove - No Intro = Level3.mo3
+Dizzy! = Level4.mo3
+Dizzy! - No Intro = Level4.mo3
+Happy Rush = Level5.mo3
+Happy Rush - No Intro = Level5.mo3
+Up Race = Level6.mo3
+Up Race - No Intro = Level6.mo3
+Neon Theme = Level7.mo3
+Fight! = Level8.mo3
+Fight! - No Intro = Level8.mo3
+Ninja Hamster = Level9.mo3
+Ninja Hamster - No Intro = Level9.mo3
+Rodenthood = Level10.mo3
+Rodenthood - No Intro = Level10.mo3
+Hamster Chase = Level11.mo3
+Hamster Chase - No Intro = Level11.mo3
+Glass Theme = Level12.mo3
+Bucky Break = Level13.mo3
+Bucky Break - No Intro = Level13.mo3
+Master Theme = Level14.mo3
+Master Theme - No Intro = Level14.mo3
+Impossible Theme = Level15.mo3
+;
+; Menus (empty = original):
+Main Theme =
+Main Theme - No Intro =
+Game Over =
+Tournament =
+Goal! =
+High Scores =
+Loading =
