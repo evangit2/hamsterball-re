@@ -478,7 +478,10 @@ static void* EnsureBoardExt(void* board) {
     }
     return ext;
 }
- /* 1 if [FEATURES] section overrode defaults for this level */
+/* lf_10_neon.c — prototypes (defined in last chapter; single TU). */
+static int Neon_IsActive(void *board);
+static void Neon_PostSetup(void *board, void *ext, int raceIndex, const char *meshPath);
+/* 1 if [FEATURES] section overrode defaults for this level */
 typedef void (__fastcall *Scene_Update_t)(void *board);
 typedef void (__fastcall *Board_UpdateRaceState_t)(void *board);
 typedef void (__fastcall *Level_RenderDynamicObjects_t)(void *board);
@@ -633,6 +636,7 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define RVA_Wave_Cos                  0x00057DC0
 #define RVA_Wave_Sin                  0x00057DA0
 #define RVA_Scene_RegisterObject      0x00053BD0
+#define RVA_Light_ctor                0x0006B4F0
 #define RVA_AthenaList_RemoveByValue  0x00053690
 #define RVA_NeonPlatform_Activate     0x00037300
 #define RVA_SquareWobbly_Activate     0x0003ACB0
@@ -887,6 +891,9 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_BBRIDGE2_OBJ     0xB9F4  /* BBridge2 instance (was MESH_8 0x8600) */
 #define UNI_CHOMP_TIMER      0xB9F8  /* Chomper Wave_Sin timer (mirror board+0x43A4, +=3.0/frame) */
 #define UNI_PENNANT_WAVER    0xB9FC  /* Dedicated pennant waver* (lf_09; second FlagWaver for PENNANT* refs) */
+#define UNI_NEON_GLOW_ACTIVE 0xBA00  /* byte: 1 = lf_10 built follower lights (S3-gap gate passed) */
+#define UNI_NEON_HAS_NATIVE  0xBA04  /* byte: cached S3 scan — 1 = file has its own light(s) */
+/* Next free: 0xBA08, tail to 0xC000 remaining */
 /* Next free: 0xBA00, tail to 0xC000 = 0x600 bytes remaining */
 
 /* Sky popcyl array (16 × 4 = 64 bytes) */

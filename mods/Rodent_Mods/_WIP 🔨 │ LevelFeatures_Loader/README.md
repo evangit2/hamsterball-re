@@ -1,4 +1,10 @@
-# LevelFeatures_Loader (v13) — S1 + folder scan + tower/sky split + deadcode cleanup
+# LevelFeatures_Loader (v13.1) — S1 + folder scan + tower/sky split + deadcode cleanup + neon glow gate
+
+## What's New in v13.1 (neon glow followers, S3-gap gated)
+- **Neon scene-loader tail replicated (Step 6c, `src/lf_10_neon.c`)**: P1/P2 follower lights (`Light_ctor` 0x46B4F0, emitter (10,10,0,1), Range 400.0, POINT) at `board+0x436C/0x4370`, gfx slots 0/1, positioned at ball+(+20,+30,-20). Disasm-verified against `0x416270+` / `0x424790` via objdump.
+- **S3-gap gate (RodentRacer rule)**: neon code runs ONLY when the level MESHWORLD has no S3 light of its own. Stock Neon (`LevelDark`, S3=0) gets followers; all other stock races (S3=1, Odd=2) keep native lights. Custom authors opt out by adding any S3 light. Verdict cached per-board (`UNI_NEON_HAS_NATIVE`), active flag at `UNI_NEON_GLOW_ACTIVE`.
+- **Retargets**: `Feature_NeonCamera` now positions `board+0x436C/0x4370` (was dead ext mesh slots); `E:LIGHTSOFF/ON` toggles `board+0x436C[playerIdx]`; Neon `RaceState` (0x424790) only called when active (was NULL/garbage deref risk).
+- **Needs real-Windows validation**: Wine crash test passes (title-screen survival) but level-load light paths can't render on llvmpipe.
 
 ## What's New in v13 (cleanup) + v12.3 (tower/sky split) + v12 (folder scan) + v11 (S1 collisions)
 - **All S1 references added dynamically**: Every object type (`BRIDGE`, `WATERWHEEL`, `TIPPER`, `SWIRL`, `GLUEBIE`, `WINDMILL`, `CHOMPER`, `TURRET`, `CATAPULT`, `MACE`, `DRAWBRIDGE`, `BONK`, `FAN`, `WOBBLY`, etc.) is now spawned via `S1Ensure*` lazy-loading inside `UniversalCreateDynamicObjects` — no static `g_levelData[].meshes` preload. Drop any `.MESHWORLD` into any slot, its S1 strings bring their own meshes.
