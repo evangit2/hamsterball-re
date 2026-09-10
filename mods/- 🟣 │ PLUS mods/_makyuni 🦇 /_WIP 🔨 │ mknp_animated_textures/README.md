@@ -1,48 +1,91 @@
-# Animated Textures Mod
+# mknp_animated_textures
 
-A Hamsterball Plus API mod that adds runtime texture animation support. Reads `.txt` config files from the `Textures/` folder and cycles through texture frames at runtime.
+A Hamsterball Plus mod. Cycles numbered texture variants at a custom
+framerate. Install: copy `mknp_animated_textures.dll` into the game's
+`Mods/` folder (Hamsterball Plus required).
 
-## How It Works
+## How it works
 
-1. At mod load, scans `Textures/*.txt` for files containing `framerate` keyword
-2. For each config file (e.g. `arrowanim.txt`), scans for matching frame files (`arrowanim_01.png`, `arrowanim_02.png`, etc.)
-3. At `onLevelStart`, finds the base texture in the game's Graphics texture cache
-4. Loads all additional frames using the game's own texture loader
-5. Background thread swaps the `IDirect3DTexture8*` pointer in the D3DTexture object at the configured framerate
+1. `mknp_animated_textures_set.jsonc` (next to the dll) lists which
+   textures animate, with per-texture settings
+2. Background thread scans the Graphics texture cache for those
+   `baseNN.png` frames (e.g. `Circleanim02.png`). Names NOT in the
+   set are ignored, so stock textures like `Title02.png` are never
+   touched
+3. Remaining frames load via the game's own texture loader
+4. The `IDirect3DTexture8*` pointer in the texture object swaps at the
+   configured framerate. Original texture restores on level exit.
 
-## Config File Format
+## Any-frame start
 
-Place in `Textures/` folder next to the game exe. Filename must match the texture base name.
+The level may reference ANY frame (`Circleanim01`, `02`, ... `NN`).
+Each material's texture animates phased from its own frame: an
+object wearing `A01` cycles 1-2-3, one wearing `A02` cycles 2-3-1.
+Files on disk must still be `01..NN` contiguous, 2-digit, no underscore.
+
+## Set file format
+
+One `mknp_animated_textures_set.jsonc` next to the dll (`//` and
+`/* */` comments allowed, trailing commas allowed):
 
 ```
-framerate = 0.5
-looptype = 1
+[
+    "Circleanim", { "framerate": 0.25, "looptype": 1 },
+
+    "WaterFlow",  { "framerate": 0.5, "looptype": 3, "proximity": 450 },
+]
 ```
 
-- **framerate**: Seconds between frame swaps (float)
-- **looptype**: 
-  - `0` = Play once, stop on last frame
-  - `1` = Loop (wrap back to first frame)
-  - `2` = Ping-pong (reverse direction at ends)
+- **framerate**: seconds between frame swaps (float, default 0.5)
+- **looptype**: `0` = play once, stop on last frame.
+  `1` = loop forever (default). `2` = ping-pong (reverse direction
+  at ends). `3` = proximity gate (see below).
+- **proximity**: ball distance that counts as "near" (float, loop 3
+  only, default 300).
 
-## File Naming Convention
+Re-read on every level enter: edit the file, replay the level, no
+restart needed. Syntax error = previous set kept + `SET parse error`
+in the log. Missing file = no animations + `SET missing`.
 
-- Config: `Textures/arrowanim.txt`
-- Frame 1: `Textures/arrowanim_01.png` (referenced by MESHWORLD)
-- Frame 2: `Textures/arrowanim_02.png`
-- Frame 3: `Textures/arrowanim_03.png`
-- etc.
+## Looptype 3 (proximity gate)
 
-The MESHWORLD references the first frame (`arrowanim_01.png`). The mod loads frames 2+ and cycles through them.
+Zero setup: anchors = positions of the meshes wearing the texture —
+found from the level file (`levels/*.MESHWORLD`, S1-count fingerprint,
+strip-vertex averages, up to 8 per animation), no ref points needed.
+Ball inside `proximity` radius = hold frame 01. Ball leaves = play
+02..NN once, then hold the last frame. Re-enter = hold 01 again.
+Exit edge = 1.15x radius (anti-flicker at the boundary).
+Optional manual extras: S1 ref points named `PROX:<base>`. No anchor
+at all = plain loop plus one log line. Transitions log as `NEAR` /
+`FAR`. Anchor lines in the log: `MATCH` (materials scanned/hit) +
+`FILE` (level file + geoms) + `ANCHOR` (auto + manual).
 
-## Technical Details
+## File naming
 
-- Uses the game's own texture loader (Graphics+0x2E4 cache, function at RVA 0x55C50) to load frames
-- Swaps `IDirect3DTexture8*` at D3DTexture+0x04 in a background thread (16ms tick)
-- Thread-safe: uses `IsBadReadPtr`/`IsBadWritePtr` guards, restores original texture on scene end
-- Supports up to 16 concurrent animations, 32 frames each
-- Frame files sorted alphabetically before loading
+- Set: `Mods/mknp_animated_textures_set.jsonc` (next to the dll)
+- Frames: `Textures/Circleanim01.png`, `Circleanim02.png`, ...
+- Level material: point at any one of the frames
+
+## Log
+
+`mknp_animated_textures.log` is written next to this dll (the `Mods/`
+folder): INIT + ENTER/EXIT + every cache hit + skip reasons (no txt /
+few files / load fail) + setup line + first 8 swaps. Send it back if an
+animation sits still.
+
+## Technical details
+
+- HB+ v2.1, MinGW build: nocrt + manual 17-entry vtable, KERNEL32 only
+- Board/ball via HB+ GetScene/GetPlayer (manual vtable, same as
+  mknp_battyball_entities), direct-memory fallback
+- Texture loader at 0x455C50, cache at Graphics+0x2E4/+0x6F0
+- Swaps `IDirect3DTexture8*` at texture object +0x04, 16 ms tick thread
+- Up to 32 animations (one per texture object), 32 frames each
+- `source/` holds `.cpp` (HB+ build, shipped) + `.c` (retired bass-proxy
+  variant — kept for reference, does NOT work in `Mods/`)
 
 ## Build
 
-Compile as 32-bit DLL using Visual Studio with the Hamsterball Plus API template. Place the resulting `.dll` in the game's `Mods/` folder.
+```sh
+cd source && bash build.sh
+```

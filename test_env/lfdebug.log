@@ -1,0 +1,837 @@
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+
+=== PatchThread started ===
+Sleep done, resolving module base
+Function pointers resolved
+GetConfigPath done: path='Z:\home\evan\hamsterball-re\test_env\LevelFeatures.txt'
+RaceFiles path='Z:\home\evan\hamsterball-re\test_env\RaceFiles.txt'
+LoadRaceFiles done
+LevelFeatures.txt deprecated (Option B, S1 collisions)
+LevelData.txt deprecated — using in-memory defaults + S1 scan
+InstallExtFreeHook: prologue 64 A1 00 (continuing)
+InstallExtFreeHook: hooked Tournament_AdvanceRace
+InstallExtFreeHook done
+PatchAllocSizes: skipped (vanilla board size, ext heap used)
+PatchAllocSizes done
+InstallFileFallbackHook: CreateFileA hooked
+InstallFileFallbackHook: CreateFileW hooked
+InstallFileFallbackHook done
+InstallBoardCtorHooks done
+InstallUniversalConstructorHook done
+Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)
+InstallVtablePatches done
+InstallHook: SEH trampoline disabled, vtable[29] handles collisions
+InstallHook done
+=== PatchThread complete (v2 swirlfix) ===
+

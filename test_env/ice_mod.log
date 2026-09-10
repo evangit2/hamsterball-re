@@ -1,0 +1,4 @@
+=== ice_mod v1 started ===
+HOOK: DispatchCollisionEvents installed
+HOOK: Ball_ApplyForceV2 input-scale installed
+HOOK: frame epilogue tick installed

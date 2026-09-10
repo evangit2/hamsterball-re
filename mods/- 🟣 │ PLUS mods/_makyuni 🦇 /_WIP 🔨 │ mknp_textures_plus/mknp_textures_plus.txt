@@ -1,0 +1,33 @@
+mknp_textures_plus — set config
+
+ONE file for everything: mknp_textures_plus_set.jsonc
+Place it NEXT TO THE DLL (your /Mods folder, same place as the .dll).
+
+Format (jsonc = json with // and /* */ comments):
+
+[
+    // Checker Textures
+    "tex_checker_01",     { "texture_type": "checker", "texture": "checker01" },
+
+    // Custom Goal Textures
+    "tex_goal-darkround", { "texture_type": "goal",
+                            "goal_off_tex": "goal-darkround",
+                            "goal_on_tex": "goal-darkround-lit" },
+]
+
+First string per entry = label (log identifier only, any name).
+
+Names accept bare ("checker01") or pathed ("Textures/checker01")
+form, with or without extension. Compared case-insensitive.
+
+texture_type:
+  checker = POINT (nearest) filtering for "texture" (sharp at any size,
+            like vanilla checker textures; only listed textures touched)
+  goal    = like vanilla goals: shows "goal_off_tex", swaps to
+            "goal_on_tex" when the player touches N:GOAL, restores on
+            level start/end
+
+The file is re-read on every level enter: edit it, replay the level,
+no game restart needed. A syntax error keeps the previous set and
+logs  SET parse error @<byte offset>.  A missing file idles the mod
+and logs  SET missing.

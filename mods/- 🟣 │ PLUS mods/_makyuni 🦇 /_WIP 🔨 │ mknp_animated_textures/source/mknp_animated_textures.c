@@ -1,18 +1,19 @@
 /*
- * animated_textures — Cycle between numbered texture variants at a custom framerate.
+ * mknp_animated_textures — Cycle between numbered texture variants at a custom framerate.
  *
- * Scans Textures/ for .txt config files containing "framerate". Each config's
- * base name (filename without .txt) defines an animation prefix. The mod then
- * scans the Graphics texture cache for textures named baseNN.png (e.g.
- * arrowanim01.png), loads additional numbered frames, and swaps the D3D
- * texture pointer at runtime.
+ * Scans the Graphics texture cache for textures named baseNN.png (e.g.
+ * Circleanim02.png) that have a matching Textures/<base>.txt config, loads
+ * the numbered frames, and swaps the D3D texture pointer at runtime.
  *
- * Config format (e.g. Textures/arrowanim.txt):
+ * ANY referenced frame anchors the animation: the level may point at
+ * Circleanim01, 02, ... NN and the cycle starts AT that frame.
+ *
+ * Config format (e.g. Textures/Circleanim.txt):
  *   framerate = 0.5    (seconds between frame swaps)
  *   looptype = 1       (0=play once, 1=loop, 2=ping-pong)
  *
- * Texture naming: baseNN.png (e.g. arrowanim01.png, arrowanim02.png)
- * NO underscore between base name and number.
+ * Texture naming: baseNN.png (e.g. Circleanim01.png, Circleanim02.png)
+ * NO underscore between base name and number. Frames 01..NN contiguous.
  */
 
 #define WIN32_LEAN_AND_MEAN
@@ -20,6 +21,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include <ctype.h>
 
 /* ── BASS proxy exports (forward to bass_real.dll) ─────────────────── */
@@ -139,6 +141,53 @@ static int g_animCount = 0;
 static int g_running = 1;
 static char g_gameDir[MAX_PATH] = "";
 
+/* ── Log file (mknp_animated_textures.log next to the DLL) ──────────── */
+
+static FILE* g_log = NULL;
+static int g_swapLogs = 0;
+
+static void log_open(void) {
+    char dir[MAX_PATH], path[MAX_PATH];
+    HMODULE hSelf = NULL;
+    if (g_log) return;
+    /* Own DLL folder (not exe dir, not cwd). */
+    dir[0] = 0;
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                          | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                          (LPCSTR)log_open, &hSelf) && hSelf) {
+        GetModuleFileNameA(hSelf, dir, MAX_PATH);
+        {
+            char* slash = strrchr(dir, 92);
+            if (slash) slash[1] = 0;
+            else dir[0] = 0;
+        }
+    }
+    if (dir[0]) {
+        snprintf(path, MAX_PATH, "%smknp_animated_textures.log", dir);
+        g_log = fopen(path, "a");
+    }
+    if (!g_log) {
+        /* DLL folder not writable (UAC): fall back to %TEMP%. */
+        char tmp[MAX_PATH];
+        if (GetTempPathA(MAX_PATH, tmp)) {
+            snprintf(path, MAX_PATH, "%smknp_animated_textures.log", tmp);
+            g_log = fopen(path, "a");
+        }
+    }
+    if (!g_log) return;
+    fprintf(g_log, "INIT mknp_animated_textures v01c (mod loaded)\n");
+    fflush(g_log);
+}
+
+static void log_msg(const char* fmt, ...) {
+    va_list ap;
+    if (!g_log) return;
+    va_start(ap, fmt);
+    vfprintf(g_log, fmt, ap);
+    va_end(ap);
+    fflush(g_log);
+}
+
 static double getTime(void) {
     LARGE_INTEGER freq, count;
     QueryPerformanceFrequency(&freq);
@@ -244,7 +293,10 @@ static void trySetupAnimations(void) {
 
         char baseName[64];
         int frameNum = parseFrameName(texName, baseName, 64);
-        if (frameNum != 1) continue;
+        /* Any referenced frame anchors the animation (not just 01) —
+         * the cycle starts AT the frame the level points at. */
+        if (frameNum < 1) continue;
+        log_msg("SCAN found cache tex=%s frame=%d base=%s\n", texName, frameNum, baseName);
 
         /* Dedup check */
         int already = 0;
@@ -259,10 +311,16 @@ static void trySetupAnimations(void) {
         char configPath[MAX_PATH];
         snprintf(configPath, MAX_PATH, "%sTextures\\%s.txt", g_gameDir, baseName);
         DWORD attr = GetFileAttributesA(configPath);
-        if (attr == INVALID_FILE_ATTRIBUTES) continue; /* no .txt = not animated */
+        if (attr == INVALID_FILE_ATTRIBUTES) {
+            log_msg("SCAN skip %s: no txt (%s)\n", baseName, configPath);
+            continue; /* no .txt = not animated */
+        }
 
         int totalFrames = countFrames(baseName);
-        if (totalFrames < 2) continue;
+        if (totalFrames < 2) {
+            log_msg("SCAN skip %s: only %d frame file(s) on disk\n", baseName, totalFrames);
+            continue;
+        }
 
         if (IsBadReadPtr((void*)(entry + TEX_OBJ_D3D), 4)) continue;
         DWORD originalTex = *(DWORD*)(entry + TEX_OBJ_D3D);
@@ -271,8 +329,7 @@ static void trySetupAnimations(void) {
         AnimTexture* a = &g_anims[g_animCount];
         a->d3dTexObjAddr = entry;
         a->originalD3DTex = originalTex;
-        a->frameTextures[0] = originalTex;
-        a->frameCount = 1;
+        a->frameCount = 0;
         a->currentFrame = 0;
         a->direction = 1;
         a->lastSwapTime = getTime();
@@ -280,20 +337,47 @@ static void trySetupAnimations(void) {
         a->baseName[63] = 0;
         loadConfig(baseName, &a->framerate, &a->looptype);
 
-        for (int f = 2; f <= totalFrames && f <= MAX_FRAMES; f++) {
-            char frameName[128];
-            snprintf(frameName, sizeof(frameName), "%s%02d.png", baseName, f);
-            void* texObj = game_LoadTexture((void*)graphics, NULL, frameName, 1);
-            if (texObj && !IsBadReadPtr(texObj, 0x10)) {
-                DWORD d3dTex = *(DWORD*)((char*)texObj + TEX_OBJ_D3D);
+        /* Load frames 1..N. The cached texture — whatever frame the level
+         * referenced — is reused in place; the rest load via the game
+         * loader. The animation starts AT the referenced frame. */
+        {
+            int anchorIdx = -1;
+            for (int f = 1; f <= totalFrames && a->frameCount < MAX_FRAMES; f++) {
+                DWORD d3dTex = 0;
+                if (f == frameNum) {
+                    d3dTex = originalTex;
+                } else {
+                    char frameName[128];
+                    snprintf(frameName, sizeof(frameName), "%s%02d.png", baseName, f);
+                    void* texObj = game_LoadTexture((void*)graphics, NULL, frameName, 1);
+                    if (texObj && !IsBadReadPtr(texObj, 0x10)) {
+                        d3dTex = *(DWORD*)((char*)texObj + TEX_OBJ_D3D);
+                    }
+                    if (!d3dTex) log_msg("SCAN load fail %s\n", frameName);
+                }
                 if (d3dTex) {
+                    if (f == frameNum) anchorIdx = a->frameCount;
                     a->frameTextures[a->frameCount] = d3dTex;
                     a->frameCount++;
                 }
             }
+            /* Referenced frame beyond the files on disk (e.g. level says
+             * 05, disk has 01-03): append the cached texture so the
+             * level's own frame still shows first. */
+            if (anchorIdx < 0 && a->frameCount < MAX_FRAMES) {
+                anchorIdx = a->frameCount;
+                a->frameTextures[a->frameCount] = originalTex;
+                a->frameCount++;
+            }
+            if (anchorIdx >= 0) a->currentFrame = anchorIdx;
         }
 
-        if (a->frameCount < 2) continue;
+        if (a->frameCount < 2) {
+            log_msg("SCAN skip %s: only %d frame(s) usable\n", baseName, a->frameCount);
+            continue;
+        }
+        log_msg("SCAN setup %s: %d frames start=%d rate=%.2f loop=%d\n",
+                baseName, a->frameCount, a->currentFrame + 1, a->framerate, a->looptype);
         g_animCount++;
     }
 }
@@ -312,6 +396,8 @@ static void restoreTextures(void) {
 
 static DWORD WINAPI animThread(LPVOID param) {
     (void)param;
+    log_open();
+    log_msg("THREAD started gameDir=%s\n", g_gameDir);
     Sleep(3000);
     int scanTimer = 0;
     /* Track whether we were in a level last frame */
@@ -332,10 +418,12 @@ static DWORD WINAPI animThread(LPVOID param) {
             restoreTextures();
             wasInLevel = 0;
             scanTimer = 0;
+            log_msg("EXIT level (textures restored)\n");
         }
         if (inLevel && !wasInLevel) {
             wasInLevel = 1;
             scanTimer = 0;
+            log_msg("ENTER level\n");
         }
 
         /* Periodically try to set up animations after entering a level */
@@ -344,6 +432,7 @@ static DWORD WINAPI animThread(LPVOID param) {
             if (scanTimer >= 60) {
                 scanTimer = 0;
                 trySetupAnimations();
+                log_msg("SCAN pass done: %d animation(s) active\n", g_animCount);
             }
         }
 
@@ -387,6 +476,10 @@ static DWORD WINAPI animThread(LPVOID param) {
             DWORD newTex = a->frameTextures[next];
             if (newTex && !IsBadWritePtr((void*)(a->d3dTexObjAddr + TEX_OBJ_D3D), 4)) {
                 *(DWORD*)(a->d3dTexObjAddr + TEX_OBJ_D3D) = newTex;
+                if (g_swapLogs < 8) {
+                    g_swapLogs++;
+                    log_msg("SWAP %s -> frame %d tex=0x%X\n", a->baseName, next + 1, newTex);
+                }
             }
         }
     }

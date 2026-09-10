@@ -1,0 +1,4 @@
+=== physics_objects v2 (tipping) started ===
+RENDER: vtable[18]=0045E0E0
+HOOK: tick installed
+HOOK: Graphics_RenderScene installed
