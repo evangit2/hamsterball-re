@@ -9,7 +9,7 @@
  * pennant. There is exactly one pennant write in the whole game.
  *
  * This chapter adds designer control without touching native paths:
- *  - FLAG*    -> native waver (rectangle everywhere, pennant on Tower race 5)
+ *  - FLAG*    -> native waver (rectangle on every level, Tower included)
  *  - PENNANT* -> dedicated pennant waver (triangle on every level)
  * Native CreateFlags only collects the FLAG prefix, so PENNANT* S1 refs are
  * appended to board+0x2160 here (pointer-deduped). A 5-byte CALL detour at
@@ -118,23 +118,13 @@ static int Pennant_InList(void *board, void *obj) {
 void Pennant_PostSetup(void *board, void *ext, int raceIndex) {
     g_pennantBoard = board;
     g_pennantRace = raceIndex;
+    (void)raceIndex;  /* names decide shapes; no per-race exceptions */
     Pennant_InitPointers();
     if (!board || !ext) return;
 
-    /* (1) Tower keeps its native look: replicate scene-loader tail
-     * (0x40D785+): shared waver -> pennant, 125 wide, 75 tall. */
-    if (raceIndex == 5) {
-        if (!IsBadReadPtr((char*)board + BOARD_FLAG_WAVER, 4)) {
-            void *w = *(void**)((char*)board + BOARD_FLAG_WAVER);
-            if (w && !IsBadReadPtr(w, FLAGWAVER_SIZE) && p_FlagRebuild) {
-                *(BYTE*)((char*)w + 0x80) = 1;
-                *(DWORD*)((char*)w + 0x10) = 0x42FA0000;  /* 125.0f */
-                *(DWORD*)((char*)w + 0x14) = 0x42960000;  /* 75.0f */
-                p_FlagRebuild(w);
-                DebugLog("Pennant: Tower race — shared waver set to pennant/125x75");
-            }
-        }
-    }
+    /* (1) No Tower exception: FLAG* stays rectangular even on Tower race 5.
+     * (The native scene-loader tail pennanted the shared waver; we
+     * deliberately do not replicate it — the mesh name is the only switch.) */
 
     /* (2) Collect PENNANT* S1 refs into board+0x2160 (native only takes
      * FLAG*). Same S1-walk shape as the TarBubble Step-6 block. */

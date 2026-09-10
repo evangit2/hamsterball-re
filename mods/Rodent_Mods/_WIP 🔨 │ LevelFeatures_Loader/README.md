@@ -216,6 +216,6 @@ shared waver object, so without this mod a level is all-rectangle or (Tower
 only) all-pennant. The mod builds a second pennant waver and routes each
 flag to the right one by name at render time (see `src/lf_09_pennants.c`).
 
-- Tower race keeps its native look: all `FLAG*` render as pennants there.
-- Everywhere else `FLAG*` = rectangle, `PENNANT*` = triangle.
+- `FLAG*` = rectangle on every level, Tower included.
+- `PENNANT*` = triangle on every level.
 - Check `lfdebug.log` for `Pennant:` lines to confirm pickup.
