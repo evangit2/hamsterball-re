@@ -1,0 +1,25 @@
+
+
+// BATTYBALL EVENTS MOD - SETTINGS //
+//
+// ----------- "trigger_type" -----------
+// 0 = Trigger Event each time player collides with E: plane. (default)
+// 1 = Trigget Event only once, when player collides with E: plane.
+// 2 = Trigget Event when level starts. Loop every few seconds (loop_delay)
+// 3 = Trigget Event only once, when level starts.
+//
+// ----------- "pause" -----------
+// true = event sounds stop when game is paused, resume on unpause. (default)
+// false = event sounds ignore pause and keep playing.
+
+[
+
+// ################################### │    E V E N T S    │ ###################################
+
+    // Sound Effects
+    "E:sfx_bell", { "trigger_type": 2, "loop_delay": 200, "sound1": "Testrand1", "sound2": "Testrand2", "sound3": "Testrand3" }
+    //"E:sfx_bell", { "sound": "Testsound" }
+
+// #############################################################################################
+
+]
