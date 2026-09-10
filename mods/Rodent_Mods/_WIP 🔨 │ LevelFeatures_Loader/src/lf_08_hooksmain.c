@@ -193,7 +193,7 @@ static void UniversalConstructor(void *board, int raceIndex) {
         }
     }
 
-    /* Step 6b: Tower pennants + PENNANT* collection (see lf_09_pennants.c). */
+    /* Step 6b: PENNANT* collection (see lf_09_pennants.c). */
     Pennant_PostSetup(board, ext, raceIndex);
 }
 
