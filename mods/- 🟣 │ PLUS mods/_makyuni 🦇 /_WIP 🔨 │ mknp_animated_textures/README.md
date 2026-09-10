@@ -40,6 +40,9 @@ One `mknp_animated_textures_set.jsonc` next to the dll (`//` and
 - **looptype**: `0` = play once, stop on last frame.
   `1` = loop forever (default). `2` = ping-pong (reverse direction
   at ends). `3` = proximity gate (see below).
+- **paused**: `true` (default) = freeze on the current frame while the
+  Esc menu is open, resume cleanly on close. `false` = ignore pause,
+  keep animating.
 - **proximity**: ball distance that counts as "near" (float, loop 3
   only, default 300).
 

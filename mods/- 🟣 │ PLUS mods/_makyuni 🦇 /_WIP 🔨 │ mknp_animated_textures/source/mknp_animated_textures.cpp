@@ -15,9 +15,10 @@
  * start frame (A01 object: 1-2-3, A02 object: 2-3-1, ...).
  *
  * Set file (mknp_animated_textures_set.jsonc, next to the dll):
- *   [ "Base", { "framerate": 0.5, "looptype": 1, "proximity": 300 }, ... ]
+ *   [ "Base", { "framerate": 0.5, "looptype": 1, "paused": true, "proximity": 300 }, ... ]
  *   framerate = seconds between frame swaps (default 0.5)
  *   looptype  = 0 play once, 1 loop (default), 2 ping-pong, 3 proximity
+ *   paused    = true (default): freeze while Esc menu open; false: ignore pause
  *   proximity = loop 3 only: near radius (default 300)
  * Re-read on every level enter (edit the file, replay the level).
  *
@@ -79,6 +80,7 @@
 #define ALIST_COUNT         0x04
 #define ALIST_ITEMS         0x40C
 #define BOARD_BALL_LIST     0x29D4
+#define BOARD_PAUSE_FLAG    0x874
 #define BALL_POS_X          0x164
 
 /* LoadTexture: __thiscall(void* gfx, char* filename, char search_cache).
@@ -95,6 +97,7 @@ typedef struct {
     int frameCount;
     float framerate;
     int looptype;
+    int paused;      /* 1 = freeze while game paused (default), 0 = ignore pause */
     int currentFrame;
     int startFrame;   /* cache-entry's own frame: A01->1, A02->2 (per-object phase) */
     int direction;
@@ -277,6 +280,7 @@ typedef struct {
     char base[64];
     float framerate;
     int looptype;
+    int paused;
     float proxR;
 } SetEntry;
 static SetEntry g_set[SET_MAX];
@@ -363,8 +367,19 @@ static void jc_skip_value(JC* j) {
         j->p++;
     }
 }
+/* true/false/0/1 -> bool. Leaves the delimiter unconsumed. */
+static int jc_bool(JC* j) {
+    jc_skip(j);
+    if (j->p < j->end && (*j->p == 't' || *j->p == 'T' || *j->p == 'f' || *j->p == 'F')) {
+        int v = (*j->p == 't' || *j->p == 'T');
+        while (j->p < j->end &&
+               ((*j->p >= 'a' && *j->p <= 'z') || (*j->p >= 'A' && *j->p <= 'Z'))) j->p++;
+        return v;
+    }
+    return jc_number(j) != 0;
+}
 static void jc_object(JC* j, SetEntry* e) {
-    e->framerate = 0.5f; e->looptype = 1; e->proxR = DEFAULT_PROX_R;
+    e->framerate = 0.5f; e->looptype = 1; e->paused = 1; e->proxR = DEFAULT_PROX_R;
     jc_expect(j, '{');
     if (j->err) return;
     while (1) {
@@ -376,6 +391,7 @@ static void jc_object(JC* j, SetEntry* e) {
         if (!jc_expect(j, ':')) return;
         if (str_eq_ci(key, "framerate")) e->framerate = jc_number(j);
         else if (str_eq_ci(key, "looptype")) e->looptype = (int)jc_number(j);
+        else if (str_eq_ci(key, "paused")) e->paused = jc_bool(j);
         else if (str_eq_ci(key, "proximity")) e->proxR = jc_number(j);
         else jc_skip_value(j);
         if (j->err) return;
@@ -403,7 +419,7 @@ static int parse_set(const char* buf, int len, SetEntry* out, int maxn, int* err
         if (n < maxn) {
             strncpy(out[n].base, base, 63); out[n].base[63] = 0;
             if (j.p < j.end && *j.p == '{') jc_object(&j, &out[n]);
-            else { out[n].framerate = 0.5f; out[n].looptype = 1; out[n].proxR = DEFAULT_PROX_R; }
+            else { out[n].framerate = 0.5f; out[n].looptype = 1; out[n].paused = 1; out[n].proxR = DEFAULT_PROX_R; }
             if (!j.err) n++;
         } else {
             SetEntry tmp;
@@ -1224,6 +1240,7 @@ static void try_setup_anims(void) {
         a->baseName[63] = 0;
         a->framerate = se->framerate;
         a->looptype = se->looptype;
+        a->paused = se->paused;
         a->proxR = se->proxR;
 
         /* Load frames 1..N. The cached texture — whatever frame the level
@@ -1276,11 +1293,11 @@ static void try_setup_anims(void) {
             continue;
         }
         if (a->looptype == 3)
-            snprintf(msg, sizeof(msg), "SCAN setup %s(s%d): %d frames start=%d rate=%f.2 loop=3 prox=%f.0 obj=0x%X",
-                     baseName, a->startFrame, a->frameCount, a->currentFrame + 1, a->framerate, (double)a->proxR, entry);
+            snprintf(msg, sizeof(msg), "SCAN setup %s(s%d): %d frames start=%d rate=%f.2 loop=3 paused=%d prox=%f.0 obj=0x%X",
+                     baseName, a->startFrame, a->frameCount, a->currentFrame + 1, a->framerate, a->paused, (double)a->proxR, entry);
         else
-            snprintf(msg, sizeof(msg), "SCAN setup %s(s%d): %d frames start=%d rate=%f.2 loop=%d obj=0x%X",
-                     baseName, a->startFrame, a->frameCount, a->currentFrame + 1, a->framerate, a->looptype, entry);
+            snprintf(msg, sizeof(msg), "SCAN setup %s(s%d): %d frames start=%d rate=%f.2 loop=%d paused=%d obj=0x%X",
+                     baseName, a->startFrame, a->frameCount, a->currentFrame + 1, a->framerate, a->looptype, a->paused, entry);
         log_msg(msg);
         if (a->looptype == 3) {
             a->isnear = -1;
@@ -1307,11 +1324,19 @@ static void restore_textures(void) {
     g_swapLogs = 0;
 }
 
+/* 1 = Esc menu open (board+0x874). 0 when no board / unreadable. */
+static int game_paused(void) {
+    DWORD board = get_board();
+    if (!board) return 0;
+    if (IsBadReadPtr((void*)(board + BOARD_PAUSE_FLAG), 4)) return 0;
+    return *(int*)(board + BOARD_PAUSE_FLAG) != 0;
+}
+
 static DWORD WINAPI anim_thread(LPVOID param) {
     int scanTimer = 0, wasInLevel = 0, anchorTimer = 0;
     char msg[256];
     (void)param;
-    snprintf(msg, sizeof(msg), "INIT mknp_animated_textures v02b HB+ (mod loaded)");
+    snprintf(msg, sizeof(msg), "INIT mknp_animated_textures v02c HB+ (mod loaded)");
     log_msg(msg);
     snprintf(msg, sizeof(msg), "THREAD started gameDir=%s", g_gameDir);
     log_msg(msg);
@@ -1372,6 +1397,7 @@ static DWORD WINAPI anim_thread(LPVOID param) {
         {
             double now = get_time();
             int i;
+            int pg = game_paused();
             for (i = 0; i < g_animCount; i++) {
                 AnimTexture* a = &g_anims[i];
                 double elapsed;
@@ -1379,6 +1405,9 @@ static DWORD WINAPI anim_thread(LPVOID param) {
                 DWORD newTex;
                 if (a->frameCount < 2) continue;
                 if (!a->d3dTexObjAddr) continue;
+                /* paused=1: freeze on current frame while Esc menu is open.
+                 * Clock re-based so resume continues cleanly, no frame jump. */
+                if (a->paused && pg) { a->lastSwapTime = now; continue; }
                 if (IsBadReadPtr((void*)(a->d3dTexObjAddr + TEX_OBJ_D3D), 4)) {
                     snprintf(msg, sizeof(msg), "DROP %s: texture object went invalid", a->baseName);
                     log_msg(msg);
