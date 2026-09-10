@@ -1,0 +1,46 @@
+mknp_animated_textures — animation set config
+
+ONE file for everything: mknp_animated_textures_set.jsonc
+Place it NEXT TO THE DLL (your /Mods folder, same place as the .dll).
+
+Format (jsonc = json with // and /* */ comments):
+
+[
+    "Circleanim", { "framerate": 0.25, "looptype": 1 },
+
+    "WaterFlow",  { "framerate": 0.5, "looptype": 3, "proximity": 450 },
+]
+
+One "name", { settings } pair per animated texture.
+Only textures listed here animate. Everything else is ignored.
+
+framerate = seconds between frame swaps (float, default 0.5)
+looptype  = 0 play once, stop on last frame
+            1 loop forever (default)
+            2 ping-pong (reverse at ends)
+            3 proximity gate (see below)
+proximity = ball distance that counts as "near" (float, loop 3 only,
+            default 300). One radius per animation.
+
+The file is re-read on every level enter: edit it, replay the level,
+no game restart needed. A syntax error keeps the previous set and
+logs  SET parse error @<byte offset>.  A missing file disables all
+animations and logs  SET missing.
+
+LOOPTYPE 3 (zero setup, no ref points needed):
+  Anchors = positions of the meshes wearing the texture (found
+  automatically, up to 8 per animation). Optional extras: S1 ref
+  points named  PROX:<base>  (e.g. PROX:Circleanim).
+  Ball inside radius = hold frame 01.
+  Ball leaves       = play 02..NN once, then hold last frame.
+  Exit edge = 1.15x radius (anti-flicker at the boundary).
+  No anchor at all = plain loop + one log line.
+
+FRAMES (all in the game's Textures/ folder):
+  <base>01.png, <base>02.png, ... <base>NN.png
+  NO underscore. Numbers 2 digits, 01..NN, no gaps.
+  Example: Circleanim01.png Circleanim02.png Circleanim03.png
+
+LEVEL: point materials at ANY frames (Circleanim02.png works).
+Each object animates phased from its own frame (A01: 1-2-3,
+A02: 2-3-1). Loop 3 always starts at 01.

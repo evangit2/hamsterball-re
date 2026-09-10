@@ -1,0 +1,846 @@
+/*
+ * physics_objects — pushable physics objects for Hamsterball Physicus
+ * (Tier 1: axis-aligned sliding/falling boxes, native ball-vs-box collision)
+ *
+ * RodentRacer spec (2026-08-25):
+ *   - S1 ref points named  CUBE:<meshname>  spawn a physics object whose
+ *     visuals AND collision come from <meshname>.MESH (MeshNode pipeline:
+ *     LoadMesh 0x471750 -> MeshWorld_ctor -> MeshWorld_Parse ASE text)
+ *   - No AI, no death, no respawn. Objects are NOT balls.
+ *   - Ball can stand on / jump on / push the object with real mass-feel
+ *   - Objects are event-inert (can't trigger N:/E: events) and immortal
+ *
+ * ── How it works (all Ghidra-verified) ──────────────────────────────────
+ *
+ *  VISUALS + COLLISION DATA: one .MESH load gives us a MeshWorld whose
+ *  MeshBuffers hold strip lists (embedded AthenaList at MB+0xC: count+0x10,
+ *  items+0x418, verts 32B stride, XYZ at +0/+4/+8). The game's own raycast
+ *  (Mesh_FindClosestCollision 0x465D90) reads exactly these structures, so we
+ *  get true mesh-vs-ball queries for free. We render manually via
+ *  SceneObject_Render (vtable[18] = 0x470150, __thiscall(ECX), RET 4,
+ *  arg=0 safe per waterwheel pattern).
+ *
+ *  PER-FRAME PHYSICS (mod-side point-mass state per object):
+ *    gravity -> velocity; ground snap via downward FindClosestCollision;
+ *    friction decay when grounded; integration.
+ *
+ *  PUSHING: if the player ball's expanded AABB overlaps the box AABB and the
+ *  ball is beside it (not above), the box is pushed along the dominant X/Z
+ *  approach axis. Ball keeps its own velocity (native response vs the static
+ *  triangles); the box gains matching velocity -> weighty feel.
+ *
+ *  CARRYING: ball standing on top gets the same delta applied per frame
+ *  (carry_balls pattern from lava_rising).
+ *
+ *  COLLISION MOVEMENT: each frame the object moves by delta D = pos - lastpos;
+ *  we translate every stored ORIGINAL strip vertex by D in place. The ball's
+ *  sweep query then sees the box at its new position natively. (Catapult
+ *  arm-rotation technique, translation instead of rotation.)
+ *
+ *  RENDER MOVEMENT: MeshWorld world matrix at MW+0x04 (16 floats). We write
+ *  a translation matrix each frame before calling vtable[18].
+ *
+ *  EVENT INERTNESS: objects are not in the ball list, so DispatchCollision-
+ *  Events never sees them. No hook needed for v1.
+ */
+
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <math.h>
+
+typedef unsigned __int64 QWORD;
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  BASS proxy exports
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static HMODULE g_hRealBass = NULL;
+static void lazy_load_real_bass(void);
+
+typedef int  (__stdcall *BASS_ChannelSetAttributes_t)(DWORD, float, int, int);
+static BASS_ChannelSetAttributes_t real_BASS_ChannelSetAttributes = NULL;
+__declspec(dllexport) int __stdcall BASS_ChannelSetAttributes(DWORD a, float b, int c, int d) {
+    lazy_load_real_bass();
+    if (real_BASS_ChannelSetAttributes) return real_BASS_ChannelSetAttributes(a, b, c, d);
+    return 1;
+}
+typedef int  (__stdcall *BASS_MusicPlayEx_t)(DWORD, DWORD, BOOL);
+static BASS_MusicPlayEx_t real_BASS_MusicPlayEx = NULL;
+__declspec(dllexport) int __stdcall BASS_MusicPlayEx(DWORD a, DWORD b, BOOL c) {
+    lazy_load_real_bass();
+    if (real_BASS_MusicPlayEx) return real_BASS_MusicPlayEx(a, b, c);
+    return 1;
+}
+typedef int  (__stdcall *BASS_MusicLoad_t)(int, const char*, QWORD, DWORD, DWORD, DWORD);
+static BASS_MusicLoad_t real_BASS_MusicLoad = NULL;
+__declspec(dllexport) int __stdcall BASS_MusicLoad(int a, const char* b, QWORD c, DWORD d, DWORD e, DWORD f) {
+    lazy_load_real_bass();
+    if (real_BASS_MusicLoad) return real_BASS_MusicLoad(a, b, c, d, e, f);
+    return 0;
+}
+typedef int  (__stdcall *BASS_SampleLoad_t)(int, const char*, QWORD, DWORD, DWORD, DWORD);
+static BASS_SampleLoad_t real_BASS_SampleLoad = NULL;
+__declspec(dllexport) int __stdcall BASS_SampleLoad(int a, const char* b, QWORD c, DWORD d, DWORD e, DWORD f) {
+    lazy_load_real_bass();
+    if (real_BASS_SampleLoad) return real_BASS_SampleLoad(a, b, c, d, e, f);
+    return 0;
+}
+typedef int  (__stdcall *BASS_StreamCreateFile_t)(int, const char*, QWORD, QWORD, DWORD);
+static BASS_StreamCreateFile_t real_BASS_StreamCreateFile = NULL;
+__declspec(dllexport) int __stdcall BASS_StreamCreateFile(int a, const char* b, QWORD c, QWORD d, DWORD e) {
+    lazy_load_real_bass();
+    if (real_BASS_StreamCreateFile) return real_BASS_StreamCreateFile(a, b, c, d, e);
+    return 0;
+}
+typedef int  (__stdcall *BASS_SampleGetChannel_t)(DWORD, BOOL);
+static BASS_SampleGetChannel_t real_BASS_SampleGetChannel = NULL;
+__declspec(dllexport) int __stdcall BASS_SampleGetChannel(DWORD a, BOOL b) {
+    lazy_load_real_bass();
+    if (real_BASS_SampleGetChannel) return real_BASS_SampleGetChannel(a, b);
+    return 0;
+}
+typedef int  (__stdcall *BASS_ChannelPlay_t)(DWORD, BOOL);
+static BASS_ChannelPlay_t real_BASS_ChannelPlay = NULL;
+__declspec(dllexport) int __stdcall BASS_ChannelPlay(DWORD a, BOOL b) {
+    lazy_load_real_bass();
+    if (real_BASS_ChannelPlay) return real_BASS_ChannelPlay(a, b);
+    return 1;
+}
+typedef int  (__stdcall *BASS_ChannelStop_t)(DWORD);
+static BASS_ChannelStop_t real_BASS_ChannelStop = NULL;
+__declspec(dllexport) int __stdcall BASS_ChannelStop(DWORD a) {
+    lazy_load_real_bass();
+    if (real_BASS_ChannelStop) return real_BASS_ChannelStop(a);
+    return 1;
+}
+typedef int  (__stdcall *BASS_Init_t)(int, DWORD, DWORD, HWND, void*);
+static BASS_Init_t real_BASS_Init = NULL;
+__declspec(dllexport) int __stdcall BASS_Init(int a, DWORD b, DWORD c, HWND d, void* e) {
+    lazy_load_real_bass();
+    if (real_BASS_Init) return real_BASS_Init(a, b, c, d, e);
+    return 1;
+}
+typedef int  (__stdcall *BASS_Free_t)(void);
+static BASS_Free_t real_BASS_Free = NULL;
+__declspec(dllexport) int __stdcall BASS_Free(void) {
+    lazy_load_real_bass();
+    if (real_BASS_Free) return real_BASS_Free();
+    return 1;
+}
+typedef int  (__stdcall *BASS_Stop_t)(void);
+static BASS_Stop_t real_BASS_Stop = NULL;
+__declspec(dllexport) int __stdcall BASS_Stop(void) {
+    lazy_load_real_bass();
+    if (real_BASS_Stop) return real_BASS_Stop();
+    return 1;
+}
+typedef int  (__stdcall *BASS_Start_t)(void);
+static BASS_Start_t real_BASS_Start = NULL;
+__declspec(dllexport) int __stdcall BASS_Start(void) {
+    lazy_load_real_bass();
+    if (real_BASS_Start) return real_BASS_Start();
+    return 1;
+}
+typedef int  (__stdcall *BASS_SetConfig_t)(DWORD, DWORD);
+static BASS_SetConfig_t real_BASS_SetConfig = NULL;
+__declspec(dllexport) int __stdcall BASS_SetConfig(DWORD a, DWORD b) {
+    lazy_load_real_bass();
+    if (real_BASS_SetConfig) return real_BASS_SetConfig(a, b);
+    return 1;
+}
+typedef int  (__stdcall *BASS_ErrorGetCode_t)(void);
+static BASS_ErrorGetCode_t real_BASS_ErrorGetCode = NULL;
+__declspec(dllexport) int __stdcall BASS_ErrorGetCode(void) {
+    lazy_load_real_bass();
+    if (real_BASS_ErrorGetCode) return real_BASS_ErrorGetCode();
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  Game addresses / offsets (Ghidra-verified)
+ * ═══════════════════════════════════════════════════════════════════ */
+
+#define GLOBAL_APP            0x005341E0
+#define APP_BOARD             0x178
+#define APP_QUIT_FLAG         0x159
+
+#define BOARD_BALL_LIST       0x29D4
+#define BOARD_SCENE_OBJ       0x8AC
+#define LEVEL_SCENE_OBJ       0x480
+#define SCENE_REF_COUNT       0x898
+#define SCENE_REF_ITEMS       0xCA0
+
+#define PAUSE_FLAG            0x874
+
+#define BALL_PLAYERIDX        0x18
+#define BALL_POS              0x164      /* X/Y/Z */
+#define BALL_RADIUS           0x284
+
+#define FN_operator_new       0x004BA57B /* __cdecl(size) */
+#define FN_MeshNode_ctor      0x00471750 /* __thiscall(this,gfx,path,char flag) RET 0xC */
+#define FN_FindClosestColl    0x00465D90 /* __thiscall(mesh,outHit,origin,dir,tol) RET 0x20 */
+
+typedef void* (__cdecl *operator_new_t)(unsigned int);
+typedef unsigned int (__thiscall *MeshNodeCtor_t)(void*, DWORD, const char*, char);
+typedef void* (__thiscall *FindClosest_t)(void*, float*, float*, float*, float);
+
+#define pfn_operator_new   ((operator_new_t)FN_operator_new)
+#define pfn_MeshNode_ctor  ((MeshNodeCtor_t)FN_MeshNode_ctor)
+#define pfn_Raycast        ((FindClosest_t)FN_FindClosestColl)
+
+/* MeshWorld layout (from 0x461510/0x4706E0 decompiles) */
+#define MW_WORLD_MATRIX       0x04        /* 16 floats */
+#define MW_MESHBUFFER_LIST    0x2C        /* embedded AthenaList */
+#define MB_COUNT(listbase)    (*(DWORD*)((char*)(listbase) + 0x04))
+#define MB_ITEMS(listbase)    (*(DWORD**)((char*)(listbase) + 0x40C))
+
+/* MeshBuffer strip list (embedded AthenaList at MB+0xC) */
+#define STRIP_COUNT(mb)       (*(DWORD*)((char*)(mb) + 0x10))
+#define STRIP_ITEMS(mb)       (*(float**)((char*)(mb) + 0x418))
+
+#define STRIDE_VERTS          3           /* verts per strip (triangle strips of 1 tri) */
+#define VERT_STRIDE           8           /* floats per vertex (32 bytes) */
+
+/* SceneObject_Render via vtable[18] */
+#define MESH_RENDER_SLOT      18          /* byte offset 0x48 */
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  Config
+ * ═══════════════════════════════════════════════════════════════════ */
+
+#define CFG_GRAVITY         0.55f
+#define CFG_MAXFALL         12.0f
+#define CFG_FRICTION        0.90f
+#define CFG_PUSHFORCE       0.30f
+#define CFG_MAXPUSHVEL      2.2f
+#define CFG_SNAPDIST        6.0f
+#define CFG_CONTACTGAP      14.0f   /* ball-center to box surface at contact ~ radius */
+
+static float cfg_gravity     = CFG_GRAVITY;
+static float cfg_maxfall     = CFG_MAXFALL;
+static float cfg_friction    = CFG_FRICTION;
+static float cfg_pushforce   = CFG_PUSHFORCE;
+static float cfg_maxpushvel  = CFG_MAXPUSHVEL;
+static float cfg_snapdist    = CFG_SNAPDIST;
+
+static void get_dll_dir(char *out, int len) {
+    MEMORY_BASIC_INFORMATION mbi;
+    HMODULE hm = NULL;
+    if (VirtualQuery((LPCVOID)&get_dll_dir, &mbi, sizeof(mbi)) && mbi.AllocationBase)
+        hm = (HMODULE)mbi.AllocationBase;
+    if (!GetModuleFileNameA(hm, out, len)) out[0] = 0;
+    char *s = strrchr(out, '\\');
+    if (s) *(s + 1) = 0;
+}
+
+static void load_config(void) {
+    char path[MAX_PATH];
+    get_dll_dir(path, MAX_PATH);
+    lstrcatA(path, "physics_objects.ini");
+    FILE *f = fopen(path, "r");
+    if (!f) {
+        f = fopen(path, "w");
+        if (f) {
+            fprintf(f, "# physics_objects configuration\n");
+            fprintf(f, "# Gravity acceleration per frame\n");
+            fprintf(f, "Gravity=%.2f\n", CFG_GRAVITY);
+            fprintf(f, "# Max falling speed\n");
+            fprintf(f, "MaxFall=%.2f\n", CFG_MAXFALL);
+            fprintf(f, "# Ground friction multiplier per frame (1.0 = slides forever)\n");
+            fprintf(f, "Friction=%.2f\n", CFG_FRICTION);
+            fprintf(f, "# Acceleration gained while being pushed\n");
+            fprintf(f, "PushForce=%.2f\n", CFG_PUSHFORCE);
+            fprintf(f, "# Maximum horizontal push speed\n");
+            fprintf(f, "MaxPushVel=%.2f\n", CFG_MAXPUSHVEL);
+            fclose(f);
+        }
+        return;
+    }
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        char *h = strchr(line, '#');
+        if (h) *h = 0;
+        float v;
+        if      (sscanf(line, " Gravity = %f", &v) == 1 && v > 0.f) cfg_gravity = v;
+        else if (sscanf(line, " MaxFall = %f", &v) == 1 && v > 0.f) cfg_maxfall = v;
+        else if (sscanf(line, " Friction = %f", &v) == 1 && v >= 0.5f && v <= 1.0f) cfg_friction = v;
+        else if (sscanf(line, " PushForce = %f", &v) == 1 && v > 0.f) cfg_pushforce = v;
+        else if (sscanf(line, " MaxPushVel = %f", &v) == 1 && v > 0.f) cfg_maxpushvel = v;
+    }
+    fclose(f);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  Log
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static void ilog(const char *fmt, ...) {
+    char buf[512];
+    va_list ap;
+    va_start(ap, fmt);
+    _vsnprintf(buf, sizeof(buf) - 1, fmt, ap);
+    va_end(ap);
+    buf[sizeof(buf) - 1] = 0;
+    char path[MAX_PATH];
+    get_dll_dir(path, MAX_PATH);
+    lstrcatA(path, "physics_objects.log");
+    FILE *f = fopen(path, "a");
+    if (f) { fputs(buf, f); fputc('\n', f); fclose(f); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  Object table
+ * ═══════════════════════════════════════════════════════════════════ */
+
+#define MAX_OBJECTS 16
+#define MAX_NAME    64
+
+typedef struct {
+    /* identity */
+    DWORD  meshworld;               /* MeshWorld from .MESH load (visuals+collision data) */
+    char   mesh_name[MAX_NAME];
+
+    /* bounds (computed once from original geometry, translated live) */
+    float  min[3], max[3];          /* current AABB (follows position) */
+
+    /* physics state */
+    float  x, y, z;                 /* current center position */
+    float  vx, vy, vz;
+    float  home[3];                 /* spawn position */
+    int    grounded;
+
+    /* vertex translation bookkeeping */
+    struct {
+        float *verts;               /* live array (in-place) */
+        int    count;               /* total floats across all strips */
+    } bufs[16];
+    int    buf_count;
+    int    first_apply_done;
+
+    /* render */
+    DWORD  render_fn;               /* vtable[18] resolved */
+} PhysObj;
+
+static DWORD   g_shared_render_fn = 0;   /* SceneObject_Render (0x470150) */
+
+static PhysObj g_objs[MAX_OBJECTS];
+static int     g_obj_count = 0;
+static DWORD   g_last_board = 0;
+static int     g_level_done = 0;
+static BYTE   *g_tick_cave = NULL;
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  Helpers
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static int game_is_quitting(void) {
+    DWORD app = *(DWORD *)GLOBAL_APP;
+    if (!app || app < 0x10000 || IsBadReadPtr((void *)app, 0x160)) return 1;
+    return *(BYTE *)(app + APP_QUIT_FLAG) != 0;
+}
+
+static DWORD get_board(void) {
+    DWORD app = *(DWORD *)GLOBAL_APP;
+    if (!app || app < 0x10000 || IsBadReadPtr((void *)app, 0x200)) return 0;
+    DWORD board = *(DWORD *)(app + APP_BOARD);
+    if (!board || board < 0x10000 || IsBadReadPtr((void *)board, 0x3000)) return 0;
+    return board;
+}
+
+static DWORD get_player_ball(DWORD board) {
+    if (!board) return 0;
+    DWORD listBase = board + BOARD_BALL_LIST;
+    if (IsBadReadPtr((void *)listBase, 0x410)) return 0;
+    int count = *(int *)(listBase + 0x04);
+    if (count < 1 || count > 64) return 0;
+    DWORD items = *(DWORD *)(listBase + 0x40C);
+    if (!items || IsBadReadPtr((void *)items, count * 4)) return 0;
+    for (int i = 0; i < count; i++) {
+        DWORD ball = *(DWORD *)(items + i * 4);
+        if (!ball || ball < 0x10000 || IsBadReadPtr((void *)ball, 0x200)) continue;
+        if (*(DWORD *)(ball + BALL_PLAYERIDX) == 0) return ball;
+    }
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  Geometry capture + translation
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static void compute_aabb_from_originals(PhysObj *o) {
+    float mn[3] = { 1e30f, 1e30f, 1e30f };
+    float mx[3] = { -1e30f, -1e30f, -1e30f };
+    for (int i = 0; i < o->buf_count; i++) {
+        float *v = o->bufs[i].verts;
+        int n = o->bufs[i].count;
+        for (int k = 0; k < n; k += VERT_STRIDE) {
+            if (v[k+0] < mn[0]) mn[0] = v[k+0];
+            if (v[k+1] < mn[1]) mn[1] = v[k+1];
+            if (v[k+2] < mn[2]) mn[2] = v[k+2];
+            if (v[k+0] > mx[0]) mx[0] = v[k+0];
+            if (v[k+1] > mx[1]) mx[1] = v[k+1];
+            if (v[k+2] > mx[2]) mx[2] = v[k+2];
+        }
+    }
+    o->min[0]=mn[0]; o->min[1]=mn[1]; o->min[2]=mn[2];
+    o->max[0]=mx[0]; o->max[1]=mx[1]; o->max[2]=mx[2];
+}
+
+static void capture_geometry(PhysObj *o) {
+    o->buf_count = 0;
+    if (!o->meshworld || IsBadReadPtr((void *)o->meshworld, 0x440)) return;
+    DWORD count = MB_COUNT(o->meshworld + MW_MESHBUFFER_LIST);
+    DWORD *items = MB_ITEMS(o->meshworld + MW_MESHBUFFER_LIST);
+    if (!items || count == 0 || count > 64) return;
+    for (DWORD i = 0; i < count && o->buf_count < 16; i++) {
+        DWORD mb = items[i];
+        if (!mb || mb < 0x10000 || IsBadReadPtr((void *)mb, 0x420)) continue;
+        DWORD sc = STRIP_COUNT(mb);
+        float *sv = STRIP_ITEMS(mb);
+        if (!sv || sc == 0 || sc > 20000) continue;
+        if (IsBadReadPtr((void *)sv, sc * STRIDE_VERTS * VERT_STRIDE * 4)) continue;
+        o->bufs[o->buf_count].verts = sv;
+        o->bufs[o->buf_count].count = (int)(sc * STRIDE_VERTS * VERT_STRIDE);
+        o->buf_count++;
+    }
+}
+
+static void translate_all_verts(PhysObj *o, float dx, float dy, float dz) {
+    for (int i = 0; i < o->buf_count; i++) {
+        float *v = o->bufs[i].verts;
+        int n = o->bufs[i].count;
+        for (int k = 0; k < n; k += VERT_STRIDE) {
+            v[k+0] += dx; v[k+1] += dy; v[k+2] += dz;
+        }
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  Spawning
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static int spawn_object(DWORD board, const char *meshname, float rx, float ry, float rz) {
+    if (g_obj_count >= MAX_OBJECTS) return 0;
+
+    DWORD gfx = 0;
+    DWORD app = *(DWORD *)GLOBAL_APP;
+    if (app && !IsBadReadPtr((void *)(app + 0x174), 4))
+        gfx = *(DWORD *)(app + 0x174);
+    if (!gfx) return 0;
+
+    DWORD node = (DWORD)pfn_operator_new(0x18);
+    if (!node) return 0;
+    memset((void *)node, 0, 0x18);
+
+    unsigned int ok = pfn_MeshNode_ctor((void *)node, gfx, meshname, 0);
+    DWORD mw = *(DWORD *)((char *)node + 0x08);
+    if (!ok || !mw || mw < 0x10000 || IsBadReadPtr((void *)mw, 0x440)) {
+        ilog("SPAWN: FAILED to load %s.MESH (ok=%u)", meshname, ok);
+        return 0;
+    }
+
+    PhysObj *o = &g_objs[g_obj_count];
+    memset(o, 0, sizeof(*o));
+    strncpy(o->mesh_name, meshname, MAX_NAME - 1);
+    o->meshworld = mw;
+
+    capture_geometry(o);
+    if (o->buf_count == 0) {
+        ilog("SPAWN: %s.MESH loaded but no readable strips - cannot use", meshname);
+        return 0;
+    }
+
+    compute_aabb_from_originals(o);
+
+    /* Position: ref Y sits ON TOP of the ground plane -> lift by half height */
+    float hx = (o->max[0] + o->min[0]) * 0.5f;
+    float hz = (o->max[2] + o->min[2]) * 0.5f;
+    float hy = (o->max[1] + o->min[1]) * 0.5f;
+    float half_h = (o->max[1] - o->min[1]) * 0.5f;
+
+    o->x = rx; o->y = ry + half_h; o->z = rz;
+    o->vx = o->vy = o->vz = 0;
+    o->home[0] = o->x; o->home[1] = o->y; o->home[2] = o->z;
+    o->grounded = 0;
+    o->first_apply_done = 0;
+    o->render_fn = g_shared_render_fn;
+
+    /* Move vertices from mesh-local space to world space (one-time) */
+    float cx = hx - o->x;
+    float cy = hy - o->y;
+    float cz = hz - o->z;
+    translate_all_verts(o, -cx, -cy, -cz);
+
+    /* Sync AABB to new position */
+    float ox = o->x - hx, oy = o->y - hy, oz = o->z - hz;
+    o->min[0]+=ox; o->max[0]+=ox;
+    o->min[1]+=oy; o->max[1]+=oy;
+    o->min[2]+=oz; o->max[2]+=oz;
+
+    g_obj_count++;
+    ilog("SPAWN: '%s' at (%.1f,%.1f,%.1f) mw=%p size=(%.0fx%.0fx%.0f) bufs=%d",
+         meshname, o->x, o->y, o->z, (void*)mw,
+         o->max[0]-o->min[0], o->max[1]-o->min[1], o->max[2]-o->min[2],
+         o->buf_count);
+    return 1;
+}
+
+static void setup_level(DWORD board) {
+    g_level_done = 1;
+    g_obj_count = 0;
+
+    DWORD scene = *(DWORD *)0x005341E4;
+    if (!scene || scene < 0x10000 || IsBadReadPtr((void *)(scene + BOARD_SCENE_OBJ), 4)) return;
+    DWORD level = *(DWORD *)((char *)scene + BOARD_SCENE_OBJ);
+    if (!level || level < 0x10000 || IsBadReadPtr((void *)(level + LEVEL_SCENE_OBJ), 4)) return;
+    DWORD sceneobj = *(DWORD *)((char *)level + LEVEL_SCENE_OBJ);
+    if (!sceneobj || sceneobj < 0x10000) return;
+    if (IsBadReadPtr((void *)((char *)sceneobj + SCENE_REF_COUNT), 4)) return;
+    int count = *(int *)((char *)sceneobj + SCENE_REF_COUNT);
+    if (count <= 0 || count > 4000) return;
+    if (IsBadReadPtr((void *)((char *)sceneobj + SCENE_REF_ITEMS), 4)) return;
+    DWORD items_array = *(DWORD *)((char *)sceneobj + SCENE_REF_ITEMS);
+    if (!items_array || items_array < 0x10000) return;
+
+    int found = 0;
+    for (int i = 0; i < count; i++) {
+        if (IsBadReadPtr((void *)(items_array + i * 4), 4)) break;
+        DWORD item = *(DWORD *)(items_array + i * 4);
+        if (!item || item < 0x10000 || IsBadReadPtr((void *)item, 16)) continue;
+        char *name = *(char **)item;
+        if (!name || IsBadReadPtr(name, 6)) continue;
+        if (_strnicmp(name, "CUBE:", 5) != 0) continue;
+
+        const char *meshname = name + 5;
+        if (!meshname[0]) continue;
+
+        float rx = *(float *)(item + 4);
+        float ry = *(float *)(item + 8);
+        float rz = *(float *)(item + 12);
+
+        if (spawn_object(board, meshname, rx, ry, rz)) {
+            found++;
+        }
+    }
+    ilog("SETUP: %d CUBE objects spawned (board=%p)", found, (void*)board);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  Physics step
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static float raycast_down(PhysObj *o, float from_y) {
+    float origin[3] = { o->x, from_y, o->z };
+    float dir[3]    = { 0.0f, -1.0f, 0.0f };
+    float hit[3]    = { 0, 0, 0 };
+    void *res = pfn_Raycast((void *)o->meshworld, hit, origin, dir, 0.01f);
+    if (!res) return 1e30f;
+    return origin[1] - hit[1];
+}
+
+static void apply_render_transform(PhysObj *o) {
+    if (!o->meshworld || IsBadReadPtr((void *)o->meshworld, 0x50)) return;
+    float *m = (float *)((char *)o->meshworld + MW_WORLD_MATRIX);
+    /* Row-major-ish identity + translation (game uses this layout for
+       Matrix_ScaleTransform outputs; matches Gfx matrix conventions) */
+    m[0]=1; m[1]=0; m[2]=0;  m[3]=o->x;
+    m[4]=0; m[5]=1; m[6]=0;  m[7]=o->y;
+    m[8]=0; m[9]=0; m[10]=1; m[11]=o->z;
+    m[12]=0; m[13]=0; m[14]=0; m[15]=1;
+}
+
+static void phys_tick(void) {
+    if (game_is_quitting()) return;
+
+    DWORD board = get_board();
+    if (!board) return;
+
+    if (board != g_last_board) {
+        g_last_board = board;
+        g_level_done = 0;
+        g_obj_count = 0;
+        ilog("LEVEL: new board %p", (void*)board);
+    }
+    if (!g_level_done) {
+        setup_level(board);
+        return;
+    }
+    if (g_obj_count == 0) return;
+
+    int paused = *(BYTE *)((char *)board + PAUSE_FLAG) != 0;
+    if (paused) return;
+
+    DWORD ball = get_player_ball(board);
+
+    for (int i = 0; i < g_obj_count; i++) {
+        PhysObj *o = &g_objs[i];
+        if (!o->meshworld) continue;
+
+        /* ---- pushing detection ---- */
+        int push_axis = 0;   /* +1/-1 X, +/-2 Z encoded as 1,-1,2,-2 */
+        float px = 0, py = 0, pz = 0, pradius = 26.0f;
+        if (ball && !IsBadReadPtr((void *)ball, 0x290)) {
+            px = *(float *)((char *)ball + BALL_POS + 0);
+            py = *(float *)((char *)ball + BALL_POS + 4);
+            pz = *(float *)((char *)ball + BALL_POS + 8);
+            pradius = *(float *)((char *)ball + BALL_RADIUS);
+
+            float ex = pradius + CFG_CONTACTGAP;
+            int overlap_x = (px + ex > o->min[0]) && (px - ex < o->max[0]);
+            int overlap_z = (pz + ex > o->min[2]) && (pz - ex < o->max[2]);
+            int overlap_y = (py + pradius > o->min[1]) && (py - pradius < o->max[1]);
+            int above = (py - pradius) >= (o->max[1] - 8.0f);
+
+            if (overlap_x && overlap_z && overlap_y && !above) {
+                /* dominant approach axis by penetration depth */
+                float pen_x_lo = (px + ex) - o->min[0];
+                float pen_x_hi = o->max[0] - (px - ex);
+                float pen_z_lo = (pz + ex) - o->min[2];
+                float pen_z_hi = o->max[2] - (pz - ex);
+                float minpen = pen_x_lo; int axis = 1; int sign = -1;
+                if (pen_x_hi < minpen) { minpen = pen_x_hi; axis = 1; sign = 1; }
+                if (pen_z_lo < minpen) { minpen = pen_z_lo; axis = 2; sign = -1; }
+                if (pen_z_hi < minpen) { minpen = pen_z_hi; axis = 2; sign = 1; }
+                push_axis = axis * sign;
+            }
+        }
+
+        if (push_axis != 0) {
+            if (push_axis == 1 || push_axis == -1) {
+                o->vx += cfg_pushforce * (push_axis > 0 ? 1.0f : -1.0f);
+                if (o->vx >  cfg_maxpushvel) o->vx =  cfg_maxpushvel;
+                if (o->vx < -cfg_maxpushvel) o->vx = -cfg_maxpushvel;
+            } else {
+                o->vz += cfg_pushforce * (push_axis > 0 ? 1.0f : -1.0f);
+                if (o->vz >  cfg_maxpushvel) o->vz =  cfg_maxpushvel;
+                if (o->vz < -cfg_maxpushvel) o->vz = -cfg_maxpushvel;
+            }
+        }
+
+        /* ---- integrate ---- */
+        o->vy -= cfg_gravity;
+        if (o->vy < -cfg_maxfall) o->vy = -cfg_maxfall;
+
+        float nx = o->x + o->vx;
+        float ny = o->y + o->vy;
+        float nz = o->z + o->vz;
+
+        /* ---- ground check via engine raycast ---- */
+        float dist = raycast_down(o, ny);
+        if (dist != 1e30f && dist <= cfg_snapdist) {
+            ny += (cfg_snapdist - dist);
+            if (o->vy < 0) o->vy = 0;
+            o->grounded = 1;
+        } else {
+            o->grounded = 0;
+        }
+
+        float dx = nx - o->x;
+        float dy = ny - o->y;
+        float dz = nz - o->z;
+        o->x = nx; o->y = ny; o->z = nz;
+
+        /* friction on horizontal motion when grounded and not being pushed */
+        if (o->grounded && push_axis == 0) {
+            o->vx *= cfg_friction;
+            o->vz *= cfg_friction;
+            if (o->vx > -0.02f && o->vx < 0.02f) o->vx = 0;
+            if (o->vz > -0.02f && o->vz < 0.02f) o->vz = 0;
+        }
+
+        /* ---- move collision geometry + visuals ---- */
+        if (dx != 0 || dy != 0 || dz != 0) {
+            translate_all_verts(o, dx, dy, dz);
+            o->min[0]+=dx; o->max[0]+=dx;
+            o->min[1]+=dy; o->max[1]+=dy;
+            o->min[2]+=dz; o->max[2]+=dz;
+        }
+        apply_render_transform(o);
+
+        /* ---- carrying: ball on top follows ---- */
+        if (ball && o->grounded && !IsBadReadPtr((void*)ball, 0x180)) {
+            float bx = *(float *)((char *)ball + BALL_POS + 0);
+            float by = *(float *)((char *)ball + BALL_POS + 4);
+            float bz = *(float *)((char *)ball + BALL_POS + 8);
+            int over = (bx > o->min[0] - 10 && bx < o->max[0] + 10 &&
+                        bz > o->min[2] - 10 && bz < o->max[2] + 10 &&
+                        by >= o->max[1] - 20 && by <= o->max[1] + 40);
+            if (over) {
+                *(float *)((char *)ball + BALL_POS + 4) = by + dy;
+            }
+        }
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  Render driver (called during Graphics_RenderScene entry)
+ * ═══════════════════════════════════════════════════════════════════ */
+
+BYTE *g_render_trampoline = NULL;   /* definition; used by the stub below */
+static int   g_render_suspended = 0;
+typedef void (__thiscall *SceneRender_t)(void*, int);
+
+static void __fastcall render_hook_c(int gfx_this, void *edx_dummy) {
+    (void)edx_dummy; (void)gfx_this;
+    /* Runs at Graphics_RenderScene ENTRY, on the main thread, inside the
+       normal render context (BeginFrame/view/frustum already current).
+       We draw our meshes first; the scene then draws around them and the
+       Z-buffer resolves occlusion. The stub afterwards restores registers
+       and jumps into the original body (via trampoline), so we must NOT
+       call the trampoline here. */
+    if (!game_is_quitting() && g_obj_count > 0 && !g_render_suspended) {
+        for (int i = 0; i < g_obj_count; i++) {
+            PhysObj *o = &g_objs[i];
+            if (!o->meshworld || !o->render_fn) continue;
+            if (IsBadCodePtr((FARPROC)o->render_fn)) continue;
+            ((SceneRender_t)o->render_fn)((void *)o->meshworld, 0);
+        }
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  Hooks
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static void patch_bytes(DWORD addr, BYTE *bytes, int len) {
+    DWORD old;
+    VirtualProtect((void *)addr, len, PAGE_EXECUTE_READWRITE, &old);
+    memcpy((void *)addr, bytes, len);
+    VirtualProtect((void *)addr, len, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), (void *)addr, len);
+}
+
+static BYTE *alloc_executable(int size) {
+    return (BYTE *)VirtualAlloc(NULL, size, MEM_COMMIT | MEM_RESERVE,
+                                PAGE_EXECUTE_READWRITE);
+}
+
+#define HOOK_TICK       0x0046C1F1
+#define HOOK_TICK_RET   0x0046C1F6
+#define HOOK_RENDER     0x00454BC0   /* Graphics_RenderScene entry */
+
+static BYTE  g_render_orig[6];
+static BYTE *g_render_stub = NULL;
+
+static void build_tick_hook(void) {
+    static const BYTE expect[5] = { 0x5E, 0x83, 0xC4, 0x08, 0xC3 };
+    if (memcmp((const void *)HOOK_TICK, expect, 5) != 0) {
+        ilog("HOOK: tick epilogue mismatch - skipped (safe)");
+        return;
+    }
+    g_tick_cave = alloc_executable(32);
+    if (!g_tick_cave) return;
+    int i = 0;
+    BYTE *c = g_tick_cave;
+    c[i++] = 0x60; c[i++] = 0x9C;                        /* pushad pushfd */
+    c[i++] = 0xB8; *(DWORD*)(c+i) = (DWORD)&phys_tick; i += 4;
+    c[i++] = 0xFF; c[i++] = 0xD0;                        /* call eax */
+    c[i++] = 0x9D; c[i++] = 0x61;                        /* popfd popad */
+    memcpy(c + i, expect, 5); i += 5;
+    c[i++] = 0xE9; *(DWORD*)(c+i) = HOOK_TICK_RET - (DWORD)(c+i+4);
+
+    BYTE patch[5];
+    patch[0] = 0xE9;
+    *(DWORD*)(patch+1) = (DWORD)g_tick_cave - HOOK_TICK - 5;
+    patch_bytes(HOOK_TICK, patch, 5);
+    ilog("HOOK: tick installed");
+}
+
+static void build_render_hook(void) {
+    memcpy(g_render_orig, (void *)HOOK_RENDER, 6);
+    g_render_trampoline = alloc_executable(16);
+    if (!g_render_trampoline) return;
+    memcpy(g_render_trampoline, g_render_orig, 6);
+    g_render_trampoline[6] = 0xE9;
+    *(DWORD*)(g_render_trampoline+7) =
+        (DWORD)(HOOK_RENDER + 6) - (DWORD)(g_render_trampoline + 11);
+
+    /* stub: __fastcall ECX=gfx. Save ECX/EDX, call C fn, restore, jmp orig */
+    g_render_stub = alloc_executable(32);
+    if (!g_render_stub) return;
+    int i = 0;
+    BYTE *c = g_render_stub;
+    c[i++] = 0x51;                                       /* push ecx */
+    c[i++] = 0x52;                                       /* push edx */
+    c[i++] = 0xE8; *(DWORD*)(c+i) = (DWORD)&render_hook_c - (DWORD)(c+i+4); i += 4;
+    c[i++] = 0x5A;                                       /* pop edx */
+    c[i++] = 0x59;                                       /* pop ecx */
+    c[i++] = 0xB9; *(DWORD*)(c+i) = (DWORD)g_render_trampoline; i += 4;  /* mov ecx,tramp */
+    c[i++] = 0xFF; c[i++] = 0xE1;                        /* jmp ecx */
+
+    BYTE patch[6];
+    patch[0] = 0xE9;
+    *(DWORD*)(patch+1) = (DWORD)g_render_stub - HOOK_RENDER - 5;
+    patch[5] = 0x90;
+    patch_bytes(HOOK_RENDER, patch, 6);
+    ilog("HOOK: Graphics_RenderScene installed");
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+ *  BASS proxy init
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static void lazy_load_real_bass(void) {
+    if (g_hRealBass) return;
+    char path[MAX_PATH];
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    char *slash = strrchr(path, '\\');
+    if (slash) {
+        strcpy(slash + 1, "bass_real.dll");
+        g_hRealBass = LoadLibraryA(path);
+    }
+    if (!g_hRealBass) {
+        GetSystemDirectoryA(path, MAX_PATH);
+        lstrcatA(path, "\\bass.dll");
+        g_hRealBass = LoadLibraryA(path);
+    }
+    if (!g_hRealBass) return;
+    real_BASS_ChannelSetAttributes = (BASS_ChannelSetAttributes_t)GetProcAddress(g_hRealBass, "BASS_ChannelSetAttributes");
+    real_BASS_MusicPlayEx = (BASS_MusicPlayEx_t)GetProcAddress(g_hRealBass, "BASS_MusicPlayEx");
+    real_BASS_MusicLoad = (BASS_MusicLoad_t)GetProcAddress(g_hRealBass, "BASS_MusicLoad");
+    real_BASS_SampleLoad = (BASS_SampleLoad_t)GetProcAddress(g_hRealBass, "BASS_SampleLoad");
+    real_BASS_StreamCreateFile = (BASS_StreamCreateFile_t)GetProcAddress(g_hRealBass, "BASS_StreamCreateFile");
+    real_BASS_SampleGetChannel = (BASS_SampleGetChannel_t)GetProcAddress(g_hRealBass, "BASS_SampleGetChannel");
+    real_BASS_ChannelPlay = (BASS_ChannelPlay_t)GetProcAddress(g_hRealBass, "BASS_ChannelPlay");
+    real_BASS_ChannelStop = (BASS_ChannelStop_t)GetProcAddress(g_hRealBass, "BASS_ChannelStop");
+    real_BASS_Init = (BASS_Init_t)GetProcAddress(g_hRealBass, "BASS_Init");
+    real_BASS_Free = (BASS_Free_t)GetProcAddress(g_hRealBass, "BASS_Free");
+    real_BASS_Stop = (BASS_Stop_t)GetProcAddress(g_hRealBass, "BASS_Stop");
+    real_BASS_Start = (BASS_Start_t)GetProcAddress(g_hRealBass, "BASS_Start");
+    real_BASS_SetConfig = (BASS_SetConfig_t)GetProcAddress(g_hRealBass, "BASS_SetConfig");
+    real_BASS_ErrorGetCode = (BASS_ErrorGetCode_t)GetProcAddress(g_hRealBass, "BASS_ErrorGetCode");
+}
+
+static DWORD WINAPI patch_thread(LPVOID param) {
+    (void)param;
+    Sleep(2000);
+    load_config();
+    ilog("=== physics_objects v1 started ===");
+
+    /* resolve SceneObject_Render from the known MeshWorld vtable.
+       All .MESH-loaded MeshWorlds share vtable 0x4D8FB0, so one read covers all. */
+    DWORD vtbl = 0x004D8FB0;
+    if (!IsBadReadPtr((void *)(vtbl + MESH_RENDER_SLOT * 4), 4)) {
+        g_shared_render_fn = *(DWORD *)(vtbl + MESH_RENDER_SLOT * 4);
+        ilog("RENDER: SceneObject_Render resolved to %p (expected 0x00470150)",
+             (void *)g_shared_render_fn);
+    } else {
+        ilog("RENDER: could not read MeshWorld vtable - rendering disabled");
+    }
+
+    build_tick_hook();
+    build_render_hook();
+    return 0;
+}
+
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
+    (void)hinstDLL; (void)lpvReserved;
+    if (fdwReason == DLL_PROCESS_ATTACH) {
+        DisableThreadLibraryCalls(hinstDLL);
+        CreateThread(NULL, 0, patch_thread, NULL, 0, NULL);
+    }
+    return TRUE;
+}

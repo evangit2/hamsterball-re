@@ -92,9 +92,12 @@
 #define SO_RANGE            0xCC
 #define SO_TYPE             0xD0     /* 1 = D3DLIGHT_POINT (SDK truth) */
 #define GFX_LIGHT_SLOTS     0x710    /* 8 SceneObject* slots */
-#define MAX_LIGHTS          7        /* gfx slots 1-7 (slot 0 = native
+#define MAX_LIGHTS          7        /* ACTIVE mod slots 1-7 (slot 0 = native
                                       * follower, never touched). D3D8 caps
                                       * at 8 simultaneous lights. */
+#define MAX_LIGHT_PARSED    64       /* parsed pool: unlimited-ish, nearest
+                                      * MAX_LIGHTS win a slot each frame */
+#define MAX_PLAYERLIGHTS    4        /* REF:PlayerlightXX follow the ball */
 #define LIGHT_SLOT_BASE     1        /* slots 1-3 are P2-P4 follower slots:
                                       * empty in solo; native-priority yield
                                       * (claim_slot) defers if one fills */
@@ -207,21 +210,51 @@ static int   g_grid_count = 0;
 static int   g_scan_logged = 0;   /* 1 after first detailed scan dump */
 static char  g_levels_dir[MAX_PATH];  /* game levels\ dir, trailing backslash */
 
+/* Race slot 1-15 (MAKYUNI order). Set in find_grid_points from the board
+ * vtable. Each LevelBoard_X_ctor writes its vtable to board+0x0
+ * (Ghidra-verified per ctor); files/renames never change it. Unknown = 0. */
+static int   g_race_slot = 0;
+
+static int race_slot_from_vtable(DWORD vt) {
+    switch (vt) {
+        case 0x4D04A8: return 1;    /* WarmUp */
+        case 0x4D1098: return 2;    /* Beginner */
+        case 0x4D05A0: return 3;    /* Intermediate */
+        case 0x4D0890: return 4;    /* Dizzy */
+        case 0x4D0A08: return 5;    /* Tower */
+        case 0x4D11A0: return 6;    /* Up */
+        case 0x4D1DF0: return 7;    /* Neon */
+        case 0x4D0B00: return 8;    /* Expert */
+        case 0x4D0BC0: return 9;    /* Odd */
+        case 0x4D0E78: return 10;   /* Toob */
+        case 0x4D0D38: return 11;   /* Wobbly */
+        case 0x4D1F90: return 12;   /* Glass */
+        case 0x4D0FC8: return 13;   /* Sky */
+        case 0x4D12B0: return 14;   /* Master */
+        case 0x4D21C0: return 15;   /* Impossible */
+        default: return 0;
+    }
+}
+
 /* Active level / board the current cycle belongs to */
 static DWORD g_active_board = 0;
 static int   g_board_ready_delay = 0;   /* frames to wait for level build after board change */
 
 /* Native point lights (S3 DISTANTLIGHTs -> SceneObjects in gfx slots) */
 static DWORD g_light_objs[MAX_LIGHTS];   /* never freed, reused per level */
-static float g_light_pos[MAX_LIGHTS][3]; /* game coords */
-static float g_light_col[MAX_LIGHTS][3];
-static float g_light_mat[MAX_LIGHTS][3]; /* raw material ratio (pre-gain) */
-static int   g_light_src[MAX_LIGHTS];    /* 0 = S3 file light, 1 = POINT ref */
-static float g_light_rng[MAX_LIGHTS];    /* per-light felt range */
-static int   g_light_rngfix[MAX_LIGHTS]; /* 1 = (Rnnn) suffix, slider-proof */
+static float g_light_pos[MAX_LIGHT_PARSED][3]; /* game coords */
+static float g_light_col[MAX_LIGHT_PARSED][3];
+static float g_light_mat[MAX_LIGHT_PARSED][3]; /* raw material ratio (pre-gain) */
+static int   g_light_src[MAX_LIGHT_PARSED];    /* 0 = S3 file light, 1 = POINT ref */
+static float g_light_rng[MAX_LIGHT_PARSED];    /* per-light felt range */
+static int   g_light_rngfix[MAX_LIGHT_PARSED]; /* 1 = (Rnnn) suffix, slider-proof */
+static int   g_light_follow[MAX_LIGHT_PARSED]; /* 1 = Playerlight: snaps to ball */
 static int   g_light_yield[MAX_LIGHTS];  /* 1 = slot native-held, deferred */
-static int   g_light_count = 0;          /* parsed (clamped to MAX_LIGHTS) */
+static int   g_light_count = 0;          /* parsed (clamped to MAX_LIGHT_PARSED) */
 static int   g_light_used = 0;           /* slots currently registered */
+static int   g_active_map[MAX_LIGHTS];   /* parsed idx per slot, -1 = empty */
+static int   g_active_n = 0;             /* slots currently assigned */
+static int   g_prev_map[MAX_LIGHTS] = { -1, -1, -1, -1, -1, -1, -1 };
 static int   g_light_vis = 1;            /* 0 while LIGHTSOFF */
 static bool  g_lights_on = true;         /* BATTY_LIGHTS toggle */
 static float g_light_range = 400.0f * LIGHT_RANGE_SCALE; /* felt, slider x0.5 */
@@ -230,11 +263,13 @@ static int   g_job = 0;                  /* text_render job: 0 none 1 build 2 re
 static DWORD g_job_board = 0;
 
 /* POINTLIGHTxx S1 ref positions (case-insensitive) for ref-driven lights */
-static float g_ppt_x[MAX_LIGHTS];
-static float g_ppt_y[MAX_LIGHTS];
-static float g_ppt_z[MAX_LIGHTS];
-static char  g_ppt_name[MAX_LIGHTS][32];  /* S1 ref name (mesh lookup key) */
-static float g_ppt_rng[MAX_LIGHTS];       /* (Rnnn) suffix range, 0 = global */
+static float g_ppt_x[MAX_LIGHT_PARSED];
+static float g_ppt_y[MAX_LIGHT_PARSED];
+static float g_ppt_z[MAX_LIGHT_PARSED];
+static char  g_ppt_name[MAX_LIGHT_PARSED][32];  /* S1 ref name (mesh lookup key) */
+static float g_ppt_rng[MAX_LIGHT_PARSED];       /* (Rnnn) suffix range, 0 = global */
+static int   g_ppt_follow[MAX_LIGHT_PARSED];    /* 1 = REF:PlayerlightXX */
+static int   g_pl_found = 0;                    /* playerlights kept (max 4) */
 static int   g_ppt_count = 0;
 static int   g_ppt_total = 0;             /* refs found (kept capped) */
 
@@ -383,21 +418,16 @@ static int find_grid_points(DWORD board) {
     g_grid_count = 0;
     g_ppt_count = 0;
     g_ppt_total = 0;
+    g_pl_found = 0;
     g_s1_hash = 2166136261u;
     g_s1_count = 0;
     DWORD sceneobj = get_sceneobj(board);
     if (!sceneobj) { log_mod("  GRID: sceneobj=NULL"); return 0; }
 
     DWORD level = get_level(board);
-    char bname[32];
-    bname[0] = '\0';
-    if (!IsBadReadPtr((void*)(board + 0x29B4), 4)) {
-        char* bn = *(char**)(board + 0x29B4);
-        if (bn && !IsBadReadPtr(bn, 24)) {
-            int bi = 0;
-            while (bi < 31 && bn[bi]) { bname[bi] = bn[bi]; bi++; }
-            bname[bi] = '\0';
-        }
+    g_race_slot = 0;
+    if (!IsBadReadPtr((void*)board, 4)) {
+        g_race_slot = race_slot_from_vtable(*(DWORD*)board);
     }
 
     DWORD s1_list = sceneobj + SCENEOBJ_S1_OFF;
@@ -410,10 +440,10 @@ static int find_grid_points(DWORD board) {
     if (!IsBadReadPtr((void*)(s1_list + ALIST_ITEMS), 4))
         s1_data = *(DWORD**)(s1_list + ALIST_ITEMS);
     {
-        char dbuf[128];
+        char dbuf[160];
         snprintf(dbuf, sizeof(dbuf),
-                 "  S1 board=0x%X lvl=0x%X sc=0x%X cnt=%d data=0x%X nm=%s",
-                 board, level, sceneobj, s1_count, (DWORD)s1_data, bname);
+                 "  S1 board=0x%X lvl=0x%X sc=0x%X cnt=%d data=0x%X slot=%d",
+                 board, level, sceneobj, s1_count, (DWORD)s1_data, g_race_slot);
         if (!g_scan_logged) log_mod(dbuf);
         g_scan_logged = 1;
     }
@@ -429,7 +459,7 @@ static int find_grid_points(DWORD board) {
 
     int dumped = 0;
     for (int i = 0; i < s1_count &&
-         (g_grid_count < MAX_GRID_POINTS || g_ppt_count < MAX_LIGHTS); i++) {
+         (g_grid_count < MAX_GRID_POINTS || g_ppt_count < MAX_LIGHT_PARSED); i++) {
         DWORD entry = s1_data[i];
         if (!entry || entry < 0x10000) continue;
         if (IsBadReadPtr((void*)entry, 16)) continue;
@@ -481,9 +511,16 @@ static int find_grid_points(DWORD board) {
                 g_grid_count++;
             }
             if (is_light_ref(name)) {
+                int is_pl = (nc_istrstr(name, "PLAYERLIGHT") != NULL);
+                if (is_pl && g_pl_found >= MAX_PLAYERLIGHTS) {
+                    g_ppt_total++;   /* over-budget: counted, not kept */
+                    continue;
+                }
                 g_ppt_total++;
-                if (g_ppt_count < MAX_LIGHTS) {
+                if (g_ppt_count < MAX_LIGHT_PARSED) {
                 int pi = g_ppt_count;
+                g_ppt_follow[pi] = is_pl;
+                if (is_pl) g_pl_found++;
                 int ni = 0;
                 g_ppt_x[pi] = *(float*)(entry + S1ENTRY_POS_X);
                 g_ppt_y[pi] = *(float*)(entry + S1ENTRY_POS_Y);
@@ -533,12 +570,17 @@ static int find_grid_points(DWORD board) {
                 g_grid_count++;
             }
             if (is_light_ref((const char*)entry)) {
+                int is_pl = (nc_istrstr((const char*)entry, "PLAYERLIGHT") != NULL);
                 g_ppt_total++;
-                if (g_ppt_count < MAX_LIGHTS) {
+                if (is_pl && g_pl_found >= MAX_PLAYERLIGHTS) continue;   /* over-budget */
+                if (g_ppt_count < MAX_LIGHT_PARSED) {
+                g_ppt_follow[g_ppt_count] = is_pl;
+                if (is_pl) g_pl_found++;
                 g_ppt_x[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_X);
                 g_ppt_y[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_Y);
                 g_ppt_z[g_ppt_count] = *(float*)(entry + S1ENTRY_POS_Z);
                 g_ppt_name[g_ppt_count][0] = '\0';   /* no clean name */
+                g_ppt_rng[g_ppt_count] = 0.0f;
                 g_ppt_count++;
                 }
             }
@@ -849,7 +891,7 @@ static int find_current_level_file(char* out, unsigned cap) {
     return 0;
 }
 
-/* Parse S3 lights + S4 ambient from a level file. Stores up to MAX_LIGHTS
+/* Parse S3 lights + S4 ambient from a level file. Stores up to MAX_LIGHT_PARSED
  * (pos swizzled file x,z,y -> game x,y,z). Returns light count or -1. */
 static int read_level_lights(const char* path) {
     unsigned len = 0;
@@ -918,7 +960,7 @@ static int read_level_lights(const char* path) {
         if (t != 0) continue;
         if (!gm_need(&c, 36)) { free(d); return -1; }
         for (k = 0; k < 9; k++) v[k] = gm_f32(&c);
-        if (total < MAX_LIGHTS) {
+        if (total < MAX_LIGHT_PARSED) {
             g_light_pos[total][0] = v[0];
             g_light_pos[total][1] = v[2];   /* file x,z,y -> game x,y,z */
             g_light_pos[total][2] = v[1];
@@ -1160,6 +1202,156 @@ static void write_light_fields(DWORD obj, int li, int vis) {
     *(BYTE*)((char*)obj + SO_VISIBLE) = (BYTE)(vis ? 1 : 0);
 }
 
+/* Ball pos (ball+0x164/168/16C). 0 when no player (menus). */
+#define BALL_POS_X 0x164
+#define BALL_POS_Y 0x168
+#define BALL_POS_Z 0x16C
+static int light_ball_pos(float* ox, float* oy, float* oz) {
+    void* b;
+    if (!g_api || !ox || !oy || !oz) return 0;
+    b = (void*)HBAPI(g_api).GetPlayer();
+    if (!b || IsBadReadPtr(b, 0x200)) return 0;
+    if (IsBadReadPtr((char*)b + BALL_POS_X, 12)) return 0;
+    *ox = *(float*)((char*)b + BALL_POS_X);
+    *oy = *(float*)((char*)b + BALL_POS_Y);
+    *oz = *(float*)((char*)b + BALL_POS_Z);
+    return 1;
+}
+
+/* Nearest-MAX_LIGHTS selection. Fills g_active_map (parsed idx per slot,
+ * nearest first) + g_active_n. No ball yet -> first-N. Returns active n. */
+static int light_select(void) {
+    float bx = 0.0f, by = 0.0f, bz = 0.0f;
+    int have_ball;
+    int n, s, i;
+    int best[MAX_LIGHTS];
+    float bestd[MAX_LIGHTS];
+    if (g_light_count <= 0) {
+        for (s = 0; s < MAX_LIGHTS; s++) g_active_map[s] = -1;
+        g_active_n = 0;
+        return 0;
+    }
+    n = g_light_count;
+    if (n > MAX_LIGHT_PARSED) n = MAX_LIGHT_PARSED;
+    have_ball = light_ball_pos(&bx, &by, &bz);
+    if (have_ball) {
+        /* Playerlights ride the ball: d2=0, always win a slot */
+        for (i = 0; i < n; i++) {
+            if (g_light_follow[i]) {
+                g_light_pos[i][0] = bx;
+                g_light_pos[i][1] = by;
+                g_light_pos[i][2] = bz;
+            }
+        }
+    }
+    for (s = 0; s < MAX_LIGHTS; s++) { best[s] = -1; bestd[s] = 0.0f; }
+    if (!have_ball) {
+        /* menus / no player: stable first-N window */
+        int m = n < MAX_LIGHTS ? n : MAX_LIGHTS;
+        for (s = 0; s < m; s++) { best[s] = s; g_active_map[s] = s; }
+        for (; s < MAX_LIGHTS; s++) g_active_map[s] = -1;
+        g_active_n = m;
+        return m;
+    }
+    for (i = 0; i < n; i++) {
+        float dx = g_light_pos[i][0] - bx;
+        float dy = g_light_pos[i][1] - by;
+        float dz = g_light_pos[i][2] - bz;
+        float d2 = dx * dx + dy * dy + dz * dz;
+        for (s = 0; s < MAX_LIGHTS; s++) {
+            if (best[s] < 0 || d2 < bestd[s]) {
+                int t;
+                for (t = MAX_LIGHTS - 1; t > s; t--) {
+                    best[t] = best[t - 1];
+                    bestd[t] = bestd[t - 1];
+                }
+                best[s] = i;
+                bestd[s] = d2;
+                break;
+            }
+        }
+    }
+    {
+        int m = n < MAX_LIGHTS ? n : MAX_LIGHTS;
+        for (s = 0; s < m; s++) g_active_map[s] = best[s];
+        for (; s < MAX_LIGHTS; s++) g_active_map[s] = -1;
+        g_active_n = m;
+        return m;
+    }
+}
+
+/* Ensure slot s shows parsed idx pi (creates obj on demand). */
+static void light_apply_slot(DWORD gfx, int s, int pi, int vis, int quiet) {
+    DWORD obj;
+    char lbuf[128];
+    if (s < 0 || s >= MAX_LIGHTS || pi < 0 || pi >= MAX_LIGHT_PARSED) return;
+    obj = g_light_objs[s];
+    if (!obj || IsBadReadPtr((void*)obj, SCENEOBJECT_SIZE)) {
+        obj = native_new_sceneobject(gfx);
+        if (!obj || IsBadReadPtr((void*)obj, SCENEOBJECT_SIZE)) {
+            if (!quiet) {
+                snprintf(lbuf, sizeof(lbuf), "  LIGHT s%d: ctor failed", s);
+                log_mod(lbuf);
+            }
+            g_light_objs[s] = 0;
+            return;
+        }
+        g_light_objs[s] = obj;
+    }
+    write_light_fields(obj, pi, vis);
+    native_setpos(obj, g_light_pos[pi][0], g_light_pos[pi][1],
+                  g_light_pos[pi][2]);
+    if (claim_slot(gfx, LIGHT_SLOT_BASE + s, obj)) {
+        if (g_light_yield[s]) {
+            g_light_yield[s] = 0;
+            if (!quiet) {
+                snprintf(lbuf, sizeof(lbuf), "  LIGHT s%d: slot %d reclaimed (P%d)",
+                         s, LIGHT_SLOT_BASE + s, pi);
+                log_mod(lbuf);
+            }
+        }
+    } else if (!g_light_yield[s]) {
+        g_light_yield[s] = 1;
+        if (!quiet) {
+            snprintf(lbuf, sizeof(lbuf), "  LIGHT s%d: slot %d native-held, yield (P%d)",
+                     s, LIGHT_SLOT_BASE + s, pi);
+            log_mod(lbuf);
+        }
+    }
+    if (!quiet) {
+        DWORD slotptr = gfx + GFX_LIGHT_SLOTS + (DWORD)(LIGHT_SLOT_BASE + s) * 4;
+        int ok = (!IsBadReadPtr((void*)slotptr, 4) &&
+                  *(DWORD*)slotptr == obj) ? 1 : 0;
+        snprintf(lbuf, sizeof(lbuf),
+                 "  LIGHT s%d: slot %d P%d src=%s pos=(%d,%d,%d) col=(%d,%d,%d) vis=%d ok=%d",
+                 s, LIGHT_SLOT_BASE + s, pi,
+                 (g_light_src[pi] == 2 ? "PLAYER" : (g_light_src[pi] ? "POINT" : "S3")),
+                 (int)g_light_pos[pi][0], (int)g_light_pos[pi][1],
+                 (int)g_light_pos[pi][2],
+                 (int)(g_light_col[pi][0] * 100.0f),
+                 (int)(g_light_col[pi][1] * 100.0f),
+                 (int)(g_light_col[pi][2] * 100.0f),
+                 vis, ok);
+        log_mod(lbuf);
+    }
+}
+
+/* Switch an unused slot off (only when still ours — never native). */
+static void light_switch_off_slot(DWORD gfx, int s) {
+    DWORD obj;
+    DWORD slotptr;
+    DWORD cur = 0;
+    if (s < 0 || s >= MAX_LIGHTS) return;
+    obj = g_light_objs[s];
+    if (!obj || IsBadReadPtr((void*)obj, SCENEOBJECT_SIZE)) return;
+    slotptr = gfx + GFX_LIGHT_SLOTS + (DWORD)(LIGHT_SLOT_BASE + s) * 4;
+    if (!IsBadReadPtr((void*)slotptr, 4)) cur = *(DWORD*)slotptr;
+    if (cur == 0 || cur == obj) {
+        *(BYTE*)((char*)obj + SO_VISIBLE) = 0;
+        native_register(gfx, LIGHT_SLOT_BASE + s, obj);
+    }
+}
+
 /* 0x46B7EA bakes Attenuation1=0.04 (mov [esi+0x78],0x3D23D70A — LINEAR
  * falloff 1/(0.04d), NOT squared). REVERTED: zeroing it blasted native
  * follower lights to full range AND made our Att0=Att1=Att2=0 (div-by-0).
@@ -1233,97 +1425,30 @@ static void patch_attenuation(void) {
  * quiet=1 skips per-light logs (periodic re-assert). */
 static void service_light_job(DWORD board, int quiet) {
     DWORD gfx;
-    int i, vis, hi;
+    int s, vis, n;
     if (g_job == 0 || board != g_job_board) return;
     if (!g_light_count && !g_light_used) { g_job = 0; return; }
     gfx = gfx_device();
     if (!gfx) return;   /* retry next frame */
     patch_attenuation();   /* one-time: restore Att1 0.04 */
     vis = (g_lights_on && g_light_vis) ? 1 : 0;
-    hi = g_light_used;
     if (g_job == 3) {
         /* level end: switch every used slot off, keep objects alive */
-        for (i = 0; i <= hi && i < MAX_LIGHTS; i++) {
-            if (g_light_objs[i]) {
-                DWORD slotptr = gfx + GFX_LIGHT_SLOTS +
-                                (DWORD)(LIGHT_SLOT_BASE + i) * 4;
-                DWORD cur = 0;
-                if (!IsBadReadPtr((void*)slotptr, 4))
-                    cur = *(DWORD*)slotptr;
-                if (cur != 0 && cur != g_light_objs[i]) continue;  /* native */
-                *(BYTE*)((char*)g_light_objs[i] + SO_VISIBLE) = 0;
-                native_register(gfx, LIGHT_SLOT_BASE + i, g_light_objs[i]);
-            }
-        }
+        for (s = 0; s < MAX_LIGHTS; s++) light_switch_off_slot(gfx, s);
         log_mod("  LIGHT: level end, slots off");
         g_job = 0;
         return;
     }
-    if (g_light_count - 1 > hi) hi = g_light_count - 1;
-    for (i = 0; i <= hi && i < MAX_LIGHTS; i++) {
-        DWORD obj = g_light_objs[i];
-        char lbuf[128];
-        if (i < g_light_count) {
-            if (!obj) {
-                obj = native_new_sceneobject(gfx);
-                if (!obj || IsBadReadPtr((void*)obj, SCENEOBJECT_SIZE)) {
-                    snprintf(lbuf, sizeof(lbuf), "  LIGHT%d: ctor failed", i);
-                    log_mod(lbuf);
-                    g_light_objs[i] = 0;
-                    continue;
-                }
-                g_light_objs[i] = obj;
-            }
-            write_light_fields(obj, i, vis);
-            native_setpos(obj, g_light_pos[i][0], g_light_pos[i][1],
-                          g_light_pos[i][2]);
-            if (claim_slot(gfx, LIGHT_SLOT_BASE + i, obj)) {
-                if (g_light_yield[i]) {
-                    g_light_yield[i] = 0;
-                    snprintf(lbuf, sizeof(lbuf),
-                             "  LIGHT%d: slot %d reclaimed",
-                             i, LIGHT_SLOT_BASE + i);
-                    log_mod(lbuf);
-                }
-            } else if (!g_light_yield[i]) {
-                g_light_yield[i] = 1;
-                snprintf(lbuf, sizeof(lbuf),
-                         "  LIGHT%d: slot %d native-held, yield",
-                         i, LIGHT_SLOT_BASE + i);
-                log_mod(lbuf);
-            }
-            if (!quiet) {
-                DWORD slotptr = gfx + GFX_LIGHT_SLOTS +
-                                (DWORD)(LIGHT_SLOT_BASE + i) * 4;
-                int ok = (!IsBadReadPtr((void*)slotptr, 4) &&
-                          *(DWORD*)slotptr == obj) ? 1 : 0;
-                snprintf(lbuf, sizeof(lbuf),
-                         "  LIGHT%d: slot %d src=%s pos=(%d,%d,%d) col=(%d,%d,%d) vis=%d ok=%d gain=%d",
-                         i, LIGHT_SLOT_BASE + i,
-                         g_light_src[i] ? "POINT" : "S3",
-                         (int)g_light_pos[i][0], (int)g_light_pos[i][1],
-                         (int)g_light_pos[i][2],
-                         (int)(g_light_col[i][0] * 100.0f),
-                         (int)(g_light_col[i][1] * 100.0f),
-                         (int)(g_light_col[i][2] * 100.0f),
-                         vis, ok, (int)(g_light_intensity * 10.0f));
-                log_mod(lbuf);
-            }
-        } else if (obj) {
-            /* stale slot from a richer level: switch off, keep alive
-             * (only if still ours — never touch a native-held slot) */
-            DWORD slotptr = gfx + GFX_LIGHT_SLOTS +
-                            (DWORD)(LIGHT_SLOT_BASE + i) * 4;
-            DWORD cur = 0;
-            if (!IsBadReadPtr((void*)slotptr, 4))
-                cur = *(DWORD*)slotptr;
-            if (cur == 0 || cur == obj) {
-                *(BYTE*)((char*)obj + SO_VISIBLE) = 0;
-                native_register(gfx, LIGHT_SLOT_BASE + i, obj);
-            }
-        }
+    /* build/refresh: nearest-MAX_LIGHTS win slots (real-time window) */
+    n = light_select();
+    for (s = 0; s < MAX_LIGHTS; s++) {
+        if (s < n && g_active_map[s] >= 0)
+            light_apply_slot(gfx, s, g_active_map[s], vis, quiet);
+        else
+            light_switch_off_slot(gfx, s);
     }
-    g_light_used = hi;
+    g_light_used = n;
+    g_active_n = n;
     if (!quiet) {
         /* one-time census: who owns gfx slots 0-3 (native?) at build */
         char cbuf[128];
@@ -1356,7 +1481,36 @@ static void start_lights(DWORD board) {
     int yi;
     g_light_count = 0;
     g_light_vis = 1;
+    /* BallBorder ring color for this race slot (neon_ballring_player1) */
+    {
+        float rgba[4];
+        if (gridset_level_ring_slot(g_race_slot, rgba)) {
+            g_ring_active[0] = rgba[0];
+            g_ring_active[1] = rgba[1];
+            g_ring_active[2] = rgba[2];
+            g_ring_active[3] = rgba[3];
+            g_ring_on = 1;
+        } else {
+            g_ring_on = 0;
+        }
+    }
+    /* P1 emitter glow for this race slot (neon_glow_player1) */
+    {
+        float rgba[4];
+        if (gridset_level_glow_slot(g_race_slot, rgba)) {
+            g_glow_active[0] = rgba[0];
+            g_glow_active[1] = rgba[1];
+            g_glow_active[2] = rgba[2];
+            g_glow_active[3] = rgba[3];
+            g_glow_on = 1;
+        } else {
+            g_glow_on = 0;
+        }
+    }
     for (yi = 0; yi < MAX_LIGHTS; yi++) g_light_yield[yi] = 0;
+    for (yi = 0; yi < MAX_LIGHTS; yi++) { g_active_map[yi] = -1; g_prev_map[yi] = -2; }
+    g_active_n = 0;
+    for (yi = 0; yi < MAX_LIGHT_PARSED; yi++) g_light_follow[yi] = 0;
     cur[0] = '\0';
     if (!find_current_level_file(cur, sizeof(cur))) {
         log_mod("  LIGHT: level file unknown, S3 skipped");
@@ -1373,7 +1527,7 @@ static void start_lights(DWORD board) {
                  g_ppt_total, g_ppt_count);
         log_mod(cbuf);
     }
-    for (i = 0; i < g_ppt_count && g_light_count < MAX_LIGHTS; i++) {
+    for (i = 0; i < g_ppt_count && g_light_count < MAX_LIGHT_PARSED; i++) {
         int li = g_light_count;
         char pbuf[128];
         float mr = 1.0f, mg = 1.0f, mb = 1.0f;   /* missing-mat fallback:
@@ -1424,7 +1578,8 @@ static void start_lights(DWORD board) {
         g_light_mat[li][0] = mr * LIGHT_OUTPUT_TRIM / LIGHT_INTENSITY;
         g_light_mat[li][1] = mg * LIGHT_OUTPUT_TRIM / LIGHT_INTENSITY;
         g_light_mat[li][2] = mb * LIGHT_OUTPUT_TRIM / LIGHT_INTENSITY;
-        g_light_src[li] = 1;
+        g_light_src[li] = g_ppt_follow[i] ? 2 : 1;   /* 2 = Playerlight */
+        g_light_follow[li] = g_ppt_follow[i];
         g_light_count++;
         snprintf(pbuf, sizeof(pbuf),
                  "  LIGHT: POINT ref %d %s at (%d,%d,%d) mat=(%d,%d,%d) %s%s rng=%d gm=%d",
@@ -1434,6 +1589,12 @@ static void start_lights(DWORD board) {
                  (int)(mb * 100.0f), csrc, got ? "" : " no-mat",
                  (int)g_light_rng[li], (int)(mult * 100.0f));
         log_mod(pbuf);
+        if (g_ppt_follow[i]) {
+            char fbuf[96];
+            snprintf(fbuf, sizeof(fbuf), "  LIGHT: Playerlight %d %s follows ball",
+                     i + 1, g_ppt_name[i]);
+            log_mod(fbuf);
+        }
     }
     snprintf(nbuf, sizeof(nbuf), "  LIGHT: %d point light(s)", g_light_count);
     log_mod(nbuf);
@@ -1456,7 +1617,7 @@ static void start_grid_cycle(DWORD board) {
     start_lights(board);
     if (count > 0) {
         char buf[64];
-        g_mult = gridset_level_mult(g_levels_dir, g_s1_hash, g_s1_count);
+        g_mult = gridset_level_mult_slot(g_race_slot);
         snprintf(buf, sizeof(buf), "  Found %d GRID points, starting cycle (speed=%dms)", count, (int)(g_speed * g_mult * 1000.0f));
         log_mod(buf);
         for (int pi = 0; pi < count; pi++) {
@@ -1613,7 +1774,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
     s3.lowerBound = 0.0f; s3.upperBound = 100.0f; s3.stepSize = 0.5f; s3.decimalPlaces = 1;
     HBAPI(api).CreateSlider(s3, (HamsterballAPI*)thisptr);
 
-    log_mod("INIT Battyball Entities v1 (mod loaded)");
+    log_mod("INIT Battyball Entities v1bd (mod loaded)");
 }
 
 static void __thiscall button_toggle(void*, const char* id, bool state) {
@@ -1646,7 +1807,7 @@ static void __thiscall slider_change(void*, const char* id, float value) {
         g_light_range = value < 10.0f ? 10.0f : value;
         g_light_range *= LIGHT_RANGE_SCALE;   /* felt = shown x scale */
         /* suffixed lights keep their own range */
-        for (i = 0; i < g_light_count && i < MAX_LIGHTS; i++) {
+        for (i = 0; i < g_light_count && i < MAX_LIGHT_PARSED; i++) {
             if (!g_light_rngfix[i]) g_light_rng[i] = g_light_range;
         }
         if (g_light_used || g_light_count) {
@@ -1662,7 +1823,7 @@ static void __thiscall slider_change(void*, const char* id, float value) {
                  (int)(g_light_intensity * 10.0f));
         log_mod(ibuf);
         /* rescale parsed colors from stored material ratios (no re-parse) */
-        for (i = 0; i < g_light_count && i < MAX_LIGHTS; i++) {
+        for (i = 0; i < g_light_count && i < MAX_LIGHT_PARSED; i++) {
             g_light_col[i][0] = g_light_mat[i][0] * g_light_intensity;
             g_light_col[i][1] = g_light_mat[i][1] * g_light_intensity;
             g_light_col[i][2] = g_light_mat[i][2] * g_light_intensity;
@@ -1694,6 +1855,64 @@ static void __thiscall scene_end(void*) {
     }
 }
 
+/* BallBorder (ballborder.png) material: Ball_Render passes ball+0x1B8 as the
+ * sprite material; SetMaterial consumes D3DMATERIAL8 at +4 (ball+0x1BC).
+ * Only sprite draws (border/burner) use it — mesh draws use mesh mats. */
+#define BALL_BORDER_MAT   0x1BC    /* D3DMATERIAL8: Diffuse+0 Ambient+16 */
+#define BALL_MAT_EMISSIVE 0x30     /* Specular+32 Emissive+48 Power+64 */
+/* Per-level P1 border color (neon_ballring_player1 in the set jsonc).
+ * Level off (commented/absent) = native black (no glow). Master toggle gates.
+ * Aligned float writes: render-thread safe. */
+static void border_frame(void) {
+    void* b;
+    char* m;
+    float r, g, bl, a;
+    if (!g_enabled || !g_api) return;
+    if (!g_ring_on && !g_race_slot) return;   /* unknown board: touch nothing */
+    b = (void*)HBAPI(g_api).GetPlayer();
+    if (!b || IsBadReadPtr(b, 0x300)) return;
+    m = (char*)b + BALL_BORDER_MAT;
+    if (IsBadReadPtr(m, 0x44)) return;
+    if (g_ring_on) {
+        r = g_ring_active[0];
+        g = g_ring_active[1];
+        bl = g_ring_active[2];
+        a = g_ring_active[3];
+    } else {
+        r = g = bl = 0.0f;
+        a = *(float*)(m + 0x0C);   /* keep native alpha when off */
+    }
+    *(float*)(m + 0x00) = r;
+    *(float*)(m + 0x04) = g;
+    *(float*)(m + 0x08) = bl;
+    *(float*)(m + 0x0C) = a;
+    *(float*)(m + BALL_MAT_EMISSIVE + 0x00) = r;
+    *(float*)(m + BALL_MAT_EMISSIVE + 0x04) = g;
+    *(float*)(m + BALL_MAT_EMISSIVE + 0x08) = bl;
+}
+
+/* P1 emitter glow (Neon_colors GLOW half): scene+0x436C emitter +0x94 RGB,
+ * +0xA0 A. Key absent = untouched (native glow). NULL-safe: emitter exists
+ * on Neon; other races skip silently. */
+#define BOARD_P1_EMITTER  0x436C   /* P1 emitter SceneObject (cf. 0x416270) */
+static void glow_frame(void) {
+    DWORD board;
+    DWORD emit;
+    char* e;
+    if (!g_enabled || !g_api) return;
+    if (!g_glow_on) return;
+    board = player_board();
+    if (!board || IsBadReadPtr((void*)board, 0x4400)) return;
+    if (IsBadReadPtr((void*)(board + BOARD_P1_EMITTER), 4)) return;
+    emit = *(DWORD*)(board + BOARD_P1_EMITTER);
+    if (!emit || IsBadReadPtr((void*)emit, 0xA4)) return;
+    e = (char*)emit;
+    *(float*)(e + SO_EMIT_R) = g_glow_active[0];
+    *(float*)(e + SO_EMIT_G) = g_glow_active[1];
+    *(float*)(e + SO_EMIT_B) = g_glow_active[2];
+    *(float*)(e + SO_EMIT_A) = g_glow_active[3];
+}
+
 static void light_frame(void);   /* defined below (used by game_update) */
 
 static void __thiscall game_update(void*) {
@@ -1716,10 +1935,15 @@ static void __thiscall game_update(void*) {
         g_spawned_count = 0;
         g_grid_count = 0;
         g_order_count = 0;
+        g_race_slot = 0;   /* unknown until scanned: ring/glow touch nothing */
+        g_ring_on = 0;
+        g_glow_on = 0;
         return;
     }
 
     light_frame();   /* pin/heartbeat/service also from game_update */
+    border_frame();    /* slot RGBA -> P1 border (overrides exe, Neon too) */
+    glow_frame();      /* slot RGBA -> P1 emitter glow (Neon_colors GLOW) */
 
     if (!g_cycle_started) {
         if (g_board_ready_delay > 0) { g_board_ready_delay--; return; }
@@ -1820,71 +2044,103 @@ static DWORD g_seen_slot4 = 0;     /* first slot4 ptr seen (swap detector) */
 /* Something per-frame drags light objects to the ball. Hold our ground:
  * if a used slot's position differs from its parsed spot, drag it back
  * (log throttled). Runs every frame in text_render (render thread). */
+/* Nearest-window pin: every frame the MAX_LIGHTS nearest parsed lights own
+ * slots 1-7; mapping changes re-apply, otherwise hold position vs drag.
+ * Runs every frame in text_render (render thread). */
 static void pin_lights(DWORD board, DWORD gfx) {
-    int i, hi, vis;
+    int s, vis, n, changed = 0;
     DWORD now;
     (void)board;
     vis = (g_lights_on && g_light_vis) ? 1 : 0;
-    hi = g_light_used;
-    if (g_light_count - 1 > hi) hi = g_light_count - 1;
+    n = light_select();
+    g_light_used = n;
+    g_active_n = n;
     now = GetTickCount();
-    for (i = 0; i <= hi && i < MAX_LIGHTS; i++) {
-        DWORD obj = g_light_objs[i];
+    for (s = 0; s < MAX_LIGHTS; s++)
+        if (g_active_map[s] != g_prev_map[s]) changed = 1;
+    if (changed) {
+        if ((int)(now - g_last_pin_log) >= 500) {
+            char mbuf[160];
+            int o = 0;
+            o += snprintf(mbuf + o, sizeof(mbuf) - o, "  LIGHT: window");
+            for (s = 0; s < MAX_LIGHTS && o < 130; s++)
+                o += snprintf(mbuf + o, sizeof(mbuf) - o, " s%d=P%d",
+                              LIGHT_SLOT_BASE + s, g_active_map[s]);
+            log_mod(mbuf);
+            g_last_pin_log = now;
+        }
+        for (s = 0; s < MAX_LIGHTS; s++) {
+            if (s < n && g_active_map[s] >= 0)
+                light_apply_slot(gfx, s, g_active_map[s], vis, 1);
+            else
+                light_switch_off_slot(gfx, s);
+            g_prev_map[s] = g_active_map[s];
+        }
+        return;
+    }
+    for (s = 0; s < n; s++) {
+        int pi = g_active_map[s];
+        DWORD obj;
         DWORD slotptr;
         DWORD cur = 0;
         float ox, oy, oz;
-        if (i >= g_light_count) continue;
-        if (!obj || IsBadReadPtr((void*)obj, SCENEOBJECT_SIZE)) continue;
+        if (pi < 0) continue;
+        obj = g_light_objs[s];
+        if (!obj || IsBadReadPtr((void*)obj, SCENEOBJECT_SIZE)) {
+            light_apply_slot(gfx, s, pi, vis, 1);
+            continue;
+        }
         /* native-priority: slot taken by a native since? yield / reclaim */
-        slotptr = gfx + GFX_LIGHT_SLOTS + (DWORD)(LIGHT_SLOT_BASE + i) * 4;
+        slotptr = gfx + GFX_LIGHT_SLOTS + (DWORD)(LIGHT_SLOT_BASE + s) * 4;
         if (!IsBadReadPtr((void*)slotptr, 4)) cur = *(DWORD*)slotptr;
         if (cur != 0 && cur != obj) {
-            if (!g_light_yield[i]) {
-                g_light_yield[i] = 1;
+            if (!g_light_yield[s]) {
+                g_light_yield[s] = 1;
                 if ((int)(now - g_last_pin_log) >= 500) {
                     char ybuf[64];
                     snprintf(ybuf, sizeof(ybuf),
-                             "  LIGHT%d: slot %d native-held, yield", i,
-                             LIGHT_SLOT_BASE + i);
+                             "  LIGHT s%d: slot %d native-held, yield", s,
+                             LIGHT_SLOT_BASE + s);
                     log_mod(ybuf);
                     g_last_pin_log = now;
                 }
             }
             continue;
         }
-        if (g_light_yield[i] && cur == 0) {
-            g_light_yield[i] = 0;
-            write_light_fields(obj, i, vis);
-            claim_slot(gfx, LIGHT_SLOT_BASE + i, obj);
+        if (g_light_yield[s] && cur == 0) {
+            g_light_yield[s] = 0;
+            write_light_fields(obj, pi, vis);
+            claim_slot(gfx, LIGHT_SLOT_BASE + s, obj);
             if ((int)(now - g_last_pin_log) >= 500) {
                 char rbuf[64];
-                snprintf(rbuf, sizeof(rbuf), "  LIGHT%d: slot %d reclaimed",
-                         i, LIGHT_SLOT_BASE + i);
+                snprintf(rbuf, sizeof(rbuf), "  LIGHT s%d: slot %d reclaimed",
+                         s, LIGHT_SLOT_BASE + s);
                 log_mod(rbuf);
                 g_last_pin_log = now;
             }
             continue;
         }
-        if (g_light_yield[i]) g_light_yield[i] = 0;
+        if (g_light_yield[s]) g_light_yield[s] = 0;
         ox = *(float*)((char*)obj + SO_POS_X);
         oy = *(float*)((char*)obj + SO_POS_Y);
         oz = *(float*)((char*)obj + SO_POS_Z);
-        if (ox != g_light_pos[i][0] || oy != g_light_pos[i][1] ||
-            oz != g_light_pos[i][2]) {
+        if (ox != g_light_pos[pi][0] || oy != g_light_pos[pi][1] ||
+            oz != g_light_pos[pi][2]) {
             if ((int)(now - g_last_pin_log) >= 500) {
                 char pbuf[128];
                 snprintf(pbuf, sizeof(pbuf),
-                         "  LIGHT%d: re-pin (was %d,%d,%d)",
-                         i, (int)ox, (int)oy, (int)oz);
+                         "  LIGHT s%d: re-pin P%d (was %d,%d,%d)",
+                         s, pi, (int)ox, (int)oy, (int)oz);
                 log_mod(pbuf);
                 g_last_pin_log = now;
             }
-            write_light_fields(obj, i, vis);
-            native_setpos(obj, g_light_pos[i][0], g_light_pos[i][1],
-                          g_light_pos[i][2]);
-            native_register(gfx, LIGHT_SLOT_BASE + i, obj);
+            write_light_fields(obj, pi, vis);
+            native_setpos(obj, g_light_pos[pi][0], g_light_pos[pi][1],
+                          g_light_pos[pi][2]);
+            native_register(gfx, LIGHT_SLOT_BASE + s, obj);
         }
     }
+    for (s = n; s < MAX_LIGHTS; s++) light_switch_off_slot(gfx, s);
 }
 /* Per-frame light service. Runs from BOTH text_render and onGameUpdate:
  * text_render barely fires in-race, so game_update carries the pin. */
@@ -1905,16 +2161,25 @@ static void light_frame(void) {
         log_mod(abuf);
         if (gfxa) {
             int vis = (g_lights_on && g_light_vis) ? 1 : 0;
-            for (i = 0; i < g_light_count && i < MAX_LIGHTS; i++) {
-                DWORD obj = g_light_objs[i];
-                if (!obj ||
-                    IsBadReadPtr((void*)obj, SCENEOBJECT_SIZE)) continue;
-                write_light_fields(obj, i, vis);
-                if (!claim_slot(gfxa, LIGHT_SLOT_BASE + i, obj))
-                    g_light_yield[i] = 1;
-                else
-                    g_light_yield[i] = 0;
+            int n = light_select();
+            int s;
+            for (s = 0; s < MAX_LIGHTS; s++) {
+                if (s < n && g_active_map[s] >= 0) {
+                    DWORD obj = g_light_objs[s];
+                    if (!obj ||
+                        IsBadReadPtr((void*)obj, SCENEOBJECT_SIZE)) continue;
+                    write_light_fields(obj, g_active_map[s], vis);
+                    if (!claim_slot(gfxa, LIGHT_SLOT_BASE + s, obj))
+                        g_light_yield[s] = 1;
+                    else
+                        g_light_yield[s] = 0;
+                } else {
+                    light_switch_off_slot(gfxa, s);
+                }
+                g_prev_map[s] = g_active_map[s];
             }
+            g_light_used = n;
+            g_active_n = n;
         }
     }
     /* heartbeat FIRST (before gfx check): silence itself is data */
@@ -1968,6 +2233,23 @@ static void light_frame(void) {
                      (int)nx, (int)ny, (int)nz,
                      (s4 && s4 != g_seen_slot4) ? " SWAPPED" : "");
             log_mod(hbuf);
+            /* BallBorder gate diag (frame-based: no timer dependency) */
+            {
+                char dbuf[96];
+                void* b = (void*)HBAPI(g_api).GetPlayer();
+                int b280 = -9, b324 = -9, b754 = -9, g182 = -9;
+                if (b && !IsBadReadPtr(b, 0x800)) {
+                    b280 = *(BYTE*)((char*)b + 0x280);
+                    b324 = *(BYTE*)((char*)b + 0x324);
+                    b754 = *(int*)((char*)b + 0x754);
+                }
+                if (gfx && !IsBadReadPtr((void*)(gfx + 0x182), 1))
+                    g182 = *(BYTE*)(gfx + 0x182);
+                snprintf(dbuf, sizeof(dbuf),
+                         "  BORDER: b280=%d b324=%d b754=%d gfx182=%d",
+                         b280, b324, b754, g182);
+                log_mod(dbuf);
+            }
             /* on swap, fingerprint all 8 slots once */
             if (s4 && s4 != g_seen_slot4) {
                 g_seen_slot4 = s4;
@@ -1999,6 +2281,8 @@ static void light_frame(void) {
 }
 static void __thiscall text_render(void*) {
     light_frame();
+    border_frame();   /* render-time re-assert: slot RGBA wins over exe, Neon too */
+    glow_frame();     /* render-time re-assert: P1 emitter glow */
 }
 static void __thiscall ball_bump(void*, void*, void*) {}
 

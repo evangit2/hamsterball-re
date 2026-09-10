@@ -97,7 +97,47 @@ zeroes that constant once (`Att2 patch`), else `1/(1+0.04d^2)` attenuation
 eats the light (0.0003 at 288 units). The engine itself drives D3D — the mod never calls D3D
 functions. Slots re-assert ~every 2s (race retry wipes them). Ambient is never touched (darkness stays file-side).
 `E:LIGHTSOFF` / `E:LIGHTSON` toggle the mod lights like the native ones.
-First 7 lights win (slots 1-7); extras are logged and skipped.
+Parsed pool = 64 (S3 + POINT refs, no cap in practice); only the nearest 7
+to the ball own gfx slots 1-7 at any moment, re-picked every frame, rest
+stay defined-but-dark — walk the level and the light window follows you.
+Slot 0 stays native (P1 follower, never touched): 7 mod + 1 native = D3D8's 8.
+`REF:PlayerlightXX` (max 4) parses exactly like a Pointlight (same mesh-color
++ `(Rnnn)` rules) but snaps to the ball every frame — d2=0, so it always wins
+a slot and behaves as a Neon-style follower light.
+
+## BallBorder (v1ax+)
+
+P1's `ballborder.png` ring uses a ball-local `D3DMATERIAL8` (Ball_Render passes
+`ball+0x1B8`, consumed at `+4`). Native leaves diffuse+emissive black, so the
+ring goes dark on dim levels.
+
+## Per-level ring color (v1ay+)
+
+`neon_ballring_player1` in `mknp_battyball_entities_set.jsonc` maps each race
+slot to `[r,g,b,a]` (P1 only). Keys are slot IDs, NOT filenames:
+1 WarmUp, 2 Beginner/Cascade, 3 Intermediate, 4 Dizzy, 5 Tower, 6 Up, 7 Neon,
+8 Expert, 9 Odd, 10 Toob, 11 Wobbly, 12 Glass, 13 Sky, 14 Master,
+15 Impossible. Present key = ring painted with that RGBA every frame (diffuse
+RGBA + emissive RGB); commented-out/absent key = ring forced back to native
+black (no glow, no stale color from the last level). Slot = board vtable
+(`board+0x0`, set by `LevelBoard_X_ctor` — Ghidra-verified all 15, immune to
+file swaps and renames; names are never read). Unknown
+boards (slot 0: Pinball, menus) are left fully native — never touched. Off
+with the master `BATTY_ENTITIES` toggle. Same slot keys drive `grid_speed`.
+
+Neon (slot 7) needs no special case: `Ball_Render` (0x403DB8) only READS
+`ball+0x1B8` at its 3 `Sprite_RenderQuad` sites and never writes it, so the
+mod's per-frame write (update + render loop) always wins over the exe when
+the `level7` key exists. Absent `level7` forces native black, killing the
+stock Neon glow too.
+
+## P1 emitter glow (v1bb+)
+
+`neon_glow_player1` does exactly the Neon_colors mod's Player GLOW half, from
+jsonc: P1 emitter SceneObject (`scene+0x436C`, set up by `0x416270`) gets RGB
+at `+0x94` and A at `+0xA0`, every frame. Same `levelN` slot keys (slot 7 =
+Neon); absent/commented key = emitter untouched (native glow). The OUTLINE
+half of Neon_colors is already `neon_ballring_player1` above.
 Slots 1-3 are P2-P4 follower slots: empty in solo, and native-priority
 yield defers ours the moment a native claims one (reclaims when freed).
 Naming rules: S1 ref `PointlightNN[(Rrange)]` (e.g. `Pointlight02(R200)`,

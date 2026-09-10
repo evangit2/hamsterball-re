@@ -1,0 +1,132 @@
+# LevelFeatures Configuration
+# Level numbers: 1=WarmUp 2=Beginner 3=Intermediate 4=Dizzy 5=Tower
+#   6=Up 7=Neon 8=Expert 9=Odd 10=Toob 11=Wobbly 12=Glass 13=Sky
+#   14=Master 15=Impossible
+#
+# [OBJECTS] — List level numbers after = to enable that object for those levels.
+#   Empty () means disabled everywhere.
+#   Example: BUMPERS = 2 5 8  (enables bumpers on Beginner, Tower, Expert)
+#            BRIDGE = 3 14   (enables bridge on Intermediate, Master)
+#
+# [FEATURES] — Override which Board_Update feature blocks run per level.
+#   Format: levelNum = FEATURE1 FEATURE2 ...
+#   Available features:
+#     BRIDGE_ANIM   — 4-state bridge tilt (Intermediate, Master)
+#     SWIRL         — Swirl zones + tar bubbles (Dizzy, Master)
+#     WINDMILL      — Rotating windmill (Tower)
+#     BADBALL       — Enemy ball spawner (Odd)
+#     BUMPER_DECAY  — Bumper lit decay (Beginner, Toob, Master)
+#     NEON_CAM      — Ball-following camera (Neon)
+#     SKY_POPCYL    — Popcylinder activator (Sky)
+#   Levels NOT listed here use built-in defaults.
+#   Use () to clear all features for a level.
+#   Example: 2 = SWIRL BUMPER_DECAY  (adds swirl to Beginner while keeping bumper decay)
+
+[OBJECTS]
+BUMPERS = ()
+BRIDGE = 3
+
+[FEATURES]
+# Defaults (uncomment and edit to override):
+# 1 = ()
+# 2 = BUMPER_DECAY
+# 3 = BRIDGE_ANIM
+# 4 = SWIRL
+# 5 = WINDMILL
+# 6 = ()
+# 7 = NEON_CAM
+# 8 = ()
+# 9 = BADBALL
+# 10 = BUMPER_DECAY
+# 11 = ()
+# 12 = ()
+# 13 = SKY_POPCYL
+# 14 = SWIRL BUMPER_DECAY BRIDGE_ANIM
+# 15 = ()
+
+# Example: Add swirl to Beginner!
+# 2 = SWIRL BUMPER_DECAY
+
+# ─────────────────────────────────────────────
+# [COLLISION] — Per-level collision event toggles
+# ─────────────────────────────────────────────
+# Format: EVENT_NAME = level numbers (1-15)
+# Global events (N:GOAL, N:TARPIT, E:JUMP, etc.) are always active.
+# Only level-specific events need to be listed here.
+# Edit to enable cross-level collision events (e.g. put N:BUMPER on level 7)
+#
+# Note: E:ALERTSAW3 is Toob's version of E:ALERTSAW2 (renamed to avoid conflict)
+
+[COLLISION]
+N:BUMPER = 2 10 14
+N:BRIDGE = 3
+N:WATERWHEEL = 4
+N:WHEELEMBED = 4
+N:SWIRL = 4
+E:CATAPULTBOTTOM = 5 14
+E:OPENSESAME = 5
+N:TRAPDOOR = 5
+E:BITE = 5
+E:MACETRIGGER = 5
+N:MACE = 5
+E:HELPINERTIA = 6 15
+E:UNHELPINERTIA = 6 15
+E:VACPOPOUT = 6
+N:SPEEDCYLINDER = 6
+N:EXTRATIME = 6
+N:NEONPLATFORM = 7
+E:ZOOP = 7
+E:LIGHTSOFF = 7
+E:LIGHTSON = 7
+E:CALLHAMMER = 8 14
+E:HAMMERCHASE = 8 14
+E:ALERTSAW1 = 8
+E:ALERTSAW2 = 8
+E:ALERTSAW3 = 10
+E:ACTIVATESAW1 = 8
+E:ACTIVATESAW2 = 8
+E:ALERTJUDGES = 8
+E:SCORE = 8
+E:BELL = 8
+E:GRAVITY = 9
+N:JUMPFIRST = 9
+N:JUMPSECOND = 9
+E:SHRINK = 9
+E:GROWSOUND = 9
+E:GROW = 9
+E:DROPLIFT = 9
+E:PIPERANDOM = 9
+E:LIMITX = 9
+E:LIMITZ = 9
+E:LIMITPIPE1 = 9
+E:SWALLOW = 9
+E:LIMITPIPE2 = 9
+E:BRANCH = 10
+N:SPINNY = 10
+N:SAWTEETH = 10
+N:SPINNER = 14
+E:LAUNCH = 14
+N:SQUAREWOBBLY = 11
+N:WAVY = 11
+N:GLASS = 12
+N:TENBONUS1 = 12
+N:TENBONUS2 = 12
+E:PEGS = 13
+E:TRAPPOP = 13
+E:NOPEGS = 13
+E:HEATON = 13
+E:HEATOFF = 13
+N:BOUNCE = 15
+N:ONROTATOR = 15
+N:ONGEAR = 15
+
+# ─────────────────────────────────────────────
+# LevelData.txt (auto-generated on first run)
+# ─────────────────────────────────────────────
+# Controls per-level structural init. Editable fields:
+#   AthenaLists  — Semicolon-separated hex offsets for AthenaList_Init
+#   EHVector     — Format: 0xOFFSET:COUNT:STRIDE (bumper slot arrays)
+#   ZeroFills    — Semicolon-separated hex offsets to zero-fill
+#   AssignTex    — Mesh offsets for Level_AssignTexturesAndScales
+#   SoundChannel — Offset for sound channel allocation
+#   BridgeParam  — Offset for bridge tilt state machine init
