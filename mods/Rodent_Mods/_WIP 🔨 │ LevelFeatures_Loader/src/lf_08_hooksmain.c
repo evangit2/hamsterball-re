@@ -1,4 +1,7 @@
 /* Chapter 8 - UniversalConstructor + hooks + DebugLog + vtable patches + PatchThread + DllMain (LevelFeatures.c lines 6105-6930) */
+/* Chapter-9 pennants (lf_09_pennants.c, included after this file). */
+void Pennant_PostSetup(void *board, void *ext, int raceIndex);
+static void InstallFlagRenderHook(void);
 static void UniversalConstructor(void *board, int raceIndex) {
     void* ext = EnsureBoardExt(board);
     char buf[256];
@@ -189,6 +192,9 @@ static void UniversalConstructor(void *board, int raceIndex) {
             }
         }
     }
+
+    /* Step 6b: Tower pennants + PENNANT* collection (see lf_09_pennants.c). */
+    Pennant_PostSetup(board, ext, raceIndex);
 }
 
 /* Must be non-static for asm reference */
@@ -814,6 +820,8 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     DebugLog("InstallVtablePatches done");
     InstallHook();
     DebugLog("InstallHook done");
+    InstallFlagRenderHook();
+    DebugLog("InstallFlagRenderHook done");
     DebugLog("=== PatchThread complete (v2 swirlfix) ===\n");
     return 0;
 }

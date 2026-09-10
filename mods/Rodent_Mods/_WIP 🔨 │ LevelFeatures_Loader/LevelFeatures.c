@@ -14,6 +14,7 @@
  *  lf_06_collision.c    - collision config + UniversalDispatchCollision
  *  lf_07_postscan.c     - PostSetup + S1/collision scans
  *  lf_08_hooksmain.c    - constructor + hooks + DebugLog + vtable + DllMain
+ *  lf_09_pennants.c      - per-name pennant routing (FLAG*=rect, PENNANT*=triangle)
  */
 #include "src/lf_00_core.c"
 #include "src/lf_01_bumpers.c"
@@ -24,3 +25,4 @@
 #include "src/lf_06_collision.c"
 #include "src/lf_07_postscan.c"
 #include "src/lf_08_hooksmain.c"
+#include "src/lf_09_pennants.c"

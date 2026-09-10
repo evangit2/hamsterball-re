@@ -207,3 +207,15 @@ Source lives in `src/` as 9 chapters (one translation unit —
 - **Wine navigation**: Use `xdotool key --delay 200` for menu navigation. Race selection requires precise key timing.
 - **File-swap testing**: To test locked levels (Dizzy, Tower), swap `g_levelData[1]` (Warm-Up) with the target level's entry. Warm-Up is always unlocked in Time Trials.
 - Per-level code paths: Dizzy and Intermediate verified on Wine. Tower needs Windows testing (D3D8 hang). Other levels untested.
+
+## Pennant flags (per-name shapes)
+
+Name a flag mesh `FLAG*` for a rectangle, `PENNANT*` for a triangle pennant
+— on any level, in any slot. The game natively runs every flag through one
+shared waver object, so without this mod a level is all-rectangle or (Tower
+only) all-pennant. The mod builds a second pennant waver and routes each
+flag to the right one by name at render time (see `src/lf_09_pennants.c`).
+
+- Tower race keeps its native look: all `FLAG*` render as pennants there.
+- Everywhere else `FLAG*` = rectangle, `PENNANT*` = triangle.
+- Check `lfdebug.log` for `Pennant:` lines to confirm pickup.
