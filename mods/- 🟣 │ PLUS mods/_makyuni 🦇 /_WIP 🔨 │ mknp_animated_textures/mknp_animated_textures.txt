@@ -19,6 +19,8 @@ looptype  = 0 play once, stop on last frame
             1 loop forever (default)
             2 ping-pong (reverse at ends)
             3 proximity gate (see below)
+paused    = true (default) freeze on current frame while Esc menu
+            open, resume cleanly on close. false = ignore pause.
 proximity = ball distance that counts as "near" (float, loop 3 only,
             default 300). One radius per animation.
 
