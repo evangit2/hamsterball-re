@@ -161,11 +161,73 @@ Top-level set pairs next to `grid_speed` define named entities:
 
 - Key = entity name, also the S1 ref substring (`REF:Woodbridge` in the level).
 - `behaviour` = behaviour name.
-  - `Woodbridge` (v1bf+): bridge sinks 50 units while the ball is within 150
-    units (3D), rises back when it leaves. Smooth 100 u/s both ways, frozen
-    while paused. Move uses the native reposition path (`obj+0x10D8` +
+  - `Woodbridge` (v1bj+): sinks below home while the ball is inside the
+    proximity ellipsoid, rises back to home when it leaves. Per-def keys:
+    `low_Y` = sink depth below home (def 50), `speed_Y` = seconds for full
+    home-low travel (def 0.5), `proximity` = base zone size (def 150),
+    `proximity_scaleX/Y/Z` = per-axis stretch, 1 = original (def 1/1/1).
+    Zone = ellipsoid semi-axes proximity*scale around home; Y measured
+    from fixed home so sinking never retriggers itself.
+    Non-positive values keep defaults. Smooth both ways, frozen while
+    paused. Move uses the native reposition path (`obj+0x10D8` +
     `+0x10E4` dirty flag, consumed by update `0x43DED0`).
-  - anything else: static, no motion.
+  - REF rotation (v1bw+): the ref angle (THIRD S1 rot float:
+    file rot2->ry, DAT ROT_Y wins) pitches about X, mirrored
+    (M = Rx(-a)*T, D3DX rows [1,0,0],[0,c,-s],[0,s,c]), actuated
+    every frame from slot-11 + slots 21/22 backstop, direct
+    renderLevel+4 writes (model-space mesh, zero device touches).
+    Trigger zone follows (stored angle negated into the X slot).
+    NO native X/Z draw path exists (0x45AF3E dead stub, NEVER call).
+    KNOWN LIMIT: collision flat.
+  - Woodbridge_area gate (v1bz+): `"Woodbridge_area",
+    { "behaviour": "Woodbridge_area", "mesh": "vertices" }` loads a
+    trigger quad from the VERTICES of the level's S6 geom(s) whose
+    name contains the def name (01/02/... each one quad, up to 8).
+    Never rendered, spawns nothing (S1 REF:s are markers only).
+    Ball inside any quad (XZ column, Y ignored) = proximity runs;
+    outside = all bridges hold home. No quads found = gate open
+    (old levels unchanged). Log: `AREA: quad <name>: N verts (...)`
+    + `gate OPEN/CLOSED` edges. S1 refs hold one point only, never
+    verts — the quad always comes from the S6 geom.
+    Hiding the plane (v1ca+): the ENGINE renders every plain geom
+    itself, so name it `E:Woodbridge_area01(NOCOLLIDE)` — `E:` is the
+    native invisible flag, `(NOCOLLIDE)` keeps it non-solid. Loader
+    matches by substring, unaffected. `"visible": false` (bare bool,
+    default true) is read per def; on areas without the `E:` prefix
+    the log warns `plane shows`.
+  - Distance falloff (v1ca+): sink depth scales with closeness —
+    target = -low_Y × (1 - dist): ball centered = full depth,
+    zone edge = 0. Neighbours dip progressively, never constant.
+  - Creak (v1cb+): native Wobbly replication — shared channel from
+    App+0x4E0 via Sound_GetChannel 0x459810, primed 0.0 (0x459610),
+    replayed every frame with vol=min(60×travel,1) (0x458EE0, silent
+    at 0). Acquire-once lazy, never released. Log: `SND: creak ch=`
+    + start/stop edges. Pause-safe (no calls while paused).
+    v1cc anti-chop: fire ONLY while audible (silent re-fires restarted
+    the sample); still = hands off, tail rings out; ~12f smoothed
+    release bridges flicker.
+    v1cd: `"sound_sensitivity"` per def (bare float, default 1, >0) —
+    multiplies that def's travel before the vol mapping. Lower = only
+    big dips trigger; higher = every tremor creaks. Logged as
+    `sndsens=` when != 1.
+    v1ce: `"sound": "<Name>"` per def loads `Sounds\<Name>.ogg`
+    (ext auto-tried, 10 buffers) through native Sound_LoadAndAppend
+    0x4664F0 (thiscall-shape typedef! fastcall would corrupt on RET 8).
+    Exactly-once per def (leaf appends even when missing — no retry);
+    fail = creakyplatform fallback, logged. Per-def channels + travel.
+    Static meshes rotate about their own center via direct renderLevel+4
+    matrix writes (v1bt, slot-11 every frame + slots 21+22 wrappers);
+    collision stays flat (known limit). The Woodbridge zone rotates with the same rotation.
+    Normals stay baked. AI-native types log rotation only.
+  - AI behaviours (v1bg+, names verbatim from mknp_custom_entities AI list):
+    native ctor + your mesh, motion via game lists. Rotator, Pendulum, Swirl,
+    Flickfloor1, Flickfloor2, Flickring, Trode, Glassbreaker, Judge, Sign,
+    8ball, Bonk, Catapult, Mace, Tipper, Lifter, Speedcylinder,
+    Neonplatform, Trapdoor, Droplifter, Gluebie, Timebutton.
+    Catapult/Speedcylinder register solid collision; types without
+    per-frame drivers stay visible (some non-solid) until v1bh+.
+  - static fallback (PopCylinder, solid, no motion): Bridgeslam, Chrome,
+    Funball, Tarbubble, Waterwheel, Tarpit + any other name.
 - `mesh` = meshworld file, always loaded from the game's `Levels` folder.
 
 At level start each `REF:<Name>` spawns its mesh via the same native chain as
