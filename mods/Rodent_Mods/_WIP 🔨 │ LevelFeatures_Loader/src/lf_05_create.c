@@ -995,6 +995,22 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         return;
     }
 
-    /* Unknown object — no-op */
+    /* Unknown object — no-op, but label it (entry log at fn top already
+     * printed the full name; this marks the fallthrough as a deliberate
+     * skip so future S1 additions are diagnosable, not silent). */
+    {
+        char udbg[96];
+        int ulen = 0;
+        while (name[ulen] && ulen < 48) ulen++;
+        {
+            int ui;
+            char *dst = udbg;
+            const char *prefix = "CreateDynamicObjects: unknown S1 '";
+            while (*prefix) *dst++ = *prefix++;
+            for (ui = 0; ui < ulen; ui++) *dst++ = name[ui];
+            *dst++ = '\''; *dst++ = '\0';
+        }
+        DebugLog(udbg);
+    }
     *(int*)out1 = 0; *(int*)out2 = 0;
 }

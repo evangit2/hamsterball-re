@@ -147,6 +147,11 @@ static void BuildCollisionFlags(void *board, void *ext) {
     if (IsS1CollisionEnabled(board, "N:BOUNCE")) *(BYTE*)((char*)ext + COLL_FLAG_BOUNCE)=1;
     if (IsS1CollisionEnabled(board, "N:ONROTATOR")) *(BYTE*)((char*)ext + COLL_FLAG_ONROTATOR)=1;
     if (IsS1CollisionEnabled(board, "N:ONGEAR")) *(BYTE*)((char*)ext + COLL_FLAG_ONGEAR)=1;
+    /* Feature wiring (S1-driven, no level hardcode):
+     * N:BUMPER presence => bumper-lit decay (render reads ext+UNI_BUMPER_LIT).
+     * Without this FEAT_BUMPER_DECAY never sets and Beginner (native orig
+     * skipped in UniversalRaceState) loses decay entirely. */
+    if (*(BYTE*)((char*)ext + COLL_FLAG_BUMPER)) OrBoardFeat(board, FEAT_BUMPER_DECAY);
     { char dbg[96]; int cnt=0; for(int i=0;i<COLL_FLAG_COUNT;i++) if(*(BYTE*)((char*)ext+OFF_COLLISION_FLAGS+i)) cnt++; wsprintfA(dbg,"BuildCollisionFlags: %d/%d enabled",cnt,COLL_FLAG_COUNT); DebugLog(dbg); }
 }
 

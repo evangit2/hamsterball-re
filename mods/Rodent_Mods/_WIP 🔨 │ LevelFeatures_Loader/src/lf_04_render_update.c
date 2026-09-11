@@ -589,6 +589,16 @@ void __fastcall UniversalRaceState(void *board) {
         if (Neon_IsActive(board) && g_origRaceState[level]) {
             g_origRaceState[level](board);
         }
+    } else if (level == 13) {
+        /* Sky RaceState (0x41FC90) RNG-activates NATIVE-slot popcylinders.
+         * Universal objects live in ext slots via Feature_SkyPopcylinder;
+         * calling both double-activates (2x rate + doubled sounds) and runs
+         * orig on native slots the universal builder never filled. Skip orig
+         * when the ext feature will run; keep it as fallback otherwise. */
+        DWORD skyFeat = GetBoardFeat(board);
+        if (!(skyFeat & FEAT_SKY_POPCYL) && g_origRaceState[level]) {
+            g_origRaceState[level](board);
+        }
     } else if (level >= 1 && level <= 15 && g_origRaceState[level]) {
         g_origRaceState[level](board);
     }
