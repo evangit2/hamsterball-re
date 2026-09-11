@@ -810,6 +810,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     if ((*(BYTE*)((char*)ext + COLL_FLAG_PIPERANDOM)) && my_stricmp(name, "E:PIPERANDOM") == 0) {
         if (g_BallGrow) g_BallGrow((int)ball);
         if (difficulty != 0) *(BYTE *)((char *)ext + UNI_SAW1_OBJ) = 1;
+        /* Chrome-ball arming — native OddBoard_CollisionHandler E:PIPERANDOM
+         * (Ghidra-verified 2026-09-11): difficulty != 0 -> board+0x4370 = 1,
+         * and board+0x4370 IS the Odd BadBall spawn flag (dword-idx 0x10DC
+         * in the decomp = byte 0x4370). Same write lands on SAW1's slot in
+         * other levels (offset reuse) — hence both slots are written here. */
+        if (difficulty != 0 && level == 9)
+            *(char *)((char *)ext + BRD_BB_FLAG) = 1;
         /* Random pipe selection */
         if (g_CPUIDRNG && g_AthenaHashTableLookup) {
             void *ht = *(void **)((char *)board + BOARD_MESHWORLD);
