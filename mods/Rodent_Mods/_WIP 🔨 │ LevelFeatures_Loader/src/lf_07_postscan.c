@@ -3,6 +3,57 @@
  * Universal Post-Setup — config-driven feature initialization
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* Find an S1 ref point's position by exact name (verbatim 3 floats at
+ * entry +0x04/08/0x0C — byte order preserved, never reordered).
+ * Mirrors native 0x4605E0 S1-name lookup used by the Odd scene loader
+ * (0x40EAA0 tail) to fill the BadBall spawn table. Returns 1 if found. */
+static int FindS1Position(void *meshWorld, const char *want, float *out) {
+    MEMORY_BASIC_INFORMATION mbi;
+    DWORD objDb;
+    int iter, count, idx;
+    DWORD *array;
+    DWORD savedIter;
+    if (!meshWorld || !want || !out) return 0;
+    if (!VirtualQuery(meshWorld, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return 0;
+    objDb = *(DWORD *)((char *)meshWorld + 0x480);
+    if (!objDb) return 0;
+    if (!VirtualQuery((void*)objDb, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return 0;
+    if (!g_AthenaListGetIterator || !g_AthenaListGetSize) return 0;
+    if (!VirtualQuery((void*)(objDb + 0x894), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return 0;
+    iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
+    if (iter <0 || iter>16) return 0;
+    if (!VirtualQuery((void*)(objDb + 0x89C + iter*4), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return 0;
+    savedIter = *(DWORD*)(objDb + 0x89C + iter*4);
+    *(DWORD *)(objDb + 0x89C + iter*4) = 0;
+    if (!VirtualQuery((void*)(objDb + 0x898), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return 0; }
+    count = *(int *)(objDb + 0x898);
+    if (count <=0 || count>8192) return 0;
+    if (!VirtualQuery((void*)(objDb + 0xCA0), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return 0;
+    array = *(DWORD **)(objDb + 0xCA0);
+    if (!array) return 0;
+    if (!VirtualQuery(array, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return 0;
+    *(DWORD *)(objDb + 0x89C + iter*4) = 1;
+    for (idx=0; idx<count; idx++) {
+        DWORD *obj = (DWORD *)array[idx];
+        char *name;
+        if (!obj) continue;
+        if (!VirtualQuery(obj, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) continue;
+        name = *(char **)obj;
+        if (!name) continue;
+        if (!VirtualQuery(name, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) continue;
+        if (my_stricmp(name, want) == 0) {
+            if (!VirtualQuery((void*)((char*)obj + 0x04), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) break;
+            out[0] = *(float *)((char *)obj + 0x04);
+            out[1] = *(float *)((char *)obj + 0x08);
+            out[2] = *(float *)((char *)obj + 0x0C);
+            *(DWORD*)(objDb + 0x89C + iter*4)=savedIter;
+            return 1;
+        }
+    }
+    *(DWORD*)(objDb + 0x89C + iter*4)=savedIter;
+    return 0;
+}
+
 static void UniversalPostSetup(void *board) {
     void* ext = EnsureBoardExt(board);
     if (!ext) return;
@@ -38,6 +89,43 @@ static void UniversalPostSetup(void *board) {
                 g_CollectByNameFilter((void *)meshWorld, nameBuf, dest);
             }
             *(DWORD *)((char *)ext + BUMPER_LIT_BASE + i * BUMPER_LIT_STRIDE) = 0;
+        }
+    }
+
+    /* Odd BadBall spawn table (native Odd scene loader 0x40EAA0 tail,
+     * disasm-verified 2026-09-11 via objdump):
+     *   FLAG(board+0x4370) = 0, COUNTER(+0x4374) = 200, TOTAL(+0x4378) = 0,
+     *   LAST(+0x43A0) = -1, TABLE(+0x437C/88/94) = S1 positions of
+     *   LAUNCH01 / LAUNCH02 / CHROMESHADOW via 0x4605E0 name lookup.
+     * The ONLY movb $1,+0x4370 in the exe is Toob's E:DROPLIFT handler
+     * (0x40F0C5 — a different level's field), so Odd's flag stays 0
+     * forever: the vanilla timer-spawner never fires. Replicated
+     * dormant-faithful here (flag=0); resurrecting it (flag=1) would
+     * spawn BadBalls vanilla never had — a gameplay call, not a fix. */
+    if (level == 9) {
+        DWORD oddMW = *(DWORD *)((char *)board + BOARD_MESHWORLD);
+        if (oddMW && !IsBadReadPtr((void *)oddMW, 0x430)) {
+            const char *bbSlots[3] = { "LAUNCH01", "LAUNCH02", "CHROMESHADOW" };
+            int bi, bfound = 0;
+            *(char *)((char *)ext + UNI_BB_FLAG) = 0;
+            *(int *)((char *)ext + UNI_BB_COUNTER) = 200;
+            *(int *)((char *)ext + UNI_BB_TOTAL) = 0;
+            *(int *)((char *)ext + UNI_BB_LAST_IDX) = -1;
+            for (bi = 0; bi < 3; bi++) {
+                float p[3] = { 0.0f, 0.0f, 0.0f };
+                if (FindS1Position((void *)oddMW, bbSlots[bi], p)) {
+                    ((float *)((char *)ext + UNI_BB_POS_TABLE))[bi * 3] = p[0];
+                    ((float *)((char *)ext + UNI_BB_POS_TABLE))[bi * 3 + 1] = p[1];
+                    ((float *)((char *)ext + UNI_BB_POS_TABLE))[bi * 3 + 2] = p[2];
+                    bfound++;
+                }
+            }
+            OrBoardFeat(board, FEAT_BADBALL);
+            {
+                char bbdbg[96];
+                wsprintfA(bbdbg, "Odd: BB table init %d/3 (dormant, flag=0 per native)", bfound);
+                DebugLog(bbdbg);
+            }
         }
     }
 }
