@@ -119,6 +119,37 @@ static void Feature_BridgeAnimation(void *board, int level) {
                 }
             }
             if (angle >= 45.0f) { *anglePtr = 45.0f; *counterPtr = 0x4B; *statePtr = 0; }
+            /* Rider carry — native Intermediate Board_Update state 3
+             * (0x41CE9D, Ghidra-verified 2026-09-11: 0x402BF0=Vec3_Copy,
+             * 0x40A0B0=(mat,vec-inplace) stdcall, ECX officially scratch):
+             * per ball with +0x778 set, rotate (pos-pivot) by -0.5 about Z
+             * (matches the +0.5/frame rise rate), add pivot back. Runs only
+             * while rising (states 0-2 jmp straight to end). Kinematic
+             * carry — native pos-writes here; forces cannot do rigid carry,
+             * so the native write is mirrored exactly (not accumulators). */
+            if (g_TimerInit && g_TimerCleanup && g_GfxScaleZ && g_MatrixTransformVec3) {
+                int bn = *(int *)((char *)board + UNI_BALL_COUNT);
+                DWORD barr = *(DWORD *)((char *)board + UNI_BALL_ARRAY);
+                if (bn > 0 && bn < 64 && barr && !IsBadReadPtr((void *)barr, bn * 4)) {
+                    int bi;
+                    for (bi = 0; bi < bn; bi++) {
+                        DWORD cb = ((DWORD *)barr)[bi];
+                        float cd[3]; char ctimer[68];
+                        if (!cb || IsBadReadPtr((void *)cb, 0x800)) continue;
+                        if (!*(BYTE *)((char *)cb + 0x778)) continue;
+                        cd[0] = *(float *)((char *)cb + 0x164) - *pivotX;
+                        cd[1] = *(float *)((char *)cb + 0x168) - *pivotY;
+                        cd[2] = *(float *)((char *)cb + 0x16C) - *pivotZ;
+                        g_TimerInit(ctimer);
+                        g_GfxScaleZ(ctimer, -0.5f);
+                        g_MatrixTransformVec3((float *)ctimer, cd);
+                        *(float *)((char *)cb + 0x164) = cd[0] + *pivotX;
+                        *(float *)((char *)cb + 0x168) = cd[1] + *pivotY;
+                        *(float *)((char *)cb + 0x16C) = cd[2] + *pivotZ;
+                        g_TimerCleanup(ctimer);
+                    }
+                }
+            }
             if (g_TimerInit && g_TimerCleanup && g_GfxScaleZ && g_GfxSetPosition && g_MatrixTransformVec3 && app) {
                 void *gfx = *(void **)(app + 0x174);
                 if (gfx) {
@@ -756,70 +787,80 @@ static void Feature_SkyPopcylinder(void *board, int level) {
     *(int *)((char *)ext + UNI_SKY_TIMER) = 0x4B; /* 75 */
     int rngCase = RNG_call((void *)0x4F7360, 0, 6, 0);
 
-    /* Play sound at rotator position */
-    DWORD rotator = *(DWORD *)((char *)ext + UNI_TRAPDOOR_LIST);
-    if (rotator && g_SoundPlay3D) {
+    /* Play sound at popcylinder idx8 position (native SkyBoard_Update plays
+     * at 0x47D0==idx8 via App+0x480 in ALL 6 cases, Ghidra-verified) */
+    DWORD pop8 = *(DWORD *)((char *)ext + UNI_SKY_POPCYL_BASE + 32);
+    if (pop8 && g_SoundPlay3D) {
         DWORD snd = *(DWORD *)(app + 0x480);
         if (snd) {
             g_SoundPlay3D((void *)snd,
-                *(float *)(rotator + 0x10D4),
-                *(float *)(rotator + 0x10D8),
-                *(float *)(rotator + 0x10DC));
+                *(float *)(pop8 + 0x10D4),
+                *(float *)(pop8 + 0x10D8),
+                *(float *)(pop8 + 0x10DC));
         }
     }
 
-    /* Activate popcylinders based on RNG case */
+    /* Activate popcylinders per RNG case (native switch, Ghidra-verified
+     * 2026-09-11; bank UNI_SKY_POPCYL_BASE+idx*4 == native 0x47B0+idx*4).
+     * NULL-guarded: file-swapped levels may lack S1s (vanilla would crash;
+     * LFL skips instead). */
+#define SKY_POP(i) do { int o_ = *(int *)((char *)ext + UNI_SKY_POPCYL_BASE + (i) * 4); if (o_) g_SceneSetRaceActive(o_); } while (0)
     switch (rngCase) {
     case 0:
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_CATAPULT_DATA));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + 24));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_TRAPDOOR_COUNT));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_TRAPDOOR_LIST + 8));
+        SKY_POP(5);
+        SKY_POP(6);
+        SKY_POP(9);
+        SKY_POP(10);
         break;
     case 1: {
-        int n = RNG_call((void *)0x4F7360, 0, 5, 0);
-        int i;
-        for (i = 0; i < n + 3; i++) {
-            int idx = RNG_call((void *)0x4F7360, 0, 0x10, 0);
-            g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + idx * 4));
+        int i3 = 0;
+        int rb = RNG_call((void *)0x4F7360, 0, 5, 0);
+        if (rb != -3 && -1 < rb + 3) {
+            do {
+                int ri = RNG_call((void *)0x4F7360, 0, 0x10, 0);
+                SKY_POP(ri);
+                i3++;
+                rb = RNG_call((void *)0x4F7360, 0, 5, 0);
+            } while (i3 < rb + 3);
         }
         break;
     }
     case 2: {
         int i;
         for (i = 0; i < 0x10; i++)
-            g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + i * 4));
+            SKY_POP(i);
         break;
     }
     case 3:
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + 4));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + 8));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + 12));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + 16));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + 28));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_TRAPDOOR_LIST));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + 44));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + 48));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + 52));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + 56));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + 60));
+        SKY_POP(0);
+        SKY_POP(1);
+        SKY_POP(2);
+        SKY_POP(3);
+        SKY_POP(4);
+        SKY_POP(6);
+        SKY_POP(8);
+        SKY_POP(11);
+        SKY_POP(12);
+        SKY_POP(13);
+        SKY_POP(14);
+        SKY_POP(15);
         break;
     case 4: {
         int idx = RNG_call((void *)0x4F7360, 0, 4, 0);
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + idx * 0x10));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + 4 + idx * 0x10));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + 8 + idx * 0x10));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + 12 + idx * 0x10));
+        SKY_POP(idx * 4);
+        SKY_POP(idx * 4 + 1);
+        SKY_POP(idx * 4 + 2);
+        SKY_POP(idx * 4 + 3);
         break;
     }
     case 5: {
         int idx = RNG_call((void *)0x4F7360, 0, 4, 0);
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + idx * 4));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + 16 + idx * 4));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_TRAPDOOR_LIST + idx * 4));
-        g_SceneSetRaceActive(*(int *)((char *)ext + UNI_SKY_POPCYL_BASE + 48 + idx * 4));
+        SKY_POP(idx);
+        SKY_POP(4 + idx);
+        SKY_POP(8 + idx);
+        SKY_POP(12 + idx);
         break;
     }
     }
+#undef SKY_POP
 }
