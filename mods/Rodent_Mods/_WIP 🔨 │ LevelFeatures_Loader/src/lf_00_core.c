@@ -509,6 +509,19 @@ static int __fastcall RNG_call(void *this_ptr, int dummy_edx, int range, char fl
 }
 typedef int (__thiscall *CPUID_RNG_t)(void *ptr, int range, char flag);
 typedef void *__thiscall (*BadBall_ctor_t)(void *mem, int board);
+/* Up VAC CollisionFace (0x38B, vtable 0x4D5768): __thiscall, ECX=mem,
+ * ret $0x28 = board(4) + IN(12) + OUT(12) + VEC(12). Disasm-verified
+ * 2026-09-11 (Up scene loader 0x411620 tail; dir = normalize(VEC-OUT)
+ * cross-checked against LevelUp VAC S1 positions). */
+typedef void *__thiscall (*VacFace_ctor_t)(void *mem, void *board,
+    float inX, float inY, float inZ,
+    float outX, float outY, float outZ,
+    float vecX, float vecY, float vecZ);
+/* Sky magnifier (0x444B, vtable 0x4D569C): __thiscall, ECX=mem,
+ * ret $0x10 = board(4) + pos(12). Stores board+0x47AC. Gated natively
+ * on difficulty != 0 + MAGNIFYER S1 (Sky loader 0x410900 tail). */
+typedef void *__thiscall (*Magnifier_ctor_t)(void *mem, void *board,
+    float x, float y, float z);
 typedef void (__thiscall *Ball_SetTrajectory_t)(void *ball, int unk, float x, float y, float f1, float f2);
 typedef void (__thiscall *Ball_SetVec3AtOffset_t)(void *ball, float *vec);
 typedef void (__thiscall *Vec3_NormalizeAndScale_t)(float *vec, float scale);
@@ -552,6 +565,8 @@ typedef float (__thiscall *Wave_Fn_t)(void *table, float angle);
 static Wave_Fn_t                  g_WaveSin = NULL;
 /* g_RNG_raw declared earlier (before RNG_call) */
 static BadBall_ctor_t             g_BadBallCtor = NULL;
+static VacFace_ctor_t             g_VacFaceCtor = NULL;
+static Magnifier_ctor_t           g_MagnifierCtor = NULL;
 static Ball_SetTrajectory_t       g_BallSetTrajectory = NULL;
 static Ball_SetVec3AtOffset_t     g_BallSetVec3AtOffset = NULL;
 static Vec3_NormalizeAndScale_t   g_Vec3NormalizeAndScale = NULL;
@@ -584,6 +599,8 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define RVA_FUN_00405190              0x00005190
 #define RVA_CPUID_RNG                 0x0005DD60
 #define RVA_BadBall_ctor              0x0000AFE0
+#define RVA_VacFace_ctor              0x00036860
+#define RVA_Magnifier_ctor            0x00036250
 #define RVA_Ball_SetTrajectory        0x00003850
 #define RVA_Ball_SetVec3AtOffset      0x00002A20
 #define RVA_Vec3_NormalizeAndScale    0x00001AA0

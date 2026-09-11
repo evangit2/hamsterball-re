@@ -54,6 +54,127 @@ static int FindS1Position(void *meshWorld, const char *want, float *out) {
     return 0;
 }
 
+/* Up VAC transport tubes (native Up scene loader 0x411620 tail,
+ * disasm-verified 2026-09-11 via objdump): for each S1 "VAC-IN*" (len-6
+ * prefix), suffix is reused verbatim ("-1", "-02" both work); "VAC-OUT*"
+ * + "VAC-VEC*" resolved by name; op_new(0x38) + VacFace_ctor; appended
+ * to the NATIVE board+0x436C list (orig Up RaceState iterates it — LFL
+ * calls orig for level 6, so faces must sit exactly where vanilla puts
+ * them). Two-pass (collect then build): FindS1Position nests AthenaList
+ * iterator use and must not run inside an open walk. List (re)inited
+ * here — PostSetup always precedes CreateDynamicObjects appends, so it
+ * is empty at this point; bounds-guarded for file-swapped small boards. */
+static void Vac_BuildTubes(void *board, void *ext) {
+    MEMORY_BASIC_INFORMATION mbi;
+    DWORD meshWorld, objDb, *array, savedIter;
+    int iter, count, idx, built = 0;
+    char suffixes[8][44];
+    float inPos[8][3];
+    int nIn = 0;
+    if (!board || !ext) return;
+    if (!g_operatorNew || !g_VacFaceCtor || !g_AthenaListAppend ||
+        !g_AthenaListInit || !g_AthenaListGetIterator) return;
+    meshWorld = *(DWORD *)((char *)board + BOARD_MESHWORLD);
+    if (!meshWorld) return;
+    if (!VirtualQuery((void *)meshWorld, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    objDb = *(DWORD *)((char *)meshWorld + 0x480);
+    if (!objDb) return;
+    if (!VirtualQuery((void*)objDb, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    if (!VirtualQuery((void*)(objDb + 0x894), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
+    if (iter <0 || iter>16) return;
+    if (!VirtualQuery((void*)(objDb + 0x89C + iter*4), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    savedIter = *(DWORD*)(objDb + 0x89C + iter*4);
+    *(DWORD *)(objDb + 0x89C + iter*4) = 0;
+    if (!VirtualQuery((void*)(objDb + 0x898), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
+    count = *(int *)(objDb + 0x898);
+    if (count <=0 || count>8192) return;
+    if (!VirtualQuery((void*)(objDb + 0xCA0), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    array = *(DWORD **)(objDb + 0xCA0);
+    if (!array) return;
+    if (!VirtualQuery(array, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    *(DWORD *)(objDb + 0x89C + iter*4) = 1;
+    /* Pass 1: collect VAC-IN suffixes + entry positions */
+    for (idx=0; idx<count && nIn<8; idx++) {
+        DWORD *obj = (DWORD *)array[idx];
+        char *name;
+        int slen, si;
+        if (!obj) continue;
+        if (!VirtualQuery(obj, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) continue;
+        name = *(char **)obj;
+        if (!name) continue;
+        if (!VirtualQuery(name, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) continue;
+        if (my_strnicmp(name, "VAC-IN", 6) != 0) continue;
+        if (!VirtualQuery((void*)((char*)obj + 0x04), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) continue;
+        slen = 0; while (name[6+slen] && slen < 40) slen++;
+        for (si=0; si<slen; si++) suffixes[nIn][si] = name[6+si];
+        suffixes[nIn][slen] = '\0';
+        inPos[nIn][0] = *(float *)((char *)obj + 0x04);
+        inPos[nIn][1] = *(float *)((char *)obj + 0x08);
+        inPos[nIn][2] = *(float *)((char *)obj + 0x0C);
+        nIn++;
+    }
+    *(DWORD*)(objDb + 0x89C + iter*4)=savedIter;
+    if (nIn == 0) return;
+    /* List must fit: native Up board holds it; file-swapped small boards skip */
+    if (!BoardHasOffset(board, 0x436C, 0x410)) { DebugLog("VAC: board too small, tubes skipped"); return; }
+    g_AthenaListInit((void *)((char *)board + 0x436C), 0);
+    /* Pass 2: resolve OUT/VEC + build faces */
+    for (idx=0; idx<nIn; idx++) {
+        char outName[64], vecName[64];
+        float outP[3], vecP[3];
+        void *mem, *face;
+        const char *p1 = "VAC-OUT", *p2 = "VAC-VEC";
+        int pi = 0, si = 0;
+        while (p1[pi] && pi < 60) { outName[pi] = p1[pi]; pi++; }
+        si = 0; while (suffixes[idx][si] && pi < 60) { outName[pi++] = suffixes[idx][si++]; }
+        outName[pi] = '\0';
+        pi = 0; while (p2[pi] && pi < 60) { vecName[pi] = p2[pi]; pi++; }
+        si = 0; while (suffixes[idx][si] && pi < 60) { vecName[pi++] = suffixes[idx][si++]; }
+        vecName[pi] = '\0';
+        if (!FindS1Position((void *)meshWorld, outName, outP)) continue;
+        if (!FindS1Position((void *)meshWorld, vecName, vecP)) continue;
+        mem = g_operatorNew(0x38);
+        if (!mem) continue;
+        face = g_VacFaceCtor(mem, board,
+            inPos[idx][0], inPos[idx][1], inPos[idx][2],
+            outP[0], outP[1], outP[2], vecP[0], vecP[1], vecP[2]);
+        if (!face) continue;
+        g_AthenaListAppend((void *)((char *)board + 0x436C), (int)face);
+        built++;
+    }
+    {
+        char vdbg[64];
+        wsprintfA(vdbg, "VAC: built %d/%d tubes", built, nIn);
+        DebugLog(vdbg);
+    }
+}
+
+/* Sky magnifier (native Sky loader 0x410900 tail): MAGNIFYER S1 +op_new
+ * (0x444) + Magnifier_ctor, stored board+0x47AC; natively gated on
+ * difficulty (App+0x23C) != 0. Exactly 1 MAGNIFYER in stock Level9, so
+ * first-match == native. Ext slot always written (LFL readers use ext);
+ * native slot mirrored when it fits. */
+static void Magnifier_Build(void *board, void *ext) {
+    float p[3];
+    DWORD meshWorld, app, mem, obj;
+    if (!board || !ext || !g_operatorNew || !g_MagnifierCtor) return;
+    meshWorld = *(DWORD *)((char *)board + BOARD_MESHWORLD);
+    if (!meshWorld) return;
+    if (!FindS1Position((void *)meshWorld, "MAGNIFYER", p)) return;
+    app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+    if (!app || IsBadReadPtr((void *)app, 0x240)) return;
+    if (*(int *)(app + APP_DIFFICULTY) == 0) return;
+    mem = (DWORD)g_operatorNew(0x444);
+    if (!mem) return;
+    obj = (DWORD)g_MagnifierCtor((void *)mem, board, p[0], p[1], p[2]);
+    if (!obj) return;
+    *(DWORD *)((char *)ext + UNI_MAGNIFYING_GLASS) = obj;
+    if (BoardHasOffset(board, 0x47AC, 4))
+        *(DWORD *)((char *)board + 0x47AC) = obj;
+    DebugLog("Sky: magnifier built");
+}
+
 static void UniversalPostSetup(void *board) {
     void* ext = EnsureBoardExt(board);
     if (!ext) return;
@@ -128,6 +249,11 @@ static void UniversalPostSetup(void *board) {
             }
         }
     }
+
+    /* Up VAC tubes + Sky magnifier (native scene-loader tails, see builders
+     * above). Content-gated: no-op on levels without VAC-IN/MAGNIFYER S1s. */
+    Vac_BuildTubes(board, ext);
+    Magnifier_Build(board, ext);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

@@ -710,6 +710,8 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     g_RNG = (CPUID_RNG_t)(g_moduleBase + RVA_CPUID_RNG);
     g_RNG_raw = (DWORD)(g_moduleBase + RVA_CPUID_RNG);
     g_BadBallCtor = (BadBall_ctor_t)(g_moduleBase + RVA_BadBall_ctor);
+    g_VacFaceCtor = (VacFace_ctor_t)(g_moduleBase + RVA_VacFace_ctor);
+    g_MagnifierCtor = (Magnifier_ctor_t)(g_moduleBase + RVA_Magnifier_ctor);
     g_BallSetTrajectory = (Ball_SetTrajectory_t)(g_moduleBase + RVA_Ball_SetTrajectory);
     g_BallSetVec3AtOffset = (Ball_SetVec3AtOffset_t)(g_moduleBase + RVA_Ball_SetVec3AtOffset);
     g_Vec3NormalizeAndScale = (Vec3_NormalizeAndScale_t)(g_moduleBase + RVA_Vec3_NormalizeAndScale);
