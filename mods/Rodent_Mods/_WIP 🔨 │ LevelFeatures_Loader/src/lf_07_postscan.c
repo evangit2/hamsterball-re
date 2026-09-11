@@ -213,20 +213,20 @@ static void UniversalPostSetup(void *board) {
         }
     }
 
-    /* Odd BadBall spawn table (native Odd scene loader 0x40EAA0 tail,
-     * disasm-verified 2026-09-11 via objdump):
-     *   FLAG(board+0x4370) = 0, COUNTER(+0x4374) = 200, TOTAL(+0x4378) = 0,
-     *   LAST(+0x43A0) = -1, TABLE(+0x437C/88/94) = S1 positions of
-     *   LAUNCH01 / LAUNCH02 / CHROMESHADOW via 0x4605E0 name lookup.
-     * The ONLY movb $1,+0x4370 in the exe is Toob's E:DROPLIFT handler
-     * (0x40F0C5 — a different level's field), so Odd's flag stays 0
-     * forever: the vanilla timer-spawner never fires. Replicated
-     * dormant-faithful here (flag=0); resurrecting it (flag=1) would
-     * spawn BadBalls vanilla never had — a gameplay call, not a fix. */
+    /* Odd BadBall spawn table (native Odd scene loader, Ghidra-verified
+     * 2026-09-11 via decomp: flag byte +0x10DC=0, counter +0x4374=200,
+     * total +0x4378=0, last +0x43A0=-1, table +0x437C/88/94 = S1 positions
+     * of LAUNCH01 / LAUNCH02 / LAUNCH03. CHROMESHADOW resolves to a SEPARATE
+     * slot (+0x43A4, consumer unknown — NOT a spawn location).
+     * The ONLY writer of +0x10DC in .text is this init-0: no trigger event
+     * (Odd E: set is BELL/SCORE/JUDGES/SAW/HAMMER only) ever sets the flag,
+     * so the vanilla timer-spawner never fires. Replicated dormant-faithful
+     * here (flag=0); starting it (flag=1 at load, or wiring a custom E:
+     * trigger to set it) is a gameplay call, not a fix. */
     if (level == 9) {
         DWORD oddMW = *(DWORD *)((char *)board + BOARD_MESHWORLD);
         if (oddMW && !IsBadReadPtr((void *)oddMW, 0x430)) {
-            const char *bbSlots[3] = { "LAUNCH01", "LAUNCH02", "CHROMESHADOW" };
+            const char *bbSlots[3] = { "LAUNCH01", "LAUNCH02", "LAUNCH03" };
             int bi, bfound = 0;
             *(char *)((char *)ext + UNI_BB_FLAG) = 0;
             *(int *)((char *)ext + UNI_BB_COUNTER) = 200;
