@@ -11,15 +11,40 @@
 #ifndef ENTDEFS_H
 #define ENTDEFS_H
 
-#define ENT_MAX_DEFS 16
+#define ENT_MAX_DEFS 64
 #define ENT_NAME_N 48
 #define ENT_BEH_N 32
 #define ENT_MESH_N 64
+#define ENT_SND_N 64
 
 static char g_ent_name[ENT_MAX_DEFS][ENT_NAME_N];
 static char g_ent_beh[ENT_MAX_DEFS][ENT_BEH_N];
 static char g_ent_mesh[ENT_MAX_DEFS][ENT_MESH_N];
+static char g_ent_snd[ENT_MAX_DEFS][ENT_SND_N];   /* v1ce "sound" file */
+static float g_ent_low[ENT_MAX_DEFS];   /* v1bh low_Y: sink depth below home */
+static float g_ent_spd[ENT_MAX_DEFS];   /* v1bh speed_Y: full-travel seconds */
+static float g_ent_prox[ENT_MAX_DEFS];  /* v1bh proximity: trigger radius */
+static float g_ent_sx[ENT_MAX_DEFS];    /* v1bj proximity_scaleX (def 1) */
+static float g_ent_sy[ENT_MAX_DEFS];    /* v1bj proximity_scaleY (def 1) */
+static float g_ent_sz[ENT_MAX_DEFS];    /* v1bj proximity_scaleZ (def 1) */
+static float g_ent_sndsens[ENT_MAX_DEFS]; /* v1cd sound_sensitivity (def 1) */
+static int  g_ent_area[ENT_MAX_DEFS];   /* v1bz Woodbridge_area gate def */
+static int  g_ent_vis[ENT_MAX_DEFS];    /* v1ca visible (def 1) */
 static int  g_ent_count = 0;
+
+/* behaviour ci-equals "woodbridge_area" (self-contained, no dep order) */
+static int ent_beh_is_area(const char* beh) {
+    const char* w = "woodbridge_area";
+    int i = 0;
+    if (!beh || !beh[0]) return 0;
+    while (w[i] && beh[i]) {
+        char c = beh[i];
+        if (c >= 'A' && c <= 'Z') c += 32;
+        if (c != w[i]) return 0;
+        i++;
+    }
+    return (w[i] == '\0' && beh[i] == '\0') ? 1 : 0;
+}
 
 static int ent_key_known(const char* key) {
     char low[64];
@@ -62,6 +87,109 @@ static int ent_block_str(const char* b, const char* bend,
                     return (*ve == '"') ? 1 : 0;
                 }
                 return 0;
+            }
+            p = ke;
+        }
+        p++;
+    }
+    return 0;
+}
+
+/* Extract "subkey": true/false/number inside a {..} block (v1ca visible).
+ * Exact key match (quoted), like ent_block_float. true=>1, false=>0,
+ * number=>!=0. Returns 1 + value. */
+static int ent_block_bool(const char* b, const char* bend,
+                          const char* sub, int* out) {
+    const char* p = b;
+    int sl = 0;
+    while (sub[sl]) sl++;
+    while (p < bend) {
+        if (*p == '"') {
+            const char* k = p + 1;
+            const char* ke = k;
+            while (ke < bend && *ke && *ke != '"') ke++;
+            if (ke < bend && (ke - k) == sl && memcmp(k, sub, (unsigned)sl) == 0) {
+                const char* v = ke + 1;
+                while (v < bend && (*v == ' ' || *v == 9 || *v == 10 ||
+                       *v == 13 || *v == ':' || *v == ',')) v++;
+                if (v < bend && *v == 't' && v + 4 <= bend &&
+                    v[1] == 'r' && v[2] == 'u' && v[3] == 'e') {
+                    *out = 1;
+                    return 1;
+                }
+                if (v < bend && *v == 'f' && v + 5 <= bend &&
+                    v[1] == 'a' && v[2] == 'l' && v[3] == 's' &&
+                    v[4] == 'e') {
+                    *out = 0;
+                    return 1;
+                }
+                if (v < bend && ((*v >= '0' && *v <= '9') ||
+                    *v == '-' || *v == '+')) {
+                    long ip = 0;
+                    int neg = 0, any = 0;
+                    if (*v == '-' || *v == '+') {
+                        neg = (*v == '-');
+                        v++;
+                    }
+                    while (v < bend && *v >= '0' && *v <= '9') {
+                        ip = ip * 10 + (*v - '0');
+                        v++;
+                        any = 1;
+                    }
+                    if (!any) return 0;
+                    *out = ((neg ? -ip : ip) != 0) ? 1 : 0;
+                    return 1;
+                }
+                return 0;
+            }
+            p = ke;
+        }
+        p++;
+    }
+    return 0;
+}
+
+/* Extract "subkey": number inside a {..} block. Returns 1 + value.
+ * Plain decimal only (no exponent). Char codes numeric (9 tab 10 LF
+ * 13 CR 32 space) to stay patch-tool safe. Non-positive use is up
+ * to the caller (Woodbridge ignores <= 0 and keeps defaults). */
+static int ent_block_float(const char* b, const char* bend,
+                           const char* sub, float* out) {
+    const char* p = b;
+    int sl = 0;
+    while (sub[sl]) sl++;
+    while (p < bend) {
+        if (*p == '"') {
+            const char* k = p + 1;
+            const char* ke = k;
+            while (ke < bend && *ke && *ke != '"') ke++;
+            if (ke < bend && (ke - k) == sl && memcmp(k, sub, (unsigned)sl) == 0) {
+                const char* v = ke + 1;
+                int neg = 0;
+                long ip = 0;
+                float frac = 0.0f;
+                float div = 1.0f;
+                while (v < bend && (*v == ' ' || *v == 9 || *v == 10 ||
+                       *v == 13 || *v == ':' || *v == ',')) v++;
+                if (v < bend && (*v == '-' || *v == '+')) {
+                    neg = (*v == '-');
+                    v++;
+                }
+                if (v >= bend || !(*v >= '0' && *v <= '9')) return 0;
+                while (v < bend && *v >= '0' && *v <= '9') {
+                    ip = ip * 10 + (*v - '0');
+                    v++;
+                }
+                if (v < bend && *v == '.') {
+                    v++;
+                    while (v < bend && *v >= '0' && *v <= '9') {
+                        frac = frac * 10.0f + (float)(*v - '0');
+                        div *= 10.0f;
+                        v++;
+                    }
+                }
+                *out = (neg ? -1.0f : 1.0f) * ((float)ip + frac / div);
+                return 1;
             }
             p = ke;
         }
@@ -134,13 +262,18 @@ static void load_entities_file(void) {
             if (!ent_key_known(key)) {
                 char beh[ENT_BEH_N];
                 char mesh[ENT_MESH_N];
+                char snd[ENT_SND_N];
                 beh[0] = '\0';
                 mesh[0] = '\0';
+                snd[0] = '\0';
                 ent_block_str(bs, be, "behaviour", beh, sizeof(beh));
                 ent_block_str(bs, be, "behavior", beh, sizeof(beh));
                 ent_block_str(bs, be, "mesh", mesh, sizeof(mesh));
+                ent_block_str(bs, be, "sound", snd, sizeof(snd));
                 if (mesh[0]) {
                     int ni = 0;
+                    float fv = 0.0f;
+                    int iv = 1;
                     while (ni < ENT_NAME_N - 1 && key[ni]) {
                         g_ent_name[g_ent_count][ni] = key[ni];
                         ni++;
@@ -158,6 +291,38 @@ static void load_entities_file(void) {
                         ni++;
                     }
                     g_ent_mesh[g_ent_count][ni] = '\0';
+                    ni = 0;   /* v1ce: sound file (may stay empty) */
+                    while (ni < ENT_SND_N - 1 && snd[ni]) {
+                        g_ent_snd[g_ent_count][ni] = snd[ni];
+                        ni++;
+                    }
+                    g_ent_snd[g_ent_count][ni] = '\0';
+                    g_ent_low[g_ent_count] = 50.0f;
+                    g_ent_spd[g_ent_count] = 0.5f;
+                    g_ent_prox[g_ent_count] = 150.0f;
+                    g_ent_sx[g_ent_count] = 1.0f;
+                    g_ent_sy[g_ent_count] = 1.0f;
+                    g_ent_sz[g_ent_count] = 1.0f;
+                    g_ent_sndsens[g_ent_count] = 1.0f;
+                    if (ent_block_float(bs, be, "low_Y", &fv) && fv > 0.0f)
+                        g_ent_low[g_ent_count] = fv;
+                    if (ent_block_float(bs, be, "speed_Y", &fv) && fv > 0.0f)
+                        g_ent_spd[g_ent_count] = fv;
+                    if (ent_block_float(bs, be, "proximity", &fv) && fv > 0.0f)
+                        g_ent_prox[g_ent_count] = fv;
+                    if (ent_block_float(bs, be, "proximity_scaleX", &fv) && fv > 0.0f)
+                        g_ent_sx[g_ent_count] = fv;
+                    if (ent_block_float(bs, be, "proximity_scaleY", &fv) && fv > 0.0f)
+                        g_ent_sy[g_ent_count] = fv;
+                    if (ent_block_float(bs, be, "proximity_scaleZ", &fv) && fv > 0.0f)
+                        g_ent_sz[g_ent_count] = fv;
+                    if (ent_block_float(bs, be, "sound_sensitivity", &fv) && fv > 0.0f)
+                        g_ent_sndsens[g_ent_count] = fv;
+                    g_ent_area[g_ent_count] =
+                        ent_beh_is_area(beh) ? 1 : 0;
+                    g_ent_vis[g_ent_count] = 1;
+                    if (ent_block_bool(bs, be, "visible", &iv) && !iv)
+                        g_ent_vis[g_ent_count] = 0;
                     g_ent_count++;
                 }
             }
@@ -172,10 +337,34 @@ static void load_entities_file(void) {
         snprintf(ebuf, sizeof(ebuf), "  ENT set: %d def(s)", g_ent_count);
         log_mod(ebuf);
         for (i = 0; (int)i < g_ent_count; i++) {
-            char dbuf[128];
-            snprintf(dbuf, sizeof(dbuf), "  ENT def %s behaviour=%s mesh=%s",
-                     g_ent_name[i], g_ent_beh[i], g_ent_mesh[i]);
+            char dbuf[160];
+            snprintf(dbuf, sizeof(dbuf), "  ENT def %s low=%f.1  spd=%f.1  prox=%f.1",
+                     g_ent_name[i], g_ent_low[i], g_ent_spd[i], g_ent_prox[i]);
             log_mod(dbuf);
+            snprintf(dbuf, sizeof(dbuf), "  ENT def %s scX=%f.1  scY=%f.1  scZ=%f.1",
+                     g_ent_name[i], g_ent_sx[i], g_ent_sy[i], g_ent_sz[i]);
+            log_mod(dbuf);
+            if (g_ent_sndsens[i] != 1.0f) {
+                snprintf(dbuf, sizeof(dbuf), "  ENT def %s sndsens=%f.2",
+                         g_ent_name[i], g_ent_sndsens[i]);
+                log_mod(dbuf);
+            }
+            if (g_ent_snd[i][0]) {
+                snprintf(dbuf, sizeof(dbuf), "  ENT def %s sound=%s",
+                         g_ent_name[i], g_ent_snd[i]);
+                log_mod(dbuf);
+            }
+            if (g_ent_area[i]) {
+                snprintf(dbuf, sizeof(dbuf),
+                         "  ENT def %s: AREA mode (mesh=vertices)",
+                         g_ent_name[i]);
+                log_mod(dbuf);
+            }
+            if (!g_ent_vis[i]) {
+                snprintf(dbuf, sizeof(dbuf),
+                         "  ENT def %s: visible=false", g_ent_name[i]);
+                log_mod(dbuf);
+            }
         }
     }
 }

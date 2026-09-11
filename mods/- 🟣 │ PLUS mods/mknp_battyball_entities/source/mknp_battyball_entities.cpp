@@ -212,9 +212,14 @@ static int   g_scan_logged = 0;   /* 1 after first detailed scan dump */
 static char  g_levels_dir[MAX_PATH];  /* game levels\ dir, trailing backslash */
 
 /* Named entities (set jsonc ENTITIES pairs): persistent static spawns */
-#define ENT_MAX_INST 32
+#define ENT_MAX_INST 64
 static DWORD g_ent_objs[ENT_MAX_INST];
 static int   g_ent_obj_def[ENT_MAX_INST];  /* def idx per instance */
+static int   g_ent_obj_type[ENT_MAX_INST]; /* AI ctor type per instance (v1bg) */
+static int   g_ent_obj_size[ENT_MAX_INST]; /* alloc size per instance (v1bg) */
+static float g_ent_rx[ENT_MAX_INST];      /* REF rot X radians (v1bm) */
+static float g_ent_ry[ENT_MAX_INST];      /* REF rot Y radians (v1bm) */
+static float g_ent_rz[ENT_MAX_INST];      /* REF rot Z radians (v1bm) */
 static int   g_ent_inst_count = 0;
 /* Woodbridge behaviour state (per instance) */
 static float g_ent_home_x[ENT_MAX_INST];
@@ -617,8 +622,11 @@ static int find_grid_points(DWORD board) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Create the object for a GRID point (NOT list-registered). NULL on failure. */
+/* Forward: defined in entyaw.h (included below, needs board defines first). */
+static int ent_rotate_mesh3(DWORD mw, float rx, float ry, float rz);
 static void* create_grid_cube(DWORD board, float px, float py, float pz,
-                              int grid_num, const char* mesh_path) {
+                              int grid_num, const char* mesh_path,
+                              float erx, float ery, float erz) {
     if (!board) return NULL;
 
     const char* path = mesh_path;
@@ -646,6 +654,11 @@ static void* create_grid_cube(DWORD board, float px, float py, float pz,
     void* loaded = g_mw_ctor(mesh, (void*)gfx_device, path);
     if (!loaded) { log_mod("  GRID: MeshWorld_ctor failed"); return NULL; }
 
+    /* v1bn: NO mesh-source rotation (v1bm baked verts the draw path never
+     * reads: only 1 vert found, zero visual). Rotation now happens per-frame
+     * at draw via pop_rot_install below (Mousetrap-native compose). */
+    (void)erx; (void)ery; (void)erz;
+
     /* Allocate + construct PopCylinder object */
     void* obj = g_op_new(POPCYLINDER_SIZE);
     if (!obj) { log_mod("  GRID: failed to alloc PopCylinder"); return NULL; }
@@ -658,6 +671,170 @@ static void* create_grid_cube(DWORD board, float px, float py, float pz,
              path, (int)px, (int)py, (int)pz, (DWORD)obj);
     log_mod(buf);
     return obj;
+}
+
+/* v1bp: DIAGNOSTIC (behavior-neutral). v1bo drew via slot-21 CallRender and
+ * the 4 rotated bridges went invisible: the per-object matrix the draw
+ * uses is written by slots 21/22 through renderLevel (obj+0x434, set by
+ * ctor; BeginFrame does NOT reset the device matrix). This build wraps
+ * slots 21+22 only (11/18 stock, all 5 bridges draw normally) and logs
+ * the renderLevel matrix before/after the original, so v1bq can write
+ * rotation into exactly the right place. */
+#define POPCYL_SLOT21     0x45DF90   /* SceneObject_CallRender __fastcall */
+#define POPCYL_SLOT22     0x45DF80   /* SceneObject_CallUpdate __fastcall */
+#define POPCYL_UPDATE     0x43DED0   /* slot 11, motion only, __fastcall */
+#define POPCYL_VTABLE     0x4D58F0
+#define POPCYL_VT_COPY_SZ 0x400
+typedef int (__fastcall *pop_upd_t)(void*);  /* orig slot-11 motion */
+/* v1bv: Z->X swap per MAKYUNI (angle now pitches about X, model-space
+ * M = Rx*T(Q), slot-11 every frame, absolute, zero device touches).
+ * v1bw: mirror (v1bv pitched the wrong way): Rx(-a), rows
+ * ([1,0,0],[0,c,-s],[0,s,c]); zone X slot negated to match. */
+static float ent_sin_deg(float deg) {
+    float x = deg * 0.01745329252f;
+    float x2;
+    while (x > 3.14159265f) x -= 6.28318531f;
+    while (x < -3.14159265f) x += 6.28318531f;
+    x2 = x * x;
+    return x * (1.0f - x2 / 6.0f + x2 * x2 / 120.0f -
+                x2 * x2 * x2 / 5040.0f + x2 * x2 * x2 * x2 / 362880.0f);
+}
+static float ent_cos_deg(float deg) {
+    return ent_sin_deg(deg + 90.0f);
+}
+
+static void pop_write_matrix(DWORD obj) {
+    int i;
+    float hx, hy, hz, angdeg, c, s0, qy;
+    DWORD rl;
+    float* m;
+    hx = hy = hz = 0.0f; angdeg = 0.0f;
+    for (i = 0; i < g_ent_inst_count; i++) {
+        if (g_ent_objs[i] == obj) {
+            hx = g_ent_home_x[i]; hy = g_ent_home_y[i]; hz = g_ent_home_z[i];
+            angdeg = g_ent_ry[i] * 57.29578f;  /* v1bv: ref angle -> X */
+            break;
+        }
+    }
+    if (!obj || IsBadReadPtr((void*)obj, 0x10E0)) return;
+    rl = *(DWORD*)(obj + 0x434);
+    if (!rl || IsBadReadPtr((void*)rl, 68)) return;
+    c = ent_cos_deg(angdeg);
+    s0 = ent_sin_deg(angdeg);
+    qy = *(float*)(obj + 0x10D8);  /* live sunk Y */
+    (void)hy;
+    m = (float*)(rl + 4);
+    m[0] = 1.0f; m[1] = 0.0f; m[2] = 0.0f; m[3] = 0.0f;
+    m[4] = 0.0f; m[5] = c;    m[6] = -s0;  m[7] = 0.0f;
+    m[8] = 0.0f; m[9] = s0;   m[10] = c;   m[11] = 0.0f;
+    m[12] = hx;  m[13] = qy;  m[14] = hz;  m[15] = 1.0f;
+}
+
+static int __fastcall pop_rot_update(void* obj) {
+    int rc = ((pop_upd_t)POPCYL_UPDATE)(obj);  /* native motion first */
+    pop_write_matrix((DWORD)obj);              /* actuate every frame */
+    return rc;
+}
+
+typedef void (__thiscall *slot21_t)(void*, void*);
+typedef void (__fastcall *slot22_t)(void*);
+/* pop_upd_t declared above (used by pop_rot_update) */
+
+static DWORD g_pop_vt_copy[POPCYL_VT_COPY_SZ / 4];
+static int g_pop_vt_ready = 0;
+/* last-logged matrix per obj (change-only logging): small ring */
+static DWORD g_mlog_obj[32];
+static DWORD g_mlog_m0[32][4];
+static int g_mlog_n = 0;
+
+static void pop_mlog(DWORD obj, const char* tag) {
+    DWORD rl;
+    float* m;
+    DWORD w0, w1, w2, w3;
+    char lb[192];
+    int L, i, slot;
+    if (!obj || IsBadReadPtr((void*)obj, 0x440)) return;
+    rl = *(DWORD*)(obj + 0x434);
+    if (!rl || IsBadReadPtr((void*)rl, 68)) {
+        snprintf(lb, sizeof(lb), "  ENT mlog %s obj=0x%X rl=0x%X BAD",
+                 tag, obj, rl);
+        log_mod(lb);
+        return;
+    }
+    m = (float*)(rl + 4);
+    w0 = ((DWORD*)m)[0]; w1 = ((DWORD*)m)[1];
+    w2 = ((DWORD*)m)[2]; w3 = ((DWORD*)m)[3];
+    slot = -1;
+    for (i = 0; i < g_mlog_n; i++) {
+        if (g_mlog_obj[i] == obj) { slot = i; break; }
+    }
+    if (slot >= 0 && g_mlog_m0[slot][0] == w0 && g_mlog_m0[slot][1] == w1 &&
+        g_mlog_m0[slot][2] == w2 && g_mlog_m0[slot][3] == w3)
+        return;  /* unchanged row0 = skip */
+    if (slot < 0 && g_mlog_n < 32) { slot = g_mlog_n++; g_mlog_obj[slot] = obj; }
+    if (slot >= 0) {
+        g_mlog_m0[slot][0] = w0; g_mlog_m0[slot][1] = w1;
+        g_mlog_m0[slot][2] = w2; g_mlog_m0[slot][3] = w3;
+    }
+    L = 0;
+    L += snprintf(lb + L, sizeof(lb) - L, "  ENT mlog %s obj=0x%X rl=0x%X m=",
+                  tag, obj, rl);
+    for (i = 0; i < 16 && L + 9 < (int)sizeof(lb); i++)
+        L += snprintf(lb + L, sizeof(lb) - L, "%X%c",
+                      ((DWORD*)m)[i], i == 15 ? '\0' : ' ');
+    log_mod(lb);
+}
+
+static void __thiscall wrap_slot21(void* obj, void* t) {
+    pop_mlog((DWORD)obj, "s21-pre");
+    ((slot21_t)POPCYL_SLOT21)(obj, t);
+    pop_write_matrix((DWORD)obj);  /* v1bs: rotation landing */
+    pop_mlog((DWORD)obj, "s21-post");
+}
+
+/* v1bq: slot-22 takes NO stack arg natively (game calls (ECX=obj), clean-0;
+ * v1bp pushed t + RET 8 = stack imbalance = crash 0001:00078EDD).
+ * Wrapper + orig call are both bare fastcall now. Slot-21 keeps (obj,t). */
+static void __fastcall wrap_slot22(void* obj) {
+    pop_mlog((DWORD)obj, "s22-pre");
+    ((slot22_t)POPCYL_SLOT22)(obj);
+    pop_mlog((DWORD)obj, "s22-post");
+}
+
+/* v1bs: slot-11 compose removed (device-matrix poison, see note above). */
+
+/* v1bt: vtable copy: slot 11 = motion+write (every frame), slots 21+22
+ * call orig, log, then overwrite renderLevel+4. Slot 18 STOCK. */
+static void pop_rot_install(DWORD obj, float rx, float ry, float rz) {
+    char ibuf[128];
+    DWORD m438[4];
+    if (!obj || IsBadReadPtr((void*)obj, 0x10D0)) return;
+    if (!g_pop_vt_ready) {
+        memcpy(g_pop_vt_copy, (void*)POPCYL_VTABLE, POPCYL_VT_COPY_SZ);
+        g_pop_vt_copy[11] = (DWORD)pop_rot_update;
+        g_pop_vt_copy[21] = (DWORD)wrap_slot21;
+        g_pop_vt_copy[22] = (DWORD)wrap_slot22;
+        g_pop_vt_ready = 1;
+    }
+    *(DWORD*)obj = (DWORD)g_pop_vt_copy;
+    /* v1bs: snapshot obj+0x438 (candidate second matrix?) at install */
+    if (!IsBadReadPtr((void*)(obj + 0x438), 16)) {
+        int k;
+        for (k = 0; k < 4; k++) m438[k] = *(DWORD*)(obj + 0x438 + k * 4);
+        snprintf(ibuf, sizeof(ibuf), "  ENT rotdiag: obj=0x%X rl=0x%X m438=%X %X %X %X",
+                 obj, *(DWORD*)(obj + 0x434),
+                 m438[0], m438[1], m438[2], m438[3]);
+    } else {
+        snprintf(ibuf, sizeof(ibuf), "  ENT rotdiag: obj=0x%X rl=0x%X m438=BAD",
+                 obj, *(DWORD*)(obj + 0x434));
+    }
+    log_mod(ibuf);
+    if (rx > 0.000001f || rx < -0.000001f) {
+        snprintf(ibuf, sizeof(ibuf), "  ENT rotdiag: obj=0x%X rx nonzero, yaw-only",
+                 obj);
+        log_mod(ibuf);
+    }
+    (void)ry; (void)rz;
 }
 
 /* Show: register a preloaded object into update/render/collision lists */
@@ -745,6 +922,13 @@ static void despawn_object(DWORD board, DWORD obj) {
     }
 }
 
+/* Forward: defined in aibeh.h (included below, needs board defines first). */
+static void aibeh_remove(DWORD board, DWORD obj, int type, unsigned size);
+/* Forward: defined in entyaw.h (included below). */
+static int ent_rotate_mesh3(DWORD mw, float rx, float ry, float rz);
+/* Forward: level-file matcher used by the S1-rot fallback. */
+static int find_current_level_file(char* out, unsigned cap);
+
 static void despawn_all(DWORD board) {
     int i;
     for (i = 0; i < MAX_SPAWNED; i++) {
@@ -757,8 +941,14 @@ static void despawn_all(DWORD board) {
     g_order_count = 0;
     for (i = 0; i < ENT_MAX_INST; i++) {
         if (g_ent_objs[i]) {
-            despawn_object(board, g_ent_objs[i]);
+            aibeh_remove(board, g_ent_objs[i], g_ent_obj_type[i],
+                         (unsigned)g_ent_obj_size[i]);
             g_ent_objs[i] = 0;
+            g_ent_obj_type[i] = 0;
+            g_ent_obj_size[i] = 0;
+            g_ent_rx[i] = 0.0f;
+            g_ent_ry[i] = 0.0f;
+            g_ent_rz[i] = 0.0f;
         }
     }
     g_ent_inst_count = 0;
@@ -881,16 +1071,38 @@ static const char* mesh_for(int idx) {
     return mesh_file_present() ? g_mesh_path : NULL;   /* testcube fallback */
 }
 
+/* aibeh.h needs board defines + g_op_new/g_append/g_remove + get_level +
+ * log_mod, so it is included here (not at the top with the other headers). */
+#include "aibeh.h"
+/* entyaw.h needs the same (IsBadReadPtr, log_mod, gm_read_file, free). */
+#include "entyaw.h"
+/* entarea.h needs gridmesh (GmCur), entdefs (def tables), log_mod. */
+#include "entarea.h"
+#include "entsnd.h"    /* v1cb: creak acquire/frame (needs log_mod) */
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Named entities: set jsonc pairs -> S1 REF:<Name> -> Levels/<mesh> spawn.
- * v1be: behaviour stored only, every entity is a persistent static solid
- * (same PopCylinder chain as GRID, shown once at level start, never cycled).
+ * v1bg: behaviour selects the native ctor (AI list verbatim); static types
+ * use the PopCylinder chain, shown once at level start, never cycled.
  * ═══════════════════════════════════════════════════════════════════════════ */
 static int ent_match_def(const char* s1name) {
     int d;
     if (!s1name) return -1;
     for (d = 0; d < g_ent_count; d++) {
         if (g_ent_name[d][0] && nc_istrstr(s1name, g_ent_name[d]) != NULL)
+            return d;
+    }
+    return -1;
+}
+
+/* v1bz: area-def match (checked BEFORE ent_match_def so area markers never
+ * bind the Woodbridge def even when it is listed first in the set) */
+static int ent_match_area(const char* s1name) {
+    int d;
+    if (!s1name) return -1;
+    for (d = 0; d < g_ent_count; d++) {
+        if (g_ent_area[d] && g_ent_name[d][0] &&
+            nc_istrstr(s1name, g_ent_name[d]) != NULL)
             return d;
     }
     return -1;
@@ -903,8 +1115,18 @@ static void scan_spawn_entities(DWORD board) {
     int s1_count;
     DWORD* s1_data;
     int i;
-    for (i = 0; i < ENT_MAX_INST; i++) g_ent_objs[i] = 0;
+    char levelfile[MAX_PATH];   /* v1bk: level file for S1-rot fallback */
+    int have_levelfile = 0;
+    for (i = 0; i < ENT_MAX_INST; i++) {
+        g_ent_objs[i] = 0;
+        g_ent_obj_type[i] = 0;
+        g_ent_obj_size[i] = 0;
+        g_ent_rx[i] = 0.0f;
+        g_ent_ry[i] = 0.0f;
+        g_ent_rz[i] = 0.0f;
+    }
     g_ent_inst_count = 0;
+    area_reset();   /* v1bz: clear gate quads every scan */
     load_entities_file();
     if (!g_ent_count) return;
     if (!g_levels_dir[0]) {
@@ -923,12 +1145,30 @@ static void scan_spawn_entities(DWORD board) {
         s1_data = *(DWORD**)(s1_list + ALIST_ITEMS);
     if (s1_count <= 0 || s1_count > 1000) return;
     if (!s1_data || IsBadReadPtr(s1_data, s1_count * 4)) return;
+    {   /* v1bk: resolve level file once for S1-rot fallback (not per ref) */
+        levelfile[0] = '\0';
+        have_levelfile = find_current_level_file(levelfile, sizeof(levelfile));
+    }
+    {   /* v1bl diag: which file the S1-rot fallback reads (once per scan) */
+        char ybuf[128];
+        const char* src = have_levelfile ? levelfile : "NONE";
+        int L = 0, k = 0;
+        const char* pre = "  ENT yaw: levelfile=";
+        while (pre[L]) { ybuf[L] = pre[L]; L++; }
+        while (k < 100 && src[k] && L + 1 < (int)sizeof(ybuf)) {
+            ybuf[L++] = src[k++];
+        }
+        ybuf[L] = '\0';
+        log_mod(ybuf);
+    }
     for (i = 0; i < s1_count && g_ent_inst_count < ENT_MAX_INST; i++) {
         DWORD entry = s1_data[i];
         const char* nm = NULL;
         char* ptr = NULL;
         int d;
         float px, py, pz;
+        float erx = 0.0f, ery = 0.0f, erz = 0.0f; /* v1bm: REF rot triple */
+        int yaw_src = 0;        /* 0 none, 1 DAT ROT_Y, 2 S1 file rot */
         char base[ENT_MESH_N];
         char noext[ENT_MESH_N];
         char ctor[MAX_PATH];
@@ -940,11 +1180,88 @@ static void scan_spawn_entities(DWORD board) {
         ptr = *(char**)(entry + S1ENTRY_NAME);
         if (ptr && !IsBadReadPtr(ptr, 5)) nm = ptr;
         else nm = (const char*)entry;   /* inline name fallback */
+        if (ent_match_area(nm) >= 0) {  /* v1bz: zone marker, no instance */
+            g_area_refs_seen++;
+            continue;
+        }
         d = ent_match_def(nm);
         if (d < 0) continue;
         px = *(float*)(entry + S1ENTRY_POS_X);
         py = *(float*)(entry + S1ENTRY_POS_Y);
         pz = *(float*)(entry + S1ENTRY_POS_Z);
+        {   /* v1bm: REF rotation (DAT ROT_Y deg -> Y, else S1 file triple) */
+            float yaw_deg = 0.0f;
+            if (ent_dat_yaw_deg(nm, &yaw_deg)) {
+                ery = yaw_deg * 0.01745329252f;
+                yaw_src = 1;
+            } else if (have_levelfile &&
+                       ent_file_rot(levelfile, nm, px, py, pz,
+                                    &erx, &ery, &erz)) {
+                yaw_src = 2;
+            } else if (have_levelfile) {
+                /* v1bl diag: file present but this ref unmatched */
+                const char* s1h = nm ? nm : "?";
+                int L = 0, k = 0;
+                snprintf(ebuf, sizeof(ebuf), "  ENT %s: filerot none s1=",
+                         g_ent_name[d]);
+                while (ebuf[L]) L++;
+                while (k < 24 && s1h[k] && L + 1 < (int)sizeof(ebuf)) {
+                    ebuf[L++] = s1h[k++];
+                }
+                ebuf[L] = '\0';
+                log_mod(ebuf);
+            }
+            if (yaw_src &&
+                ((erx > 0.000001f || erx < -0.000001f) ||
+                 (ery > 0.000001f || ery < -0.000001f) ||
+                 (erz > 0.000001f || erz < -0.000001f))) {
+                snprintf(ebuf, sizeof(ebuf), "  ENT %s: rot %d,%d,%ddeg (%s)",
+                         g_ent_name[d], (int)(erx * 57.29578f),
+                         (int)(ery * 57.29578f), (int)(erz * 57.29578f),
+                         yaw_src == 1 ? "DAT" : "file");
+                log_mod(ebuf);
+            }
+        }
+        {   /* v1bg: no-mesh native types skip file checks entirely */
+            int et0 = aibeh_type(g_ent_beh[d]);
+            if (!aibeh_needs_mesh(et0) && !aibeh_is_static(et0)) {
+                DWORD app0 = 0;
+                unsigned sz0;
+                if (g_api) {
+                    DWORD apv = (DWORD)HBAPI(g_api).GetApp();
+                    if (apv && !IsBadReadPtr((void*)apv, 4)) app0 = apv;
+                }
+                obj = aibeh_spawn(board, px, py, pz, NULL, et0, app0);
+                if (!obj) {
+                    snprintf(ebuf, sizeof(ebuf), "  ENT %s: native spawn failed type=%d",
+                             g_ent_name[d], et0);
+                    log_mod(ebuf);
+                    continue;
+                }
+                sz0 = aibeh_size(et0);
+                aibeh_show(board, (DWORD)obj, et0);
+                g_ent_objs[g_ent_inst_count] = (DWORD)obj;
+                g_ent_obj_def[g_ent_inst_count] = d;
+                g_ent_obj_type[g_ent_inst_count] = et0;
+                g_ent_obj_size[g_ent_inst_count] = (int)sz0;
+                g_ent_rx[g_ent_inst_count] = erx;
+                g_ent_ry[g_ent_inst_count] = ery;
+                g_ent_rz[g_ent_inst_count] = erz;
+                g_ent_home_x[g_ent_inst_count] = px;
+                g_ent_home_y[g_ent_inst_count] = py;
+                g_ent_home_z[g_ent_inst_count] = pz;
+                g_ent_cur[g_ent_inst_count] = 0.0f;
+                g_ent_applied[g_ent_inst_count] = 0.0f;
+                g_ent_near[g_ent_inst_count] = 0;
+                g_ent_inst_count++;
+                snprintf(ebuf, sizeof(ebuf),
+                         "  ENT: spawned %s behaviour=%s type=%d at (%d,%d,%d) obj=0x%X",
+                         g_ent_name[d], g_ent_beh[d], et0,
+                         (int)px, (int)py, (int)pz, (DWORD)obj);
+                log_mod(ebuf);
+                continue;
+            }
+        }
         ent_basename(g_ent_mesh[d], base, sizeof(base));
         if (!base[0]) {
             snprintf(ebuf, sizeof(ebuf), "  ENT %s: empty mesh, skip",
@@ -973,16 +1290,79 @@ static void scan_spawn_entities(DWORD board) {
         }
         ent_strip_ext(base, noext, sizeof(noext));
         snprintf(ctor, sizeof(ctor), "levels\\%s", noext);
-        obj = create_grid_cube(board, px, py, pz, 900 + d, ctor);
-        if (!obj) {
-            snprintf(ebuf, sizeof(ebuf), "  ENT %s: spawn failed",
-                     g_ent_name[d]);
-            log_mod(ebuf);
-            continue;
+        {   /* v1bg: behaviour selects static fallback or native ctor */
+            int etype = aibeh_type(g_ent_beh[d]);
+            unsigned esize = 0;
+            if (aibeh_is_static(etype)) {
+                obj = create_grid_cube(board, px, py, pz, 900 + d, ctor,
+                                       erx, ery, erz);
+                if (!obj) {
+                    snprintf(ebuf, sizeof(ebuf), "  ENT %s: spawn failed",
+                             g_ent_name[d]);
+                    log_mod(ebuf);
+                    continue;
+                }
+                esize = POPCYLINDER_SIZE;
+                grid_show(board, (DWORD)obj);
+                /* v1bo: install compose-draw for X/Y only (rz has no
+                 * native draw op; rz-only refs log + skip) */
+                if ((erx > 0.000001f || erx < -0.000001f) ||
+                    (ery > 0.000001f || ery < -0.000001f))
+                    pop_rot_install((DWORD)obj, erx, ery, erz);
+                else if (erz > 0.000001f || erz < -0.000001f) {
+                    snprintf(ebuf, sizeof(ebuf),
+                             "  ENT %s: rz-only, no native Z draw path",
+                             g_ent_name[d]);
+                    log_mod(ebuf);
+                }
+            } else {
+                void* nmesh;
+                void* mloaded;
+                DWORD app_for_spawn = 0;
+                DWORD gfx_for_spawn = 0;
+                if (g_api) {
+                    DWORD appv = (DWORD)HBAPI(g_api).GetApp();
+                    if (appv && !IsBadReadPtr((void*)appv, 4)) {
+                        app_for_spawn = appv;
+                        gfx_for_spawn = *(DWORD*)(appv + APP_GFX_DEVICE);
+                        if (!gfx_for_spawn || IsBadReadPtr((void*)gfx_for_spawn, 4))
+                            gfx_for_spawn = 0;
+                    }
+                }
+                if (!gfx_for_spawn) {
+                    snprintf(ebuf, sizeof(ebuf), "  ENT %s: no gfx, skip type=%d",
+                             g_ent_name[d], etype);
+                    log_mod(ebuf);
+                    continue;
+                }
+                nmesh = g_op_new(MESHWORLD_SIZE);
+                if (!nmesh) continue;
+                memset(nmesh, 0, MESHWORLD_SIZE);
+                mloaded = g_mw_ctor(nmesh, (void*)gfx_for_spawn, ctor);
+                if (!mloaded) {
+                    snprintf(ebuf, sizeof(ebuf), "  ENT %s: mesh load failed",
+                             g_ent_name[d]);
+                    log_mod(ebuf);
+                    continue;
+                }
+                obj = aibeh_spawn(board, px, py, pz, nmesh, etype, app_for_spawn);
+                if (!obj) {
+                    snprintf(ebuf, sizeof(ebuf), "  ENT %s: native spawn failed type=%d",
+                             g_ent_name[d], etype);
+                    log_mod(ebuf);
+                    continue;
+                }
+                esize = aibeh_size(etype);
+                aibeh_show(board, (DWORD)obj, etype);
+            }
+            g_ent_obj_type[g_ent_inst_count] = etype;
+            g_ent_obj_size[g_ent_inst_count] = (int)esize;
         }
-        grid_show(board, (DWORD)obj);
         g_ent_objs[g_ent_inst_count] = (DWORD)obj;
         g_ent_obj_def[g_ent_inst_count] = d;
+        g_ent_rx[g_ent_inst_count] = erx;
+        g_ent_ry[g_ent_inst_count] = ery;
+        g_ent_rz[g_ent_inst_count] = erz;
         g_ent_home_x[g_ent_inst_count] = px;
         g_ent_home_y[g_ent_inst_count] = py;
         g_ent_home_z[g_ent_inst_count] = pz;
@@ -991,8 +1371,8 @@ static void scan_spawn_entities(DWORD board) {
         g_ent_near[g_ent_inst_count] = 0;
         g_ent_inst_count++;
         snprintf(ebuf, sizeof(ebuf),
-                 "  ENT: spawned %s behaviour=%s at (%d,%d,%d) obj=0x%X",
-                 g_ent_name[d], g_ent_beh[d],
+                 "  ENT: spawned %s behaviour=%s type=%d at (%d,%d,%d) obj=0x%X",
+                 g_ent_name[d], g_ent_beh[d], g_ent_obj_type[g_ent_inst_count - 1],
                  (int)px, (int)py, (int)pz, (DWORD)obj);
         log_mod(ebuf);
     }
@@ -1002,15 +1382,39 @@ static void scan_spawn_entities(DWORD board) {
                  g_ent_inst_count);
         log_mod(cbuf);
     }
+    {   /* v1bz: area quads from the level file (one S6 walk per area def) */
+        int ad;
+        for (ad = 0; ad < g_ent_count; ad++) {
+            if (!g_ent_area[ad]) continue;
+            if (have_levelfile)
+                area_scan_file(levelfile, g_ent_name[ad], g_ent_vis[ad]);
+            else
+                log_mod("  AREA: no level file, gate open");
+        }
+        {
+            char abuf[96];
+            snprintf(abuf, sizeof(abuf),
+                     "  AREA: %d S1 marker ref(s), %d quad(s)%s",
+                     g_area_refs_seen, g_area_count,
+                     g_area_count ? ", gate armed" : ", gate open");
+            log_mod(abuf);
+        }
+    }
 }
 
-/* Per-frame entity behaviours. Woodbridge: sink 50u while ball < 150u.
+/* Per-frame entity behaviours. Woodbridge: sinks to home-low_Y while the
+ * ball is inside the proximity ellipsoid, rises back to home when it
+ * leaves. low_Y/speed_Y/proximity/proximity_scaleX/Y/Z come from the set
+ * jsonc per def (defaults 50 / 0.5s full travel / 150 / 1/1/1). speed_Y =
+ * seconds for full home-low travel. Y is measured from fixed home, so
+ * bridge motion can never detune its own latch (v1bh flicker bug).
  * Move = write obj+0x10D8 + BYTE +0x10E4=1; native update (0x43DED0)
  * rebuilds Timer + slots 21/22 reposition render+collision absolutely
  * (0x46FBB0 fstp = set-from-source, repeat-safe). Flag set ONLY on
  * changed frames; pause freezes (no advance, no write). */
 static int ent_is_woodbridge(int di) {
     if (di < 0 || di >= g_ent_count) return 0;
+    if (g_ent_area[di]) return 0;   /* v1bz: gate defs never instances */
     if (!g_ent_beh[di][0]) return 0;
     return nc_istrstr(g_ent_beh[di], "Woodbridge") != NULL;
 }
@@ -1021,6 +1425,9 @@ static void entity_frame(DWORD board) {
     void* b;
     float bx, by, bz;
     int has_ball;
+    int wb_gate;   /* v1bz: Woodbridge_area gate (1 = proximity runs) */
+    float frav[ENT_MAX_DEFS];  /* v1ce: per-def travel (creak volume) */
+    int fi;
     int i;
     if (!board || IsBadReadPtr((void*)board, 0x4400)) return;
     if (!g_ent_inst_count) return;
@@ -1045,34 +1452,81 @@ static void entity_frame(DWORD board) {
     } else {
         bx = by = bz = 0.0f;
     }
+    wb_gate = area_gate(bx, bz, has_ball);  /* v1bz: closed => hold home */
+    for (fi = 0; fi < ENT_MAX_DEFS; fi++) frav[fi] = 0.0f;
+    snd_level_acquire(board);   /* v1ce: default ch + one custom/def */
     for (i = 0; i < g_ent_inst_count && i < ENT_MAX_INST; i++) {
         DWORD obj = g_ent_objs[i];
         float dx, dy, dz, dist, target, cur, step, diff;
+        float prox, low, spd, rate, sx, sy, sz, rx, ry, rz;
+        int di;
         char ebuf[128];
         if (!ent_is_woodbridge(g_ent_obj_def[i])) continue;
         if (!obj || IsBadReadPtr((void*)obj, 0x10E8)) continue;
+        di = g_ent_obj_def[i];
+        prox = (di >= 0 && di < ENT_MAX_DEFS) ? g_ent_prox[di] : 150.0f;
+        low = (di >= 0 && di < ENT_MAX_DEFS) ? g_ent_low[di] : 50.0f;
+        spd = (di >= 0 && di < ENT_MAX_DEFS) ? g_ent_spd[di] : 0.5f;
+        sx = (di >= 0 && di < ENT_MAX_DEFS) ? g_ent_sx[di] : 1.0f;
+        sy = (di >= 0 && di < ENT_MAX_DEFS) ? g_ent_sy[di] : 1.0f;
+        sz = (di >= 0 && di < ENT_MAX_DEFS) ? g_ent_sz[di] : 1.0f;
+        if (prox <= 0.0f) prox = 150.0f;
+        if (low <= 0.0f) low = 50.0f;
+        if (sx <= 0.0f) sx = 1.0f;
+        if (sy <= 0.0f) sy = 1.0f;
+        if (sz <= 0.0f) sz = 1.0f;
+        rate = (spd > 0.001f) ? (low / spd) : 1000000000.0f;
+        rx = prox * sx;
+        ry = prox * sy;
+        rz = prox * sz;
         dx = has_ball ? (bx - g_ent_home_x[i]) : 999999.0f;
-        dy = has_ball ? (by - (g_ent_home_y[i] + g_ent_cur[i])) : 999999.0f;
+        /* v1bj: Y anchored to HOME (never home+cur: measuring against the
+         * moving bridge was the v1bh flicker bug). Ellipsoid semi-axes
+         * prox*sx/sy/sz; all 1 = sphere radius prox around home. */
+        dy = has_ball ? (by - g_ent_home_y[i]) : 999999.0f;
         dz = has_ball ? (bz - g_ent_home_z[i]) : 999999.0f;
-        dist = dx * dx + dy * dy + dz * dz;
-        /* compare squared (150^2=22500) */
-        if (has_ball && dist < 22500.0f) {
+        {   /* v1bv: un-rotate offset by inverse ref rotation so the
+             * zone follows the visual (same R; the stored ref angle
+             * now drives the X slot, negated to match the v1bw mirror) */
+            float ux = -(g_ent_ry[i]), uy = g_ent_rx[i], uz = g_ent_rz[i];
+            if ((ux > 0.000001f || ux < -0.000001f) ||
+                (uy > 0.000001f || uy < -0.000001f) ||
+                (uz > 0.000001f || uz < -0.000001f)) {
+                float ox, oy, oz;
+                ent_unrot_pt3(dx, dy, dz, ux, uy, uz, &ox, &oy, &oz);
+                dx = ox; dy = oy; dz = oz;
+            }
+        }
+        dist = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) +
+               (dz * dz) / (rz * rz);
+        /* inside the ellipsoid (< 1) the bridge sinks (gate open only) */
+        if (has_ball && wb_gate && dist < 1.0f) {
             if (!g_ent_near[i]) {
                 g_ent_near[i] = 1;
                 snprintf(ebuf, sizeof(ebuf),
-                         "  ENT Woodbridge%d: near -> sinking", i);
+                         "  ENT Woodbridge%d: near -> sinking dy=%f.1 ry=%f.1", i, dy, ry);
                 log_mod(ebuf);
             }
         } else if (g_ent_near[i]) {
             g_ent_near[i] = 0;
             snprintf(ebuf, sizeof(ebuf),
-                     "  ENT Woodbridge%d: far -> rising", i);
+                     "  ENT Woodbridge%d: far -> rising dy=%f.1 ry=%f.1", i, dy, ry);
             log_mod(ebuf);
         }
-        target = g_ent_near[i] ? -WB_DROP : 0.0f;
+        /* v1ca: distance falloff — nearest bridge rides nearest low_Y,
+         * fading to 0 at the zone edge (dynamic, never constant) */
+        if (g_ent_near[i]) {
+            float f = 1.0f - dist;
+            if (f < 0.0f) f = 0.0f;
+            if (f > 1.0f) f = 1.0f;
+            target = -low * f;
+        } else {
+            target = 0.0f;
+        }
         cur = g_ent_cur[i];
         if (cur != target) {
-            step = WB_SPEED * dt;
+            float oldc = cur;   /* v1cb: creak travel measurement */
+            step = rate * dt;
             if (target < cur) {
                 cur -= step;
                 if (cur < target) cur = target;
@@ -1081,6 +1535,17 @@ static void entity_frame(DWORD board) {
                 if (cur > target) cur = target;
             }
             g_ent_cur[i] = cur;
+            if (low > 0.0f) {
+                float dd = cur - oldc;
+                int dddef = g_ent_obj_def[i];   /* v1cd: per-def sens */
+                float sens = 1.0f;
+                if (dd < 0.0f) dd = -dd;
+                if (dddef >= 0 && dddef < ENT_MAX_DEFS &&
+                    dddef < g_ent_count)
+                    sens = g_ent_sndsens[dddef];
+                if (dddef >= 0 && dddef < ENT_MAX_DEFS)
+                    frav[dddef] += (dd / low) * sens;
+            }
             if (cur == target) {
                 snprintf(ebuf, sizeof(ebuf),
                          "  ENT Woodbridge%d: reached %d", i, (int)target);
@@ -1095,6 +1560,10 @@ static void entity_frame(DWORD board) {
             *(BYTE*)((char*)obj + ENT_DIRTY) = 1;
             g_ent_applied[i] = g_ent_cur[i];
         }
+    }
+    for (fi = 0; fi < g_ent_count && fi < ENT_MAX_DEFS; fi++) {
+        if (frav[fi] > 0.0f || g_snd_heard[fi])
+            snd_creak_frame_d(fi, frav[fi]);   /* v1ce: per-def sound */
     }
 }
 
@@ -1880,7 +2349,8 @@ static void start_grid_cycle(DWORD board) {
         g_order_count = 0;
         for (int pi = 0; pi < count; pi++) {
             void* obj = create_grid_cube(board, g_pts_x[pi], g_pts_y[pi],
-                                         g_pts_z[pi], pi + 1, mesh_for(pi));
+                                         g_pts_z[pi], pi + 1, mesh_for(pi),
+                                         0.0f, 0.0f, 0.0f);
             if (obj) {
                 g_spawned_objs[pi] = (DWORD)obj;
                 g_order[g_order_count++] = pi;
@@ -2022,7 +2492,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities v1bf log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities v1ce log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
@@ -2203,7 +2673,7 @@ static void __thiscall game_update(void*) {
     light_frame();   /* pin/heartbeat/service also from game_update */
     border_frame();    /* slot RGBA -> P1 border (overrides exe, Neon too) */
     glow_frame();      /* slot RGBA -> P1 emitter glow (Neon_colors GLOW) */
-    entity_frame(board); /* named entities: v1be all static (no-op) */
+    entity_frame(board); /* named entities: Woodbridge motion, rest native-driven */
 
     if (!g_cycle_started) {
         if (g_board_ready_delay > 0) { g_board_ready_delay--; return; }

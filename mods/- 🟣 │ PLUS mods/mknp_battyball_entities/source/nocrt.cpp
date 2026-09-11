@@ -168,10 +168,16 @@ int nc_snprintf(char* buf, size_t size, const char* fmt, ...) {
                 prec = 0;
                 while (*p >= '0' && *p <= '9') { prec = prec * 10 + (*p - '0'); p++; }
                 if (prec > 9) prec = 9;
+                /* v1by: p already past the precision digits: NO p++ here.
+                 * The old shared p++ ate one char after every %f.N (the
+                 * space in "dy=%f.1 ry=") and ate the NUL after a trailing
+                 * %f.N, appending the next .rdata literal raw to the log
+                 * (the "ghost Woodbridge96" tails). */
+            } else {
+                p++;  /* skip 'f' */
             }
             nc_ftoa(v, tmp, prec);
             tmp_len = (int)nc_strlen(tmp);
-            p++;
         } else {
             tmp[tmp_len++] = '%';
             tmp[tmp_len++] = *p;
