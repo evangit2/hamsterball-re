@@ -153,6 +153,22 @@ Felt range = shown slider (D3D cuts light beyond Range).
 Disasm audit (0x453BD0/0x46B4F0/0x46B670): register, ctor and refresh are
 strictly per-object/per-slot — the mod cannot alter native slots 0-1.
 
+## Named entities (v1be+)
+
+Top-level set pairs next to `grid_speed` define named entities:
+
+    "Woodbridge", { "behaviour": "Woodbridge", "mesh": "Woodbridge.MESHWORLD" },
+
+- Key = entity name, also the S1 ref substring (`REF:Woodbridge` in the level).
+- `behaviour` = behaviour name. v1be stores it only; every entity is static.
+- `mesh` = meshworld file, always loaded from the game's `Levels` folder.
+
+At level start each `REF:<Name>` spawns its mesh via the same native chain as
+GRID (`operator_new` -> `MeshWorld_ctor` -> `PopCylinder_ctor` -> lists) and
+stays visible (solid, never cycled). Missing or bad mesh files log
+`ENT <Name>: MISSING/BAD` and skip without crashing. Full destroy at level
+quit via the shared despawn path.
+
 ## Level setup
 
 Place S1 reference points with `GRID` in the name in your custom level. The order they cycle in follows their order in the S1 list (`GRID01` first, then the next matching entry, etc.). The `testcube.MESHWORLD` you ship with the mod can be swapped for any mesh you'd like to appear at each point.
@@ -177,6 +193,9 @@ The HB+ loading chain (scanning `Mods\`, calling `CreateModInstance`, firing `In
 MAKYUNI / Hamsterbot
 
 ## Changelog
+
+### v1be
+- Named entities: set jsonc top-level `"Name", { "behaviour", "mesh" }` pairs spawn `REF:<Name>` refs with `Levels/<mesh>` meshes (persistent static solids, same native chain as GRID). Behaviour stored only for now. INIT log now lists `log=` + `set=` paths.
 
 ### v1
 - Initial release: standalone HB+ GRID-object cycling system, ported from `mknp_custom_entities`.
