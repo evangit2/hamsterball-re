@@ -4,8 +4,11 @@
 // 12 Glass, 13 Sky, 14 Master, 15 Impossible.
 // Commented-out level = feature off on that slot (ring=black, glow=native).
 
-// ################################# │    G R I D    │ #################################
+// ################################# │    E N T I T I E S    │ #################################
+// "Name", { "behaviour": "<behaviour>", "mesh": "<file in Levels/>" } -- S1 REF:<Name>
 [
+    "Woodbridge", { "behaviour": "Woodbridge", "mesh": "Woodbridge.MESHWORLD" },
+// ################################# │    G R I D    │ #################################
     "grid_speed", { "level1": 1.0, "level2": 1.0, "level3": 1.0, "level4": 1.0, "level5": 1.0, "level6": 1.0, "level7": 1.0, "level8": 1.0, "level9": 1.0, "level10": 1.0, "level11": 1.0, "level12": 1.0, "level13": 1.0, "level14": 1.0, "level15": 1.0 }
 ]
 // #####################################################################################

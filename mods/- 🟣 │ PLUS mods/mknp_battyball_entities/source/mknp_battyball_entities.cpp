@@ -49,6 +49,7 @@
 
 #include "gridmesh.h"
 #include "gridset.h"
+#include "entdefs.h"
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Game addresses + offsets (verified against mknp_custom_entities / Hamsterball.exe)
@@ -209,6 +210,12 @@ static char  g_grid_digits[MAX_GRID_POINTS][8];   /* digit string ("01") */
 static int   g_grid_count = 0;
 static int   g_scan_logged = 0;   /* 1 after first detailed scan dump */
 static char  g_levels_dir[MAX_PATH];  /* game levels\ dir, trailing backslash */
+
+/* Named entities (set jsonc ENTITIES pairs): persistent static spawns */
+#define ENT_MAX_INST 32
+static DWORD g_ent_objs[ENT_MAX_INST];
+static int   g_ent_obj_def[ENT_MAX_INST];  /* def idx per instance */
+static int   g_ent_inst_count = 0;
 
 /* Race slot 1-15 (MAKYUNI order). Set in find_grid_points from the board
  * vtable. Each LevelBoard_X_ctor writes its vtable to board+0x0
@@ -734,6 +741,13 @@ static void despawn_all(DWORD board) {
     }
     g_spawned_count = 0;
     g_order_count = 0;
+    for (i = 0; i < ENT_MAX_INST; i++) {
+        if (g_ent_objs[i]) {
+            despawn_object(board, g_ent_objs[i]);
+            g_ent_objs[i] = 0;
+        }
+    }
+    g_ent_inst_count = 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -851,6 +865,128 @@ static const char* mesh_for(int idx) {
         g_grid_mesh[idx][0])
         return g_grid_mesh[idx];
     return mesh_file_present() ? g_mesh_path : NULL;   /* testcube fallback */
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Named entities: set jsonc pairs -> S1 REF:<Name> -> Levels/<mesh> spawn.
+ * v1be: behaviour stored only, every entity is a persistent static solid
+ * (same PopCylinder chain as GRID, shown once at level start, never cycled).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static int ent_match_def(const char* s1name) {
+    int d;
+    if (!s1name) return -1;
+    for (d = 0; d < g_ent_count; d++) {
+        if (g_ent_name[d][0] && nc_istrstr(s1name, g_ent_name[d]) != NULL)
+            return d;
+    }
+    return -1;
+}
+
+static void scan_spawn_entities(DWORD board) {
+    DWORD sceneobj;
+    DWORD level;
+    DWORD s1_list;
+    int s1_count;
+    DWORD* s1_data;
+    int i;
+    for (i = 0; i < ENT_MAX_INST; i++) g_ent_objs[i] = 0;
+    g_ent_inst_count = 0;
+    load_entities_file();
+    if (!g_ent_count) return;
+    if (!g_levels_dir[0]) {
+        log_mod("  ENT: levels dir unknown, skip");
+        return;
+    }
+    sceneobj = get_sceneobj(board);
+    if (!sceneobj) { log_mod("  ENT: sceneobj=NULL"); return; }
+    level = get_level(board);
+    (void)level;
+    s1_list = sceneobj + SCENEOBJ_S1_OFF;
+    if (IsBadReadPtr((void*)(s1_list + ALIST_COUNT), 4)) return;
+    s1_count = *(int*)(s1_list + ALIST_COUNT);
+    s1_data = NULL;
+    if (!IsBadReadPtr((void*)(s1_list + ALIST_ITEMS), 4))
+        s1_data = *(DWORD**)(s1_list + ALIST_ITEMS);
+    if (s1_count <= 0 || s1_count > 1000) return;
+    if (!s1_data || IsBadReadPtr(s1_data, s1_count * 4)) return;
+    for (i = 0; i < s1_count && g_ent_inst_count < ENT_MAX_INST; i++) {
+        DWORD entry = s1_data[i];
+        const char* nm = NULL;
+        char* ptr = NULL;
+        int d;
+        float px, py, pz;
+        char base[ENT_MESH_N];
+        char noext[ENT_MESH_N];
+        char ctor[MAX_PATH];
+        char abs[MAX_PATH];
+        char ebuf[160];
+        void* obj;
+        if (!entry || entry < 0x10000) continue;
+        if (IsBadReadPtr((void*)entry, 16)) continue;
+        ptr = *(char**)(entry + S1ENTRY_NAME);
+        if (ptr && !IsBadReadPtr(ptr, 5)) nm = ptr;
+        else nm = (const char*)entry;   /* inline name fallback */
+        d = ent_match_def(nm);
+        if (d < 0) continue;
+        px = *(float*)(entry + S1ENTRY_POS_X);
+        py = *(float*)(entry + S1ENTRY_POS_Y);
+        pz = *(float*)(entry + S1ENTRY_POS_Z);
+        ent_basename(g_ent_mesh[d], base, sizeof(base));
+        if (!base[0]) {
+            snprintf(ebuf, sizeof(ebuf), "  ENT %s: empty mesh, skip",
+                     g_ent_name[d]);
+            log_mod(ebuf);
+            continue;
+        }
+        {
+            int hasdot = 0;
+            int k = 0;
+            while (base[k]) { if (base[k] == '.') hasdot = 1; k++; }
+            if (hasdot) snprintf(abs, sizeof(abs), "%s%s", g_levels_dir, base);
+            else snprintf(abs, sizeof(abs), "%s%s.MESHWORLD", g_levels_dir, base);
+        }
+        if (GetFileAttributesA(abs) == INVALID_FILE_ATTRIBUTES) {
+            snprintf(ebuf, sizeof(ebuf), "  ENT %s: MISSING %s",
+                     g_ent_name[d], base);
+            log_mod(ebuf);
+            continue;
+        }
+        if (validate_grid_file(abs) < 1) {
+            snprintf(ebuf, sizeof(ebuf), "  ENT %s: BAD %s",
+                     g_ent_name[d], base);
+            log_mod(ebuf);
+            continue;
+        }
+        ent_strip_ext(base, noext, sizeof(noext));
+        snprintf(ctor, sizeof(ctor), "levels\\%s", noext);
+        obj = create_grid_cube(board, px, py, pz, 900 + d, ctor);
+        if (!obj) {
+            snprintf(ebuf, sizeof(ebuf), "  ENT %s: spawn failed",
+                     g_ent_name[d]);
+            log_mod(ebuf);
+            continue;
+        }
+        grid_show(board, (DWORD)obj);
+        g_ent_objs[g_ent_inst_count] = (DWORD)obj;
+        g_ent_obj_def[g_ent_inst_count] = d;
+        g_ent_inst_count++;
+        snprintf(ebuf, sizeof(ebuf),
+                 "  ENT: spawned %s behaviour=%s at (%d,%d,%d) obj=0x%X",
+                 g_ent_name[d], g_ent_beh[d],
+                 (int)px, (int)py, (int)pz, (DWORD)obj);
+        log_mod(ebuf);
+    }
+    {
+        char cbuf[64];
+        snprintf(cbuf, sizeof(cbuf), "  ENT: %d instance(s) active",
+                 g_ent_inst_count);
+        log_mod(cbuf);
+    }
+}
+
+/* Per-frame entity behaviours. v1be: all behaviours static (no-op). */
+static void entity_frame(DWORD board) {
+    (void)board;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1615,6 +1751,7 @@ static void start_grid_cycle(DWORD board) {
 
     int count = find_grid_points(board);
     start_lights(board);
+    scan_spawn_entities(board);
     if (count > 0) {
         char buf[64];
         g_mult = gridset_level_mult_slot(g_race_slot);
@@ -1774,7 +1911,12 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
     s3.lowerBound = 0.0f; s3.upperBound = 100.0f; s3.stepSize = 0.5f; s3.decimalPlaces = 1;
     HBAPI(api).CreateSlider(s3, (HamsterballAPI*)thisptr);
 
-    log_mod("INIT Battyball Entities v1bd (mod loaded)");
+    {
+        char ibuf[512];
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities v1be log=%s set=%s",
+                 g_log_path, g_set_path);
+        log_mod(ibuf);
+    }
 }
 
 static void __thiscall button_toggle(void*, const char* id, bool state) {
@@ -1842,6 +1984,7 @@ static void __thiscall level_start(void*) {
     g_grid_count = 0;
     g_spawned_count = 0;
     g_order_count = 0;
+    g_ent_inst_count = 0;
 }
 
 static void __thiscall scene_end(void*) {
@@ -1938,12 +2081,18 @@ static void __thiscall game_update(void*) {
         g_race_slot = 0;   /* unknown until scanned: ring/glow touch nothing */
         g_ring_on = 0;
         g_glow_on = 0;
+        {
+            int ei;
+            for (ei = 0; ei < ENT_MAX_INST; ei++) g_ent_objs[ei] = 0;
+            g_ent_inst_count = 0;
+        }
         return;
     }
 
     light_frame();   /* pin/heartbeat/service also from game_update */
     border_frame();    /* slot RGBA -> P1 border (overrides exe, Neon too) */
     glow_frame();      /* slot RGBA -> P1 emitter glow (Neon_colors GLOW) */
+    entity_frame(board); /* named entities: v1be all static (no-op) */
 
     if (!g_cycle_started) {
         if (g_board_ready_delay > 0) { g_board_ready_delay--; return; }
