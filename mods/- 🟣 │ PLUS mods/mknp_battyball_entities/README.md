@@ -160,7 +160,12 @@ Top-level set pairs next to `grid_speed` define named entities:
     "Woodbridge", { "behaviour": "Woodbridge", "mesh": "Woodbridge.MESHWORLD" },
 
 - Key = entity name, also the S1 ref substring (`REF:Woodbridge` in the level).
-- `behaviour` = behaviour name. v1be stores it only; every entity is static.
+- `behaviour` = behaviour name.
+  - `Woodbridge` (v1bf+): bridge sinks 50 units while the ball is within 150
+    units (3D), rises back when it leaves. Smooth 100 u/s both ways, frozen
+    while paused. Move uses the native reposition path (`obj+0x10D8` +
+    `+0x10E4` dirty flag, consumed by update `0x43DED0`).
+  - anything else: static, no motion.
 - `mesh` = meshworld file, always loaded from the game's `Levels` folder.
 
 At level start each `REF:<Name>` spawns its mesh via the same native chain as
@@ -193,6 +198,9 @@ The HB+ loading chain (scanning `Mods\`, calling `CreateModInstance`, firing `In
 MAKYUNI / Hamsterbot
 
 ## Changelog
+
+### v1bf
+- Woodbridge behaviour: sinks 50u while ball within 150u, rises back after. Smooth 100 u/s, pause-frozen, native `+0x10D8`/`+0x10E4` reposition path (disasm-verified against `PopCylinder_ctor`/`0x43DED0`/`0x46FBB0`). Edge-only logs (`near -> sinking`, `far -> rising`, `reached`).
 
 ### v1be
 - Named entities: set jsonc top-level `"Name", { "behaviour", "mesh" }` pairs spawn `REF:<Name>` refs with `Levels/<mesh>` meshes (persistent static solids, same native chain as GRID). Behaviour stored only for now. INIT log now lists `log=` + `set=` paths.

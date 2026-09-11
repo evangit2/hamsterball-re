@@ -216,6 +216,20 @@ static char  g_levels_dir[MAX_PATH];  /* game levels\ dir, trailing backslash */
 static DWORD g_ent_objs[ENT_MAX_INST];
 static int   g_ent_obj_def[ENT_MAX_INST];  /* def idx per instance */
 static int   g_ent_inst_count = 0;
+/* Woodbridge behaviour state (per instance) */
+static float g_ent_home_x[ENT_MAX_INST];
+static float g_ent_home_y[ENT_MAX_INST];
+static float g_ent_home_z[ENT_MAX_INST];
+static float g_ent_cur[ENT_MAX_INST];      /* current Y offset (0 .. -50) */
+static float g_ent_applied[ENT_MAX_INST];  /* last Y offset written + flagged */
+static int   g_ent_near[ENT_MAX_INST];     /* proximity latch (edge logs) */
+static DWORD g_ent_last_tick = 0;          /* dt clock for smooth motion */
+#define ENT_POS_X 0x10D4   /* PopCylinder_ctor stores x,y,z here (0x436EE0) */
+#define ENT_POS_Y 0x10D8
+#define ENT_DIRTY 0x10E4   /* BYTE: 1 = reposition (native update consumes) */
+#define WB_RADIUS 150.0f   /* trigger distance (3D, ball center to ref point) */
+#define WB_DROP   50.0f    /* sink depth when player near */
+#define WB_SPEED  100.0f   /* units/sec (0.5s down, 0.5s up) */
 
 /* Race slot 1-15 (MAKYUNI order). Set in find_grid_points from the board
  * vtable. Each LevelBoard_X_ctor writes its vtable to board+0x0
@@ -969,6 +983,12 @@ static void scan_spawn_entities(DWORD board) {
         grid_show(board, (DWORD)obj);
         g_ent_objs[g_ent_inst_count] = (DWORD)obj;
         g_ent_obj_def[g_ent_inst_count] = d;
+        g_ent_home_x[g_ent_inst_count] = px;
+        g_ent_home_y[g_ent_inst_count] = py;
+        g_ent_home_z[g_ent_inst_count] = pz;
+        g_ent_cur[g_ent_inst_count] = 0.0f;
+        g_ent_applied[g_ent_inst_count] = 0.0f;
+        g_ent_near[g_ent_inst_count] = 0;
         g_ent_inst_count++;
         snprintf(ebuf, sizeof(ebuf),
                  "  ENT: spawned %s behaviour=%s at (%d,%d,%d) obj=0x%X",
@@ -984,9 +1004,98 @@ static void scan_spawn_entities(DWORD board) {
     }
 }
 
-/* Per-frame entity behaviours. v1be: all behaviours static (no-op). */
+/* Per-frame entity behaviours. Woodbridge: sink 50u while ball < 150u.
+ * Move = write obj+0x10D8 + BYTE +0x10E4=1; native update (0x43DED0)
+ * rebuilds Timer + slots 21/22 reposition render+collision absolutely
+ * (0x46FBB0 fstp = set-from-source, repeat-safe). Flag set ONLY on
+ * changed frames; pause freezes (no advance, no write). */
+static int ent_is_woodbridge(int di) {
+    if (di < 0 || di >= g_ent_count) return 0;
+    if (!g_ent_beh[di][0]) return 0;
+    return nc_istrstr(g_ent_beh[di], "Woodbridge") != NULL;
+}
+
 static void entity_frame(DWORD board) {
-    (void)board;
+    DWORD now;
+    float dt;
+    void* b;
+    float bx, by, bz;
+    int has_ball;
+    int i;
+    if (!board || IsBadReadPtr((void*)board, 0x4400)) return;
+    if (!g_ent_inst_count) return;
+    now = GetTickCount();
+    if (!g_ent_last_tick) g_ent_last_tick = now;
+    /* pause gate: freeze motion, keep clock (no time-jump on resume) */
+    if (!IsBadReadPtr((void*)(board + BOARD_PAUSED), 4) &&
+        *(int*)(board + BOARD_PAUSED)) {
+        g_ent_last_tick = now;
+        return;
+    }
+    dt = (float)(now - g_ent_last_tick) / 1000.0f;
+    g_ent_last_tick = now;
+    if (dt < 0.0f) dt = 0.0f;
+    if (dt > 0.25f) dt = 0.25f;
+    b = g_api ? (void*)HBAPI(g_api).GetPlayer() : NULL;
+    has_ball = (b && !IsBadReadPtr(b, 0x300)) ? 1 : 0;
+    if (has_ball) {
+        bx = *(float*)((char*)b + 0x164);
+        by = *(float*)((char*)b + 0x168);
+        bz = *(float*)((char*)b + 0x16C);
+    } else {
+        bx = by = bz = 0.0f;
+    }
+    for (i = 0; i < g_ent_inst_count && i < ENT_MAX_INST; i++) {
+        DWORD obj = g_ent_objs[i];
+        float dx, dy, dz, dist, target, cur, step, diff;
+        char ebuf[128];
+        if (!ent_is_woodbridge(g_ent_obj_def[i])) continue;
+        if (!obj || IsBadReadPtr((void*)obj, 0x10E8)) continue;
+        dx = has_ball ? (bx - g_ent_home_x[i]) : 999999.0f;
+        dy = has_ball ? (by - (g_ent_home_y[i] + g_ent_cur[i])) : 999999.0f;
+        dz = has_ball ? (bz - g_ent_home_z[i]) : 999999.0f;
+        dist = dx * dx + dy * dy + dz * dz;
+        /* compare squared (150^2=22500) */
+        if (has_ball && dist < 22500.0f) {
+            if (!g_ent_near[i]) {
+                g_ent_near[i] = 1;
+                snprintf(ebuf, sizeof(ebuf),
+                         "  ENT Woodbridge%d: near -> sinking", i);
+                log_mod(ebuf);
+            }
+        } else if (g_ent_near[i]) {
+            g_ent_near[i] = 0;
+            snprintf(ebuf, sizeof(ebuf),
+                     "  ENT Woodbridge%d: far -> rising", i);
+            log_mod(ebuf);
+        }
+        target = g_ent_near[i] ? -WB_DROP : 0.0f;
+        cur = g_ent_cur[i];
+        if (cur != target) {
+            step = WB_SPEED * dt;
+            if (target < cur) {
+                cur -= step;
+                if (cur < target) cur = target;
+            } else {
+                cur += step;
+                if (cur > target) cur = target;
+            }
+            g_ent_cur[i] = cur;
+            if (cur == target) {
+                snprintf(ebuf, sizeof(ebuf),
+                         "  ENT Woodbridge%d: reached %d", i, (int)target);
+                log_mod(ebuf);
+            }
+        }
+        diff = g_ent_cur[i] - g_ent_applied[i];
+        if (diff < 0.0f) diff = -diff;
+        if (diff > 0.001f) {
+            *(float*)((char*)obj + ENT_POS_Y) =
+                g_ent_home_y[i] + g_ent_cur[i];
+            *(BYTE*)((char*)obj + ENT_DIRTY) = 1;
+            g_ent_applied[i] = g_ent_cur[i];
+        }
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1913,7 +2022,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities v1be log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities v1bf log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
@@ -1985,6 +2094,7 @@ static void __thiscall level_start(void*) {
     g_spawned_count = 0;
     g_order_count = 0;
     g_ent_inst_count = 0;
+    g_ent_last_tick = 0;
 }
 
 static void __thiscall scene_end(void*) {
@@ -2085,6 +2195,7 @@ static void __thiscall game_update(void*) {
             int ei;
             for (ei = 0; ei < ENT_MAX_INST; ei++) g_ent_objs[ei] = 0;
             g_ent_inst_count = 0;
+            g_ent_last_tick = 0;
         }
         return;
     }
