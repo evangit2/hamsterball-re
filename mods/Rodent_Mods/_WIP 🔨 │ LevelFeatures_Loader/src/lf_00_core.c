@@ -79,6 +79,7 @@ void DebugLog(const char *msg);
 #define RVA_SawBlade_ctor            0x00034660
 #define RVA_SawBlade_SetVariant      0x00034ab0
 #define RVA_Spinner_Level_ctor       0x000396f0
+#define RVA_Secret_ctor              0x0003DFB0 /* Secret_ctor (CreateSecretObjects, Ghidra-verified 2026-09-11) */
 #define RVA_Gear_Level_ctor          0x0003a150
 #define RVA_Bell_ctor                0x00034d70
 #define RVA_Odd_Lifter_ctor          0x00034e60

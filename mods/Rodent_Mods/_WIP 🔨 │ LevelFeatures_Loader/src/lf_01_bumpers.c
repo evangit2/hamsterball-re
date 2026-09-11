@@ -183,6 +183,7 @@ static Ctor5f_t g_FanCtor = NULL;
 static Ctor4f_t g_SawBladeCtor = NULL;
 static SawBlade_SetVariant_t g_SawBladeSetVariant = NULL;
 static Ctor5f_t g_SpinnerLevelCtor = NULL;
+static Ctor5f_t g_SecretCtor = NULL; /* Secret_ctor(mem,board,x,y,z,mesh) — same arity */
 static Ctor4f_t g_GearLevelCtor = NULL;
 static Ctor4f_t g_BellCtor = NULL;
 static Ctor4f_t g_OddLifterCtor = NULL;
