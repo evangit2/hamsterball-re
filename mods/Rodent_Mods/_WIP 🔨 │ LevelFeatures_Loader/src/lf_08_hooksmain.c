@@ -290,13 +290,8 @@ static void __stdcall Hook_AdvanceRace(DWORD a1) {
     if (VirtualQuery((void*)appPtrAddr, &mbi, sizeof(mbi)) && mbi.State==MEM_COMMIT) {
         DWORD app = *(DWORD*)appPtrAddr;
         if (app && VirtualQuery((void*)app, &mbi, sizeof(mbi)) && mbi.State==MEM_COMMIT) {
-            /* BOARD_APP_PTR validated via BoardHasOffset-style check */
-            if (BoardHasOffset((void*)app, 0x178, 4) || !HeapValidate(GetProcessHeap(),0,(void*)app)) {
-                /* Fallback: raw read with SEH-style guard via VirtualQuery already */
-                curBoard = *(void**)((char*)app + 0x178);
-            } else {
-                curBoard = *(void**)((char*)app + 0x178);
-            }
+            /* App+0x178 is the current board (VirtualQuery above guards the read). */
+            curBoard = *(void**)((char*)app + 0x178);
         }
     }
     if (curBoard) {
