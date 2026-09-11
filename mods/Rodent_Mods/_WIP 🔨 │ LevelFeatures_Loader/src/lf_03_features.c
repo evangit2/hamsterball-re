@@ -106,6 +106,18 @@ static void Feature_BridgeAnimation(void *board, int level) {
     case 3: {
             float angle = *anglePtr + 0.5f;
             *anglePtr = angle;
+            /* Rise creak-tick — native Intermediate Board_Update state 3
+             * (0x41CDEF, disasm-verified 2026-09-11): Y=(angle)/7, q=(int)Y;
+             * Play3D (App+0x478 sound at pivot, scale 0.5) iff Y==(float)q,
+             * i.e. each time the rising angle hits a multiple of 7. */
+            {
+                float creakY = angle / 7.0f;
+                int creakQ = (int)creakY;
+                if (creakY == (float)creakQ && app && !IsBadReadPtr((void *)app, 0x800) && g_SoundPlay3D) {
+                    DWORD snd = *(DWORD *)(app + 0x478);
+                    if (snd) g_SoundPlay3D((void *)snd, *pivotX, *pivotY, *pivotZ);
+                }
+            }
             if (angle >= 45.0f) { *anglePtr = 45.0f; *counterPtr = 0x4B; *statePtr = 0; }
             if (g_TimerInit && g_TimerCleanup && g_GfxScaleZ && g_GfxSetPosition && g_MatrixTransformVec3 && app) {
                 void *gfx = *(void **)(app + 0x174);
@@ -718,9 +730,11 @@ static void Feature_SkyPopcylinder(void *board, int level) {
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (!app || IsBadReadPtr((void *)app, 0x600)) return;
 
-    /* Only activate when difficulty != 0 */
-    if (*(int *)(app + APP_DIFFICULTY) == 0) {
-        /* Still call vtable[+4] on the scene object at board+UNI_MAGNIFYING_GLASS */
+    /* Magnifier update tick — native Sky Board_Update 0x41FCA7 (disasm-verified
+     * 2026-09-11): difficulty (App+0x23C) != 0 -> magnifier->vtable[1]().
+     * (Previous gate was inverted; harmless while the ext slot was unwritten.) */
+    if (*(int *)(app + APP_DIFFICULTY) != 0) {
+        /* Call vtable[+4] on the scene object at board+UNI_MAGNIFYING_GLASS */
         DWORD sceneObj = *(DWORD *)((char *)ext + UNI_MAGNIFYING_GLASS);
         if (sceneObj) {
             DWORD *vtbl = *(DWORD **)sceneObj;
