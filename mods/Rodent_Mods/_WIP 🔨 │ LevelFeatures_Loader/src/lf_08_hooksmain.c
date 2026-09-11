@@ -658,6 +658,7 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     g_SawBladeCtor = (Ctor4f_t)(g_moduleBase + RVA_SawBlade_ctor);
     g_SawBladeSetVariant = (SawBlade_SetVariant_t)(g_moduleBase + RVA_SawBlade_SetVariant);
     g_SpinnerLevelCtor = (Ctor5f_t)(g_moduleBase + RVA_Spinner_Level_ctor);
+    g_SecretCtor = (Ctor5f_t)(g_moduleBase + RVA_Secret_ctor);
     g_GearLevelCtor = (Ctor4f_t)(g_moduleBase + RVA_Gear_Level_ctor);
     g_BellCtor = (Ctor4f_t)(g_moduleBase + RVA_Bell_ctor);
     g_OddLifterCtor = (Ctor4f_t)(g_moduleBase + RVA_Odd_Lifter_ctor);

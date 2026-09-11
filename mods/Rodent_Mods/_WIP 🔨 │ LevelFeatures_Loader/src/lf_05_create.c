@@ -99,6 +99,46 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     void *obj = NULL;
     int renderOut = 0;
 
+    /* ── SECRET / SECRETUNLOCK (shared CreateSecretObjects, Ghidra-verified 2026-09-11) ──
+     * Native order: SECRETUNLOCK (12-char match) first, then SECRET (6-char).
+     * Gate: difficulty != 0 && App+0x234 == 0 && profile(App+0x220)+0x11 == 0.
+     * Mesh: App+0x580 for UNLOCK, App+0x57c for SECRET.
+     * Secret_ctor(mem, board, x,y,z, mesh), size 0x10EC; appends to board+0xCD4,
+     * meshdb+0x1C, board+0x8B0+0x18 (render at obj+0x10E0), board+0x2578.
+     * Returns 0,0 (native per-level create ignores SECRET S1s; shared fn owns them). */
+    if (my_strnicmp(name, "SECRETUNLOCK", 12) == 0 || my_strnicmp(name, "SECRET", 6) == 0) {
+        int isUnlock = (my_strnicmp(name, "SECRETUNLOCK", 12) == 0);
+        if (difficulty != 0 && app && !IsBadReadPtr((void*)app, 0x600) && g_SecretCtor &&
+            g_operatorNew && g_AthenaListAppend && *(char *)(app + 0x234) == 0) {
+            DWORD profile = *(DWORD *)(app + 0x220);
+            if (profile && !IsBadReadPtr((void*)profile, 0x20) && *(char *)(profile + 0x11) == 0) {
+                void *seMesh = *(void **)((char *)app + (isUnlock ? 0x580 : 0x57C));
+                if (seMesh) {
+                    void *seMem = g_operatorNew(0x10EC);
+                    if (seMem) {
+                        float meshBits;
+                        memcpy(&meshBits, &seMesh, 4);
+                        void *sobj = g_SecretCtor(seMem, (int)board, x, y, z, meshBits);
+                        if (sobj) {
+                            g_AthenaListAppend((void*)((char*)board + 0xCD4), (int)sobj);
+                            if (meshWorld && !IsBadReadPtr((void*)meshWorld, 0x500)) {
+                                DWORD mdb = *(DWORD *)((char *)meshWorld + 0x480);
+                                if (mdb && !IsBadReadPtr((void*)mdb, 0x30))
+                                    g_AthenaListAppend((void*)(mdb + 0x1C), (int)sobj);
+                            }
+                            DWORD b8b0 = *(DWORD *)((char *)board + 0x8B0);
+                            if (b8b0 && !IsBadReadPtr((void*)b8b0, 0x30))
+                                g_AthenaListAppend((void*)(b8b0 + 0x18), ((DWORD*)sobj)[0x438]);
+                            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)sobj);
+                        }
+                    }
+                }
+            }
+        }
+        *(int*)out1 = 0; *(int*)out2 = 0;
+        return;
+    }
+
     /* ── TIPPER (Dizzy) ── */
     // S1 ensure for swapped files
 
