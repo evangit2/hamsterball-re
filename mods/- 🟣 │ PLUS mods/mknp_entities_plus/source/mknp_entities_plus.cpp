@@ -1458,6 +1458,16 @@ static int   g_push_ok = 0;
 static int   g_push_ax = 0;    /* 0 X, 1 Y, 2 Z */
 static int   g_push_sg = 1;    /* +1 / -1 */
 static DWORD g_push_lastlog = 0;
+static float g_push_cx = 0.0f, g_push_cy = 0.0f, g_push_cz = 0.0f;
+static int   g_push_in = 0;    /* ball inside volume latched (enter/leave) */
+
+/* v1p: first def with e_Mousepush behaviour (type 48), or -1. */
+static int push_def(void) {
+    int d;
+    for (d = 0; d < g_ent_count; d++)
+        if (aibeh_type(g_ent_beh[d]) == 48) return d;
+    return -1;
+}
 
 static int push_walk(GmCur* c, const unsigned char* vbuf, int nverts,
                      int* nodes) {
@@ -1500,6 +1510,8 @@ static int push_walk(GmCur* c, const unsigned char* vbuf, int nverts,
             c->p += (unsigned)sc * 8u;
             if (!g_push_ok && ent_ci_substr((const char*)nm, "mousepush")) {
                 double nx = 0.0, ny = 0.0, nz = 0.0;
+                double sx = 0.0, sy = 0.0, sz = 0.0;
+                int nv = 0;
                 for (s = 0; s < sc; s++) {
                     int tri, vr, t;
                     memcpy(&tri, spp + (unsigned)s * 8u, 4);
@@ -1524,6 +1536,10 @@ static int push_walk(GmCur* c, const unsigned char* vbuf, int nverts,
                         memcpy(&cx, pc, 4);
                         memcpy(&cy, pc + 4, 4);
                         memcpy(&cz, pc + 8, 4);
+                        sx += ax + bx + cx;   /* v1p: centroid */
+                        sy += ay + by + cy;
+                        sz += az + bz + cz;
+                        nv += 3;
                         if (t & 1) {
                             float tx = bx, ty = by, tz = bz;
                             bx = cx; by = cy; bz = cz;
@@ -1549,6 +1565,11 @@ static int push_walk(GmCur* c, const unsigned char* vbuf, int nverts,
                         else
                             { g_push_ax = 2; g_push_sg = (nz >= 0) ? 1 : -1; }
                         g_push_ok = 1;
+                        if (nv > 0) {   /* v1p: volume center = quad centroid */
+                            g_push_cx = (float)(sx / nv);
+                            g_push_cy = (float)(sy / nv);
+                            g_push_cz = (float)(sz / nv);
+                        }
                     }
                 }
             }
@@ -1574,6 +1595,8 @@ static void push_scan_file(const char* path) {
     char pbuf[128];
     GmCur c;
     g_push_ok = 0; g_push_ax = 0; g_push_sg = 1;
+    g_push_cx = 0.0f; g_push_cy = 0.0f; g_push_cz = 0.0f;
+    g_push_in = 0;
     if (!path || !path[0]) return;
     d = gm_read_file(path, &len);
     if (!d || len < 4) { if (d) free(d); return; }
@@ -1584,14 +1607,77 @@ static void push_scan_file(const char* path) {
     }
     push_walk(&c, vbuf, nverts, &nodes);
     free(d);
-    if (g_push_ok)
-        snprintf(pbuf, sizeof(pbuf), "  PUSHQ: E:Mousepush axis=%c sign=%s",
+    if (g_push_ok) {
+        int pd = push_def();
+        float pp = (pd >= 0) ? g_ent_prox[pd] : 150.0f;
+        float psx = (pd >= 0) ? g_ent_sx[pd] : 1.0f;
+        float psy = (pd >= 0) ? g_ent_sy[pd] : 1.0f;
+        float psz = (pd >= 0) ? g_ent_sz[pd] : 1.0f;
+        snprintf(pbuf, sizeof(pbuf),
+                 "  PUSHQ: E:Mousepush axis=%c sign=%s c=(%d,%d,%d)"
+                 " prox=%.1f sc=(%.1f,%.1f,%.1f)",
                  g_push_ax == 0 ? 'X' : (g_push_ax == 1 ? 'Y' : 'Z'),
-                 g_push_sg > 0 ? "+1" : "-1");
-    else
+                 g_push_sg > 0 ? "+1" : "-1",
+                 (int)g_push_cx, (int)g_push_cy, (int)g_push_cz,
+                 pp, psx, psy, psz);
+    } else
         snprintf(pbuf, sizeof(pbuf),
                  "  PUSHQ: no E:Mousepush quad, fallback +X");
     log_mod(pbuf);
+}
+
+/* v1p: per-frame push volume. Ellipsoid (proximity*scaleX/Y/Z from the
+ * Mousepush def) around the quad centroid; inside = force 20 along the
+ * facing axis every frame. Runs even with zero entity instances. */
+static void push_frame(DWORD board) {
+    void* b;
+    float bx, by, bz, dx, dy, dz, rx, ry, rz, dist;
+    float prox, sx, sy, sz, push;
+    int pd;
+    char pbuf[128];
+    if (!board || IsBadReadPtr((void*)board, 0x4400)) return;
+    if (!g_push_ok) return;
+    pd = push_def();
+    if (pd < 0) return;
+    if (!IsBadReadPtr((void*)(board + BOARD_PAUSED), 4) &&
+        *(int*)(board + BOARD_PAUSED))
+        return;
+    b = g_api ? (void*)HBAPI(g_api).GetPlayer() : NULL;
+    if (!b || IsBadReadPtr(b, 0x300)) return;
+    bx = *(float*)((char*)b + 0x164);
+    by = *(float*)((char*)b + 0x168);
+    bz = *(float*)((char*)b + 0x16C);
+    prox = g_ent_prox[pd]; sx = g_ent_sx[pd];
+    sy = g_ent_sy[pd]; sz = g_ent_sz[pd];
+    if (prox <= 0.0f) prox = 150.0f;
+    if (sx <= 0.0f) sx = 1.0f;
+    if (sy <= 0.0f) sy = 1.0f;
+    if (sz <= 0.0f) sz = 1.0f;
+    rx = prox * sx; ry = prox * sy; rz = prox * sz;
+    dx = bx - g_push_cx; dy = by - g_push_cy; dz = bz - g_push_cz;
+    dist = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) +
+           (dz * dz) / (rz * rz);
+    if (dist < 1.0f) {
+        push = 20.0f * (float)g_push_sg;
+        if (g_push_ax == 1)
+            *(float*)((char*)b + 0x174) += push;
+        else if (g_push_ax == 2)
+            *(float*)((char*)b + 0x178) += push;
+        else
+            *(float*)((char*)b + 0x170) += push;
+        if (!g_push_in) {
+            g_push_in = 1;
+            snprintf(pbuf, sizeof(pbuf),
+                     "  PUSHQ: enter vol ball=(%d,%d,%d)",
+                     (int)bx, (int)by, (int)bz);
+            log_mod(pbuf);
+        }
+    } else if (g_push_in) {
+        g_push_in = 0;
+        snprintf(pbuf, sizeof(pbuf), "  PUSHQ: leave vol ball=(%d,%d,%d)",
+                 (int)bx, (int)by, (int)bz);
+        log_mod(pbuf);
+    }
 }
 
 static void scan_spawn_entities(DWORD board) {
@@ -4496,7 +4582,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1o log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1p log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
@@ -4685,6 +4771,7 @@ static void __thiscall game_update(void*) {
     border_frame();    /* slot RGBA -> P1 border (overrides exe, Neon too) */
     glow_frame();      /* slot RGBA -> P1 emitter glow (Neon_colors GLOW) */
     entity_frame(board); /* named entities: Woodbridge motion, rest native-driven */
+    push_frame(board);   /* v1p: E:Mousepush proximity volume (own gating) */
     bub_frame(board);  /* v1cq: drowning bubbles (update stage, like native) */
     bubsfx_service(board); /* v1da: pop-sfx cache/probe (same tick OK) */
 
@@ -4811,12 +4898,10 @@ static void __thiscall event_collide(void* ball, void*, char* name) {
             }
         }
     }
-    /* v1o: E:Mousepush quad push (event-side). Force 20 along the quad
-     * facing (level-start S6 scan, fallback +X). Continuous while
-     * touching (accumulators, never pos-write). v1n proved the collide
-     * `ball` arg is NOT the physics ball (pos 0,0,0, acc never
-     * consumed) -> resolve the player ball via board+0x29D4 list. */
-    if (name_eq_ci(name, "E:Mousepush")) {
+    /* v1p: E:Mousepush touch fallback — fires ONLY when no quad was
+     * found (no volume exists). With a quad, the volume rules alone
+     * (no double force). Ball via board+0x29D4 list (collide arg dead). */
+    if (name_eq_ci(name, "E:Mousepush") && !g_push_ok) {
         DWORD board = player_board();
         if (board && !IsBadReadPtr((void*)(board + 0x29D4 + 0x04), 4)) {
             int bcount = *(int*)(board + 0x29D4 + 0x04);
