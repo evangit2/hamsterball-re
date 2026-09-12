@@ -15,11 +15,11 @@
 /* UniversalRender implementation — does the actual rendering work.
  * Called by the naked thunk below which handles RET 4.
  * Must be non-static for asm reference from the naked thunk. */
-void UniversalRenderImpl(void *board) {
+void UniversalRenderImpl(void *board, int unk) {
     if (!board || !g_RenderDynamicObjects) return;
 
-    /* Call shared base render (Level_RenderDynamicObjects) */
-    g_RenderDynamicObjects(board);
+    /* Call shared base render (Level_RenderDynamicObjects) — forward gfx ctx (native ret $0x4) */
+    g_RenderDynamicObjects(board, unk);
 
     int level = GetCurrentLevel(board);
     void* ext = GetBoardExt(board);
@@ -96,8 +96,8 @@ void UniversalRenderImpl(void *board) {
                 if (meshWorld && !IsBadReadPtr((void *)meshWorld, 0x54)) {
                     DWORD *vtbl = *(DWORD **)meshWorld;
                     if (vtbl) {
-                        void (__thiscall *fn)(DWORD) = (void (__thiscall *)(DWORD))vtbl[0x14];
-                        if (fn) fn((DWORD)slotPtr);
+                        void (__thiscall *fn)(DWORD, DWORD) = (void (__thiscall *)(DWORD, DWORD))vtbl[0x14];
+                        if (fn) fn((DWORD)meshWorld, (DWORD)slotPtr); /* native: ECX=meshWorld + push slot */
                     }
                 }
                 /* Reset render context */
@@ -128,7 +128,7 @@ void UniversalRenderImpl(void *board) {
             if (timerVtbl) {
                 void (__thiscall *scaleFn)(DWORD, float, float, float) =
                     (void (__thiscall *)(DWORD, float, float, float))timerVtbl[6];
-                if (scaleFn) scaleFn((DWORD)timerBuf, 0x3f933333, 0x3f933333, 0x3f933333);
+                if (scaleFn) scaleFn((DWORD)timerBuf, 1.15f, 1.15f, 1.15f); /* was int 0x3f933333 = 1.06e9f, not 1.15f */
             }
 
             /* Gfx_ScaleZ(-board[0x43A0]) — chomper-state float, NOT windmill angle (0x40DFA0) */
@@ -163,7 +163,7 @@ void UniversalRenderImpl(void *board) {
             if (timerVtbl) {
                 void (__thiscall *scaleFn)(DWORD, float, float, float) =
                     (void (__thiscall *)(DWORD, float, float, float))timerVtbl[6];
-                if (scaleFn) scaleFn((DWORD)timerBuf, 0x3f933333, 0x3f933333, 0x3f933333);
+                if (scaleFn) scaleFn((DWORD)timerBuf, 1.15f, 1.15f, 1.15f); /* was int 0x3f933333 = 1.06e9f, not 1.15f */
             }
             if (g_GfxScaleZ) g_GfxScaleZ(gfx, -chompState);
             if (g_GfxScaleX) g_GfxScaleX(gfx, 180.0f);
@@ -190,7 +190,7 @@ void UniversalRenderImpl(void *board) {
                 }
             }
 
-            g_TimerCleanup(timerBuf);
+            g_TimerCleanup(timerBuf, timerBuf);
         }
     }
 
@@ -272,8 +272,8 @@ void UniversalRenderImpl(void *board) {
                 }
             }
 
-            g_TimerCleanup(timerBuf2);
-            g_TimerCleanup(timerBuf);
+            g_TimerCleanup(timerBuf2, timerBuf2);
+            g_TimerCleanup(timerBuf, timerBuf);
         }
     }
 
@@ -304,7 +304,7 @@ void UniversalRenderImpl(void *board) {
         }
 
         /* Disable culling for cloud sprite */
-        if (g_GraphicsSetCullMode2) g_GraphicsSetCullMode2(gfx, 0);
+        if (g_GraphicsSetCullMode2) g_GraphicsSetCullMode2(gfx, 0, 1);
 
         /* Render cloud sprite quad from dedicated REND_SKY_SPRITE */
         if (g_SpriteRenderQuad) {
@@ -316,7 +316,7 @@ void UniversalRenderImpl(void *board) {
         }
 
         /* Re-enable culling */
-        if (g_GraphicsSetCullMode2) g_GraphicsSetCullMode2(gfx, 1);
+        if (g_GraphicsSetCullMode2) g_GraphicsSetCullMode2(gfx, 1, 1);
 
         /* Toggle render state back */
         if (*(char *)((char *)gfx + 0x70C) != 1) {
@@ -382,7 +382,7 @@ void UniversalRenderImpl(void *board) {
                         if (fn1C) fn1C(mesh, 0);
                     }
                 }
-                if (g_TimerCleanup) g_TimerCleanup(timerBuf);
+                if (g_TimerCleanup) g_TimerCleanup(timerBuf, timerBuf);
 
                 int next = *(int *)((char *)ext + REND_SKY_LIST + 8 + iter * 4);
                 if (count <= next) break;
@@ -442,8 +442,10 @@ void UniversalRenderImpl(void *board) {
  * But since slot 24 is per-vtable, and each vtable only gets ONE function,
  * we need to match the convention of the ORIGINAL function for that vtable.
  *
- * Levels 1,3,4,6,7,8,9,11,15: original = Level_RenderDynamicObjects (RET 0)
- * Levels 2,5,10,12,13,14: original = 2-param render (RET 4)
+ * CORRECTION 2026-09-12: disasm proves shared 0x40B420 ends ret $0x4 —
+ * ALL 15 renders take (board, gfx) RET 4. Call site #1 (0x46C8C7, no push)
+ * targets a different object hierarchy, not Board renders. Code below was
+ * already correct (RET-4 thunk, patch only the 6 wrapper levels).
  *
  * SIMPLEST FIX: Don't replace slot 24 for levels that use the shared
  * 1-param function. Only replace for levels that have 2-param render.
@@ -462,7 +464,10 @@ __attribute__((naked)) void UniversalRender(void) {
         "pushl %%ebp\n\t"
         "movl  %%esp, %%ebp\n\t"
         "pushl %%edx\n\t"          /* save EDX (unused but preserved) */
+        "pushl 8(%%ebp)\n\t"       /* forward caller's gfx stack arg */
+        "pushl %%ecx\n\t"          /* forward board (ECX) */
         "call  _UniversalRenderImpl\n\t"
+        "addl  $8, %%esp\n\t"
         "popl  %%edx\n\t"
         "popl  %%ebp\n\t"
         "ret   $4\n\t"             /* __thiscall: callee cleans 4 bytes */
@@ -561,12 +566,10 @@ void __fastcall UniversalRaceState(void *board) {
         DebugLog(dbg);
     }
 
-    /* Call base Board_UpdateRaceState */
-    g_BoardUpdateRaceState(board);
-
-    if (s_rsCount <= 3) {
-        DebugLog("  [raceState] Board_UpdateRaceState done");
-    }
+    /* Single-chain rule (2026-09-12 audit): every saved orig either IS the
+     * base (10 shared levels) or calls it internally first (all 5 customs,
+     * verified in disasm), so the dispatch below runs orig-or-base exactly
+     * once — never both (double-run was 2x timers/RNG/lifters). */
 
     /* Get level and dispatch features */
     int level = GetCurrentLevel(board);
@@ -581,13 +584,16 @@ void __fastcall UniversalRaceState(void *board) {
      * Beginner is skipped — orig decays board+0x642C while Feature_BumperDecay
      * decays ext+0x85C0 (UNI_BUMPER_LIT); calling both double-decays and desyncs. */
     if (level == 2) {
-        /* skip 0x420240 — FEAT_BUMPER_DECAY handles ext path */
+        /* skip orig 0x420240 (decays dead board+0x642C) — base + ext decay instead */
+        g_BoardUpdateRaceState(board);
     } else if (level == 7) {
         /* Neon RaceState (0x424790) positions board+0x436C/0x4370 followers.
          * Only valid when Neon_PostSetup built them (S3-gap gate passed);
          * otherwise the slots are NULL/garbage or foreign (never touch). */
         if (Neon_IsActive(board) && g_origRaceState[level]) {
             g_origRaceState[level](board);
+        } else {
+            g_BoardUpdateRaceState(board);
         }
     } else if (level == 13) {
         /* Sky RaceState (0x41FC90) RNG-activates NATIVE-slot popcylinders.
@@ -598,9 +604,13 @@ void __fastcall UniversalRaceState(void *board) {
         DWORD skyFeat = GetBoardFeat(board);
         if (!(skyFeat & FEAT_SKY_POPCYL) && g_origRaceState[level]) {
             g_origRaceState[level](board);
+        } else {
+            g_BoardUpdateRaceState(board);
         }
     } else if (level >= 1 && level <= 15 && g_origRaceState[level]) {
         g_origRaceState[level](board);
+    } else {
+        g_BoardUpdateRaceState(board);
     }
 
     DWORD extFeat = GetBoardFeat(board);

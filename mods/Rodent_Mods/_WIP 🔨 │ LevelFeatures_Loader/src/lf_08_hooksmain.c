@@ -278,9 +278,27 @@ static void PatchAllocSizes(void) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Hook Tournament_AdvanceRace (0x00427080) to free ext on level unload */
-static unsigned char* g_advanceTrampoline = NULL;
+/* Non-static: referenced from naked asm below (_g_advanceTrampoline). */
+unsigned char* g_advanceTrampoline = NULL;
 static void (__stdcall *g_origAdvanceRace)(DWORD);
-static void __stdcall Hook_AdvanceRace(DWORD a1) {
+/* Naked ECX-preserving wrapper: 0x427080 is __thiscall (mov esi,ecx) with
+ * one stack arg. The C body would clobber ECX before reaching the trampoline,
+ * so the original would run with a garbage `this`. Stash live regs across it. */
+__attribute__((naked)) static void Hook_AdvanceRace(void) {
+    __asm__ __volatile__(
+        "pushl %%ecx\n\t"
+        "pushl %%edx\n\t"
+        "pushl 12(%%esp)\n\t"   /* a1 (ret + 2 pushes above it) */
+        "call  _Hook_AdvanceRaceLogic\n\t"
+        "addl  $4, %%esp\n\t"
+        "popl  %%edx\n\t"
+        "popl  %%ecx\n\t"
+        "jmpl  *_g_advanceTrampoline\n\t"
+        :: : "eax", "memory"
+    );
+}
+
+void __cdecl Hook_AdvanceRaceLogic(DWORD a1) { /* non-static + cdecl: referenced from naked asm above */
     /* Free the outgoing board's ext *before* the call (App+0x178 is the cur board)
      * and sweep stales *after* the call. Covers both reuse and free cases.
      * App pointer is at absolute 0x005341E0 (RVA 0x1341E0 from g_moduleBase). */

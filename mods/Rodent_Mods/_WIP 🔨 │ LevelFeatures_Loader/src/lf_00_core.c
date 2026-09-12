@@ -62,7 +62,7 @@ void DebugLog(const char *msg);
 #define RVA_AthenaList_GetIterator    0x000532B0
 #define RVA_eh_vector_ctor            0x000BAF59
 #define RVA_FUN_0040a870              0x0000A870
-#define RVA_Vec3List_Free             0x0000A820
+#define RVA_Vec3List_Free             0x00053250 /* genuine ECX-only list-free (0x40A820 is a mid-cluster fragment, NOT callable) */
 #define RVA_Level_AssignTexScales     0x00011BA0
 
 /* CreateDynamicObjects ctor RVAs */
@@ -485,16 +485,16 @@ static void Neon_PostSetup(void *board, void *ext, int raceIndex, const char *me
 /* 1 if [FEATURES] section overrode defaults for this level */
 typedef void (__fastcall *Scene_Update_t)(void *board);
 typedef void (__fastcall *Board_UpdateRaceState_t)(void *board);
-typedef void (__fastcall *Level_RenderDynamicObjects_t)(void *board);
+typedef void (__thiscall *Level_RenderDynamicObjects_t)(void *board, int unk); /* native 0x40B420: ret $0x4 (gfx ctx), verified 2026-09-12 */
 typedef void (__thiscall *Graphics_SetProjection_t)(void *board, float near_plane, float far_plane);
-typedef void (__thiscall *Graphics_SetCullMode2_t)(void *gfx, int mode);
+typedef void (__thiscall *Graphics_SetCullMode2_t)(void *gfx, int mode, int persist); /* native 0x453970: ret $0x8; arg2!=0 persists to gfx+0x734 */
 typedef void (__thiscall *Sprite_RenderQuad_t)(void *sprite, float a, float b, float c, float d, int e);
 typedef void (__thiscall *RenderContext_Init_t)(void *out);
-typedef void (__cdecl *Matrix4_Identity_t)(void *out);
+typedef void (__thiscall *Matrix4_Identity_t)(void *out); /* native 0x457FD0: ECX-only (movl $0x4D8E68,(%ecx); ret) */
 typedef void (__thiscall *Gfx_ScaleFn_t)(void *gfx, float val);
 typedef void (__thiscall *Gfx_SetPosition_t)(void *gfx, float x, float y, float z);
 typedef void (__fastcall *Timer_Init_t)(void *out);
-typedef void (__fastcall *Timer_Cleanup_t)(void *out);
+typedef void (__thiscall *Timer_Cleanup_t)(void *timer, void *arg); /* native 0x457A50: ret $0x4, reads struct from stack */
 typedef void (__stdcall *Matrix_TransformVec3_t)(float *out, float *in);
 typedef void (__fastcall *Matrix44_Zero_t)(int *out);
 typedef void (__thiscall *Scene_ForEachBall_SetVelocity_t)(void *board, float x, float y, float z);
@@ -528,7 +528,7 @@ typedef void (__thiscall *Ball_SetVec3AtOffset_t)(void *ball, float *vec);
 typedef void (__thiscall *Vec3_NormalizeAndScale_t)(float *vec, float scale);
 typedef void (__thiscall *Vec3_Copy_t)(float *dst, float *src);
 typedef float (__thiscall *Sound_CalcDistAtten_t)(int soundDevice, float x, float y, float z);
-typedef void (__thiscall *Sound_Play3DAtPos_t)(int channel);
+typedef void (__thiscall *Sound_Play3DAtPos_t)(int channel, float unk); /* native 0x458EE0: ret $0x4 */
 typedef void (__thiscall *Scene_SetRaceActive_t)(int obj);
 typedef void (__thiscall *Scene_AddObject_t)(void *scene, void *obj);
 
@@ -538,8 +538,8 @@ static Board_UpdateRaceState_t    g_BoardUpdateRaceState = NULL;
 /* Saved original vtable[19] (RaceState) for each level (1-15).
  * Several levels have custom RaceState handlers that iterate per-level
  * data at board+0x436C (Up: lifter AthenaList, Neon: render objects,
- * Beginner: float timers).  We must call the original after our shared
- * Board_UpdateRaceState so those per-level systems keep running. */
+ * Beginner: float timers).  Single-chain rule: run orig-or-base exactly
+ * once (orig IS base on shared levels; customs self-delegate). */
 typedef void (__fastcall *RaceState_t)(void *board);
 static RaceState_t g_origRaceState[16] = { NULL }; /* index 1-15 */
 static Level_RenderDynamicObjects_t g_RenderDynamicObjects = NULL;
@@ -807,7 +807,8 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_BITE_STATE       0x8660
 #define UNI_BITE_SPEED       0x8664
 #define UNI_NEON_DARK_COUNT  0x8668
-#define UNI_NEON_TRAPDOOR    0x866C
+#define UNI_NEON_TRAPDOOR    0x866C /* Sky trapdoor OBJECT only — counter moved to LIGHT_COUNT */
+#define UNI_NEON_LIGHT_COUNT 0x86FC /* Neon LIGHTSOFF/ON counter (was sharing 0x866C, corrupted obj ptr on mixed boards) */
 #define UNI_GLASS_SMASHER1   0x8670
 #define UNI_GLASS_SMASHER2   0x8674
 #define UNI_SKY_TRAPDOOR     0x8678
@@ -1129,7 +1130,7 @@ static int g_objectEnabled[OBJ_COUNT][16] __attribute__((unused)) = {{0}};
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static DWORD g_moduleBase = 0;
-typedef void (__thiscall *Sound_Play3D_t)(void *soundChannel, float x, float y, float z);
+typedef void (__thiscall *Sound_Play3D_t)(void *soundChannel, float x, float y, float z, float scale); /* native 0x459860: ret $0x10, scale=1.0f */
 static Sound_Play3D_t g_SoundPlay3D = NULL;
 
 /* Must be non-static for asm reference */

@@ -420,7 +420,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
                 renderOut = (int)render;
                 *(DWORD *)((char *)ext + REND_TOWER_TURRET) = (DWORD)render;
             }
-            g_TimerCleanup(timerBuf);
+            g_TimerCleanup(timerBuf, timerBuf);
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
@@ -701,7 +701,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "BLOCKDAWG", 9) == 0 && difficulty != 0) {
         int dawgNum = name[9] - '0';
         int meshOff = (dawgNum==1) ? UNI_BLOCKDAWG1_MESH : (dawgNum==3) ? UNI_BLOCKDAWG3_MESH : UNI_BLOCKDAWG2_MESH;
-        { const char *_bdPath = (dawgNum==1) ? "Levels\\Level8-BlockDawg1" : (dawgNum==3) ? "Levels\\Level8-BlockDawg2" : "Levels\\Level8-BlockDawg2"; S1EnsureMeshWorld(board, ext, meshOff, _bdPath); }
+        { const char *_bdPath = (dawgNum==1) ? "Levels\\Level8-BlockDawg1" : (dawgNum==3) ? "Levels\\Level8-BlockDawg3" : "Levels\\Level8-BlockDawg2"; S1EnsureMeshWorld(board, ext, meshOff, _bdPath); if (dawgNum==3) S1EnsureMeshWorld(board, ext, meshOff, "Levels\\Level8-BlockDawg2"); } /* dawg3 file missing on disk -> fall back to dawg2 mesh */
         void* bExt2 = GetBoardExt(board); if (!bExt2) bExt2 = ext;
         int meshVal = bExt2 ? *(int*)((char*)bExt2 + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("BLOCKDAWG: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }

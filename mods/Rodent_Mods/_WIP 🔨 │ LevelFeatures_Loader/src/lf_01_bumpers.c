@@ -28,7 +28,7 @@ static void ApplyBumperBounce(void *board, void *ball, void *collPair) {
     if (app && !IsBadReadPtr(app, 0x500)) {
         DWORD soundList = app[APP_SOUNDFX_LIST / 4];
         if (soundList && g_SoundPlay3D) {
-            g_SoundPlay3D((void *)soundList, posX, posY, posZ);
+            g_SoundPlay3D((void *)soundList, posX, posY, posZ, 1.0f);
         }
     }
 
@@ -113,13 +113,13 @@ typedef void *(__thiscall *AthenaList_Init_t)(void *this, int capacity);
 typedef void *(__thiscall *Board_ctor_t)(void *this, int app);
 typedef void (__thiscall *LoadRaceData_t)(void *board, const char *raceName);
 typedef int (__thiscall *Vec3_Init_t)(void *out, float x, float y, float z);
-typedef void (__cdecl *Matrix_Identity_t)(void *out);
+typedef void (__thiscall *Matrix_Identity_t)(void *out); /* native 0x453200: ECX-only */
 typedef void *(__thiscall *MeshNode_ctor_t)(void *mem, void *gfx, const char *path);
 typedef void *(__thiscall *Sprite_ctor_t)(void *mem, void *gfx, const char *path);
 typedef void (__thiscall *TipperVisual_Attach_t)(void *renderObj, void *meshWorld);
 typedef void (__thiscall *Level_AssignTex_t)(void *board, void *meshWorld);
 typedef int (__thiscall *Sound_GetNextChannel_t)(void *soundDevice);
-typedef void (__thiscall *Scene_RenderIfVisible_t)(int obj);
+typedef void (__thiscall *Scene_RenderIfVisible_t)(int obj, float unk); /* native 0x459610: ret $0x4 */
 typedef void (__thiscall *AthenaList_Append_t)(void *list, int item);
 typedef int (__thiscall *AthenaList_GetSize_t)(void *list);
 typedef int (__thiscall *AthenaList_GetIterator_t)(void *list);
