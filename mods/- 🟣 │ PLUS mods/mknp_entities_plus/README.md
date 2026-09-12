@@ -6,7 +6,7 @@ lights + BallBorder ring + P1 glow) and `mknp_battyball_events` (custom
 both: install this DLL **instead of** the two old ones, never alongside
 them (two drivers for the same `E:` planes would double-play sounds).
 
-## What it does (v1p)
+## What it does (v1q)
 
 - Everything `mknp_battyball_entities` v1dx does (same S1 `GRID` cycle,
   `ENTITIES` defs, `grid_speed`, neon ring/glow, lights, TRAJ + LIGHTSON /
@@ -58,6 +58,9 @@ them (two drivers for the same `E:` planes would double-play sounds).
   entity instances. Touch event now fires only when no quad found (no
   double force). Log: scan line shows c + prox + sc; enter/leave vol
   lines on transitions.
+- v1q: volume center RIDES the live Mouse instance (obj+0x10D4) when one
+  exists, static quad centroid otherwise. Facing still from the file
+  quad. Enter line shows c + ride/static.
 - One DLL, one log (`mknp_entities_plus.log`), one set file
   (`mknp_entities_plus_set.jsonc`, re-read every level start, same
   tolerant parsers: `E:` blocks with `behaviour` are entity-drivers,
@@ -86,7 +89,7 @@ them (two drivers for the same `E:` planes would double-play sounds).
 ## Log
 
 ```
-INIT Battyball Entities Plus v1p log=... set=...
+INIT Battyball Entities Plus v1q log=... set=...
 SET init: N sound events
 NEWBOARD ...
 EV LEVEL start
