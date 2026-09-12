@@ -10,6 +10,7 @@
 // Prefix is a routing label only: matching uses the stripped name, so E:Cheesepit = REF:Cheesepit = Cheesepit.
 [
     "REF:Woodbridge", { "behaviour": "REF:Woodbridge", "mesh": "Woodbridge.MESHWORLD" },
+    "E:Mousepush", { "behaviour": "e_Mousepush", "mesh": "Mouse" },
     // Events (uncomment + place matching E: refs/quads in the level):
     // "E:Launch", { "behaviour": "E:Launch", "mesh": "vertices" },
     // "E:Woodbridge_area", { "behaviour": "E:Woodbridge_area", "mesh": "vertices" },

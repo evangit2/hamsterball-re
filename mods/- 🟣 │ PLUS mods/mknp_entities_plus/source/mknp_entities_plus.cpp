@@ -1740,6 +1740,20 @@ static int ent_is_mouse(int di) {
     return (w[i] == '\0' && b[i] == '\0') ? 1 : 0;
 }
 
+/* v1j: plain-C inverse sqrt (no libm under -nostdlib, MSVC-safe).
+ * One Newton step is plenty for a kick direction. */
+static float push_rsqrt(float x) {
+    union { float f; unsigned u; } c;
+    float xh, y;
+    if (!(x > 0.0f)) return 0.0f;
+    c.f = x;
+    c.u = 0x5F3759DFu - (c.u >> 1);
+    y = c.f;
+    xh = x * 0.5f;
+    y = y * (1.5f - xh * y * y);
+    return y;
+}
+
 static void entity_frame(DWORD board) {
     DWORD now;
     float dt;
@@ -2109,6 +2123,86 @@ static void entity_frame(DWORD board) {
                                  "  ENT Launch%d: no DEST, idle", i);
                         log_mod(ebuf);
                     }
+                }
+                g_ent_near[i] = 1;
+                break;
+            }
+            if (!inside) g_ent_near[i] = 0;
+            continue;
+        }
+        /* v1j: e_Mousepush pad (type 48). Ball enters the touch sphere
+         * (XZ < push_radius, |dy| < 60) -> bumper-like kick away from pad
+         * home: accumulators += push along (ball-home) XZ + push*0.5 up,
+         * one-shot custom def sound at the ball (else silent), 0.4s
+         * cooldown. Rising-edge fire. */
+        if (g_ent_obj_type[i] == 48) {
+            float tx, ty, tz, prad, pstr;
+            int bcount, bi, inside;
+            DWORD* bdata;
+            int pdi;
+            if (g_ent_wait[i] > 0.0f) {
+                g_ent_wait[i] -= dt;
+                if (g_ent_wait[i] < 0.0f) g_ent_wait[i] = 0.0f;
+                continue;
+            }
+            pdi = g_ent_obj_def[i];
+            prad = (pdi >= 0 && pdi < ENT_MAX_DEFS) ?
+                   g_ent_pushr[pdi] : 70.0f;
+            pstr = (pdi >= 0 && pdi < ENT_MAX_DEFS) ?
+                   g_ent_push[pdi] : 3.0f;
+            if (prad <= 0.0f) prad = 70.0f;
+            if (pstr <= 0.0f) pstr = 3.0f;
+            if (IsBadReadPtr((void*)(board + 0x29D4 + 0x04), 4)) continue;
+            bcount = *(int*)(board + 0x29D4 + 0x04);
+            if (bcount <= 0 || bcount > 20) continue;
+            if (IsBadReadPtr((void*)(board + 0x29D4 + 0x40C), 4)) continue;
+            bdata = *(DWORD**)(board + 0x29D4 + 0x40C);
+            if (!bdata || IsBadReadPtr(bdata, (unsigned)bcount * 4))
+                continue;
+            tx = g_ent_home_x[i];
+            ty = g_ent_home_y[i];
+            tz = g_ent_home_z[i];
+            inside = 0;
+            for (bi = 0; bi < bcount; bi++) {
+                DWORD bb = bdata[bi];
+                float qx, qy, qz, qdx, qdy, qdz, qd2, ql, kick;
+                if (!bb || bb < 0x10000) continue;
+                if (IsBadReadPtr((void*)bb, 0x800)) continue;
+                qx = *(float*)(bb + 0x164);
+                qy = *(float*)(bb + 0x168);
+                qz = *(float*)(bb + 0x16C);
+                qdx = qx - tx;
+                qdz = qz - tz;
+                qdy = qy - ty;
+                if (qdy < 0.0f) qdy = -qdy;
+                if (qdy >= 60.0f) continue;
+                qd2 = qdx * qdx + qdz * qdz;
+                if (qd2 >= prad * prad) continue;
+                inside = 1;
+                if (!g_ent_near[i]) {
+                    DWORD sptr = 0;
+                    const char* psnd = "none";
+                    if (qd2 < 1.0f) { qdx = 1.0f; qdz = 0.0f; qd2 = 1.0f; }
+                    ql = push_rsqrt(qd2);
+                    kick = pstr;
+                    *(float*)(bb + 0x170) += kick * qdx * ql;
+                    *(float*)(bb + 0x174) += kick * 0.5f;
+                    *(float*)(bb + 0x178) += kick * qdz * ql;
+                    if (pdi >= 0 && pdi < ENT_MAX_DEFS &&
+                        g_snd_list[pdi] &&
+                        !IsBadReadPtr((void*)g_snd_list[pdi], 0x20))
+                        sptr = g_snd_list[pdi];
+                    if (sptr && g_api) {
+                        Vec3 vp(qx, qy, qz);
+                        HBAPI(g_api).Play3dSoundEffect((void*)sptr, vp, 1.0f);
+                        psnd = "custom";
+                    }
+                    snprintf(ebuf, sizeof(ebuf),
+                             "  ENT Mousepush%d: hit snd=%s dx=%d dy=%d dz=%d",
+                             i, psnd, (int)(qx - tx), (int)(qy - ty),
+                             (int)(qz - tz));
+                    log_mod(ebuf);
+                    g_ent_wait[i] = 0.4f;
                 }
                 g_ent_near[i] = 1;
                 break;
@@ -4010,7 +4104,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1i log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1j log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }

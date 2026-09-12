@@ -9,6 +9,8 @@
  *   46 6ball (v1dv: BadBall body + custom Levels mesh in slot 2),
  *   47 E:Launch (v1dw: visible launch pad, mod-side driver in cpp;
  *      v1b: e_Launch/Launch/E:Launch/REF:Launch identical).
+ *   48 e_Mousepush (v1j: bumper-like touch kick, mod-side driver in cpp;
+ *      e_Mousepush/Mousepush/E:Mousepush identical).
  * Static PopCylinder spawn shape (visible, solid — motion via drivers):
  *   0 (all other names), 16 Bridgeslam, 23 Chrome, 24 Funball,
  *   25 Tarbubble, 26 Waterwheel, 44 Tarpit/Cheesepit (v1cf: tar driver;
@@ -167,12 +169,14 @@ static int aibeh_type(const char* beh) {
     if (aibeh_streq(beh, "Timebutton")) return 45;
     if (aibeh_streq(beh, "e_Launch")) return 47;
     if (aibeh_streq(beh, "Launch")) return 47;
+    if (aibeh_streq(beh, "e_Mousepush")) return 48;
+    if (aibeh_streq(beh, "Mousepush")) return 48;
     return 0;
 }
 
 /* 1 = static PopCylinder fallback (caller uses create_grid_cube+grid_show) */
 static int aibeh_is_static(int t) {
-    return (t == 0 || t == 16 || t == 23 || t == 24 || t == 25 || t == 26 || t == 44 || t == 47);
+    return (t == 0 || t == 16 || t == 23 || t == 24 || t == 25 || t == 26 || t == 44 || t == 47 || t == 48);
 }
 
 /* 0 = ctor takes no mesh (skip MeshWorld load + file validation) */
