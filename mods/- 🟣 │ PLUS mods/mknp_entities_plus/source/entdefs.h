@@ -4,8 +4,10 @@
  * Key   = entity name with prefix, also the S1 ref substring (REF:Woodbridge).
  * Prefix split (v1b): REF:<name> = entity (S1 ref point spawn),
  * E:<name> = event (E:Launch / E:Woodbridge_area / E:Cheesepit drivers below,
- * treated as event quads/planes). Behaviour match is prefix-blind: bare,
- * REF: and E: forms map identically. Mesh always loads from Levels/.
+ * treated as event quads/planes). v1e: the prefix is a ROUTING label only --
+ * stored/matched names are prefix-STRIPPED, so "E:Cheesepit" matches S1
+ * "REF:Cheesepit", "E:Cheesepit01" or bare "Cheesepit" alike. Behaviour
+ * match is prefix-blind: bare, REF: and E: forms map identically. Mesh always loads from Levels/.
  * Needs from includer: log_mod(), gm_read_file(), malloc/free/memcpy/strlen,
  *   windows.h (MAX_PATH), g_set_path (gridset.h -- include AFTER gridset.h).
  */
@@ -66,17 +68,30 @@ static int ent_beh_is_area(const char* beh) {
     return (w[i] == '\0' && beh[i] == '\0') ? 1 : 0;
 }
 
-/* low starts with pre (both already lowercase, v1c: numbered E: variants) */
-static int ent_low_starts(const char* low, const char* pre) {
-    int i = 0;
-    while (pre[i]) {
-        if (low[i] != pre[i]) return 0;
-        i++;
+/* v1e: 1 = block holds a quoted "behaviour"/"behavior" key (entity driver).
+ * E: keys route on content: with behaviour -> entity parse, without -> ev_. */
+static int ent_block_has_beh(const char* b, const char* bend) {
+    static const char* keys[2] = { "\"behaviour\"", "\"behavior\"" };
+    int ki;
+    for (ki = 0; ki < 2; ki++) {
+        const char* k = keys[ki];
+        int kl = 0;
+        const char* p;
+        while (k[kl]) kl++;
+        p = b;
+        while (p + kl <= bend) {
+            if (*p == '"' && memcmp(p, k, (unsigned)kl) == 0) {
+                const char* v = p + kl;
+                while (v < bend && (*v == ' ' || *v == 9)) v++;
+                if (v < bend && *v == ':') return 1;
+            }
+            p++;
+        }
     }
-    return 1;
+    return 0;
 }
 
-static int ent_key_known(const char* key) {
+static int ent_key_known(const char* key, const char* bs, const char* be) {
     char low[64];
     int i = 0;
     while (i < 63 && key[i]) {
@@ -85,15 +100,11 @@ static int ent_key_known(const char* key) {
         i++;
     }
     low[i] = '\0';
-    /* v1b prefix split: E:Launch / E:Woodbridge_area / E:Cheesepit are
-     * entity-drivers (event quads/planes), NOT sound events -- fall through
-     * to entity parse. All other E: keys belong to the ev_ section.
-     * v1c: prefix match so numbered variants (E:Woodbridge_area0) route too. */
+    /* v1e: E: keys route on block content -- "behaviour" present means
+     * entity-driver (event quads/planes), else sound event for ev_. The
+     * E:/REF: prefix itself is only a label; matching uses stripped names. */
     if ((key[0] == 'E' || key[0] == 'e') && key[1] == ':') {
-        if (ent_low_starts(low, "e:launch")) return 0;
-        if (ent_low_starts(low, "e:woodbridge_area")) return 0;
-        if (ent_low_starts(low, "e:cheesepit")) return 0;
-        return 1;
+        return ent_block_has_beh(bs, be) ? 0 : 1;
     }
     if (set_name_eq(low, "grid_speed")) return 1;
     if (set_name_eq(low, "neon_ballring_player1")) return 1;
@@ -299,7 +310,7 @@ static void load_entities_file(void) {
             }
             if (depth != 0) break;
             be--; /* at closing } */
-            if (!ent_key_known(key)) {
+            if (!ent_key_known(key, bs, be)) {
                 char beh[ENT_BEH_N];
                 char mesh[ENT_MESH_N];
                 char snd[ENT_SND_N];
@@ -310,12 +321,15 @@ static void load_entities_file(void) {
                 ent_block_str(bs, be, "behavior", beh, sizeof(beh));
                 ent_block_str(bs, be, "mesh", mesh, sizeof(mesh));
                 ent_block_str(bs, be, "sound", snd, sizeof(snd));
-                if (mesh[0]) {
+                /* v1e: store the prefix-STRIPPED name (E:/REF: is only a
+                 * routing label). Empty after strip = label-only key, skip. */
+                if (mesh[0] && ent_strip_prefix(key)[0]) {
                     int ni = 0;
                     float fv = 0.0f;
                     int iv = 1;
-                    while (ni < ENT_NAME_N - 1 && key[ni]) {
-                        g_ent_name[g_ent_count][ni] = key[ni];
+                    const char* kn = ent_strip_prefix(key);
+                    while (ni < ENT_NAME_N - 1 && kn[ni]) {
+                        g_ent_name[g_ent_count][ni] = kn[ni];
                         ni++;
                     }
                     g_ent_name[g_ent_count][ni] = '\0';
