@@ -1468,6 +1468,7 @@ static int push_def(void) {
         if (aibeh_type(g_ent_beh[d]) == 48) return d;
     return -1;
 }
+static int ent_is_mouse(int di);   /* v1q: fwd (defined in entity section) */
 
 static int push_walk(GmCur* c, const unsigned char* vbuf, int nverts,
                      int* nodes) {
@@ -1628,13 +1629,16 @@ static void push_scan_file(const char* path) {
 
 /* v1p: per-frame push volume. Ellipsoid (proximity*scaleX/Y/Z from the
  * Mousepush def) around the quad centroid; inside = force 20 along the
- * facing axis every frame. Runs even with zero entity instances. */
+ * facing axis every frame. Runs even with zero entity instances.
+ * v1q: center rides the live Mouse instance (obj+0x10D4) when one
+ * exists; static quad centroid otherwise. */
 static void push_frame(DWORD board) {
     void* b;
     float bx, by, bz, dx, dy, dz, rx, ry, rz, dist;
     float prox, sx, sy, sz, push;
-    int pd;
-    char pbuf[128];
+    float ccx, ccy, ccz;
+    int pd, i, ride;
+    char pbuf[160];
     if (!board || IsBadReadPtr((void*)board, 0x4400)) return;
     if (!g_push_ok) return;
     pd = push_def();
@@ -1642,6 +1646,18 @@ static void push_frame(DWORD board) {
     if (!IsBadReadPtr((void*)(board + BOARD_PAUSED), 4) &&
         *(int*)(board + BOARD_PAUSED))
         return;
+    ccx = g_push_cx; ccy = g_push_cy; ccz = g_push_cz; ride = 0;
+    for (i = 0; i < g_ent_inst_count; i++) {
+        DWORD obj = (DWORD)g_ent_objs[i];
+        if (!obj || obj < 0x10000) continue;
+        if (IsBadReadPtr((void*)obj, 0x10E0)) continue;
+        if (!ent_is_mouse(g_ent_obj_def[i])) continue;
+        ccx = *(float*)(obj + 0x10D4);
+        ccy = *(float*)(obj + 0x10D8);
+        ccz = *(float*)(obj + 0x10DC);
+        ride = 1;
+        break;
+    }
     b = g_api ? (void*)HBAPI(g_api).GetPlayer() : NULL;
     if (!b || IsBadReadPtr(b, 0x300)) return;
     bx = *(float*)((char*)b + 0x164);
@@ -1654,7 +1670,7 @@ static void push_frame(DWORD board) {
     if (sy <= 0.0f) sy = 1.0f;
     if (sz <= 0.0f) sz = 1.0f;
     rx = prox * sx; ry = prox * sy; rz = prox * sz;
-    dx = bx - g_push_cx; dy = by - g_push_cy; dz = bz - g_push_cz;
+    dx = bx - ccx; dy = by - ccy; dz = bz - ccz;
     dist = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) +
            (dz * dz) / (rz * rz);
     if (dist < 1.0f) {
@@ -1668,8 +1684,10 @@ static void push_frame(DWORD board) {
         if (!g_push_in) {
             g_push_in = 1;
             snprintf(pbuf, sizeof(pbuf),
-                     "  PUSHQ: enter vol ball=(%d,%d,%d)",
-                     (int)bx, (int)by, (int)bz);
+                     "  PUSHQ: enter vol ball=(%d,%d,%d) c=(%d,%d,%d)%s",
+                     (int)bx, (int)by, (int)bz,
+                     (int)ccx, (int)ccy, (int)ccz,
+                     ride ? " ride" : " static");
             log_mod(pbuf);
         }
     } else if (g_push_in) {
@@ -4582,7 +4600,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1p log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1q log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
