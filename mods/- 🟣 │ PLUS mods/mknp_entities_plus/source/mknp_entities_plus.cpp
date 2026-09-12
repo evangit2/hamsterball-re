@@ -231,6 +231,10 @@ static float g_ent_applied[ENT_MAX_INST];  /* last Y offset written + flagged */
 static int   g_ent_near[ENT_MAX_INST];     /* proximity latch (edge logs) */
 static DWORD g_ent_last_tick = 0;          /* dt clock for smooth motion */
 static float g_ent_wait[ENT_MAX_INST];     /* v1dp: Mouse end-hold timer */
+static int   g_ent_carrier[ENT_MAX_INST];  /* v1k: meshref carrier idx (-1 none) */
+static float g_ent_local_x[ENT_MAX_INST];  /* v1k: mesh-local offset (S1-centroid) */
+static float g_ent_local_y[ENT_MAX_INST];
+static float g_ent_local_z[ENT_MAX_INST];
 static float g_ent_dst_x[ENT_MAX_INST];    /* v1dw: e_Launch DEST per inst */
 static float g_ent_dst_y[ENT_MAX_INST];
 static float g_ent_dst_z[ENT_MAX_INST];
@@ -1183,6 +1187,10 @@ static void spawn_tarpit_trigger(int d, float px, float py, float pz,
     g_ent_cur[n] = 0.0f;
     g_ent_applied[n] = 0.0f;
     g_ent_near[n] = 0;
+    g_ent_carrier[n] = -1;
+    g_ent_local_x[n] = 0.0f;
+    g_ent_local_y[n] = 0.0f;
+    g_ent_local_z[n] = 0.0f;
     g_ent_inst_count++;
     snprintf(ebuf, sizeof(ebuf),
              "  ENT: spawned %s behaviour=%s type=44 trigger-only (%s)",
@@ -1251,12 +1259,160 @@ static void spawn_launch_trigger(int d, float px, float py, float pz,
     g_ent_applied[n] = 0.0f;
     g_ent_near[n] = 0;
     g_ent_wait[n] = 0.0f;
+    g_ent_carrier[n] = -1;
+    g_ent_local_x[n] = 0.0f;
+    g_ent_local_y[n] = 0.0f;
+    g_ent_local_z[n] = 0.0f;
     launch_resolve(n, d, s1_data, s1_count, nm);
     g_ent_inst_count++;
     snprintf(ebuf, sizeof(ebuf),
              "  ENT: spawned %s behaviour=%s type=47 trigger-only (%s)",
              g_ent_name[d], g_ent_beh[d], why);
     log_mod(ebuf);
+}
+
+/* v1k: mesh-file S1 refs for e_Mousepush (type 48, trigger-only follow pads).
+ * After a static instance (carrier c) spawns from mesh file F, scan F's own
+ * S1: refs matching a type-48 def spawn invisible pads at
+ * carrier_home + (s1pos - S5centroid) (centroid model: the spawn path pins
+ * the mesh centroid to the instance pos). Per-frame the pad re-reads the
+ * carrier live pos (obj+0x10D4), so it rides moving carriers. Only type 48
+ * matches spawn (no recursion). abs = carrier's Levels abs path. */
+static void meshref_scan(DWORD board, const char* meshabs, int carrier) {
+    unsigned len = 0;
+    unsigned char* d = 0;
+    const unsigned char* p;
+    const unsigned char* end;
+    const unsigned char* vbuf = 0;
+    unsigned n = 0, i = 0;
+    int nverts = 0;
+    float ccx = 0.0f, ccy = 0.0f, ccz = 0.0f;
+    float chx = 0.0f, chy = 0.0f, chz = 0.0f;
+    char ebuf[192];
+    GmCur c;
+    (void)board;
+    if (carrier < 0 || carrier >= ENT_MAX_INST) return;
+    if (carrier >= g_ent_inst_count) return;
+    if (!meshabs || !meshabs[0]) return;
+    chx = g_ent_home_x[carrier];
+    chy = g_ent_home_y[carrier];
+    chz = g_ent_home_z[carrier];
+    d = gm_read_file(meshabs, &len);
+    if (!d || len < 4) {
+        if (d) free(d);
+        return;
+    }
+    /* S5 centroid (32B verts, pos = first 12B). */
+    c.p = d;
+    c.end = d + len;
+    if (!gm_skip_to_s6(&c, &vbuf, &nverts) || !vbuf || nverts <= 0) {
+        free(d);
+        return;
+    }
+    {
+        int k;
+        float sx = 0.0f, sy = 0.0f, sz = 0.0f;
+        int sc = 0;
+        for (k = 0; k < nverts; k++) {
+            float x, y, z;
+            memcpy(&x, vbuf + (unsigned)k * 32u, 4);
+            memcpy(&y, vbuf + (unsigned)k * 32u + 4, 4);
+            memcpy(&z, vbuf + (unsigned)k * 32u + 8, 4);
+            if (x != x || y != y || z != z) continue;
+            if (x > 1000000.0f || x < -1000000.0f) continue;
+            if (y > 1000000.0f || y < -1000000.0f) continue;
+            if (z > 1000000.0f || z < -1000000.0f) continue;
+            sx += x; sy += y; sz += z;
+            sc++;
+        }
+        if (sc > 0) {
+            ccx = sx / (float)sc;
+            ccy = sy / (float)sc;
+            ccz = sz / (float)sc;
+        }
+    }
+    /* S1 walk (entyaw layout: nl, name, 6 floats pos PLAIN x,y,z + rot, hm). */
+    p = d;
+    end = d + len;
+    n = *(unsigned*)p;
+    p += 4;
+    if (n > 4096) { free(d); return; }
+    for (i = 0; i < n; i++) {
+        unsigned nl;
+        const char* nm;
+        float sx, sy, sz;
+        const float* f;
+        int d2, nn;
+        if (p + 4 > end) break;
+        nl = *(unsigned*)p;
+        p += 4;
+        if (nl == 0 || nl > 256 || p + nl > end) break;
+        nm = (const char*)p;
+        p += nl;
+        if (p + 24 > end) break;
+        f = (const float*)p;
+        sx = f[0]; sy = f[1]; sz = f[2];
+        p += 24;
+        if (p + 4 > end) break;
+        {
+            unsigned hm = *(unsigned*)p;
+            unsigned hrefl, htex, tnl;
+            p += 4;
+            if (hm & 0xFF) {
+                if (p + 72 > end) break;
+                p += 68;
+                hrefl = *(unsigned*)p;
+                p += 4;
+                (void)hrefl;
+                htex = *(unsigned*)p;
+                p += 4;
+                if (htex) {
+                    if (p + 4 > end) break;
+                    tnl = *(unsigned*)p;
+                    p += 4;
+                    if (tnl > 256 || p + tnl > end) break;
+                    p += tnl;
+                }
+            }
+        }
+        d2 = ent_match_def(nm);
+        if (d2 < 0) continue;
+        if (aibeh_type(g_ent_beh[d2]) != 48) continue;
+        if (g_ent_inst_count < 0 || g_ent_inst_count >= ENT_MAX_INST) break;
+        nn = g_ent_inst_count;
+        g_ent_objs[nn] = 0;   /* trigger-only, invisible (tarpit pattern) */
+        g_ent_obj_def[nn] = d2;
+        g_ent_obj_type[nn] = 48;
+        g_ent_obj_size[nn] = 0;
+        g_ent_rx[nn] = 0.0f;
+        g_ent_ry[nn] = 0.0f;
+        g_ent_rz[nn] = 0.0f;
+        g_ent_carrier[nn] = carrier;
+        g_ent_local_x[nn] = sx - ccx;
+        g_ent_local_y[nn] = sy - ccy;
+        g_ent_local_z[nn] = sz - ccz;
+        g_ent_home_x[nn] = chx + g_ent_local_x[nn];
+        g_ent_home_y[nn] = chy + g_ent_local_y[nn];
+        g_ent_home_z[nn] = chz + g_ent_local_z[nn];
+        g_ent_cur[nn] = 0.0f;
+        g_ent_applied[nn] = 0.0f;
+        g_ent_near[nn] = 0;
+        g_ent_wait[nn] = 0.0f;
+        g_ent_inst_count++;
+        snprintf(ebuf, sizeof(ebuf),
+                 "  ENT: spawned %s behaviour=%s type=48 at (%d,%d,%d) meshref carrier=%d local=(%d,%d,%d)",
+                 g_ent_name[d2], g_ent_beh[d2],
+                 (int)g_ent_home_x[nn], (int)g_ent_home_y[nn],
+                 (int)g_ent_home_z[nn], carrier,
+                 (int)g_ent_local_x[nn], (int)g_ent_local_y[nn],
+                 (int)g_ent_local_z[nn]);
+        log_mod(ebuf);
+    }
+    snprintf(ebuf, sizeof(ebuf),
+             "  ENT meshref: %s centroid=(%d,%d,%d) carrier=%d",
+             meshabs, (int)ccx, (int)ccy, (int)ccz, carrier);
+    log_mod(ebuf);
+    free(d);
 }
 
 static void scan_spawn_entities(DWORD board) {
@@ -1439,6 +1595,10 @@ static void scan_spawn_entities(DWORD board) {
                 g_ent_cur[g_ent_inst_count] = 0.0f;
                 g_ent_applied[g_ent_inst_count] = 0.0f;
                 g_ent_near[g_ent_inst_count] = 0;
+                g_ent_carrier[g_ent_inst_count] = -1;
+                g_ent_local_x[g_ent_inst_count] = 0.0f;
+                g_ent_local_y[g_ent_inst_count] = 0.0f;
+                g_ent_local_z[g_ent_inst_count] = 0.0f;
                 g_ent_inst_count++;
                 snprintf(ebuf, sizeof(ebuf),
                          "  ENT: spawned %s behaviour=%s type=%d at (%d,%d,%d) obj=0x%X",
@@ -1625,6 +1785,10 @@ static void scan_spawn_entities(DWORD board) {
         g_ent_cur[g_ent_inst_count] = 0.0f;
         g_ent_applied[g_ent_inst_count] = 0.0f;
         g_ent_near[g_ent_inst_count] = 0;
+        g_ent_carrier[g_ent_inst_count] = -1;
+        g_ent_local_x[g_ent_inst_count] = 0.0f;
+        g_ent_local_y[g_ent_inst_count] = 0.0f;
+        g_ent_local_z[g_ent_inst_count] = 0.0f;
         if (g_ent_obj_type[g_ent_inst_count] == 47)   /* v1dw: DEST/FX */
             launch_resolve(g_ent_inst_count, d, s1_data, s1_count, nm);
         g_ent_inst_count++;
@@ -1633,6 +1797,10 @@ static void scan_spawn_entities(DWORD board) {
                  g_ent_name[d], g_ent_beh[d], g_ent_obj_type[g_ent_inst_count - 1],
                  (int)px, (int)py, (int)pz, (DWORD)obj);
         log_mod(ebuf);
+        /* v1k: static-grid carriers scan their mesh file S1 for Mousepush
+         * follow-pads (native carriers have no +0x10D4 pos, skip them). */
+        if (aibeh_is_static(g_ent_obj_type[g_ent_inst_count - 1]))
+            meshref_scan(board, abs, g_ent_inst_count - 1);
     }
     {
         char cbuf[64];
@@ -2162,6 +2330,23 @@ static void entity_frame(DWORD board) {
             tx = g_ent_home_x[i];
             ty = g_ent_home_y[i];
             tz = g_ent_home_z[i];
+            {   /* v1k: meshref pads ride the carrier live pos + local offset
+                 * (translation only). Unreadable carrier = stored home. */
+                int car = g_ent_carrier[i];
+                if (car >= 0 && car < ENT_MAX_INST &&
+                    car < g_ent_inst_count) {
+                    DWORD cobj = g_ent_objs[car];
+                    if (cobj && cobj >= 0x10000 &&
+                        !IsBadReadPtr((void*)cobj, 0x10E0)) {
+                        tx = *(float*)((char*)cobj + 0x10D4) +
+                             g_ent_local_x[i];
+                        ty = *(float*)((char*)cobj + 0x10D8) +
+                             g_ent_local_y[i];
+                        tz = *(float*)((char*)cobj + 0x10DC) +
+                             g_ent_local_z[i];
+                    }
+                }
+            }
             inside = 0;
             for (bi = 0; bi < bcount; bi++) {
                 DWORD bb = bdata[bi];
@@ -4104,7 +4289,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1j log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1k log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
