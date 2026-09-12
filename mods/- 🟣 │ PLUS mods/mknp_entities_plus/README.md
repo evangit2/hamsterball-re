@@ -6,7 +6,7 @@ lights + BallBorder ring + P1 glow) and `mknp_battyball_events` (custom
 both: install this DLL **instead of** the two old ones, never alongside
 them (two drivers for the same `E:` planes would double-play sounds).
 
-## What it does (v1j)
+## What it does (v1k)
 
 - Everything `mknp_battyball_entities` v1dx does (same S1 `GRID` cycle,
   `ENTITIES` defs, `grid_speed`, neon ring/glow, lights, TRAJ + LIGHTSON /
@@ -38,7 +38,13 @@ them (two drivers for the same `E:` planes would double-play sounds).
   (ball-home) XZ + `push`*0.5 up, one-shot custom def `sound` (else
   silent), 0.4s cooldown, rising-edge. Needs S1 `E:Mousepush` refs
   (any level) + `"E:Mousepush", { "behaviour": "e_Mousepush",
-  "mesh": "Mouse" }` (shipped in the set already).
+  `"mesh": "Mouse" }` (shipped in the set already).
+- v1k: mesh-file S1 refs. After any static instance spawns from mesh file
+  F, F's own S1 is scanned: refs matching a type-48 (`e_Mousepush`) def
+  spawn invisible follow-pads at carrier_home + (s1pos - S5centroid),
+  riding the carrier live pos (obj+0x10D4) per-frame (translation only).
+  Put S1 `E:Mousepush` in the MESH file (editor coords) — no level ref
+  needed. Log shows centroid + local + pad home to verify placement.
 - One DLL, one log (`mknp_entities_plus.log`), one set file
   (`mknp_entities_plus_set.jsonc`, re-read every level start, same
   tolerant parsers: `E:` blocks with `behaviour` are entity-drivers,
@@ -67,7 +73,7 @@ them (two drivers for the same `E:` planes would double-play sounds).
 ## Log
 
 ```
-INIT Battyball Entities Plus v1j log=... set=...
+INIT Battyball Entities Plus v1k log=... set=...
 SET init: N sound events
 NEWBOARD ...
 EV LEVEL start
