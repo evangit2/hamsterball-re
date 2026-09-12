@@ -4496,7 +4496,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1n log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1o log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
@@ -4811,34 +4811,45 @@ static void __thiscall event_collide(void* ball, void*, char* name) {
             }
         }
     }
-    /* v1m: E:Mousepush quad push (event-side). Force 20 along the quad
+    /* v1o: E:Mousepush quad push (event-side). Force 20 along the quad
      * facing (level-start S6 scan, fallback +X). Continuous while
-     * touching (accumulators, never pos-write). */
+     * touching (accumulators, never pos-write). v1n proved the collide
+     * `ball` arg is NOT the physics ball (pos 0,0,0, acc never
+     * consumed) -> resolve the player ball via board+0x29D4 list. */
     if (name_eq_ci(name, "E:Mousepush")) {
-        if (ball && !IsBadReadPtr(ball, 0x180)) {
-            DWORD now = GetTickCount();
-            float push = 20.0f * (float)g_push_sg;
-            /* v1n diag: pos + accumulator BEFORE write (wall or wipe?) */
-            float accx = *(float*)((char*)ball + 0x170);
-            float accy = *(float*)((char*)ball + 0x174);
-            float accz = *(float*)((char*)ball + 0x178);
-            float bx = *(float*)((char*)ball + 0x164);
-            float by = *(float*)((char*)ball + 0x168);
-            float bz = *(float*)((char*)ball + 0x16C);
-            if (g_push_ax == 1)
-                *(float*)((char*)ball + 0x174) += push;
-            else if (g_push_ax == 2)
-                *(float*)((char*)ball + 0x178) += push;
-            else
-                *(float*)((char*)ball + 0x170) += push;
-            if ((int)(now - g_push_lastlog) >= 500) {
-                char pbuf[128];
-                g_push_lastlog = now;
-                snprintf(pbuf, sizeof(pbuf),
-                         "  PUSHQ: hit ball=(%d,%d,%d) acc=(%d,%d,%d)",
-                         (int)bx, (int)by, (int)bz,
-                         (int)accx, (int)accy, (int)accz);
-                log_mod(pbuf);
+        DWORD board = player_board();
+        if (board && !IsBadReadPtr((void*)(board + 0x29D4 + 0x04), 4)) {
+            int bcount = *(int*)(board + 0x29D4 + 0x04);
+            if (bcount > 0 && bcount <= 20 &&
+                !IsBadReadPtr((void*)(board + 0x29D4 + 0x40C), 4)) {
+                DWORD* bdata = *(DWORD**)(board + 0x29D4 + 0x40C);
+                if (bdata && !IsBadReadPtr(bdata, 4)) {
+                    DWORD pb = bdata[0];
+                    if (pb && pb >= 0x10000 &&
+                        !IsBadReadPtr((void*)pb, 0x800)) {
+                        DWORD now = GetTickCount();
+                        float push = 20.0f * (float)g_push_sg;
+                        float accx = *(float*)(pb + 0x170);
+                        float bx = *(float*)(pb + 0x164);
+                        float by = *(float*)(pb + 0x168);
+                        float bz = *(float*)(pb + 0x16C);
+                        if (g_push_ax == 1)
+                            *(float*)(pb + 0x174) += push;
+                        else if (g_push_ax == 2)
+                            *(float*)(pb + 0x178) += push;
+                        else
+                            *(float*)(pb + 0x170) += push;
+                        if ((int)(now - g_push_lastlog) >= 500) {
+                            char pbuf[128];
+                            g_push_lastlog = now;
+                            snprintf(pbuf, sizeof(pbuf),
+                                     "  PUSHQ: hit ball=(%d,%d,%d) accx=%d",
+                                     (int)bx, (int)by, (int)bz,
+                                     (int)accx);
+                            log_mod(pbuf);
+                        }
+                    }
+                }
             }
         }
     }
