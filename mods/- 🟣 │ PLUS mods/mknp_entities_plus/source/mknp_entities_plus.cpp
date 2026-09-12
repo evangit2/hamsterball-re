@@ -1118,32 +1118,34 @@ static const char* mesh_for(int idx) {
 #include "entlaunch.h" /* v1dw: e_Launch DEST/FX markers (needs S1ENTRY_*) */
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Named entities: set jsonc pairs -> S1 REF:<Name> -> Levels/<mesh> spawn.
- * v1bg: behaviour selects the native ctor (AI list verbatim); static types
- * use the PopCylinder chain, shown once at level start, never cycled.
- * ═══════════════════════════════════════════════════════════════════════════ */
-static int ent_match_def(const char* s1name) {
-    int d;
-    if (!s1name) return -1;
-    for (d = 0; d < g_ent_count; d++) {
-        if (g_ent_name[d][0] && nc_istrstr(s1name, g_ent_name[d]) != NULL)
-            return d;
-    }
-    return -1;
-}
+ /* Named entities: set jsonc pairs -> S1 REF:<Name> -> Levels/<mesh> spawn.
+  * v1bg: behaviour selects the native ctor (AI list verbatim); static types
+  * use the PopCylinder chain, shown once at level start, never cycled.
+  * v1e: stored def names are prefix-stripped (E:/REF: = routing label only).
+  * v1f: trailing digits in defs are wildcards (ent_match_name). */
+ static int ent_match_def(const char* s1name) {
+     int d;
+     if (!s1name) return -1;
+     for (d = 0; d < g_ent_count; d++) {
+         if (g_ent_name[d][0] && ent_match_name(s1name, g_ent_name[d]))
+             return d;
+     }
+     return -1;
+ }
 
-/* v1bz: area-def match (checked BEFORE ent_match_def so area markers never
- * bind the Woodbridge def even when it is listed first in the set) */
-static int ent_match_area(const char* s1name) {
-    int d;
-    if (!s1name) return -1;
-    for (d = 0; d < g_ent_count; d++) {
-        if (g_ent_area[d] && g_ent_name[d][0] &&
-            nc_istrstr(s1name, g_ent_name[d]) != NULL)
-            return d;
-    }
-    return -1;
-}
+ /* v1bz: area-def match (checked BEFORE ent_match_def so area markers never
+  * bind the Woodbridge def even when it is listed first in the set).
+  * v1f: same numeric wildcard via ent_match_name. */
+ static int ent_match_area(const char* s1name) {
+     int d;
+     if (!s1name) return -1;
+     for (d = 0; d < g_ent_count; d++) {
+         if (g_ent_area[d] && g_ent_name[d][0] &&
+             ent_match_name(s1name, g_ent_name[d]))
+             return d;
+     }
+     return -1;
+ }
 
 /* v1cf: mesh value "vertices" (ci) = invisible trigger, no Levels file. */
 static int mesh_is_vertices(const char* m) {
@@ -4008,7 +4010,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1e log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1f log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }

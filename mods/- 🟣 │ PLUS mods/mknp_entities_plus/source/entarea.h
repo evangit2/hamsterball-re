@@ -55,14 +55,34 @@ static int area_ci_contains(const char* hay, const char* needle) {
     return 0;
 }
 
-/* geom-name hit: S6 name (maybe NUL-padded, len ln) contains def name */
+/* geom-name hit: S6 name (maybe NUL-padded, len ln) contains def name.
+ * v1f numeric wildcard: trailing digits in want (area0) match any digit
+ * run in the geom name (area01..area99, literal incl). */
 static int area_name_hit(const unsigned char* nm, int ln, const char* want) {
     char tmp[128];
-    int i = 0;
+    int i = 0, wl = 0, n = 0, hl = 0, sl = 0, a = 0, b = 0;
     if (!nm || ln < 1 || !want || !want[0]) return 0;
     while (i < ln && i < 127 && nm[i]) { tmp[i] = (char)nm[i]; i++; }
     tmp[i] = '\0';
-    return area_ci_contains(tmp, want);
+    while (want[wl]) wl++;
+    while (wl - n > 0 && want[wl - n - 1] >= '0' && want[wl - n - 1] <= '9') n++;
+    if (n == 0 || n >= wl) return area_ci_contains(tmp, want);
+    sl = wl - n;
+    while (tmp[hl]) hl++;
+    if (sl > hl) return 0;
+    for (a = 0; a <= hl - sl; a++) {
+        for (b = 0; b < sl; b++) {
+            char ca = tmp[a + b], cb = want[b];
+            if (ca >= 'A' && ca <= 'Z') ca += 32;
+            if (cb >= 'A' && cb <= 'Z') cb += 32;
+            if (ca != cb) break;
+        }
+        if (b == sl) {
+            char c = tmp[a + sl];
+            if (c >= '0' && c <= '9') return 1;
+        }
+    }
+    return 0;
 }
 
 /* store one vertex into the open slot (dedupe ~1e-4, cap AREA_MAXV) */
