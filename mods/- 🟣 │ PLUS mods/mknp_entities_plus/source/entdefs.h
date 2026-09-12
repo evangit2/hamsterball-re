@@ -54,7 +54,7 @@ static const char* ent_strip_prefix(const char* s) {
 }
 
 /* ci substring (self-contained) */
-static int ent_ci_contains(const char* hay, const char* needle) {
+static int ent_ci_substr(const char* hay, const char* needle) {
     int hl = 0, nl = 0, i, j;
     if (!hay || !needle || !needle[0]) return 0;
     while (hay[hl]) hl++;
@@ -81,7 +81,7 @@ static int ent_match_name(const char* s1name, const char* defname) {
     while (defname[dl]) dl++;
     while (dl - n > 0 && defname[dl - n - 1] >= '0' &&
            defname[dl - n - 1] <= '9') n++;
-    if (n == 0 || n >= dl) return ent_ci_contains(s1name, defname);
+    if (n == 0 || n >= dl) return ent_ci_substr(s1name, defname);
     sl = dl - n;
     while (s1name[hl]) hl++;
     if (sl > hl) return 0;
