@@ -396,68 +396,12 @@ void UniversalRenderImpl(void *board, int unk) {
     } // REND_SKY_LIST
 } // UniversalRenderImpl
 
-/* Naked thunk for UniversalRender — handles the calling convention mismatch.
- * The game has two call sites for vtable slot 24:
- *   1. ECX=board, no stack params (expects RET 0)
- *   2. ECX=board, PUSH edi (expects RET 4)
- * The 2-param call site (0x0046C9F0) is the main per-frame render dispatch.
- * Using RET 4 handles both: call site #1 doesn't push anything so RET 4
- * would pop the return address — BUT that's wrong for call site #1.
- *
- * Actually, call site #1 (0x0046C8C7) does NOT push a param, so it expects
- * RET 0. But the original shared render (Level_RenderDynamicObjects) is also
- * RET 0 and used for 9 of 15 levels. The 2-param render functions
- * (Beginner, Tower, Toob, Glass, Sky, Master) use RET 4.
- *
- * Since slot 24 is patched on ALL 15 vtables, we need RET 4 to match
- * the 2-param call site. For the 1-param call site, the caller does
- * RET $0x4 itself (it's a __thiscall wrapper), so our RET 4 is correct
- * there too — the caller's RET $0x4 handles ITS own stack params, not
- * the callee's. In __thiscall, the callee cleans its own stack params.
- * 1 stack param → RET 4. 0 stack params → RET 0.
- *
- * The 1-param call site at 0x0046C8C7 does NOT push before the call,
- * so RET 4 would pop the wrong bytes. BUT examining the code more
- * carefully: 0x0046C8C7 is inside a function that itself does RET $0x4,
- * meaning the function takes 1 stack param. The vtable call is in the
- * middle, and the pops/add esp after it account for the function's own
- * locals, not the vtable call's params. The vtable callee cleans its
- * own params via RET N.
- *
- * For __thiscall: callee cleans. 0 stack params → RET 0. 1 stack param → RET 4.
- * Call site #1 (no push) → callee should RET 0.
- * Call site #2 (push edi) → callee should RET 4.
- *
- * We can't satisfy both with a single RET N. The solution: use RET 4
- * (matching the 2-param call site, which is the main render loop).
- * Call site #1 is only used for a secondary render path that 9 of 15
- * levels don't use (they use Level_RenderDynamicObjects directly).
- *
- * Actually — re-examining: call site #1 at 0x0046C8C7 calls vtable[24]
- * with ECX=board and NO stack push. If the callee does RET 4, it pops
- * 4 bytes of the CALLER's stack (the return address + 4). This corrupts
- * the caller's stack.
- *
- * The REAL fix: check which call site is used and handle accordingly.
- * But since slot 24 is per-vtable, and each vtable only gets ONE function,
- * we need to match the convention of the ORIGINAL function for that vtable.
- *
- * CORRECTION 2026-09-12: disasm proves shared 0x40B420 ends ret $0x4 —
- * ALL 15 renders take (board, gfx) RET 4. Call site #1 (0x46C8C7, no push)
- * targets a different object hierarchy, not Board renders. Code below was
- * already correct (RET-4 thunk, patch only the 6 wrapper levels).
- *
- * SIMPLEST FIX: Don't replace slot 24 for levels that use the shared
- * 1-param function. Only replace for levels that have 2-param render.
- * Or: use a naked thunk that does RET 4 for 2-param levels, and don't
- * patch 1-param levels at all (they don't need UniversalRender since
- * their original render just calls Level_RenderDynamicObjects).
- *
- * EVEN SIMPLER: Use RET 4 for ALL levels. The 1-param call site
- * (0x0046C8C7) is NOT the main render loop — it's a secondary path.
- * Testing shows the main render dispatch is 0x0046C9F0 (2-param).
- * The 1-param path at 0x0046C8C7 appears to be for a different
- * rendering mode that may not be called during normal gameplay.
+/* Naked thunk for UniversalRender — forwards (ECX=board, stack gfx) to
+ * UniversalRenderImpl and cleans the 1 stack param (RET 4, __thiscall).
+ * Binary-verified 2026-09-12: ALL 15 native renders take (board, gfx) with
+ * RET 4 (shared 0x40B420 ends ret $0x4; wrappers pass gfx through), and the
+ * main Board dispatch (0x46C9F0) pushes gfx before call [eax+0x60]. Only the
+ * 6 wrapper levels {2,5,10,12,13,14} are patched; the other 9 keep native.
  */
 __attribute__((naked)) void UniversalRender(void) {
     __asm__ __volatile__(
