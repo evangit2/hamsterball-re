@@ -220,7 +220,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
                 if (ld->soundChannelOffset >= 0x6500) *(int *)((char *)ext + ld->soundChannelOffset) = channel;
                 else *(int *)((char *)mem + ld->soundChannelOffset) = channel;
                 if (channel && g_SceneRenderIfVisible)
-                    g_SceneRenderIfVisible(channel);
+                    g_SceneRenderIfVisible(channel, 0.0f);
             }
         }
     }

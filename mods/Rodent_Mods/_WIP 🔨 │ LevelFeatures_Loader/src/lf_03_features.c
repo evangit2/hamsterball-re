@@ -94,7 +94,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
                 *anglePtr = 0.0f; *counterPtr = 0x7D; *statePtr = 2;
                 if (app && !IsBadReadPtr((void *)app, 0x800) && g_SoundPlay3D) {
                     DWORD snd = *(DWORD *)(app + APP_SOUNDFX_47C);
-                    if (snd) g_SoundPlay3D((void *)snd, *pivotX, *pivotY, *pivotZ);
+                    if (snd) g_SoundPlay3D((void *)snd, *pivotX, *pivotY, *pivotZ, 1.0f);
                 }
                 if (g_SceneForEachBallSetVelocity && g_Vec3CopyUpd) {
                     float pivot[3]; g_Vec3CopyUpd(pivot, pivotX);
@@ -115,7 +115,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
                 int creakQ = (int)creakY;
                 if (creakY == (float)creakQ && app && !IsBadReadPtr((void *)app, 0x800) && g_SoundPlay3D) {
                     DWORD snd = *(DWORD *)(app + 0x478);
-                    if (snd) g_SoundPlay3D((void *)snd, *pivotX, *pivotY, *pivotZ);
+                    if (snd) g_SoundPlay3D((void *)snd, *pivotX, *pivotY, *pivotZ, 1.0f);
                 }
             }
             if (angle >= 45.0f) { *anglePtr = 45.0f; *counterPtr = 0x4B; *statePtr = 0; }
@@ -146,7 +146,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
                         *(float *)((char *)cb + 0x164) = cd[0] + *pivotX;
                         *(float *)((char *)cb + 0x168) = cd[1] + *pivotY;
                         *(float *)((char *)cb + 0x16C) = cd[2] + *pivotZ;
-                        g_TimerCleanup(ctimer);
+                        g_TimerCleanup(ctimer, ctimer);
                     }
                 }
             }
@@ -160,11 +160,11 @@ static void Feature_BridgeAnimation(void *board, int level) {
                 DWORD *renderVtbl = *(DWORD **)renderObj;
                 if (renderVtbl) {
                     void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))renderVtbl[0x16];
-                    void (__fastcall *fn54)(DWORD, char *) = (void (__fastcall *)(DWORD, char *))renderVtbl[0x15];
+                    void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))renderVtbl[0x15]; /* native: ECX=obj + push timer, ret $0x4 */
                     if (fn58) fn58((DWORD)renderObj);
                     if (fn54) fn54((DWORD)renderObj, timerBuf);
                 }
-                g_TimerCleanup(timerBuf);
+                g_TimerCleanup(timerBuf, timerBuf);
                 }
             }
         } break;
@@ -311,7 +311,7 @@ static void Feature_SwirlZones(void *board, int level) {
                                 if (g_SoundPlay3D) {
                                     DWORD snd = *(DWORD *)(app + APP_SOUNDFX_484);
                                     if (snd)
-                                        g_SoundPlay3D((void *)snd, ballX, ballY, ballZ);
+                                        g_SoundPlay3D((void *)snd, ballX, ballY, ballZ, 1.0f);
                                 }
                                 /* Spawn 3 particles */
                                 int p;
@@ -433,7 +433,7 @@ static void Feature_SwirlZones(void *board, int level) {
         }
         if (swirlDbg < 3) DebugLog("  [swirl] step3a done");
 
-        g_TimerCleanup(timerBuf);
+        g_TimerCleanup(timerBuf, timerBuf);
         }
         DebugLog("  [swirl] step3a done (full)");
     }
@@ -473,7 +473,7 @@ static void Feature_SwirlZones(void *board, int level) {
         }
         if (swirlDbg < 3) DebugLog("  [swirl] step3b done");
 
-        g_TimerCleanup(timerBuf);
+        g_TimerCleanup(timerBuf, timerBuf);
         }
         if (swirlDbg < 3) DebugLog("  [swirl] step3b done");
     }
@@ -515,7 +515,7 @@ static void Feature_Windmill(void *board, int level) {
         if (angleInt % 0x5A == 0x2D) {
             if (g_SoundPlay3D) {
                 DWORD snd = *(DWORD *)(app + 0x4A4);
-                if (snd) g_SoundPlay3D((void *)snd, *posX, *posY, *posZ);
+                if (snd) g_SoundPlay3D((void *)snd, *posX, *posY, *posZ, 1.0f);
             }
         }
     }
@@ -531,18 +531,18 @@ static void Feature_Windmill(void *board, int level) {
             DWORD *vtbl = *(DWORD **)renderObj;
             if (vtbl) {
                 void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))vtbl[0x16];
-                void (__fastcall *fn54)(DWORD, char *) = (void (__fastcall *)(DWORD, char *))vtbl[0x15];
+                void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))vtbl[0x15]; /* native: ECX=obj + push timer, ret $0x4 */
                 if (fn58) fn58((DWORD)renderObj);
                 if (fn54) fn54((DWORD)renderObj, timerBuf);
             }
         }
-        g_TimerCleanup(timerBuf);
+        g_TimerCleanup(timerBuf, timerBuf);
         }
     }
     int wmState = *statePtr;
     switch (wmState) {
     case 0: { float speed = *speedPtr; if (speed == 0.0f) speed = 0.25f; speed *= 1.2f; *speedPtr = speed; if (speed > 25.0f) { *speedPtr = 25.0f; *statePtr = 1; *counterPtr = 0x19; *decayPtr = 50.0f; } } break;
-    case 1: { int c = *counterPtr - 1; *counterPtr = c; if (c < 1) { *statePtr = 2; if (g_SoundPlay3D) { DWORD snd = *(DWORD *)(app + 0x4A8); if (snd) g_SoundPlay3D((void *)snd, *posX, *posY, *posZ); } } } break;
+    case 1: { int c = *counterPtr - 1; *counterPtr = c; if (c < 1) { *statePtr = 2; if (g_SoundPlay3D) { DWORD snd = *(DWORD *)(app + 0x4A8); if (snd) g_SoundPlay3D((void *)snd, *posX, *posY, *posZ, 1.0f); } } } break;
     case 2: { float speed = *speedPtr * 0.25f; *speedPtr = speed; if (speed < 1.0f) { *speedPtr = 0.0f; if (g_RNG) { int rng = RNG_call((void *)0x4F7360, 0, 2, 0); if (rng != 0) { *statePtr = 3; int rng2 = RNG_call((void *)0x4F7360, 0, 100, 0); *counterPtr = rng2 + 100; } else { *statePtr = 0; } } } } break;
     case 3: { float decay = *decayPtr - 2.0f; if (decay < 0.0f) decay = 0.0f; *decayPtr = decay; int c = *counterPtr - 1; *counterPtr = c; if (c < 1) *statePtr = 0; } break;
     }
@@ -595,7 +595,7 @@ static void Feature_BadBallSpawner(void *board, int level) {
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (app && !IsBadReadPtr((void *)app, 0x600) && g_SoundPlay3D) {
         DWORD snd = *(DWORD *)(app + 0x4D0);
-        if (snd) g_SoundPlay3D((void *)snd, spawnX, spawnY, spawnZ);
+        if (snd) g_SoundPlay3D((void *)snd, spawnX, spawnY, spawnZ, 1.0f);
     }
 
     /* Create BadBall */
@@ -796,7 +796,7 @@ static void Feature_SkyPopcylinder(void *board, int level) {
             g_SoundPlay3D((void *)snd,
                 *(float *)(pop8 + 0x10D4),
                 *(float *)(pop8 + 0x10D8),
-                *(float *)(pop8 + 0x10DC));
+                *(float *)(pop8 + 0x10DC), 1.0f);
         }
     }
 

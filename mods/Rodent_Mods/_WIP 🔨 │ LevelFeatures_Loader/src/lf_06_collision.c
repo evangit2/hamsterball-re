@@ -234,7 +234,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         float pz = *(float *)((char *)ball + 0x16C);
         if (g_SoundPlay3D && app) {
             DWORD snd = *(DWORD *)(app + 0x448);
-            if (snd) g_SoundPlay3D((void *)snd, px, py, pz);
+            if (snd) g_SoundPlay3D((void *)snd, px, py, pz, 1.0f);
         }
         /* Per-level velocity scale and max speed (verified via Ghidra):
          * Beginner/Toob: 4.0 scale, 10.0 max (_DAT_004cf41c, _DAT_004cf9f8)
@@ -308,7 +308,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             dx += *(float *)((char *)ext + UNI_WHEELEMBED_X);
             dy += *(float *)((char *)ext + UNI_WHEELEMBED_Y);
             dz += *(float *)((char *)ext + UNI_WHEELEMBED_Z);
-            g_TimerCleanup(timerBuf);
+            g_TimerCleanup(timerBuf, timerBuf);
             }
         }
         *(BYTE *)((char *)ball + 0xC3C) = 1;
@@ -460,7 +460,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         ball[0xA1] = 0x41D00000;
         if (g_SoundPlay3D && app) {
             DWORD snd = *(DWORD *)(app + 0x468);
-            if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)ball + 0x164), *(float *)((char *)ball + 0x168), *(float *)((char *)ball + 0x16C));
+            if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)ball + 0x164), *(float *)((char *)ball + 0x168), *(float *)((char *)ball + 0x16C), 1.0f);
         }
     }
 
@@ -501,7 +501,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         if (*(int *)((char *)ball + 0x7F0) == 0) {
             if (g_SoundPlay3D && app) {
                 DWORD snd = *(DWORD *)(app + 0x524);
-                if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)ball + 0x164), *(float *)((char *)ball + 0x168), *(float *)((char *)ball + 0x16C));
+                if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)ball + 0x164), *(float *)((char *)ball + 0x168), *(float *)((char *)ball + 0x16C), 1.0f);
             }
             *(int *)((char *)ball + 0x7F0) = 100;
         }
@@ -512,7 +512,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         if (*(int *)((char *)ball + 0x7B4) == 0) {
             if (g_SoundPlay3D && app) {
                 DWORD snd = *(DWORD *)(app + 0x528);
-                if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)ball + 0x164), *(float *)((char *)ball + 0x168), *(float *)((char *)ball + 0x16C));
+                if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)ball + 0x164), *(float *)((char *)ball + 0x168), *(float *)((char *)ball + 0x16C), 1.0f);
             }
             /* Call vtable[+0x10](0) on player's follower light */
             DWORD *renderObj = NULL;
@@ -532,10 +532,10 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                     if (gfx) g_SceneRegisterObject(gfx, neon_pidx, (int *)renderObj);
                 }
             }
-            if (*(int *)((char *)ext + UNI_NEON_TRAPDOOR) == 0 && g_AthenaListAppend) {
+            if (*(int *)((char *)ext + UNI_NEON_LIGHT_COUNT) == 0 && g_AthenaListAppend && *(int *)((char *)ext + UNI_NEON_DARK_COUNT)) {
                 g_AthenaListAppend((void *)((char *)board + UNI_OBJ_LIST), *(int *)((char *)ext + UNI_NEON_DARK_COUNT));
             }
-            *(int *)((char *)ext + UNI_NEON_TRAPDOOR) += 1;
+            *(int *)((char *)ext + UNI_NEON_LIGHT_COUNT) += 1;
             *(int *)((char *)ball + 0x7B4) = 100;
         }
     }
@@ -545,7 +545,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         if (*(int *)((char *)ball + 0x7B8) == 0) {
             if (g_SoundPlay3D && app) {
                 DWORD snd = *(DWORD *)(app + 0x528);
-                if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)ball + 0x164), *(float *)((char *)ball + 0x168), *(float *)((char *)ball + 0x16C));
+                if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)ball + 0x164), *(float *)((char *)ball + 0x168), *(float *)((char *)ball + 0x16C), 1.0f);
             }
             DWORD *renderObj = NULL;
             int neon_pidx = ball[6];
@@ -565,10 +565,10 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                 }
             }
             *(int *)((char *)ball + 0x7B8) = 100;
-            int n = *(int *)((char *)ext + UNI_NEON_TRAPDOOR) - 1;
-            *(int *)((char *)ext + UNI_NEON_TRAPDOOR) = n;
+            int n = *(int *)((char *)ext + UNI_NEON_LIGHT_COUNT) - 1;
+            *(int *)((char *)ext + UNI_NEON_LIGHT_COUNT) = n;
             if (n < 1 && g_AthenaListRemoveByValue) {
-                *(int *)((char *)ext + UNI_NEON_TRAPDOOR) = 0;
+                *(int *)((char *)ext + UNI_NEON_LIGHT_COUNT) = 0;
                 g_AthenaListRemoveByValue((void *)((char *)board + UNI_OBJ_LIST), *(int *)((char *)ext + UNI_NEON_DARK_COUNT));
                 DWORD trapObj = *(DWORD *)((char *)ext + UNI_NEON_DARK_COUNT);
                 if (trapObj) {
@@ -687,7 +687,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
 
     /* ── Expert: E:BELL ── */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_BELL)) && my_strnicmp(name, "E:BELL", 6) == 0) {
-        if (g_BellActivate) g_BellActivate(*(int *)((char *)ext + UNI_BELL_OBJ));
+        if (g_BellActivate && *(int *)((char *)ext + UNI_BELL_OBJ)) g_BellActivate(*(int *)((char *)ext + UNI_BELL_OBJ));
         if (app) {
             int gameMode = *(int *)(app + 0x220);
             if (gameMode && *(char *)(gameMode + 0x10) == 0 && *(char *)(gameMode + 0x11) == 0) {
@@ -845,7 +845,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             }
             if (g_SoundPlay3D && app) {
                 DWORD snd = *(DWORD *)(app + 0x468);
-                if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)ball + 0x164), *(float *)((char *)ball + 0x168), *(float *)((char *)ball + 0x16C));
+                if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)ball + 0x164), *(float *)((char *)ball + 0x168), *(float *)((char *)ball + 0x16C), 1.0f);
             }
         }
     }
@@ -1079,7 +1079,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         if (g_BallDizzyImmunity) g_BallDizzyImmunity(ball, 200);
         if (g_SoundPlay3D && app) {
             DWORD snd = *(DWORD *)(app + 0x500);
-            if (snd) g_SoundPlay3D((void *)snd, launchPos[0], launchPos[1], launchPos[2]);
+            if (snd) g_SoundPlay3D((void *)snd, launchPos[0], launchPos[1], launchPos[2], 1.0f);
         }
         /* Create explosion particles */
         if (g_operatorNew && g_ArenaScoreParticleCtor && g_AthenaListAppend && g_WaveCos && g_WaveSin && g_CPUIDRNG) {
@@ -1141,7 +1141,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                 *(BYTE *)((char *)ext + REND_GLASS_FLAG1) = 1;
                 if (g_SoundPlay3D && app) {
                     DWORD snd = *(DWORD *)(app + 0x52C);
-                    if (snd) g_SoundPlay3D((void *)snd, *(float*)((char*)ext+REND_GLASS_S1_X), *(float*)((char*)ext+REND_GLASS_S1_Y), *(float*)((char*)ext+REND_GLASS_S1_Z));
+                    if (snd) g_SoundPlay3D((void *)snd, *(float*)((char*)ext+REND_GLASS_S1_X), *(float*)((char*)ext+REND_GLASS_S1_Y), *(float*)((char*)ext+REND_GLASS_S1_Z), 1.0f);
                 }
                 if (app) {
                     int gameMode = *(int *)(app + 0x220);
@@ -1168,7 +1168,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                 *(BYTE *)((char *)ext + REND_GLASS_FLAG2) = 1;
                 if (g_SoundPlay3D && app) {
                     DWORD snd = *(DWORD *)(app + 0x52C);
-                    if (snd) g_SoundPlay3D((void *)snd, *(float*)((char*)ext+REND_GLASS_S2_X), *(float*)((char*)ext+REND_GLASS_S2_Y), *(float*)((char*)ext+REND_GLASS_S2_Z));
+                    if (snd) g_SoundPlay3D((void *)snd, *(float*)((char*)ext+REND_GLASS_S2_X), *(float*)((char*)ext+REND_GLASS_S2_Y), *(float*)((char*)ext+REND_GLASS_S2_Z), 1.0f);
                 }
                 if (app) {
                     int gameMode = *(int *)(app + 0x220);
