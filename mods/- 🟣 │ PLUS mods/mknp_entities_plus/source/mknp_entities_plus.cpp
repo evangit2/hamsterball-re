@@ -1460,6 +1460,12 @@ static int   g_push_sg = 1;    /* +1 / -1 */
 static DWORD g_push_lastlog = 0;
 static float g_push_cx = 0.0f, g_push_cy = 0.0f, g_push_cz = 0.0f;
 static int   g_push_in = 0;    /* ball inside volume latched (enter/leave) */
+/* v1r: shove detector (jump once per mouse motion leg). */
+static float g_push_mx = 0.0f, g_push_my = 0.0f, g_push_mz = 0.0f;
+static int   g_push_mseen = 0;
+static int   g_push_moven = 0;       /* consecutive moving frames */
+static int   g_push_stilln = 0;      /* consecutive still frames */
+static int   g_push_legfired = 0;    /* jumped already this leg */
 
 /* v1p: first def with e_Mousepush behaviour (type 48), or -1. */
 static int push_def(void) {
@@ -1598,6 +1604,8 @@ static void push_scan_file(const char* path) {
     g_push_ok = 0; g_push_ax = 0; g_push_sg = 1;
     g_push_cx = 0.0f; g_push_cy = 0.0f; g_push_cz = 0.0f;
     g_push_in = 0;
+    g_push_mseen = 0; g_push_moven = 0;   /* v1r: leg detector reset */
+    g_push_stilln = 0; g_push_legfired = 0;
     if (!path || !path[0]) return;
     d = gm_read_file(path, &len);
     if (!d || len < 4) { if (d) free(d); return; }
@@ -1658,6 +1666,24 @@ static void push_frame(DWORD board) {
         ride = 1;
         break;
     }
+    if (ride) {   /* v1r: stopped -> moving leg detector (jitter-proof) */
+        float mdx = ccx - g_push_mx, mdy = ccy - g_push_my,
+              mdz = ccz - g_push_mz;
+        float md = mdx * mdx + mdy * mdy + mdz * mdz;
+        if (!g_push_mseen) {
+            g_push_mseen = 1; g_push_stilln = 100;
+        } else if (md > 0.25f) {   /* >0.5u in one frame = real motion */
+            g_push_stilln = 0;
+            if (g_push_moven < 1000000) g_push_moven++;
+        } else {
+            if (g_push_stilln < 1000000) g_push_stilln++;
+            if (g_push_stilln > 30) {   /* stopped 30f = leg over, re-arm */
+                g_push_moven = 0;
+                g_push_legfired = 0;
+            }
+        }
+        g_push_mx = ccx; g_push_my = ccy; g_push_mz = ccz;
+    }
     b = g_api ? (void*)HBAPI(g_api).GetPlayer() : NULL;
     if (!b || IsBadReadPtr(b, 0x300)) return;
     bx = *(float*)((char*)b + 0x164);
@@ -1681,6 +1707,16 @@ static void push_frame(DWORD board) {
             *(float*)((char*)b + 0x178) += push;
         else
             *(float*)((char*)b + 0x170) += push;
+        /* v1r: shove jump — mouse moving 5+ frames straight, ball in
+         * vol, once per leg (jump_mod proven impulse 20.0). */
+        if (ride && !g_push_legfired && g_push_moven >= 5) {
+            g_push_legfired = 1;
+            *(float*)((char*)b + 0x174) += 20.0f;
+            snprintf(pbuf, sizeof(pbuf),
+                     "  PUSHQ: shove jump=20 ball=(%d,%d,%d)",
+                     (int)bx, (int)by, (int)bz);
+            log_mod(pbuf);
+        }
         if (!g_push_in) {
             g_push_in = 1;
             snprintf(pbuf, sizeof(pbuf),
@@ -4600,7 +4636,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1q log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1r log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
