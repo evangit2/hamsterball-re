@@ -53,6 +53,53 @@ static const char* ent_strip_prefix(const char* s) {
     return s;
 }
 
+/* ci substring (self-contained) */
+static int ent_ci_contains(const char* hay, const char* needle) {
+    int hl = 0, nl = 0, i, j;
+    if (!hay || !needle || !needle[0]) return 0;
+    while (hay[hl]) hl++;
+    while (needle[nl]) nl++;
+    if (nl > hl) return 0;
+    for (i = 0; i <= hl - nl; i++) {
+        for (j = 0; j < nl; j++) {
+            char a = hay[i + j], b = needle[j];
+            if (a >= 'A' && a <= 'Z') a += 32;
+            if (b >= 'A' && b <= 'Z') b += 32;
+            if (a != b) break;
+        }
+        if (j == nl) return 1;
+    }
+    return 0;
+}
+
+/* v1f def-name match with numeric wildcard. A trailing digit run in the
+ * def (MouseA0, Woodbridge00) matches any digit at that spot in S1
+ * (A1..A9, 01..99, literal incl). Digit-free defs = plain ci substring. */
+static int ent_match_name(const char* s1name, const char* defname) {
+    int dl = 0, n = 0, sl = 0, hl = 0, i, j;
+    if (!s1name || !defname || !defname[0]) return 0;
+    while (defname[dl]) dl++;
+    while (dl - n > 0 && defname[dl - n - 1] >= '0' &&
+           defname[dl - n - 1] <= '9') n++;
+    if (n == 0 || n >= dl) return ent_ci_contains(s1name, defname);
+    sl = dl - n;
+    while (s1name[hl]) hl++;
+    if (sl > hl) return 0;
+    for (i = 0; i <= hl - sl; i++) {
+        for (j = 0; j < sl; j++) {
+            char a = s1name[i + j], b = defname[j];
+            if (a >= 'A' && a <= 'Z') a += 32;
+            if (b >= 'A' && b <= 'Z') b += 32;
+            if (a != b) break;
+        }
+        if (j == sl) {
+            char c = s1name[i + sl];
+            if (c >= '0' && c <= '9') return 1;
+        }
+    }
+    return 0;
+}
+
 /* behaviour ci-equals "woodbridge_area" (prefix-blind, v1b) */
 static int ent_beh_is_area(const char* beh) {
     const char* w = "woodbridge_area";
