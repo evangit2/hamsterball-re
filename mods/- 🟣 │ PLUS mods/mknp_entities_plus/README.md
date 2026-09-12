@@ -6,7 +6,7 @@ lights + BallBorder ring + P1 glow) and `mknp_battyball_events` (custom
 both: install this DLL **instead of** the two old ones, never alongside
 them (two drivers for the same `E:` planes would double-play sounds).
 
-## What it does (v1f)
+## What it does (v1g)
 
 - Everything `mknp_battyball_entities` v1dx does (same S1 `GRID` cycle,
   `ENTITIES` defs, `grid_speed`, neon ring/glow, lights, TRAJ + LIGHTSON /
@@ -30,6 +30,9 @@ them (two drivers for the same `E:` planes would double-play sounds).
 - v1f: trailing digits in def names are wildcards: `REF:MouseA0` loads
   S1 `REF:MouseA1`..`REF:MouseA9` (any digit, literal incl), two-digit
   `..00` loads `01`..`99`. Same rule for S6 quad names (area/tar/launch).
+- v1g: `flip_normals` def flag (false default). true = mesh loads from a
+  normals-flipped temp copy (same proven Mouse path, shared `mknpFLIP` temp,
+  deleted after load). Applies to static + native spawns.
 - One DLL, one log (`mknp_entities_plus.log`), one set file
   (`mknp_entities_plus_set.jsonc`, re-read every level start, same
   tolerant parsers: `E:` blocks with `behaviour` are entity-drivers,
@@ -58,7 +61,7 @@ them (two drivers for the same `E:` planes would double-play sounds).
 ## Log
 
 ```
-INIT Battyball Entities Plus v1f log=... set=...
+INIT Battyball Entities Plus v1g log=... set=...
 SET init: N sound events
 NEWBOARD ...
 EV LEVEL start
