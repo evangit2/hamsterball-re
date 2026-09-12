@@ -6,7 +6,7 @@ lights + BallBorder ring + P1 glow) and `mknp_battyball_events` (custom
 both: install this DLL **instead of** the two old ones, never alongside
 them (two drivers for the same `E:` planes would double-play sounds).
 
-## What it does (v1c)
+## What it does (v1d)
 
 - Everything `mknp_battyball_entities` v1dx does (same S1 `GRID` cycle,
   `ENTITIES` defs, `grid_speed`, neon ring/glow, lights, TRAJ + LIGHTSON /
@@ -21,6 +21,8 @@ them (two drivers for the same `E:` planes would double-play sounds).
   old sets keep working).
 - v1c: numbered `E:` driver variants (`E:Woodbridge_area0`) route to the
   drivers too (prefix match on both scanners).
+- v1d: scan logs EVERY S1 name + `area=`/`def=` match (`S1[i]=<name>
+  area=<d> def=<d>`), so unmatched refs are visible instead of silent.
 - One DLL, one log (`mknp_entities_plus.log`), one set file
   (`mknp_entities_plus_set.jsonc`, re-read every level start, same
   tolerant parsers: entity keys ignore `E:` entries except `E:Launch` /
@@ -50,7 +52,7 @@ them (two drivers for the same `E:` planes would double-play sounds).
 ## Log
 
 ```
-INIT Battyball Entities Plus v1c log=... set=...
+INIT Battyball Entities Plus v1d log=... set=...
 SET init: N sound events
 NEWBOARD ...
 EV LEVEL start
