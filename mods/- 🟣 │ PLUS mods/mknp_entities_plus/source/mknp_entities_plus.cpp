@@ -1532,32 +1532,18 @@ static void scan_spawn_entities(DWORD board) {
                 char mabs[MAX_PATH];
                 int ninv = 0;
                 int havetmp = 0;
-                /* v1h: flip_normals flag rules ALL defs incl Mouse (no more
-                 * Mouse auto-flip; OFF = stock mesh, untouched). */
-                if (g_ent_flip[d]) {
-                    const char* tmpnm = ent_is_mouse(d) ? ENTNORM_TMP_NOEXT
-                                                        : ENTNORM_FLIP_NOEXT;
-                    havetmp = entnorm_make_inv_as(abs, tmpnm,
-                                                  mtmp, sizeof(mtmp),
-                                                  mabs, sizeof(mabs),
-                                                  g_levels_dir, &ninv);
+                if (ent_is_mouse(d)) {
+                    havetmp = entnorm_make_inv(abs, mtmp, sizeof(mtmp),
+                                               mabs, sizeof(mabs),
+                                               g_levels_dir, &ninv);
                     if (havetmp) {
                         mpath = mtmp;
                         snprintf(ebuf, sizeof(ebuf),
-                                 "  ENT %s: normals flipped %d",
-                                 g_ent_name[d], ninv);
+                                 "  ENT Mouse: normals inverted %d", ninv);
                         log_mod(ebuf);
                     } else {
-                        snprintf(ebuf, sizeof(ebuf),
-                                 "  ENT %s: flip failed, stock",
-                                 g_ent_name[d]);
-                        log_mod(ebuf);
+                        log_mod("  ENT Mouse: norm-inv failed, stock");
                     }
-                } else if (ent_is_mouse(d)) {
-                    snprintf(ebuf, sizeof(ebuf),
-                             "  ENT %s: flip OFF, stock mesh",
-                             g_ent_name[d]);
-                    log_mod(ebuf);
                 }
                 obj = create_grid_cube(board, px, py, pz, 900 + d, mpath,
                                        erx, ery, erz);
@@ -1608,36 +1594,7 @@ static void scan_spawn_entities(DWORD board) {
                 nmesh = g_op_new(MESHWORLD_SIZE);
                 if (!nmesh) continue;
                 memset(nmesh, 0, MESHWORLD_SIZE);
-                /* v1g: flip_normals defs load a normals-flipped temp copy
-                 * (same entnorm path as the static branch; temp deleted
-                 * right after the synchronous ctor). */
-                {
-                    const char* loadpath = ctor;
-                    char flipabs[MAX_PATH];
-                    char fliptmp[MAX_PATH];
-                    int haveflip = 0;
-                    if (g_ent_flip[d]) {
-                        int nfl = 0;
-                        haveflip = entnorm_make_inv_as(abs, ENTNORM_FLIP_NOEXT,
-                                                       fliptmp, sizeof(fliptmp),
-                                                       flipabs, sizeof(flipabs),
-                                                       g_levels_dir, &nfl);
-                        if (haveflip) {
-                            loadpath = fliptmp;
-                            snprintf(ebuf, sizeof(ebuf),
-                                     "  ENT %s: normals flipped %d",
-                                     g_ent_name[d], nfl);
-                            log_mod(ebuf);
-                        } else {
-                            snprintf(ebuf, sizeof(ebuf),
-                                     "  ENT %s: flip failed, stock",
-                                     g_ent_name[d]);
-                            log_mod(ebuf);
-                        }
-                    }
-                    mloaded = g_mw_ctor(nmesh, (void*)gfx_for_spawn, loadpath);
-                    if (haveflip) DeleteFileA(flipabs);
-                }
+                mloaded = g_mw_ctor(nmesh, (void*)gfx_for_spawn, ctor);
                 if (!mloaded) {
                     snprintf(ebuf, sizeof(ebuf), "  ENT %s: mesh load failed",
                              g_ent_name[d]);
@@ -4053,7 +4010,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1h log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1i log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }

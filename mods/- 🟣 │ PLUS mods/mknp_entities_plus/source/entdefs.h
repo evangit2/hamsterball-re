@@ -36,7 +36,6 @@ static float g_ent_movedelay[ENT_MAX_DEFS]; /* v1dp moveX_delay (def 0s) */
 static float g_ent_highx[ENT_MAX_DEFS];   /* v1dp high_X (def 100u) */
 static int  g_ent_area[ENT_MAX_DEFS];   /* v1bz Woodbridge_area gate def */
 static int  g_ent_vis[ENT_MAX_DEFS];    /* v1ca visible (def 1) */
-static int  g_ent_flip[ENT_MAX_DEFS];   /* v1g flip_normals (def 0) */
 static int  g_ent_count = 0;
 static int  g_bub_on = 1;               /* v1da death_bubbles (def true) */
 static char g_bub_tex[56] = "Tar";      /* v1da death_bubbles_tex (def+fb Tar) */
@@ -434,9 +433,6 @@ static void load_entities_file(void) {
                     g_ent_vis[g_ent_count] = 1;
                     if (ent_block_bool(bs, be, "visible", &iv) && !iv)
                         g_ent_vis[g_ent_count] = 0;
-                    g_ent_flip[g_ent_count] = 0;
-                    if (ent_block_bool(bs, be, "flip_normals", &iv) && iv)
-                        g_ent_flip[g_ent_count] = 1;
                     g_ent_count++;
                 }
             }
@@ -527,11 +523,6 @@ static void load_entities_file(void) {
             if (!g_ent_vis[i]) {
                 snprintf(dbuf, sizeof(dbuf),
                          "  ENT def %s: visible=false", g_ent_name[i]);
-                log_mod(dbuf);
-            }
-            if (g_ent_flip[i]) {
-                snprintf(dbuf, sizeof(dbuf),
-                         "  ENT def %s: flip_normals=true", g_ent_name[i]);
                 log_mod(dbuf);
             }
         }
