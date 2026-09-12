@@ -4496,7 +4496,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1m log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1n log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
@@ -4818,6 +4818,13 @@ static void __thiscall event_collide(void* ball, void*, char* name) {
         if (ball && !IsBadReadPtr(ball, 0x180)) {
             DWORD now = GetTickCount();
             float push = 20.0f * (float)g_push_sg;
+            /* v1n diag: pos + accumulator BEFORE write (wall or wipe?) */
+            float accx = *(float*)((char*)ball + 0x170);
+            float accy = *(float*)((char*)ball + 0x174);
+            float accz = *(float*)((char*)ball + 0x178);
+            float bx = *(float*)((char*)ball + 0x164);
+            float by = *(float*)((char*)ball + 0x168);
+            float bz = *(float*)((char*)ball + 0x16C);
             if (g_push_ax == 1)
                 *(float*)((char*)ball + 0x174) += push;
             else if (g_push_ax == 2)
@@ -4825,11 +4832,12 @@ static void __thiscall event_collide(void* ball, void*, char* name) {
             else
                 *(float*)((char*)ball + 0x170) += push;
             if ((int)(now - g_push_lastlog) >= 500) {
-                char pbuf[96];
+                char pbuf[128];
                 g_push_lastlog = now;
-                snprintf(pbuf, sizeof(pbuf), "  PUSHQ: hit axis=%c sign=%s",
-                         g_push_ax == 0 ? 'X' : (g_push_ax == 1 ? 'Y' : 'Z'),
-                         g_push_sg > 0 ? "+1" : "-1");
+                snprintf(pbuf, sizeof(pbuf),
+                         "  PUSHQ: hit ball=(%d,%d,%d) acc=(%d,%d,%d)",
+                         (int)bx, (int)by, (int)bz,
+                         (int)accx, (int)accy, (int)accz);
                 log_mod(pbuf);
             }
         }

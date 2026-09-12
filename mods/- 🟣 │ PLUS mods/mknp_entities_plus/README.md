@@ -6,7 +6,7 @@ lights + BallBorder ring + P1 glow) and `mknp_battyball_events` (custom
 both: install this DLL **instead of** the two old ones, never alongside
 them (two drivers for the same `E:` planes would double-play sounds).
 
-## What it does (v1m)
+## What it does (v1n)
 
 - Everything `mknp_battyball_entities` v1dx does (same S1 `GRID` cycle,
   `ENTITIES` defs, `grid_speed`, neon ring/glow, lights, TRAJ + LIGHTSON /
@@ -52,6 +52,8 @@ them (two drivers for the same `E:` planes would double-play sounds).
   quad faces +X exactly, so touch = +X push 20. No quad in file =
   fallback +X. Log: PUSHQ scan line per level + throttled PUSHQ hit
   lines on touch.
+- v1n: PUSHQ hit line now logs ball pos + accumulators before the write
+  (diag: solid-wall press vs accumulator wipe).
 - One DLL, one log (`mknp_entities_plus.log`), one set file
   (`mknp_entities_plus_set.jsonc`, re-read every level start, same
   tolerant parsers: `E:` blocks with `behaviour` are entity-drivers,
@@ -80,7 +82,7 @@ them (two drivers for the same `E:` planes would double-play sounds).
 ## Log
 
 ```
-INIT Battyball Entities Plus v1m log=... set=...
+INIT Battyball Entities Plus v1n log=... set=...
 SET init: N sound events
 NEWBOARD ...
 EV LEVEL start
