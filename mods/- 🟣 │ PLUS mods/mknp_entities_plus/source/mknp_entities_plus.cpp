@@ -1198,6 +1198,40 @@ static void spawn_tarpit_trigger(int d, float px, float py, float pz,
     log_mod(ebuf);
 }
 
+/* v1l: record a Mousepush trigger-only instance (obj=0, invisible pad at
+ * the ref home, no carrier). why = short reason shown in the spawn log. */
+static void spawn_push_trigger(int d, float px, float py, float pz,
+                               float erx, float ery, float erz,
+                               const char* why) {
+    char ebuf[160];
+    int n;
+    if (g_ent_inst_count < 0 || g_ent_inst_count >= ENT_MAX_INST) return;
+    n = g_ent_inst_count;
+    g_ent_objs[n] = 0;
+    g_ent_obj_def[n] = d;
+    g_ent_obj_type[n] = 48;
+    g_ent_obj_size[n] = 0;
+    g_ent_rx[n] = erx;
+    g_ent_ry[n] = ery;
+    g_ent_rz[n] = erz;
+    g_ent_home_x[n] = px;
+    g_ent_home_y[n] = py;
+    g_ent_home_z[n] = pz;
+    g_ent_cur[n] = 0.0f;
+    g_ent_applied[n] = 0.0f;
+    g_ent_near[n] = 0;
+    g_ent_wait[n] = 0.0f;
+    g_ent_carrier[n] = -1;
+    g_ent_local_x[n] = 0.0f;
+    g_ent_local_y[n] = 0.0f;
+    g_ent_local_z[n] = 0.0f;
+    g_ent_inst_count++;
+    snprintf(ebuf, sizeof(ebuf),
+             "  ENT: spawned %s behaviour=%s type=48 trigger-only (%s)",
+             g_ent_name[d], g_ent_beh[d], why);
+    log_mod(ebuf);
+}
+
 /* v1dw: resolve DEST/FX markers per E:Launch pad (solid + trigger paths). */
 static void launch_resolve(int nn, int d, DWORD* s1_data, int s1_count,
                            const char* nm) {
@@ -1622,6 +1656,11 @@ static void scan_spawn_entities(DWORD board) {
                                      s1_data, s1_count, nm);
                 continue;
             }
+            if (etv == 48 && mesh_is_vertices(g_ent_mesh[d])) {
+                spawn_push_trigger(d, px, py, pz, erx, ery, erz,
+                                   "vertices, invisible");
+                continue;
+            }
         }
         if (!base[0]) {
             if (aibeh_type(g_ent_beh[d]) == 44) {
@@ -1633,6 +1672,11 @@ static void scan_spawn_entities(DWORD board) {
                 spawn_launch_trigger(d, px, py, pz, erx, ery, erz,
                                      "empty mesh, invisible",
                                      s1_data, s1_count, nm);
+                continue;
+            }
+            if (aibeh_type(g_ent_beh[d]) == 48) {
+                spawn_push_trigger(d, px, py, pz, erx, ery, erz,
+                                   "empty mesh, invisible");
                 continue;
             }
             snprintf(ebuf, sizeof(ebuf), "  ENT %s: empty mesh, skip",
@@ -1659,6 +1703,11 @@ static void scan_spawn_entities(DWORD board) {
                                      s1_data, s1_count, nm);
                 continue;
             }
+            if (aibeh_type(g_ent_beh[d]) == 48) {
+                snprintf(abs, sizeof(abs), "MISSING %s, invisible", base);
+                spawn_push_trigger(d, px, py, pz, erx, ery, erz, abs);
+                continue;
+            }
             snprintf(ebuf, sizeof(ebuf), "  ENT %s: MISSING %s",
                      g_ent_name[d], base);
             log_mod(ebuf);
@@ -1674,6 +1723,11 @@ static void scan_spawn_entities(DWORD board) {
                 snprintf(abs, sizeof(abs), "BAD %s, invisible", base);
                 spawn_launch_trigger(d, px, py, pz, erx, ery, erz, abs,
                                      s1_data, s1_count, nm);
+                continue;
+            }
+            if (aibeh_type(g_ent_beh[d]) == 48) {
+                snprintf(abs, sizeof(abs), "BAD %s, invisible", base);
+                spawn_push_trigger(d, px, py, pz, erx, ery, erz, abs);
                 continue;
             }
             snprintf(ebuf, sizeof(ebuf), "  ENT %s: BAD %s",
@@ -4289,7 +4343,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1k log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1l log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
