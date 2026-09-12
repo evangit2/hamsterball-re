@@ -1449,6 +1449,151 @@ static void meshref_scan(DWORD board, const char* meshabs, int carrier) {
     free(d);
 }
 
+/* v1m: E:Mousepush quad push (event-side). Level-start S6 scan finds the
+ * quad, stores facing (Newell normal, dominant axis+sign); event_collide
+ * adds force 20 along it per touch frame (accumulators). No quad in the
+ * file = fallback +X. Needs gridmesh.h (GmCur), entdefs.h (ci-substr),
+ * nocrt memcpy/snprintf/free. */
+static int   g_push_ok = 0;
+static int   g_push_ax = 0;    /* 0 X, 1 Y, 2 Z */
+static int   g_push_sg = 1;    /* +1 / -1 */
+static DWORD g_push_lastlog = 0;
+
+static int push_walk(GmCur* c, const unsigned char* vbuf, int nverts,
+                     int* nodes) {
+    int sub, mbc, i;
+    if (++(*nodes) > GM_MAX_NODES) return 0;
+    if (!gm_need(c, 28)) return 0;
+    c->p += 24;
+    sub = gm_i32(c);
+    if (sub < 1) {
+        if (!gm_need(c, 4)) return 0;
+        mbc = gm_i32(c);
+        if (mbc < 0 || mbc > 100000) return 0;
+        for (i = 0; i < mbc; i++) {
+            int ln, sc, s;
+            const unsigned char* nm;
+            const unsigned char* spp;
+            if (!gm_need(c, 4)) return 0;
+            ln = gm_i32(c);
+            if (ln < 1 || ln > 1024 || !gm_need(c, (unsigned)ln)) return 0;
+            nm = c->p;
+            c->p += (unsigned)ln;
+            if (!gm_need(c, 72 + 4)) return 0;
+            c->p += 72;
+            {
+                unsigned ht = gm_u32(c);
+                if (ht == 1) {
+                    int tl;
+                    if (!gm_need(c, 4)) return 0;
+                    tl = gm_i32(c);
+                    if (tl < 1 || tl > 1024 || !gm_need(c, (unsigned)tl))
+                        return 0;
+                    c->p += (unsigned)tl;
+                }
+            }
+            if (!gm_need(c, 4)) return 0;
+            sc = gm_i32(c);
+            if (sc < 0 || sc > 1000000) return 0;
+            if (!gm_need(c, (unsigned)sc * 8u)) return 0;
+            spp = c->p;
+            c->p += (unsigned)sc * 8u;
+            if (!g_push_ok && ent_ci_substr((const char*)nm, "mousepush")) {
+                double nx = 0.0, ny = 0.0, nz = 0.0;
+                for (s = 0; s < sc; s++) {
+                    int tri, vr, t;
+                    memcpy(&tri, spp + (unsigned)s * 8u, 4);
+                    memcpy(&vr, spp + (unsigned)s * 8u + 4, 4);
+                    if (tri < 0 || tri > 100000 || vr < 0 ||
+                        vr + tri + 2 > nverts)
+                        continue;
+                    for (t = 0; t < tri; t++) {
+                        float ax, ay, az, bx, by, bz, cx, cy, cz;
+                        const unsigned char* pa =
+                            vbuf + (unsigned)(vr + t) * 32u;
+                        const unsigned char* pb =
+                            vbuf + (unsigned)(vr + t + 1) * 32u;
+                        const unsigned char* pc =
+                            vbuf + (unsigned)(vr + t + 2) * 32u;
+                        memcpy(&ax, pa, 4);
+                        memcpy(&ay, pa + 4, 4);
+                        memcpy(&az, pa + 8, 4);
+                        memcpy(&bx, pb, 4);
+                        memcpy(&by, pb + 4, 4);
+                        memcpy(&bz, pb + 8, 4);
+                        memcpy(&cx, pc, 4);
+                        memcpy(&cy, pc + 4, 4);
+                        memcpy(&cz, pc + 8, 4);
+                        if (t & 1) {
+                            float tx = bx, ty = by, tz = bz;
+                            bx = cx; by = cy; bz = cz;
+                            cx = tx; cy = ty; cz = tz;
+                        }
+                        nx += (double)(by - ay) * (cz - az) -
+                              (double)(bz - az) * (cy - ay);
+                        ny += (double)(bz - az) * (cx - ax) -
+                              (double)(bx - ax) * (cz - az);
+                        nz += (double)(bx - ax) * (cy - ay) -
+                              (double)(by - ay) * (cx - ax);
+                    }
+                }
+                {
+                    double anx = nx < 0 ? -nx : nx;
+                    double any = ny < 0 ? -ny : ny;
+                    double anz = nz < 0 ? -nz : nz;
+                    if (anx > 0 || any > 0 || anz > 0) {
+                        if (anx >= any && anx >= anz)
+                            { g_push_ax = 0; g_push_sg = (nx >= 0) ? 1 : -1; }
+                        else if (any >= anz)
+                            { g_push_ax = 1; g_push_sg = (ny >= 0) ? 1 : -1; }
+                        else
+                            { g_push_ax = 2; g_push_sg = (nz >= 0) ? 1 : -1; }
+                        g_push_ok = 1;
+                    }
+                }
+            }
+        }
+        return 1;
+    }
+    {
+        int k;
+        if (sub > 100000) return 0;
+        for (k = 0; k < sub; k++) {
+            int r = push_walk(c, vbuf, nverts, nodes);
+            if (r != 1) return r;
+        }
+    }
+    return 1;
+}
+
+static void push_scan_file(const char* path) {
+    unsigned len = 0;
+    unsigned char* d = 0;
+    const unsigned char* vbuf = 0;
+    int nverts = 0, nodes = 0;
+    char pbuf[128];
+    GmCur c;
+    g_push_ok = 0; g_push_ax = 0; g_push_sg = 1;
+    if (!path || !path[0]) return;
+    d = gm_read_file(path, &len);
+    if (!d || len < 4) { if (d) free(d); return; }
+    c.p = d; c.end = d + len;
+    if (!gm_skip_to_s6(&c, &vbuf, &nverts) || !vbuf || nverts <= 0) {
+        free(d);
+        return;
+    }
+    push_walk(&c, vbuf, nverts, &nodes);
+    free(d);
+    if (g_push_ok)
+        snprintf(pbuf, sizeof(pbuf), "  PUSHQ: E:Mousepush axis=%c sign=%s",
+                 g_push_ax == 0 ? 'X' : (g_push_ax == 1 ? 'Y' : 'Z'),
+                 g_push_sg > 0 ? "+1" : "-1");
+    else
+        snprintf(pbuf, sizeof(pbuf),
+                 "  PUSHQ: no E:Mousepush quad, fallback +X");
+    log_mod(pbuf);
+}
+
 static void scan_spawn_entities(DWORD board) {
     DWORD sceneobj;
     DWORD level;
@@ -1921,6 +2066,14 @@ static void scan_spawn_entities(DWORD board) {
                 launch_scan_file(levelfile, g_ent_name[ad]);
             else
                 log_mod("  LAUQ: no level file, sphere fallback");
+        }
+        {   /* v1m: E:Mousepush quad facing (one S6 walk, event-side push) */
+            if (have_levelfile)
+                push_scan_file(levelfile);
+            else {
+                g_push_ok = 0; g_push_ax = 0; g_push_sg = 1;
+                log_mod("  PUSHQ: no level file, fallback +X");
+            }
         }
     }
 }
@@ -4343,7 +4496,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1l log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1m log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
@@ -4655,6 +4808,29 @@ static void __thiscall event_collide(void* ball, void*, char* name) {
             if (g_light_used || g_light_count) {
                 g_job = 2;
                 g_job_board = player_board();
+            }
+        }
+    }
+    /* v1m: E:Mousepush quad push (event-side). Force 20 along the quad
+     * facing (level-start S6 scan, fallback +X). Continuous while
+     * touching (accumulators, never pos-write). */
+    if (name_eq_ci(name, "E:Mousepush")) {
+        if (ball && !IsBadReadPtr(ball, 0x180)) {
+            DWORD now = GetTickCount();
+            float push = 20.0f * (float)g_push_sg;
+            if (g_push_ax == 1)
+                *(float*)((char*)ball + 0x174) += push;
+            else if (g_push_ax == 2)
+                *(float*)((char*)ball + 0x178) += push;
+            else
+                *(float*)((char*)ball + 0x170) += push;
+            if ((int)(now - g_push_lastlog) >= 500) {
+                char pbuf[96];
+                g_push_lastlog = now;
+                snprintf(pbuf, sizeof(pbuf), "  PUSHQ: hit axis=%c sign=%s",
+                         g_push_ax == 0 ? 'X' : (g_push_ax == 1 ? 'Y' : 'Z'),
+                         g_push_sg > 0 ? "+1" : "-1");
+                log_mod(pbuf);
             }
         }
     }
