@@ -1624,7 +1624,7 @@ static void push_scan_file(const char* path) {
         float psz = (pd >= 0) ? g_ent_sz[pd] : 1.0f;
         snprintf(pbuf, sizeof(pbuf),
                  "  PUSHQ: E:Mousepush axis=%c sign=%s c=(%d,%d,%d)"
-                 " prox=%.1f sc=(%.1f,%.1f,%.1f)",
+                 " prox=%f.1 sc=(%f.1,%f.1,%f.1)",
                  g_push_ax == 0 ? 'X' : (g_push_ax == 1 ? 'Y' : 'Z'),
                  g_push_sg > 0 ? "+1" : "-1",
                  (int)g_push_cx, (int)g_push_cy, (int)g_push_cz,
@@ -1707,13 +1707,13 @@ static void push_frame(DWORD board) {
             *(float*)((char*)b + 0x178) += push;
         else
             *(float*)((char*)b + 0x170) += push;
-        /* v1r: shove jump — mouse moving 5+ frames straight, ball in
-         * vol, once per leg (jump_mod proven impulse 20.0). */
+        /* v1s: shove jump — mouse moving 5+ frames straight, ball in
+         * vol, once per leg. 40.0 raised from 20.0 (too low). */
         if (ride && !g_push_legfired && g_push_moven >= 5) {
             g_push_legfired = 1;
-            *(float*)((char*)b + 0x174) += 20.0f;
+            *(float*)((char*)b + 0x174) += 40.0f;
             snprintf(pbuf, sizeof(pbuf),
-                     "  PUSHQ: shove jump=20 ball=(%d,%d,%d)",
+                     "  PUSHQ: shove jump=40 ball=(%d,%d,%d)",
                      (int)bx, (int)by, (int)bz);
             log_mod(pbuf);
         }
@@ -4636,7 +4636,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1r log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1s log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }

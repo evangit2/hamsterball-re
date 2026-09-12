@@ -6,7 +6,7 @@ lights + BallBorder ring + P1 glow) and `mknp_battyball_events` (custom
 both: install this DLL **instead of** the two old ones, never alongside
 them (two drivers for the same `E:` planes would double-play sounds).
 
-## What it does (v1r)
+## What it does (v1s)
 
 - Everything `mknp_battyball_entities` v1dx does (same S1 `GRID` cycle,
   `ENTITIES` defs, `grid_speed`, neon ring/glow, lights, TRAJ + LIGHTSON /
@@ -64,6 +64,8 @@ them (two drivers for the same `E:` planes would double-play sounds).
 - v1r: shove jump. Mouse moving 5+ frames straight + ball in vol = one
   Y impulse 20.0 (jump_mod proven value), once per motion leg (30 still
   frames re-arms). Log: PUSHQ shove jump line.
+- v1s: jump 20→40 (too low); fixed scan line printing literal %.1f
+  (this codebase uses %f.1).
 - One DLL, one log (`mknp_entities_plus.log`), one set file
   (`mknp_entities_plus_set.jsonc`, re-read every level start, same
   tolerant parsers: `E:` blocks with `behaviour` are entity-drivers,
@@ -92,7 +94,7 @@ them (two drivers for the same `E:` planes would double-play sounds).
 ## Log
 
 ```
-INIT Battyball Entities Plus v1r log=... set=...
+INIT Battyball Entities Plus v1s log=... set=...
 SET init: N sound events
 NEWBOARD ...
 EV LEVEL start
