@@ -6,7 +6,7 @@ lights + BallBorder ring + P1 glow) and `mknp_battyball_events` (custom
 both: install this DLL **instead of** the two old ones, never alongside
 them (two drivers for the same `E:` planes would double-play sounds).
 
-## What it does (v1i)
+## What it does (v1j)
 
 - Everything `mknp_battyball_entities` v1dx does (same S1 `GRID` cycle,
   `ENTITIES` defs, `grid_speed`, neon ring/glow, lights, TRAJ + LIGHTSON /
@@ -32,6 +32,13 @@ them (two drivers for the same `E:` planes would double-play sounds).
   `..00` loads `01`..`99`. Same rule for S6 quad names (area/tar/launch).
 - v1i: `flip_normals` removed entirely (never fixed the lighting).
   Mouse auto-flip restored as the only normals path.
+- v1j: `e_Mousepush` behaviour (type 48, static). Touch sphere
+  (`push_radius`, def 70u XZ, |dy| < 60) kicks the ball away from pad
+  home like a bumper: accumulators += `push` (def 3.0) along
+  (ball-home) XZ + `push`*0.5 up, one-shot custom def `sound` (else
+  silent), 0.4s cooldown, rising-edge. Needs S1 `E:Mousepush` refs
+  (any level) + `"E:Mousepush", { "behaviour": "e_Mousepush",
+  "mesh": "Mouse" }` (shipped in the set already).
 - One DLL, one log (`mknp_entities_plus.log`), one set file
   (`mknp_entities_plus_set.jsonc`, re-read every level start, same
   tolerant parsers: `E:` blocks with `behaviour` are entity-drivers,
@@ -60,7 +67,7 @@ them (two drivers for the same `E:` planes would double-play sounds).
 ## Log
 
 ```
-INIT Battyball Entities Plus v1i log=... set=...
+INIT Battyball Entities Plus v1j log=... set=...
 SET init: N sound events
 NEWBOARD ...
 EV LEVEL start

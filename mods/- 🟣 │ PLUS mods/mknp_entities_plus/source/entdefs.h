@@ -34,6 +34,8 @@ static float g_ent_sndsens[ENT_MAX_DEFS]; /* v1cd sound_sensitivity (def 1) */
 static float g_ent_speedx[ENT_MAX_DEFS];  /* v1dq speed_X: sec/leg (def 2) */
 static float g_ent_movedelay[ENT_MAX_DEFS]; /* v1dp moveX_delay (def 0s) */
 static float g_ent_highx[ENT_MAX_DEFS];   /* v1dp high_X (def 100u) */
+static float g_ent_push[ENT_MAX_DEFS];    /* v1j push: kick strength (def 3) */
+static float g_ent_pushr[ENT_MAX_DEFS];   /* v1j push_radius: touch XZ (def 70) */
 static int  g_ent_area[ENT_MAX_DEFS];   /* v1bz Woodbridge_area gate def */
 static int  g_ent_vis[ENT_MAX_DEFS];    /* v1ca visible (def 1) */
 static int  g_ent_count = 0;
@@ -428,6 +430,12 @@ static void load_entities_file(void) {
                         g_ent_movedelay[g_ent_count] = fv;
                     if (ent_block_float(bs, be, "high_X", &fv) && fv > 0.0f)
                         g_ent_highx[g_ent_count] = fv;
+                    g_ent_push[g_ent_count] = 3.0f;
+                    if (ent_block_float(bs, be, "push", &fv) && fv > 0.0f)
+                        g_ent_push[g_ent_count] = fv;
+                    g_ent_pushr[g_ent_count] = 70.0f;
+                    if (ent_block_float(bs, be, "push_radius", &fv) && fv > 0.0f)
+                        g_ent_pushr[g_ent_count] = fv;
                     g_ent_area[g_ent_count] =
                         ent_beh_is_area(beh) ? 1 : 0;
                     g_ent_vis[g_ent_count] = 1;
