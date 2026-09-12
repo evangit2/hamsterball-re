@@ -66,6 +66,16 @@ static int ent_beh_is_area(const char* beh) {
     return (w[i] == '\0' && beh[i] == '\0') ? 1 : 0;
 }
 
+/* low starts with pre (both already lowercase, v1c: numbered E: variants) */
+static int ent_low_starts(const char* low, const char* pre) {
+    int i = 0;
+    while (pre[i]) {
+        if (low[i] != pre[i]) return 0;
+        i++;
+    }
+    return 1;
+}
+
 static int ent_key_known(const char* key) {
     char low[64];
     int i = 0;
@@ -77,11 +87,12 @@ static int ent_key_known(const char* key) {
     low[i] = '\0';
     /* v1b prefix split: E:Launch / E:Woodbridge_area / E:Cheesepit are
      * entity-drivers (event quads/planes), NOT sound events -- fall through
-     * to entity parse. All other E: keys belong to the ev_ section. */
+     * to entity parse. All other E: keys belong to the ev_ section.
+     * v1c: prefix match so numbered variants (E:Woodbridge_area0) route too. */
     if ((key[0] == 'E' || key[0] == 'e') && key[1] == ':') {
-        if (set_name_eq(low, "e:launch")) return 0;
-        if (set_name_eq(low, "e:woodbridge_area")) return 0;
-        if (set_name_eq(low, "e:cheesepit")) return 0;
+        if (ent_low_starts(low, "e:launch")) return 0;
+        if (ent_low_starts(low, "e:woodbridge_area")) return 0;
+        if (ent_low_starts(low, "e:cheesepit")) return 0;
         return 1;
     }
     if (set_name_eq(low, "grid_speed")) return 1;

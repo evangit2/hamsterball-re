@@ -3120,6 +3120,15 @@ static int name_eq_ci(const char* a, const char* b) {
     return *a == *b;
 }
 
+/* v1c: ci prefix match (numbered E: driver variants: E:Woodbridge_area0) */
+static int name_starts_ci(const char* a, const char* pre) {
+    while (*pre) {
+        if (!*a || tolower_c(*a) != tolower_c(*pre)) return 0;
+        a++; pre++;
+    }
+    return 1;
+}
+
 static int sound_offset(const char* name) {
     int i;
     if (!name || !name[0]) return -1;
@@ -3368,9 +3377,10 @@ static int parse_set_buf(const char* buf, evtab_t* out, int cap) {
         p = q + 1;
         /* v1b: E:Launch / E:Woodbridge_area / E:Cheesepit are entity-drivers
          * (event quads/planes), not sound events -- skip so they never occupy
-         * an evtab slot. */
-        if (name_eq_ci(nm, "E:Launch") || name_eq_ci(nm, "E:Woodbridge_area") ||
-            name_eq_ci(nm, "E:Cheesepit")) {
+         * an evtab slot. v1c: prefix match (numbered variants like
+         * E:Woodbridge_area0). */
+        if (name_starts_ci(nm, "E:Launch") || name_starts_ci(nm, "E:Woodbridge_area") ||
+            name_starts_ci(nm, "E:Cheesepit")) {
             int depth = 0;
             while (*p && *p != '{' && *p != '"') p++;
             if (*p != '{') continue;
@@ -3961,7 +3971,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1b log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1c log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
