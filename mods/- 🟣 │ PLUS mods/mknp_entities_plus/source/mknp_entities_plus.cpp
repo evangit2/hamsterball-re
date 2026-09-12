@@ -1335,6 +1335,21 @@ static void scan_spawn_entities(DWORD board) {
         ptr = *(char**)(entry + S1ENTRY_NAME);
         if (ptr && !IsBadReadPtr(ptr, 5)) nm = ptr;
         else nm = (const char*)entry;   /* inline name fallback */
+        if (i < 40) {   /* v1d diag: EVERY S1 name + match (unmatched was invisible) */
+            int da = ent_match_area(nm);
+            int dd = ent_match_def(nm);
+            const char* s1n = nm ? nm : "?";
+            int L = 0, k = 0;
+            snprintf(ebuf, sizeof(ebuf), "  S1[%d]=", i);
+            while (ebuf[L]) L++;
+            while (k < 48 && s1n[k] && L + 1 < (int)sizeof(ebuf)) {
+                ebuf[L++] = s1n[k++];
+            }
+            ebuf[L] = '\0';
+            snprintf(ebuf + L, sizeof(ebuf) - (unsigned)L,
+                     " area=%d def=%d", da, dd);
+            log_mod(ebuf);
+        }
         if (ent_match_area(nm) >= 0) {  /* v1bz: zone marker, no instance */
             g_area_refs_seen++;
             continue;
@@ -3971,7 +3986,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1c log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1d log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
