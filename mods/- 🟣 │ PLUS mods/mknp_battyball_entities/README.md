@@ -223,17 +223,51 @@ Top-level set pairs next to `grid_speed` define named entities:
     native ctor + your mesh, motion via game lists. Rotator, Pendulum, Swirl,
     Flickfloor1, Flickfloor2, Flickring, Trode, Glassbreaker, Judge, Sign,
     8ball, Bonk, Catapult, Mace, Tipper, Lifter, Speedcylinder,
-    Neonplatform, Trapdoor, Droplifter, Gluebie, Timebutton.
+    Neonplatform, Trapdoor, Droplifter, Gluebie, Timebutton, 6ball.
     Catapult/Speedcylinder register solid collision; types without
     per-frame drivers stay visible (some non-solid) until v1bh+.
   - static fallback (PopCylinder, solid, no motion): Bridgeslam, Chrome,
-    Funball, Tarbubble, Waterwheel, Tarpit + any other name.
-- `mesh` = meshworld file, always loaded from the game's `Levels` folder.
+    Funball, Tarbubble, Waterwheel + any other name.
+  - `Tarpit` (v1ch+): Dizzy/Master tar, bass-mod port — touch-only
+    zone (horiz dist2 < 1600 = r40 + |dy| < 40 around the S1 point,
+    fixed, no keys). Entry: `+0x2D0=Y`, `+0x2CC=1`,
+    DWORD `+0x768=0`, one-shot 3D splash (custom `"sound"` or native
+    `gluestuck` via `board+0x878+0x484`). In-tar per frame: Y -= 0.25,
+    `+0x2E9=0`; sunk past entryY - radius*2.5 calls Ball_Respawn
+    0x405190 (SAFESPOT tp). Sink-then-die, never freeze. All balls via
+    `board+0x29D4`. Logs `entry tar=1` + `sunk -> respawn`.
+  - `Mouse` (v1df+): ping-pong on X — `home -> home+100 -> home`,
+    repeat. Static PopCylinder (solid), mesh from `mesh`, spawn at each
+    `REF:MouseXX`. Per-def keys (bare floats): `speed_X` = seconds
+    per leg like Woodbridge speed_Y (def 2, rate = high/speed),
+    `high_X` = travel units (def 100), `moveX_delay` = hold seconds at
+    each end incl. base (def 0). Each forward start plays the def's
+    `sound` one-shot at the mouse pos (unset = silent). Same native
+    reposition
+    path as Woodbridge (`obj+0x10D4` + `+0x10E4`), pause-frozen.
+    Exact `behaviour: Mouse` match (never catches `Mousetrap`).
+    Logs `ENT MouseN: reached +100/home` on turns.
+  - Death bubbles (v1da+): three top-level set keys (NOT per def):
+    `"death_bubbles": false` = no bubble spawns at all (default true).
+    `"death_bubbles_tex": "<Name>"` loads bubble skin from
+    `Textures\<Name>` (default + fallback `"Tar"`). Parsed + logged;
+    texture swap ships after the mesh material-walk RE.
+    `"death_bubbles_sfx": "<base>"` loads pop sounds from
+    `Sounds\<base>1` (+ `<base>2`..`<base>9` while present) and pops
+    pick round-robin among loaded (default `"bubble"` = native
+    bubble1/bubble2 pops, no hook). Other bases install a Play3D
+    0x459860 detour swapping the native pop lists (prologue verified,
+    mismatch = native). Log: `BUBCFG:` + `BUBSFX:` lines.
+- `mesh` = meshworld file, always loaded from the game's `Levels` folder,
+  except `Tarpit`: `"vertices"` (or empty/missing/bad file) = invisible
+  trigger-only zone at the S1 point, no spawn. A real file = visible
+  solid + the same tar trigger on top.
 
 At level start each `REF:<Name>` spawns its mesh via the same native chain as
 GRID (`operator_new` -> `MeshWorld_ctor` -> `PopCylinder_ctor` -> lists) and
 stays visible (solid, never cycled). Missing or bad mesh files log
-`ENT <Name>: MISSING/BAD` and skip without crashing. Full destroy at level
+`ENT <Name>: MISSING/BAD` and skip without crashing (except `Tarpit`,
+which falls back to an invisible trigger). Full destroy at level
 quit via the shared despawn path.
 
 ## Level setup
@@ -260,6 +294,166 @@ The HB+ loading chain (scanning `Mods\`, calling `CreateModInstance`, firing `In
 MAKYUNI / Hamsterbot
 
 ## Changelog
+
+### v1dv
+- 6ball behaviour: BadBall body + custom `mesh` skin. Same
+  BadBall_ctor+v[1]+home as 8ball, custom `Levels/<mesh>` MeshWorld
+  into App slot 2 (754=2, FunBall pattern). Slot 1 stays 8ball-only.
+  Bad mesh = 8ball fallback, never invisible. Joins bad-balls list.
+  Set: `"6ball", { "behaviour": "6ball", "mesh": "6ball.MESHWORLD" }`.
+
+### v1dr
+- Mouse forward start plays its `sound` one-shot (Tarpit splash
+  pattern, positioned at the mouse, vol 1.0). Unset/failed = silent,
+  never gluestuck fallback. Log: forward snd=custom/none.
+
+### v1dq
+- speed_X now seconds-per-leg (Woodbridge speed_Y style):
+  rate = high_X/speed_X. Your 2/1/500 = 2s legs, 1s holds.
+  Old u/s reading made 250s legs (looked dead). Def speed 2.
+
+### v1dp
+- Mouse per-def motion: `speed_X` (def 50 u/s), `high_X` travel
+  (def 100u), `moveX_delay` hold at both ends incl. base (def 0s,
+  pause-frozen). Missing keys = old behavior. Log shows parsed
+  spX/dly/hiX per def + wait on each arrival.
+
+### v1do
+- Mouse normals inverted in-game: mesh authored inside-out
+  (your editor check); mod negates all S5 normals in a temp
+  copy at load, ctors from temp, deletes after. Orig never
+  written. Fail = stock load. Log: normals inverted N.
+
+### v1dn
+- Y-flip generalized: base matrix (all behaviours) negates
+  the Y row too. Only Y is ever flipped, X/Z normal.
+
+### v1dm
+- Mouse Y-flip on the composed matrix (Y row negated),
+  Mouse-only. Log: ENT Mouse: rot ON.
+
+### v1dl
+- Mouse rotation fixed: flips reverted, axes normal; Mouse
+  installs on any-axis rotation (incl. Z-only) and composes Z
+  into the matrix (R=Rx*Rz, det +1). Log: ENT Mouse: rot ON,
+  now gated on real install.
+
+### v1dk
+- Mouse Z-flip: Z row negated on top of XY+X-unflip,
+  Mouse-only. Log: ENT Mouse: XY+X-unflip+Z-flip ON.
+
+### v1dj
+- Mouse X-unflip: X row negated on top of XY-swap, Mouse-only
+  (now a true rotation, det +1). Log: ENT Mouse: XY+X-unflip ON.
+
+### v1di
+- Mouse XY-swap probe: X/Y basis rows swapped, Mouse-only
+  (Y-flip reverted). Log: ENT Mouse: XY-swap ON.
+
+### v1dh
+- Mouse Y-flip probe: render matrix negates the Y row for Mouse
+  only (Woodbridge path untouched). Log: ENT Mouse: Y-flip ON.
+
+### v1dg
+- Rotated Mouse fix: render matrix now reads live X (obj+0x10D4),
+  not home X. Rotated Woodbridges unaffected (their X never moves,
+  so live==home for them).
+
+### v1df
+- Mouse behaviour: `behaviour: Mouse` spawns its `mesh` at each
+  `REF:MouseXX` as a solid static and ping-pongs +100 X from home
+  at 50 u/s (`obj+0x10D4`/`+0x10E4` path, pause-frozen, per-instance).
+
+### v1de
+- Ambient bubble properties: `bubbles` bool gate (default true),
+  `bubbles_tex` parsed+logged with `TarBlot` fallback (swap pending
+  with death tex), `bubbles_sfx` base+N probe with its OWN pop path —
+  ambient bubbles are ctor'd on a proxy app carrying their lists
+  (native update plays them, death redirect never matches). Logs
+  `BUBACFG:`/`BUBASFX:`.
+
+### v1dd
+- Ambient spread: rejection-sampled over the whole cover quad bbox
+  (point-in-quad tested, home+-25 fallback) — no more single cluster
+  around the one S1 point.
+
+### v1dc
+- Ambient height fix: spawns were ~29u buried (S1 home sits below the
+  ridden surface). Surface now learned per instance from first entry
+  ball Y (log `BUB: surfN learned`), ambient = surface-20; pre-touch
+  fallback home+10.
+
+### v1db
+- Ambient TarBubbles (Dizzy/Master look): every Tarpit instance bubbles
+  constantly from its surface (~8%/tick, +-25u square, same -20 height
+  offset as death bubbles), player-independent, not gated by
+  `death_bubbles`. Death + ambient share one demand queue in bub_frame.
+
+### v1da
+- Death-bubble properties: `death_bubbles` bool gate (default true),
+  `death_bubbles_tex` parsed+logged with `Tar` fallback (swap pending
+  material-walk RE), `death_bubbles_sfx` base+N probe with Play3D-detour
+  pop redirect (`bubble` = native, no hook). Logs `BUBCFG:`/`BUBSFX:`.
+
+### v1cz
+- Bubbles 160 lower than probe per test: spawn `ball-20`.
+
+### v1cy
+- Bubbles 170 lower than probe per test: spawn `ball-30`.
+
+### v1cx
+- Bubbles 150 lower than probe per test: spawn `ball-10` (visual ≈ `ball-82`, likely under the deck — say the word if invisible).
+
+### v1cw
+- Bubbles 100 lower than probe per test: spawn `ball+40`.
+
+### v1cv
+- Bubbles 50 lower per test: spawn `ball+90` (v1cu proved 1:1).
+
+### v1cu
+- Bubble height probe: spawn `ball+140` (visual must jump way-high if it follows spawn 1:1 — v1ct's 10u was unjudgeable). Decides the position math.
+
+### v1ct
+- Bubbles smaller + lower: scale `25.0` → `12.0` (tests if draw size follows), spawn `ball+62` so the visual emerges ~`ball-10` and rises.
+
+### v1cs
+- Bubble experiment: append to `board+0x3B00`, native drives (no mod update/render calls). Decides whether Warm-Up drives the bubble list.
+
+### v1cr
+- Bubbles visible: render draws at spawn−scale−60 (disassembled, doc note wrong), so spawns move to ball+85 (visual starts at the ball, rises as it shrinks). Render call now passes the dummy arg (`ret 4` exact).
+
+### v1cq
+- Bubble crash fix: drive bubbles from `game_update` (update stage, like native board updates). v1cp drove the sprite render from Draw and died at `0001:00078EDD`.
+
+### v1cp
+- Tarpit drowning bubbles: real native bubble objects (ctor `0x44FB50` RET `0x10` objdump-verified, update/render/dtor) spawn around the sinking ball (~20%/frame, cap 24), self-driven from `text_render`. New `source/entbub.h`, `BUB:` log lines.
+
+### v1co
+- Tarpit cover binds the S6 geom at the S1 point (name hit > home-inside > nearest, GOAL never picked) — works when the plane geom has any name. Plus `S1[N]=` name+pos dump every scan. No quads/geoms = sphere fallback.
+
+### v1cn
+- Tarpit diag: when 0 quads match, log lists the level's S6 geom names (`TARQ: S6[N]=`) so the real plane name shows. No behavior change.
+
+### v1cm
+- Tarpit covers the whole plane: entry XZ now tests the level S6 quad(s) matching the def name (ball-radius rim samples) instead of the r30 S1 sphere; no quads = sphere fallback. New `source/enttar.h`, `TARQ:` log lines.
+
+### v1cl
+- Tarpit zone back to r30/`|dy|`30 (v1cg feel). v1ch r40 caught the deck 38u out (`dx=-32 dz=-21 dy=22`), sinking through the roll-in = the dead second.
+
+### v1ck
+- Tarpit onset diagnostics only (no behavior change): entry logs ball offset from S1 (`dx/dy/dz`); in-tar traces `Y/g` every 30f. Decides zone-late vs sink-stalled.
+
+### v1cj
+- Tarpit sink starts instantly: in-tar re-asserts `+0x2CC=1` + DWORD `+0x768=0` every frame (standing on solid re-grounded the ball after entry, stalling onset ~1s).
+
+### v1ch
+- Tarpit trigger earlier per test: zone r30/|dy|30 → r40/|dy|40 around S1.
+
+### v1cg
+- Tarpit fixed per your 2 bullets: zone now touch-only (r30 + |dy|<30, was 150u bubble that fired early); sink-then-die replaces freeze (Y -= 0.25/frame, `+0x2E9=0`, Ball_Respawn 0x405190 at entryY - radius*2.5 = Dizzy SAFESPOT tp). Sound parent fixed to `board+0x878+0x484`. Bass-mod verbatim port.
+
+### v1cf
+- Tarpit behaviour: native `N:TARPIT` replication (`ball+0x2CC=1`, `+0x2D0=entryY`, `+0x768=0`, one-shot 3D splash custom-`sound`-or-`gluestuck`, permanent). `"vertices"`/empty/missing/bad mesh = invisible trigger-only at the S1 point; real file = visible solid + trigger. Zone = `proximity` ellipsoid (def 150/1/1/1). Your `Cheesepit` line works as-is in LevelQ.
 
 ### v1bf
 - Woodbridge behaviour: sinks 50u while ball within 150u, rises back after. Smooth 100 u/s, pause-frozen, native `+0x10D8`/`+0x10E4` reposition path (disasm-verified against `PopCylinder_ctor`/`0x43DED0`/`0x46FBB0`). Edge-only logs (`near -> sinking`, `far -> rising`, `reached`).
