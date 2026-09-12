@@ -1,23 +1,12 @@
 /* Chapter 5 - S1Ensure helpers + UniversalCreateDynamicObjects (LevelFeatures.c lines 3418-4417) */
 /* ═══════════════════════════════════════════════════════════════════════════
- * Universal CreateDynamicObjects (Slot 33) — replaces all 15 per-level handlers
- *
- * The game calls this for each named mesh object found in the MESHWORLD.
- * Each per-level handler matches its own object names (BRIDGE, TIPPER, MACE, etc.)
- * and creates the appropriate game object via its ctor.
- *
- * Since N:/E: names are unique per level's mesh, there are zero conflicts.
- * We save the original per-level handlers and delegate to them, so each
- * level's objects are created exactly as the original game intended.
- * ═══════════════════════════════════════════════════════════════════════════ */
-
-/* ═══════════════════════════════════════════════════════════════════════════
- * Universal CreateDynamicObjects (Slot 33) — replaces all 15 per-level handlers
- *
- * Matches S1 object names and calls the appropriate ctor directly.
- * This enables cross-level object injection — any object from any level
- * can be used on any other level via LevelData.txt mesh configuration.
- * ═══════════════════════════════════════════════════════════════════════════ */
+ /* Universal CreateDynamicObjects (Slot 33) — replaces all 15 per-level handlers
+  *
+  * Matches S1 object names and calls the appropriate ctor directly
+  * (no delegation to originals — the originals only know their own level's
+  * names). This enables cross-level object injection: any object from any
+  * level can be used on any other level, driven by the loaded file's S1 refs.
+  * ═══════════════════════════════════════════════════════════════════════════ */
 
 static void* S1EnsureMeshWorld(void* board, void* ext, DWORD offset, const char* path) {
     void* cur = *(void**)((char*)ext + offset);
