@@ -5,10 +5,11 @@
  *   1 Rotator, 2 Pendulum, 6 Swirl, 7 Flickfloor1, 10 Judge, 11 Glassbreaker,
  *   13 Sign, 15 8ball, 19 Flickfloor2, 20 Flickring, 21 Trode, 33 Bonk,
  *   35 Catapult, 36 Mace, 37 Tipper, 38 Lifter, 39 Speedcylinder,
- *   40 Neonplatform, 41 Trapdoor, 42 Droplifter, 43 Gluebie, 45 Timebutton.
- * Static PopCylinder fallback (visible, solid, no special motion):
+ *   40 Neonplatform, 41 Trapdoor, 42 Droplifter, 43 Gluebie, 45 Timebutton,
+ *   46 6ball (v1dv: BadBall body + custom Levels mesh in slot 2).
+ * Static PopCylinder spawn shape (visible, solid — motion via drivers):
  *   0 (all other names), 16 Bridgeslam, 23 Chrome, 24 Funball,
- *   25 Tarbubble, 26 Waterwheel, 44 Tarpit.
+ *   25 Tarbubble, 26 Waterwheel, 44 Tarpit (v1cf: tar driver in cpp).
  * Woodbridge is handled by the existing entity_frame code (unchanged).
  *
  * INCLUDE POINT: after board defines + g_op_new/g_append/g_remove +
@@ -127,6 +128,7 @@ static int aibeh_type(const char* beh) {
     if (aibeh_streq(beh, "Glassbreaker")) return 11;
     if (aibeh_streq(beh, "Sign")) return 13;
     if (aibeh_streq(beh, "8ball")) return 15;
+    if (aibeh_streq(beh, "6ball")) return 46;
     if (aibeh_streq(beh, "Bridgeslam")) return 16;
     if (aibeh_streq(beh, "Flickfloor2")) return 19;
     if (aibeh_streq(beh, "Flickring")) return 20;
@@ -172,6 +174,7 @@ static unsigned aibeh_size(int t) {
         case 11: return AIBEH_SZ_SECRET;
         case 13: return AIBEH_SZ_SIGN;
         case 15: return AIBEH_SZ_BADBALL;
+        case 46: return AIBEH_SZ_BADBALL;
         case 33: return AIBEH_SZ_BONK;
         case 35: return AIBEH_SZ_CATAPULT;
         case 36: return AIBEH_SZ_MACE;
@@ -270,6 +273,54 @@ static void* aibeh_spawn(DWORD board, float px, float py, float pz,
             *(float*)((char*)obj + 0xC60) = px;
             *(float*)((char*)obj + 0xC64) = py;
             *(float*)((char*)obj + 0xC68) = pz;
+            /* v1dt: 8ball mesh slot (custom_entities v54 pattern). Ball_Render
+             * draws App+0x244[ball+0x754*4] only when 754<3: copy the 8Ball
+             * mesh (App+0x268, index 9) into slot 1 (App+0x248) + set 754=1. */
+            if (app && !IsBadReadPtr((void*)(app + 0x268), 4)) {
+                DWORD m8 = *(DWORD*)(app + 0x268);
+                if (m8 && !IsBadReadPtr((void*)(app + 0x248), 4)) {
+                    *(DWORD*)(app + 0x248) = m8;
+                    *(DWORD*)((char*)obj + 0x754) = 1;
+                } else log_mod("  ENT 8ball: mesh missing, sphere fallback");
+            }
+            return obj;
+        }
+        case 46: {
+            DWORD* vt;
+            obj = g_op_new(AIBEH_SZ_BADBALL);
+            if (!obj) return NULL;
+            memset(obj, 0, AIBEH_SZ_BADBALL);
+            aibeh_pfn_badball(obj, (void*)board);
+            vt = *(DWORD**)obj;
+            if (vt && !IsBadReadPtr(vt, 8)) {
+                DWORD f1 = vt[1];
+                if (f1 > 0x400000 && !IsBadReadPtr((void*)f1, 4)) {
+                    typedef void (__thiscall *v1_t)(void*);
+                    ((v1_t)f1)(obj);
+                }
+            }
+            *(float*)((char*)obj + 0xC60) = px;
+            *(float*)((char*)obj + 0xC64) = py;
+            *(float*)((char*)obj + 0xC68) = pz;
+            /* v1dv: 6ball = BadBall body + custom MESHWORLD skin.
+             * Same BadBall_ctor+v[1]+home as 8ball (case 15). Custom
+             * MeshWorld* (Levels/<mesh>, loaded by caller) goes into
+             * App mesh slot 2 (App+0x24C, SphereBreak2) + 754=2, the
+             * FunBall pattern from custom_entities (Ball_Render only
+             * draws slots 0-2). Slot 1 stays 8ball-exclusive, no clash.
+             * Bad mesh/app = 8ball-mesh fallback (never invisible). */
+            if (mesh && !IsBadReadPtr((void*)mesh, 4) &&
+                app && !IsBadReadPtr((void*)(app + 0x24C), 4)) {
+                *(DWORD*)(app + 0x24C) = (DWORD)mesh;
+                *(DWORD*)((char*)obj + 0x754) = 2;
+            } else if (app && !IsBadReadPtr((void*)(app + 0x268), 4)) {
+                DWORD m8 = *(DWORD*)(app + 0x268);
+                if (m8 && !IsBadReadPtr((void*)(app + 0x248), 4)) {
+                    *(DWORD*)(app + 0x248) = m8;
+                    *(DWORD*)((char*)obj + 0x754) = 1;
+                    log_mod("  ENT 6ball: custom mesh bad, 8ball fallback");
+                } else log_mod("  ENT 6ball: mesh missing, sphere fallback");
+            } else log_mod("  ENT 6ball: mesh missing, sphere fallback");
             return obj;
         }
         case 33:
@@ -328,6 +379,9 @@ static void* aibeh_spawn(DWORD board, float px, float py, float pz,
             }
             *(DWORD*)((char*)obj + 0x10D4) = (DWORD)visual;
             aibeh_pfn_tipattach(visual, (int)obj);
+            { char tbuf[96]; snprintf(tbuf, sizeof(tbuf),
+                "  ENT Tipper: visual ok obj=0x%X vis=0x%X",
+                (DWORD)obj, (DWORD)visual); log_mod(tbuf); }
             return obj;
         }
         case 38:
@@ -361,6 +415,18 @@ static void* aibeh_spawn(DWORD board, float px, float py, float pz,
                 }
             }
             *(DWORD*)((char*)obj + 0x47C) = (DWORD)obj;
+            /* v1dt: Timebutton rides the SpeedCyl shape (custom_entities
+             * v55n_38: native 0x436C10 ctor crashes, SpeedCyl 0x436A20 is
+             * proven). Without the vtable swap a Timebutton S1 would spin +
+             * launch like a SpeedCyl. 0x4D5830 = TimeButton vtable,
+             * +0x10E5=1 render-once, +0x10E4=0 not-pressed latch. Press
+             * reward (N:EXTRATIME + timer) still needs a dispatch driver. */
+            if (type == 45) {
+                *(DWORD*)obj = 0x4D5830;
+                *(char*)((char*)obj + 0x10E5) = 1;
+                *(char*)((char*)obj + 0x10E4) = 0;
+                log_mod("  ENT Timebutton: vtable 0x4D5830 set (press pending)");
+            }
             return obj;
         }
         case 40:
@@ -412,7 +478,11 @@ static void* aibeh_spawn(DWORD board, float px, float py, float pz,
             aibeh_pfn_oddlift(obj, (void*)board, px, py, pz);
             return obj;
         }
-        case 43:
+        case 43: {
+            DWORD bname = 0;
+            const char* bn = NULL;
+            const char* want = "Board (Dizzy)";
+            int wi = 0, ok = 1;
             obj = g_op_new(AIBEH_SZ_GLUEBIE);
             if (!obj) return NULL;
             memset(obj, 0, AIBEH_SZ_GLUEBIE);
@@ -420,7 +490,28 @@ static void* aibeh_spawn(DWORD board, float px, float py, float pz,
             *(float*)((char*)obj + 0x10D4) = px;
             *(float*)((char*)obj + 0x10D8) = py;
             *(float*)((char*)obj + 0x10DC) = pz;
+            /* v1dt: Dizzy proximity list (custom_entities v55j_12 pattern).
+             * Native DizzyBoard_Update slows the ball only for members of
+             * board+0x4378. Never touch board+0x6080 (sorted-insert crash). */
+            if (board && !IsBadReadPtr((void*)(board + 0x868), 4)) {
+                bname = *(DWORD*)(board + 0x868);
+                if (bname && !IsBadReadPtr((void*)bname, 16)) bn = (const char*)bname;
+            }
+            if (bn) {
+                while (want[wi]) {
+                    char a = bn[wi], b2 = want[wi];
+                    if (a >= 'A' && a <= 'Z') a += 32;
+                    if (b2 >= 'A' && b2 <= 'Z') b2 += 32;
+                    if (a != b2) { ok = 0; break; }
+                    wi++;
+                }
+                if (ok && bn[wi] == '\0') {
+                    g_append((void*)(board + 0x4378), obj);
+                    log_mod("  ENT Gluebie: Dizzy list +0x4378 joined");
+                } else log_mod("  ENT Gluebie: non-Dizzy, visual+solid only");
+            }
             return obj;
+        }
         default:
             return NULL;
     }
@@ -436,7 +527,7 @@ static void aibeh_show(DWORD board, DWORD obj, int type) {
     if (IsBadReadPtr((void*)obj, 0x20)) return;
     g_append((void*)(board + BOARD_UPDATE_LIST), (void*)obj);
     g_append((void*)(board + BOARD_RENDER_LIST), (void*)obj);
-    if (type == 15)
+    if (type == 15 || type == 46)
         g_append((void*)(board + AIBEH_BOARD_BADBALLS), (void*)obj);
     col_obj = 0;
     if (type == 1 || type == 2 || type == 6 || type == 35)
@@ -486,7 +577,7 @@ static void aibeh_remove(DWORD board, DWORD obj, int type, unsigned size) {
     g_remove((void*)(board + BOARD_UPDATE_LIST), (int)obj);
     g_remove((void*)(board + BOARD_SCENE_UPDATE_LIST), (int)obj);
     g_remove((void*)(board + BOARD_RENDER_LIST), (int)obj);
-    if (type == 15)
+    if (type == 15 || type == 46)
         g_remove((void*)(board + AIBEH_BOARD_BADBALLS), (int)obj);
     level = get_level(board);
     if (level) {

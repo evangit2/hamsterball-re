@@ -50,6 +50,7 @@
 #include "gridmesh.h"
 #include "gridset.h"
 #include "entdefs.h"
+#include "entnorm.h"
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Game addresses + offsets (verified against mknp_custom_entities / Hamsterball.exe)
@@ -229,12 +230,24 @@ static float g_ent_cur[ENT_MAX_INST];      /* current Y offset (0 .. -50) */
 static float g_ent_applied[ENT_MAX_INST];  /* last Y offset written + flagged */
 static int   g_ent_near[ENT_MAX_INST];     /* proximity latch (edge logs) */
 static DWORD g_ent_last_tick = 0;          /* dt clock for smooth motion */
+static float g_ent_wait[ENT_MAX_INST];     /* v1dp: Mouse end-hold timer */
 #define ENT_POS_X 0x10D4   /* PopCylinder_ctor stores x,y,z here (0x436EE0) */
 #define ENT_POS_Y 0x10D8
 #define ENT_DIRTY 0x10E4   /* BYTE: 1 = reposition (native update consumes) */
+
+/* Tarpit native replication (v1cf, N:TARPIT handler 0x40C5D0 writes) */
+#define TAR_BALL_FLAG   0x2CC   /* byte: tar active (native sets 1, permanent) */
+#define TAR_BALL_ENTRY  0x2D0   /* float: entry Y pos (native saves ball Y) */
+#define TAR_BALL_GROUND 0x768   /* byte: grounded (native clears 0 -> 2s fall) */
+#define TAR_SND_OFF     0x484   /* App+0x484: sounds\gluestuck list ptr */
+#define TAR_RESPAWN     0x405190 /* Ball_Respawn __fastcall(ECX=ball) RET0:
+                                  * +0x2F8=1, clears vel+in_tar, SAFESPOT tp */
+typedef void (__fastcall *tar_respawn_t)(DWORD);
 #define WB_RADIUS 150.0f   /* trigger distance (3D, ball center to ref point) */
 #define WB_DROP   50.0f    /* sink depth when player near */
 #define WB_SPEED  100.0f   /* units/sec (0.5s down, 0.5s up) */
+#define MOUSE_RANGE 100.0f  /* v1df: X travel from home (ping-pong 0..100) */
+#define MOUSE_SPEED 50.0f   /* v1df: units/sec (2s out, 2s back) */
 
 /* Race slot 1-15 (MAKYUNI order). Set in find_grid_points from the board
  * vtable. Each LevelBoard_X_ctor writes its vtable to board+0x0
@@ -703,16 +716,20 @@ static float ent_cos_deg(float deg) {
     return ent_sin_deg(deg + 90.0f);
 }
 
+static int ent_is_mouse(int di);   /* v1dh fwd: defined with Woodbridge */
 static void pop_write_matrix(DWORD obj) {
     int i;
-    float hx, hy, hz, angdeg, c, s0, qy;
+    int isMouse = 0;
+    float hx, hy, hz, angdeg, c, s0, qx, qy, rzdeg;
     DWORD rl;
     float* m;
-    hx = hy = hz = 0.0f; angdeg = 0.0f;
+    hx = hy = hz = 0.0f; angdeg = 0.0f; rzdeg = 0.0f;
     for (i = 0; i < g_ent_inst_count; i++) {
         if (g_ent_objs[i] == obj) {
             hx = g_ent_home_x[i]; hy = g_ent_home_y[i]; hz = g_ent_home_z[i];
             angdeg = g_ent_ry[i] * 57.29578f;  /* v1bv: ref angle -> X */
+            rzdeg = g_ent_rz[i] * 57.29578f;   /* v1dl: Mouse Z */
+            isMouse = ent_is_mouse(g_ent_obj_def[i]);  /* v1dh: Y-flip */
             break;
         }
     }
@@ -721,13 +738,21 @@ static void pop_write_matrix(DWORD obj) {
     if (!rl || IsBadReadPtr((void*)rl, 68)) return;
     c = ent_cos_deg(angdeg);
     s0 = ent_sin_deg(angdeg);
-    qy = *(float*)(obj + 0x10D8);  /* live sunk Y */
-    (void)hy;
+    qx = *(float*)(obj + 0x10D4);  /* v1dg: live X (Mouse ping-pong; */
+    qy = *(float*)(obj + 0x10D8);  /* live sunk Y). Woodbridge never */
+    (void)hy; (void)hx;            /* writes X, so qx==hx for it. */
     m = (float*)(rl + 4);
-    m[0] = 1.0f; m[1] = 0.0f; m[2] = 0.0f; m[3] = 0.0f;
-    m[4] = 0.0f; m[5] = c;    m[6] = -s0;  m[7] = 0.0f;
-    m[8] = 0.0f; m[9] = s0;   m[10] = c;   m[11] = 0.0f;
-    m[12] = hx;  m[13] = qy;  m[14] = hz;  m[15] = 1.0f;
+    if (isMouse) {   /* v1dm probe, v1dn general rule: only Y flipped */
+        float cb = ent_cos_deg(rzdeg), sb = ent_sin_deg(rzdeg);
+        m[0] = cb;     m[1] = sb;     m[2] = 0.0f;  m[3] = 0.0f;
+        m[4] = c*sb;   m[5] = -c*cb;  m[6] = s0;    m[7] = 0.0f;
+        m[8] = -s0*sb; m[9] = s0*cb;  m[10] = c;    m[11] = 0.0f;
+    } else {   /* v1dn: Y-flip generalized (was base Rx) */
+        m[0] = 1.0f; m[1] = 0.0f; m[2] = 0.0f; m[3] = 0.0f;
+        m[4] = 0.0f; m[5] = -c;   m[6] = s0;   m[7] = 0.0f;
+        m[8] = 0.0f; m[9] = s0;   m[10] = c;   m[11] = 0.0f;
+    }
+    m[12] = qx;  m[13] = qy;  m[14] = hz;  m[15] = 1.0f;
 }
 
 static int __fastcall pop_rot_update(void* obj) {
@@ -1078,7 +1103,10 @@ static const char* mesh_for(int idx) {
 #include "entyaw.h"
 /* entarea.h needs gridmesh (GmCur), entdefs (def tables), log_mod. */
 #include "entarea.h"
+#include "enttar.h"     /* v1cm: tarpit plane-cover quads (needs entarea) */
+#include "entbub.h"     /* v1cp: native drowning bubbles, self-driven */
 #include "entsnd.h"    /* v1cb: creak acquire/frame (needs log_mod) */
+#include "entbubcfg.h" /* v1da: pop-sfx probe+redirect (needs entdefs,snd) */
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Named entities: set jsonc pairs -> S1 REF:<Name> -> Levels/<mesh> spawn.
@@ -1108,6 +1136,49 @@ static int ent_match_area(const char* s1name) {
     return -1;
 }
 
+/* v1cf: mesh value "vertices" (ci) = invisible trigger, no Levels file. */
+static int mesh_is_vertices(const char* m) {
+    const char* w = "vertices";
+    int i = 0;
+    if (!m || !m[0]) return 0;
+    while (w[i] && m[i]) {
+        char c = m[i];
+        if (c >= 'A' && c <= 'Z') c += 32;
+        if (c != w[i]) return 0;
+        i++;
+    }
+    return (w[i] == '\0' && m[i] == '\0') ? 1 : 0;
+}
+
+/* v1cf: record a Tarpit trigger-only instance (obj=0, invisible).
+ * why = short reason shown in the spawn log ("vertices" / "MISSING <f>"). */
+static void spawn_tarpit_trigger(int d, float px, float py, float pz,
+                                 float erx, float ery, float erz,
+                                 const char* why) {
+    char ebuf[160];
+    int n;
+    if (g_ent_inst_count < 0 || g_ent_inst_count >= ENT_MAX_INST) return;
+    n = g_ent_inst_count;
+    g_ent_objs[n] = 0;
+    g_ent_obj_def[n] = d;
+    g_ent_obj_type[n] = 44;
+    g_ent_obj_size[n] = 0;
+    g_ent_rx[n] = erx;
+    g_ent_ry[n] = ery;
+    g_ent_rz[n] = erz;
+    g_ent_home_x[n] = px;
+    g_ent_home_y[n] = py;
+    g_ent_home_z[n] = pz;
+    g_ent_cur[n] = 0.0f;
+    g_ent_applied[n] = 0.0f;
+    g_ent_near[n] = 0;
+    g_ent_inst_count++;
+    snprintf(ebuf, sizeof(ebuf),
+             "  ENT: spawned %s behaviour=Tarpit type=44 trigger-only (%s)",
+             g_ent_name[d], why);
+    log_mod(ebuf);
+}
+
 static void scan_spawn_entities(DWORD board) {
     DWORD sceneobj;
     DWORD level;
@@ -1124,9 +1195,12 @@ static void scan_spawn_entities(DWORD board) {
         g_ent_rx[i] = 0.0f;
         g_ent_ry[i] = 0.0f;
         g_ent_rz[i] = 0.0f;
+        g_ent_wait[i] = 0.0f;
     }
     g_ent_inst_count = 0;
     area_reset();   /* v1bz: clear gate quads every scan */
+    tar_reset();    /* v1cm: clear tarpit cover quads every scan */
+    bub_clear();    /* v1cp: drop live bubbles on next update tick */
     load_entities_file();
     if (!g_ent_count) return;
     if (!g_levels_dir[0]) {
@@ -1189,6 +1263,19 @@ static void scan_spawn_entities(DWORD board) {
         px = *(float*)(entry + S1ENTRY_POS_X);
         py = *(float*)(entry + S1ENTRY_POS_Y);
         pz = *(float*)(entry + S1ENTRY_POS_Z);
+        if (i < 16) {   /* v1co diag: every S1 name+pos */
+            const char* s1n = nm ? nm : "?";
+            int L = 0, k = 0;
+            snprintf(ebuf, sizeof(ebuf), "  S1[%d]=", i);
+            while (ebuf[L]) L++;
+            while (k < 24 && s1n[k] && L + 1 < (int)sizeof(ebuf)) {
+                ebuf[L++] = s1n[k++];
+            }
+            ebuf[L] = '\0';
+            snprintf(ebuf + L, sizeof(ebuf) - (unsigned)L,
+                     " at (%d,%d,%d)", (int)px, (int)py, (int)pz);
+            log_mod(ebuf);
+        }
         {   /* v1bm: REF rotation (DAT ROT_Y deg -> Y, else S1 file triple) */
             float yaw_deg = 0.0f;
             if (ent_dat_yaw_deg(nm, &yaw_deg)) {
@@ -1263,7 +1350,20 @@ static void scan_spawn_entities(DWORD board) {
             }
         }
         ent_basename(g_ent_mesh[d], base, sizeof(base));
+        {   /* v1cf: Tarpit needs no mesh file (invisible trigger zone) */
+            int etv = aibeh_type(g_ent_beh[d]);
+            if (etv == 44 && mesh_is_vertices(g_ent_mesh[d])) {
+                spawn_tarpit_trigger(d, px, py, pz, erx, ery, erz,
+                                     "vertices, invisible");
+                continue;
+            }
+        }
         if (!base[0]) {
+            if (aibeh_type(g_ent_beh[d]) == 44) {
+                spawn_tarpit_trigger(d, px, py, pz, erx, ery, erz,
+                                     "empty mesh, invisible");
+                continue;
+            }
             snprintf(ebuf, sizeof(ebuf), "  ENT %s: empty mesh, skip",
                      g_ent_name[d]);
             log_mod(ebuf);
@@ -1277,12 +1377,22 @@ static void scan_spawn_entities(DWORD board) {
             else snprintf(abs, sizeof(abs), "%s%s.MESHWORLD", g_levels_dir, base);
         }
         if (GetFileAttributesA(abs) == INVALID_FILE_ATTRIBUTES) {
+            if (aibeh_type(g_ent_beh[d]) == 44) {
+                snprintf(abs, sizeof(abs), "MISSING %s, invisible", base);
+                spawn_tarpit_trigger(d, px, py, pz, erx, ery, erz, abs);
+                continue;
+            }
             snprintf(ebuf, sizeof(ebuf), "  ENT %s: MISSING %s",
                      g_ent_name[d], base);
             log_mod(ebuf);
             continue;
         }
         if (validate_grid_file(abs) < 1) {
+            if (aibeh_type(g_ent_beh[d]) == 44) {
+                snprintf(abs, sizeof(abs), "BAD %s, invisible", base);
+                spawn_tarpit_trigger(d, px, py, pz, erx, ery, erz, abs);
+                continue;
+            }
             snprintf(ebuf, sizeof(ebuf), "  ENT %s: BAD %s",
                      g_ent_name[d], base);
             log_mod(ebuf);
@@ -1294,8 +1404,27 @@ static void scan_spawn_entities(DWORD board) {
             int etype = aibeh_type(g_ent_beh[d]);
             unsigned esize = 0;
             if (aibeh_is_static(etype)) {
-                obj = create_grid_cube(board, px, py, pz, 900 + d, ctor,
+                const char* mpath = ctor;
+                char mtmp[MAX_PATH];
+                char mabs[MAX_PATH];
+                int ninv = 0;
+                int havetmp = 0;
+                if (ent_is_mouse(d)) {
+                    havetmp = entnorm_make_inv(abs, mtmp, sizeof(mtmp),
+                                               mabs, sizeof(mabs),
+                                               g_levels_dir, &ninv);
+                    if (havetmp) {
+                        mpath = mtmp;
+                        snprintf(ebuf, sizeof(ebuf),
+                                 "  ENT Mouse: normals inverted %d", ninv);
+                        log_mod(ebuf);
+                    } else {
+                        log_mod("  ENT Mouse: norm-inv failed, stock");
+                    }
+                }
+                obj = create_grid_cube(board, px, py, pz, 900 + d, mpath,
                                        erx, ery, erz);
+                if (havetmp) DeleteFileA(mabs);
                 if (!obj) {
                     snprintf(ebuf, sizeof(ebuf), "  ENT %s: spawn failed",
                              g_ent_name[d]);
@@ -1307,8 +1436,12 @@ static void scan_spawn_entities(DWORD board) {
                 /* v1bo: install compose-draw for X/Y only (rz has no
                  * native draw op; rz-only refs log + skip) */
                 if ((erx > 0.000001f || erx < -0.000001f) ||
-                    (ery > 0.000001f || ery < -0.000001f))
+                    (ery > 0.000001f || ery < -0.000001f) ||
+                    (ent_is_mouse(d) &&
+                     (erz > 0.000001f || erz < -0.000001f))) {
                     pop_rot_install((DWORD)obj, erx, ery, erz);
+                    if (ent_is_mouse(d)) log_mod("  ENT Mouse: rot ON");
+                }
                 else if (erz > 0.000001f || erz < -0.000001f) {
                     snprintf(ebuf, sizeof(ebuf),
                              "  ENT %s: rz-only, no native Z draw path",
@@ -1400,6 +1533,38 @@ static void scan_spawn_entities(DWORD board) {
             log_mod(abuf);
         }
     }
+    {   /* v1cm: tarpit cover quads (one S6 walk per Tarpit def) */
+        int ad;
+        for (ad = 0; ad < g_ent_count; ad++) {
+            float hx = 0.0f, hz = 0.0f;
+            int ii;
+            if (aibeh_type(g_ent_beh[ad]) != 44) continue;
+            if (g_ent_area[ad]) continue;
+            /* v1co: first instance home binds the cover quad */
+            for (ii = 0; ii < g_ent_inst_count; ii++) {
+                if (g_ent_obj_def[ii] != ad) continue;
+                hx = g_ent_home_x[ii];
+                hz = g_ent_home_z[ii];
+                break;
+            }
+            if (have_levelfile)
+                tar_scan_file(levelfile, g_ent_name[ad], hx, hz);
+            else
+                log_mod("  TARQ: no level file, sphere fallback");
+        }
+        {
+            char tbuf[96];
+            snprintf(tbuf, sizeof(tbuf),
+                     "  TARQ: %d quad(s)%s",
+                     g_tar_count,
+                     tar_armed() ? ", plane cover armed" :
+                                   ", sphere fallback");
+            log_mod(tbuf);
+            /* v1cn: no quads => dump S6 names so the mismatch shows */
+            if (!g_tar_count && have_levelfile)
+                tar_list_geoms(levelfile);
+        }
+    }
 }
 
 /* Per-frame entity behaviours. Woodbridge: sinks to home-low_Y while the
@@ -1417,6 +1582,24 @@ static int ent_is_woodbridge(int di) {
     if (g_ent_area[di]) return 0;   /* v1bz: gate defs never instances */
     if (!g_ent_beh[di][0]) return 0;
     return nc_istrstr(g_ent_beh[di], "Woodbridge") != NULL;
+}
+
+/* v1df: Mouse = exact ci-equals "mouse" (substr would catch Mousetrap). */
+static int ent_is_mouse(int di) {
+    const char* w = "mouse";
+    const char* b;
+    int i = 0;
+    if (di < 0 || di >= g_ent_count) return 0;
+    if (g_ent_area[di]) return 0;
+    b = g_ent_beh[di];
+    if (!b || !b[0]) return 0;
+    while (w[i] && b[i]) {
+        char c = b[i];
+        if (c >= 'A' && c <= 'Z') c += 32;
+        if (c != w[i]) return 0;
+        i++;
+    }
+    return (w[i] == '\0' && b[i] == '\0') ? 1 : 0;
 }
 
 static void entity_frame(DWORD board) {
@@ -1461,6 +1644,241 @@ static void entity_frame(DWORD board) {
         float prox, low, spd, rate, sx, sy, sz, rx, ry, rz;
         int di;
         char ebuf[128];
+        if (!ent_is_woodbridge(g_ent_obj_def[i])) {
+            if (ent_is_mouse(g_ent_obj_def[i])) {
+                /* v1dp: Mouse ping-pong on X with per-def speed_X /
+                 * high_X / moveX_delay. v1dq: speed_X = seconds per
+                 * leg like Woodbridge speed_Y (rate = hi/sec).
+                 * g_ent_cur = X offset (0..hi),
+                 * g_ent_near = dir (0=+X out, 1=-X back),
+                 * g_ent_applied = last write, g_ent_wait = end hold.
+                 * Each end: clamp, hold dly seconds, flip, repeat.
+                 * Same native path as Woodbridge (obj+0x10D4 +0x10E4).
+                 * Pause-frozen by the early return above. */
+                float mcur, mstep, mdiff, msp, mhi, mdly;
+                int mdi;
+                if (!obj || IsBadReadPtr((void*)obj, 0x10E8)) continue;
+                mdi = g_ent_obj_def[i];
+                msp = 2.0f; mhi = 100.0f; mdly = 0.0f;
+                if (mdi >= 0 && mdi < ENT_MAX_DEFS) {
+                    if (g_ent_speedx[mdi] > 0.0f) msp = g_ent_speedx[mdi];
+                    if (g_ent_highx[mdi] > 0.0f) mhi = g_ent_highx[mdi];
+                    if (g_ent_movedelay[mdi] >= 0.0f) mdly = g_ent_movedelay[mdi];
+                }
+                if (g_ent_wait[i] > 0.0f) {
+                    g_ent_wait[i] -= dt;
+                    if (g_ent_wait[i] < 0.0f) g_ent_wait[i] = 0.0f;
+                    continue;
+                }
+                mcur = g_ent_cur[i];
+                mstep = (msp > 0.001f ? (mhi / msp) : 50.0f) * dt;
+                if (!g_ent_near[i]) {
+                    if (mcur <= 0.0f && mstep > 0.0001f) {
+                        /* v1dr: forward start -> one-shot custom sound
+                         * at the mouse pos. Custom list only (the def's
+                         * "sound" file via snd_level_acquire); unset or
+                         * failed load = silent, never gluestuck fallback.
+                         * Fires once: mcur > 0 right after this frame. */
+                        DWORD sptr2 = 0;
+                        const char* msnd = "none";
+                        if (mdi >= 0 && mdi < ENT_MAX_DEFS &&
+                            g_snd_list[mdi] &&
+                            !IsBadReadPtr((void*)g_snd_list[mdi], 0x20))
+                            sptr2 = g_snd_list[mdi];
+                        if (sptr2 && g_api) {
+                            Vec3 vp(g_ent_home_x[i] + mcur,
+                                    g_ent_home_y[i], g_ent_home_z[i]);
+                            HBAPI(g_api).Play3dSoundEffect((void*)sptr2,
+                                                           vp, 1.0f);
+                            msnd = "custom";
+                        }
+                        snprintf(ebuf, sizeof(ebuf),
+                                 "  ENT Mouse%d: forward snd=%s",
+                                 i, msnd);
+                        log_mod(ebuf);
+                    }
+                    mcur += mstep;
+                    if (mcur >= mhi) {
+                        mcur = mhi;
+                        g_ent_near[i] = 1;
+                        g_ent_wait[i] = mdly;
+                        snprintf(ebuf, sizeof(ebuf),
+                                 "  ENT Mouse%d: reached %d, wait %f.1",
+                                 i, (int)mhi, mdly);
+                        log_mod(ebuf);
+                    }
+                } else {
+                    mcur -= mstep;
+                    if (mcur <= 0.0f) {
+                        mcur = 0.0f;
+                        g_ent_near[i] = 0;
+                        g_ent_wait[i] = mdly;
+                        snprintf(ebuf, sizeof(ebuf),
+                                 "  ENT Mouse%d: reached home, wait %f.1",
+                                 i, mdly);
+                        log_mod(ebuf);
+                    }
+                }
+                g_ent_cur[i] = mcur;
+                mdiff = mcur - g_ent_applied[i];
+                if (mdiff < 0.0f) mdiff = -mdiff;
+                if (mdiff > 0.001f) {
+                    *(float*)((char*)obj + ENT_POS_X) =
+                        g_ent_home_x[i] + mcur;
+                    *(BYTE*)((char*)obj + ENT_DIRTY) = 1;
+                    g_ent_applied[i] = mcur;
+                }
+                continue;
+            }
+            /* v1cg: Tarpit = bass-mod verbatim port (Dizzy/Master tar).
+             * Zone native-fixed: horiz dist2 < 1600 (r=40) + |dy| < 40 —
+             * touch-only, never the 150u v1cf bubble. In-tar per frame:
+             * Y -= 0.25 (native _DAT_004CF380), +0x2E9=0 (no pen-death),
+             * dead when Y < entryY - radius*2.5 -> Ball_Respawn 0x405190
+             * (SAFESPOT tp, same as Dizzy). Entry: +0x2D0=Y, +0x2CC=1,
+             * DWORD +0x768=0, one-shot 3D splash (custom or gluestuck
+             * via board+0x878+0x484, the true native parent). All balls
+             * via board+0x29D4 list. No freeze, sink-then-die. */
+            if (g_ent_obj_type[i] == 44) {
+                float tx, ty, tz;
+                int bcount;
+                DWORD* bdata;
+                int bi;
+                /* v1db: ambient TarBubbles (Dizzy/Master look): slow
+                 * constant rise from the surface, player-independent.
+                 * v1dc: height from learned surface (entry Y - 20), S1
+                 * home sits ~29u under the ridden surface. ~8%/tick.
+                 * v1dd: spread over the whole cover quad (rejection
+                 * sample in bbox, home+-25 fallback), not one cluster. */
+                if ((bub_rand() % 100u) < 8u) {
+                    float ax = g_ent_home_x[i];
+                    float az = g_ent_home_z[i];
+                    if (tar_armed()) {
+                        int q = g_tar_pick;
+                        float aw = g_tar_maxx[q] - g_tar_minx[q];
+                        float ad = g_tar_maxz[q] - g_tar_minz[q];
+                        int tr = 0;
+                        if (aw < 1.0f) aw = 1.0f;
+                        if (ad < 1.0f) ad = 1.0f;
+                        for (tr = 0; tr < 6; tr++) {
+                            float cx = g_tar_minx[q] + aw *
+                                (float)(bub_rand() % 1000u) / 1000.0f;
+                            float cz = g_tar_minz[q] + ad *
+                                (float)(bub_rand() % 1000u) / 1000.0f;
+                            if (tar_cover(cx, cz, 0.0f)) {
+                                ax = cx;
+                                az = cz;
+                                break;
+                            }
+                        }
+                    } else {
+                        ax += (float)((int)(bub_rand() % 51u) - 25);
+                        az += (float)((int)(bub_rand() % 51u) - 25);
+                    }
+                    bub_ambient(ax, bub_surf_y(i, g_ent_home_y[i]), az);
+                }
+                if (IsBadReadPtr((void*)(board + 0x29D4 + 0x04), 4)) continue;
+                bcount = *(int*)(board + 0x29D4 + 0x04);
+                if (bcount <= 0 || bcount > 20) continue;
+                if (IsBadReadPtr((void*)(board + 0x29D4 + 0x40C), 4)) continue;
+                bdata = *(DWORD**)(board + 0x29D4 + 0x40C);
+                if (!bdata || IsBadReadPtr(bdata, (unsigned)bcount * 4)) continue;
+                tx = g_ent_home_x[i];
+                ty = g_ent_home_y[i];
+                tz = g_ent_home_z[i];
+                for (bi = 0; bi < bcount; bi++) {
+                    DWORD bb = bdata[bi];
+                    float qx, qy, qz, qr, qdx, qdz, qdy, qentry, qdead;
+                    DWORD spar, sptr;
+                    const char* qsnd;
+                    if (!bb || bb < 0x10000) continue;
+                    if (IsBadReadPtr((void*)bb, 0x800)) continue;
+                    qx = *(float*)(bb + 0x164);
+                    qy = *(float*)(bb + 0x168);
+                    qz = *(float*)(bb + 0x16C);
+                    if (*(BYTE*)(bb + TAR_BALL_FLAG) != 0) {
+                        int g0;
+                        bub_notify(qx, qy, qz);   /* v1cp: drowning bubbles */
+                        qentry = *(float*)(bb + TAR_BALL_ENTRY);
+                        qr = *(float*)(bb + 0x284);
+                        /* v1ck diag: pre-write grounded + Y every 30f.
+                         * g_ent_cur unused by Tarpit, borrowed as counter. */
+                        g0 = (int)*(BYTE*)(bb + TAR_BALL_GROUND);
+                        g_ent_cur[i] += 1.0f;
+                        if (((int)g_ent_cur[i] % 30) == 1) {
+                            snprintf(ebuf, sizeof(ebuf),
+                                     "  ENT Tarpit%d: sink Y=%d g=%d",
+                                     i, (int)qy, g0);
+                            log_mod(ebuf);
+                        }
+                        /* v1cj: re-assert every frame — standing on solid
+                         * re-grounds the ball after entry, which stalled
+                         * onset ~1s. Native handler rewrites these on each
+                         * touch frame too. */
+                        *(BYTE*)(bb + TAR_BALL_FLAG) = 1;
+                        *(DWORD*)(bb + TAR_BALL_GROUND) = 0;
+                        *(float*)(bb + 0x168) = qy - 0.25f;
+                        *(BYTE*)(bb + 0x2E9) = 0;
+                        qdead = qentry - qr * 2.5f;
+                        if (qy - 0.25f < qdead) {
+                            ((tar_respawn_t)TAR_RESPAWN)(bb);
+                            snprintf(ebuf, sizeof(ebuf),
+                                     "  ENT Tarpit%d: sunk -> respawn", i);
+                            log_mod(ebuf);
+                        }
+                        continue;
+                    }
+                    qdx = tx - qx;
+                    qdz = tz - qz;
+                    /* v1cm: XZ must touch the cover quad (ball-radius rim
+                     * samples); unarmed => r30 sphere. */
+                    if (tar_armed()) {
+                        float er = *(float*)(bb + 0x284);
+                        if (!tar_cover(qx, qz, er)) continue;
+                    } else if (qdx * qdx + qdz * qdz >= 900.0f) continue;
+                    qdy = ty - qy;
+                    if (qdy < 0.0f) qdy = -qdy;
+                    if (qdy >= 30.0f) continue;
+                    *(float*)(bb + TAR_BALL_ENTRY) = qy;
+                    bub_learn_surf(i, qy);   /* v1dc: surface for ambient */
+                    *(BYTE*)(bb + TAR_BALL_FLAG) = 1;
+                    *(DWORD*)(bb + TAR_BALL_GROUND) = 0;
+                    spar = 0;
+                    sptr = 0;
+                    if (!IsBadReadPtr((void*)(board + 0x878), 4)) {
+                        spar = *(DWORD*)(board + 0x878);
+                        if (spar >= 0x10000 &&
+                            !IsBadReadPtr((void*)(spar + 0x484), 4))
+                            sptr = *(DWORD*)(spar + 0x484);
+                    }
+                    di = g_ent_obj_def[i];
+                    if (di >= 0 && di < ENT_MAX_DEFS && g_snd_list[di] &&
+                        !IsBadReadPtr((void*)g_snd_list[di], 0x20))
+                        sptr = g_snd_list[di];
+                    qsnd = "none";
+                    if (sptr && !IsBadReadPtr((void*)sptr, 0x20)) {
+                        qsnd = (di >= 0 && di < ENT_MAX_DEFS &&
+                                sptr == g_snd_list[di]) ? "custom" : "gluestuck";
+                        if (g_api) {
+                            Vec3 vp(qx, qy, qz);
+                            HBAPI(g_api).Play3dSoundEffect((void*)sptr, vp, 1.0f);
+                        }
+                    }
+                    snprintf(ebuf, sizeof(ebuf),
+                             "  ENT Tarpit%d: entry tar=1 snd=%s dx=%d dy=%d dz=%d",
+                             i, qsnd, (int)(qx - tx), (int)(qy - ty),
+                             (int)(qz - tz));
+                    log_mod(ebuf);
+                    g_ent_near[i] = 1;
+                }
+            }
+            continue;
+        }
+        /* v1ds: native-driven behaviours (Tipper 37, Catapult 35, etc.)
+         * must NOT run the Woodbridge sink driver below. That driver writes
+         * obj+0x10D8 (=Y for PopCylinder but =X for Tipper, whose +0x10D4
+         * holds the TipperVisual ptr) + BYTE +0x10E4. Without this guard a
+         * Tipper within prox (def 150) sank/wobbled on the wrong axis. */
         if (!ent_is_woodbridge(g_ent_obj_def[i])) continue;
         if (!obj || IsBadReadPtr((void*)obj, 0x10E8)) continue;
         di = g_ent_obj_def[i];
@@ -2492,7 +2910,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities v1ce log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities v1dv log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
@@ -2570,6 +2988,7 @@ static void __thiscall level_start(void*) {
 static void __thiscall scene_end(void*) {
     DWORD board = player_board();
     despawn_all(board);
+    bub_clear();   /* v1cp: free bubble visuals on update tick */
     g_cycle_started = false;
     g_active_board = 0;
     if (g_light_used && board) {
@@ -2674,6 +3093,8 @@ static void __thiscall game_update(void*) {
     border_frame();    /* slot RGBA -> P1 border (overrides exe, Neon too) */
     glow_frame();      /* slot RGBA -> P1 emitter glow (Neon_colors GLOW) */
     entity_frame(board); /* named entities: Woodbridge motion, rest native-driven */
+    bub_frame(board);  /* v1cq: drowning bubbles (update stage, like native) */
+    bubsfx_service(board); /* v1da: pop-sfx cache/probe (same tick OK) */
 
     if (!g_cycle_started) {
         if (g_board_ready_delay > 0) { g_board_ready_delay--; return; }
@@ -2740,11 +3161,44 @@ static void __thiscall game_update(void*) {
 static void __thiscall ball_update(void*, void*) {}
 static void __thiscall render_apply(void*, void*, float*) {}
 static void __thiscall cycle_option_change(void*, const char*, const char*) {}
-static void __thiscall event_collide(void*, void*, char* name) {
+static DWORD g_traj_last_log = 0;   /* v1du: TRAJECTORY fire-log throttle */
+static void __thiscall event_collide(void* ball, void*, char* name) {
     char c0;
     if (!name || IsBadReadPtr(name, 12)) return;
     c0 = name[0];
     if ((c0 != 'E' && c0 != 'e') || name[1] != ':') return;
+    /* v1du: TRAJECTORY fire log (proves moving-entity planes trigger).
+     * Prefix match like native (ci, 10ch after E:). Throttled 500ms. */
+    {
+        const char* w = "TRAJECTORY";
+        int ti = 0, ok = 1;
+        while (w[ti]) {
+            char a = name[2 + ti], b = w[ti];
+            if (a >= 'A' && a <= 'Z') a += 32;
+            if (a != b) { ok = 0; break; }
+            ti++;
+        }
+        if (ok) {
+            DWORD now = GetTickCount();
+            if ((int)(now - g_traj_last_log) >= 500) {
+                char tbuf[160];
+                int bx = 0, by = 0, bz = 0, k = 0, o = 0;
+                if (ball && !IsBadReadPtr(ball, 0x170))
+                    { bx = (int)*(float*)((char*)ball + 0x164);
+                      by = (int)*(float*)((char*)ball + 0x168);
+                      bz = (int)*(float*)((char*)ball + 0x16C); }
+                g_traj_last_log = now;
+                o += snprintf(tbuf + o, sizeof(tbuf) - o,
+                              "  TRAJ: fire ball=0x%X at (%d,%d,%d) ev=",
+                              (DWORD)ball, bx, by, bz);
+                while (k < 48 && name[k] && o + 1 < (int)sizeof(tbuf))
+                    tbuf[o++] = name[k++];
+                tbuf[o] = '\0';
+                log_mod(tbuf);
+            }
+            return;
+        }
+    }
     /* E:LIGHTSOFF (11) / E:LIGHTSON (10): mirror native behavior */
     if (strncmp(name + 2, "LIGHTSOFF", 9) == 0) {
         if (g_light_vis) {
