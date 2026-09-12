@@ -6,7 +6,7 @@ lights + BallBorder ring + P1 glow) and `mknp_battyball_events` (custom
 both: install this DLL **instead of** the two old ones, never alongside
 them (two drivers for the same `E:` planes would double-play sounds).
 
-## What it does (v1o)
+## What it does (v1p)
 
 - Everything `mknp_battyball_entities` v1dx does (same S1 `GRID` cycle,
   `ENTITIES` defs, `grid_speed`, neon ring/glow, lights, TRAJ + LIGHTSON /
@@ -52,10 +52,12 @@ them (two drivers for the same `E:` planes would double-play sounds).
   quad faces +X exactly, so touch = +X push 20. No quad in file =
   fallback +X. Log: PUSHQ scan line per level + throttled PUSHQ hit
   lines on touch.
-- v1o: PUSHQ writes the REAL player ball (board+0x29D4 list, first
-  entry). v1n proved the collide `ball` arg is a dead struct (pos
-  0,0,0, acc grew 0..320 never consumed). Hit line now logs the real
-  ball pos + accx — pos near (936,50..107,-18..25) = quad present.
+- v1p: PUSHQ proximity volume. Ellipsoid `proximity * proximity_scaleX/Y/Z`
+  (from your Mousepush def) around the quad centroid; inside = force 20
+  along facing every frame. Runs without touching the quad, needs no
+  entity instances. Touch event now fires only when no quad found (no
+  double force). Log: scan line shows c + prox + sc; enter/leave vol
+  lines on transitions.
 - One DLL, one log (`mknp_entities_plus.log`), one set file
   (`mknp_entities_plus_set.jsonc`, re-read every level start, same
   tolerant parsers: `E:` blocks with `behaviour` are entity-drivers,
@@ -84,7 +86,7 @@ them (two drivers for the same `E:` planes would double-play sounds).
 ## Log
 
 ```
-INIT Battyball Entities Plus v1o log=... set=...
+INIT Battyball Entities Plus v1p log=... set=...
 SET init: N sound events
 NEWBOARD ...
 EV LEVEL start
