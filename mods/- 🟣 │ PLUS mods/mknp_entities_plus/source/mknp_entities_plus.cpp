@@ -3144,6 +3144,29 @@ static int name_starts_ci(const char* a, const char* pre) {
     return 1;
 }
 
+/* v1e: 1 = E: block (bs..bend, exclusive) holds a "behaviour"/"behavior"
+ * key (entity-driver). memcmp = nc_memcmp via the nocrt macros above. */
+static int ev_block_has_beh(const char* bs, const char* bend) {
+    static const char* keys[2] = { "\"behaviour\"", "\"behavior\"" };
+    int ki;
+    for (ki = 0; ki < 2; ki++) {
+        const char* k = keys[ki];
+        int kl = 0;
+        const char* p;
+        while (k[kl]) kl++;
+        p = bs;
+        while (p + kl <= bend) {
+            if (*p == '"' && memcmp(p, k, (unsigned)kl) == 0) {
+                const char* v = p + kl;
+                while (v < bend && (*v == ' ' || *v == '\t')) v++;
+                if (v < bend && *v == ':') return 1;
+            }
+            p++;
+        }
+    }
+    return 0;
+}
+
 static int sound_offset(const char* name) {
     int i;
     if (!name || !name[0]) return -1;
@@ -3390,23 +3413,22 @@ static int parse_set_buf(const char* buf, evtab_t* out, int cap) {
         nm[ni] = '\0';
         if (*q != '"') { p++; continue; }
         p = q + 1;
-        /* v1b: E:Launch / E:Woodbridge_area / E:Cheesepit are entity-drivers
-         * (event quads/planes), not sound events -- skip so they never occupy
-         * an evtab slot. v1c: prefix match (numbered variants like
-         * E:Woodbridge_area0). */
-        if (name_starts_ci(nm, "E:Launch") || name_starts_ci(nm, "E:Woodbridge_area") ||
-            name_starts_ci(nm, "E:Cheesepit")) {
-            int depth = 0;
-            while (*p && *p != '{' && *p != '"') p++;
-            if (*p != '{') continue;
-            depth = 1;
-            p++;
-            while (*p && depth > 0) {
-                if (*p == '{') depth++;
-                else if (*p == '}') depth--;
-                p++;
+        /* v1e: E: blocks carrying "behaviour" are entity-drivers (event
+         * quads/planes) -- skip so they never occupy an evtab slot.
+         * Content-routed (any name); the E:/REF: prefix is only a label. */
+        {
+            const char* bsb = p;
+            while (*bsb && *bsb != '{' && *bsb != '"') bsb++;
+            if (*bsb == '{') {
+                const char* s = bsb + 1;
+                int depth = 1;
+                while (*s && depth > 0) {
+                    if (*s == '{') depth++;
+                    else if (*s == '}') depth--;
+                    s++;
+                }
+                if (ev_block_has_beh(bsb + 1, s - 1)) { p = s; continue; }
             }
-            continue;
         }
         /* find opening brace of its property block */
         while (*p && *p != '{' && *p != '"') p++;
@@ -3986,7 +4008,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1d log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1e log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }

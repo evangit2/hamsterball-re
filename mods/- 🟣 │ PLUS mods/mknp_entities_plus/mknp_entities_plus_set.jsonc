@@ -6,7 +6,8 @@
 
 // ################################# │    E N T I T I E S    │ #################################
 // "REF:<Name>", { "behaviour": "REF:<behaviour>", "mesh": "<file in Levels/>" } -- S1 REF:<Name>
-// "E:<Name>" events (E:Launch / E:Woodbridge_area / E:Cheesepit) are event quads/planes, not S1 spawns.
+// "E:<Name>" events (E:Launch / E:Woodbridge_area / E:Cheesepit) are event quads/planes.
+// Prefix is a routing label only: matching uses the stripped name, so E:Cheesepit = REF:Cheesepit = Cheesepit.
 [
     "REF:Woodbridge", { "behaviour": "REF:Woodbridge", "mesh": "Woodbridge.MESHWORLD" },
     // Events (uncomment + place matching E: refs/quads in the level):

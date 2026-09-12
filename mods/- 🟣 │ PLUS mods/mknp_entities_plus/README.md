@@ -6,7 +6,7 @@ lights + BallBorder ring + P1 glow) and `mknp_battyball_events` (custom
 both: install this DLL **instead of** the two old ones, never alongside
 them (two drivers for the same `E:` planes would double-play sounds).
 
-## What it does (v1d)
+## What it does (v1e)
 
 - Everything `mknp_battyball_entities` v1dx does (same S1 `GRID` cycle,
   `ENTITIES` defs, `grid_speed`, neon ring/glow, lights, TRAJ + LIGHTSON /
@@ -23,11 +23,14 @@ them (two drivers for the same `E:` planes would double-play sounds).
   drivers too (prefix match on both scanners).
 - v1d: scan logs EVERY S1 name + `area=`/`def=` match (`S1[i]=<name>
   area=<d> def=<d>`), so unmatched refs are visible instead of silent.
+- v1e: `E:`/`REF:` prefixes are routing labels only. Stored/matched names
+  are prefix-stripped (`E:Cheesepit` matches S1 `REF:Cheesepit`,
+  `E:Cheesepit01`, bare `Cheesepit`). `E:` blocks route on content:
+  with `behaviour` = entity-driver, without = sound event.
 - One DLL, one log (`mknp_entities_plus.log`), one set file
   (`mknp_entities_plus_set.jsonc`, re-read every level start, same
-  tolerant parsers: entity keys ignore `E:` entries except `E:Launch` /
-  `E:Woodbridge_area` / `E:Cheesepit`, event scanner only accepts
-  `"E:..."` sound entries and skips those three drivers).
+  tolerant parsers: `E:` blocks with `behaviour` are entity-drivers,
+  without are sound events; stored names are prefix-stripped).
 
 ## Migrating
 
@@ -52,7 +55,7 @@ them (two drivers for the same `E:` planes would double-play sounds).
 ## Log
 
 ```
-INIT Battyball Entities Plus v1d log=... set=...
+INIT Battyball Entities Plus v1e log=... set=...
 SET init: N sound events
 NEWBOARD ...
 EV LEVEL start
