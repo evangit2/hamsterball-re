@@ -4670,7 +4670,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1x log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1y log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
@@ -4837,6 +4837,15 @@ static void __thiscall game_update(void*) {
                  board, g_active_board);
         log_mod(bbuf);
         g_active_board = board;
+        /* v1y: pause-from-restart fix. Restarting from the pause menu
+         * carries paused=1 onto the fresh board and the game never clears
+         * it (stock fresh loads start at 0). Clear once here — mid-game
+         * pausing is untouched (this block runs only on board change). */
+        if (!IsBadReadPtr((void*)(board + BOARD_PAUSED), 4) &&
+            *(int*)(board + BOARD_PAUSED)) {
+            *(int*)(board + BOARD_PAUSED) = 0;
+            log_mod("  NEWBOARD: was paused, cleared");
+        }
         g_scan_logged = 0;
         g_board_ready_delay = 40;   /* wait ~40 frames for the level to finish building */
         g_rescan_tries = 0;           /* v1x */

@@ -6,7 +6,7 @@ lights + BallBorder ring + P1 glow) and `mknp_battyball_events` (custom
 both: install this DLL **instead of** the two old ones, never alongside
 them (two drivers for the same `E:` planes would double-play sounds).
 
-## What it does (v1x)
+## What it does (v1y)
 
 - Everything `mknp_battyball_entities` v1dx does (same S1 `GRID` cycle,
   `ENTITIES` defs, `grid_speed`, neon ring/glow, lights, TRAJ + LIGHTSON /
@@ -66,6 +66,9 @@ them (two drivers for the same `E:` planes would double-play sounds).
   frames re-arms). Log: PUSHQ shove jump line.
 - v1w: shove jump 150x8 frames (single-frame impulses clamp —
   20/150/1000 all read the same, sign never the issue).
+- v1y: NEWBOARD clears a carried-over paused flag (restart-from-pause
+  no longer starts frozen; log: was paused, cleared). Mid-game pausing
+  untouched.
 - v1x: shove grants E:JUMP-identical landing immunity (+0x2EC=0,
   +0x2F4=2000, log shows immune=2000) — high landings never dizzy,
   height untouched. Restart fix: EV LEVEL forces full rescan (same-
@@ -99,7 +102,7 @@ them (two drivers for the same `E:` planes would double-play sounds).
 ## Log
 
 ```
-INIT Battyball Entities Plus v1x log=... set=...
+INIT Battyball Entities Plus v1y log=... set=...
 SET init: N sound events
 NEWBOARD ...
 EV LEVEL start
