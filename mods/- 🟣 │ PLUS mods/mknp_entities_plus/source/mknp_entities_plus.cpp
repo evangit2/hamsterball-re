@@ -359,6 +359,7 @@ static DWORD g_prev_tick = 0;           /* last frame tick (pause freeze math) *
 static DWORD g_last_switch_log = 0;     /* last SWITCH line (log throttle) */
 static int   g_current_grid = 1;        /* 1-based current GRID (1 = GRID01) */
 static bool  g_cycle_started = false;
+static int   g_rescan_tries = 0;     /* v1x: S1-not-ready retries */
 
 /* Own-module handle (for locating testcube.MESHWORLD next to the DLL) */
 static HMODULE g_module = NULL;
@@ -1714,8 +1715,14 @@ static void push_frame(DWORD board) {
         if (ride && !g_push_legfired && g_push_moven >= 5) {
             g_push_legfired = 1;
             g_push_jumpn = 8;
+            /* v1x: E:JUMP-identical landing immunity (ball+0x2EC=clear,
+             * +0x2F4=max) so the big landing never dizzies. 2000 covers
+             * the full arc; native jump pads grant 200. */
+            *(int*)((char*)b + 0x2EC) = 0;
+            if (*(int*)((char*)b + 0x2F4) < 2000)
+                *(int*)((char*)b + 0x2F4) = 2000;
             snprintf(pbuf, sizeof(pbuf),
-                     "  PUSHQ: shove jump=150x8 ball=(%d,%d,%d)",
+                     "  PUSHQ: shove jump=150x8 immune=2000 ball=(%d,%d,%d)",
                      (int)bx, (int)by, (int)bz);
             log_mod(pbuf);
         }
@@ -3623,6 +3630,18 @@ static void start_grid_cycle(DWORD board) {
     int count = find_grid_points(board);
     start_lights(board);
     scan_spawn_entities(board);
+    if (!g_s1_count) {
+        /* v1x: S1 still empty (level mid-build on a fast restart) — retry
+         * next frames instead of latching dead. Bounded: 600 tries (~10s). */
+        if (++g_rescan_tries == 1)
+            log_mod("  GRID: S1 not ready, waiting...");
+        if (g_rescan_tries > 600) {
+            log_mod("  GRID: board never ready, giving up");
+            g_cycle_started = true;
+        }
+        return;
+    }
+    g_rescan_tries = 0;
     if (count > 0) {
         char buf[64];
         g_mult = gridset_level_mult_slot(g_race_slot);
@@ -4329,6 +4348,14 @@ static void ev_button_events(bool state) {
 static void ev_level_start_service(void) {
     int i, k;
     log_mod("EV LEVEL start");
+    /* v1x: force a full rescan even if the restarted board reuses the same
+     * address (allocator often returns it): next game_update takes the
+     * NEWBOARD path with a fresh 40f ready delay instead of trusting
+     * possibly-freed entity objs or scanning an unbuilt S1. */
+    g_active_board = 0;
+    g_cycle_started = false;
+    g_board_ready_delay = 40;
+    g_rescan_tries = 0;
     set_load("level");
     /* preload custom (non-vanilla) sounds, once per name per session */
     for (i = 0; i < g_evcount; i++) {
@@ -4643,7 +4670,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1w log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1x log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
@@ -4812,6 +4839,7 @@ static void __thiscall game_update(void*) {
         g_active_board = board;
         g_scan_logged = 0;
         g_board_ready_delay = 40;   /* wait ~40 frames for the level to finish building */
+        g_rescan_tries = 0;           /* v1x */
         g_cycle_started = false;
         g_spawned_count = 0;
         g_grid_count = 0;
