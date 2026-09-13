@@ -11,6 +11,10 @@
 [
     "REF:Woodbridge", { "behaviour": "REF:Woodbridge", "mesh": "Woodbridge.MESHWORLD" },
     "E:Mousepush", { "behaviour": "e_Mousepush", "mesh": "Mouse" },
+    // Cloudscape: Sky-Race cloud skybox on any level. Place an S1 REF:Cloudscape
+    // point where the clouds sit (NOT an S6 rename); mesh is ignored, sprite is
+    // always textures\clouds.png. Sky slot 13 keeps native clouds (mod idle).
+    // "REF:Cloudscape", { "behaviour": "Cloudscape", "mesh": "clouds" },
     // Events (uncomment + place matching E: refs/quads in the level):
     // "E:Launch", { "behaviour": "E:Launch", "mesh": "vertices" },
     // "E:Woodbridge_area", { "behaviour": "E:Woodbridge_area", "mesh": "vertices" },

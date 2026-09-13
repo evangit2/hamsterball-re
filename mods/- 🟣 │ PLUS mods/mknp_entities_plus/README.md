@@ -6,7 +6,7 @@ lights + BallBorder ring + P1 glow) and `mknp_battyball_events` (custom
 both: install this DLL **instead of** the two old ones, never alongside
 them (two drivers for the same `E:` planes would double-play sounds).
 
-## What it does (v1y)
+## What it does (v1z)
 
 - Everything `mknp_battyball_entities` v1dx does (same S1 `GRID` cycle,
   `ENTITIES` defs, `grid_speed`, neon ring/glow, lights, TRAJ + LIGHTSON /
@@ -74,6 +74,16 @@ them (two drivers for the same `E:` planes would double-play sounds).
   height untouched. Restart fix: EV LEVEL forces full rescan (same-
   address board reuse no longer skips it); S1-not-ready retries ~10s
   instead of latching dead (log: S1 not ready, waiting...).
+- v1z: `Cloudscape` behaviour — Sky Race's cloud skybox on any level.
+  S1 `REF:Cloudscape` point sets the position (native reads it from the
+  `CLOUDSCAPE` file entry). Load is `Sprite_ctor` (0x45D0C0, op_new
+  0x110, `textures\clouds.png`); every frame `render_apply` replays
+  `SkyBoard_RenderDynamic` (0x410E80) exactly: projection 20/50000,
+  cull off, `RenderQuad` layer 23.0, cull on, projection restored.
+  No instance, no collision, `mesh` ignored (any non-empty value —
+  the set parser drops mesh-less defs). One global sprite reused
+  across levels. Sky slot 13 keeps native clouds (mod idle).
+  `visible=false` supported. Log: `SKY:` lines.
 - One DLL, one log (`mknp_entities_plus.log`), one set file
   (`mknp_entities_plus_set.jsonc`, re-read every level start, same
   tolerant parsers: `E:` blocks with `behaviour` are entity-drivers,
@@ -102,7 +112,7 @@ them (two drivers for the same `E:` planes would double-play sounds).
 ## Log
 
 ```
-INIT Battyball Entities Plus v1y log=... set=...
+INIT Battyball Entities Plus v1z log=... set=...
 SET init: N sound events
 NEWBOARD ...
 EV LEVEL start
