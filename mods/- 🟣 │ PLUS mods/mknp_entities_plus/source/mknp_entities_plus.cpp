@@ -1466,6 +1466,7 @@ static int   g_push_mseen = 0;
 static int   g_push_moven = 0;       /* consecutive moving frames */
 static int   g_push_stilln = 0;      /* consecutive still frames */
 static int   g_push_legfired = 0;    /* jumped already this leg */
+static int   g_push_jumpn = 0;       /* v1w: jump frames left */
 
 /* v1p: first def with e_Mousepush behaviour (type 48), or -1. */
 static int push_def(void) {
@@ -1606,6 +1607,7 @@ static void push_scan_file(const char* path) {
     g_push_in = 0;
     g_push_mseen = 0; g_push_moven = 0;   /* v1r: leg detector reset */
     g_push_stilln = 0; g_push_legfired = 0;
+    g_push_jumpn = 0;                     /* v1w */
     if (!path || !path[0]) return;
     d = gm_read_file(path, &len);
     if (!d || len < 4) { if (d) free(d); return; }
@@ -1707,13 +1709,13 @@ static void push_frame(DWORD board) {
             *(float*)((char*)b + 0x178) += push;
         else
             *(float*)((char*)b + 0x170) += push;
-        /* v1v: shove jump — mouse moving 5+ frames straight, ball in
-         * vol, once per leg. -100.0 sign test (positive may be down). */
+        /* v1w: shove jump — single impulses get clamped (20/150/1000
+         * all read the same), so spread 150 over 8 frames. Once/leg. */
         if (ride && !g_push_legfired && g_push_moven >= 5) {
             g_push_legfired = 1;
-            *(float*)((char*)b + 0x174) += -100.0f;
+            g_push_jumpn = 8;
             snprintf(pbuf, sizeof(pbuf),
-                     "  PUSHQ: shove jump=-100 ball=(%d,%d,%d)",
+                     "  PUSHQ: shove jump=150x8 ball=(%d,%d,%d)",
                      (int)bx, (int)by, (int)bz);
             log_mod(pbuf);
         }
@@ -1731,6 +1733,11 @@ static void push_frame(DWORD board) {
         snprintf(pbuf, sizeof(pbuf), "  PUSHQ: leave vol ball=(%d,%d,%d)",
                  (int)bx, (int)by, (int)bz);
         log_mod(pbuf);
+    }
+    /* v1w: jump frames run even outside vol (shove completes). */
+    if (g_push_jumpn > 0) {
+        g_push_jumpn--;
+        *(float*)((char*)b + 0x174) += 150.0f;
     }
 }
 
@@ -4636,7 +4643,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1v log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1w log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
