@@ -1121,6 +1121,7 @@ static const char* mesh_for(int idx) {
 #include "entsnd.h"    /* v1cb: creak acquire/frame (needs log_mod) */
 #include "entbubcfg.h" /* v1da: pop-sfx probe+redirect (needs entdefs,snd) */
 #include "entlaunch.h" /* v1dw: e_Launch DEST/FX markers (needs S1ENTRY_*) */
+#include "entsky.h"     /* v1z: Cloudscape skybox sprite (needs entdefs,g_op_new) */
 
 /* ═══════════════════════════════════════════════════════════════════════════
  /* Named entities: set jsonc pairs -> S1 REF:<Name> -> Levels/<mesh> spawn.
@@ -1851,6 +1852,10 @@ static void scan_spawn_entities(DWORD board) {
         px = *(float*)(entry + S1ENTRY_POS_X);
         py = *(float*)(entry + S1ENTRY_POS_Y);
         pz = *(float*)(entry + S1ENTRY_POS_Z);
+        if (sky_beh_is(g_ent_beh[d])) {   /* v1z: Cloudscape marker, no instance */
+            sky_record(board, d, nm, px, py, pz);
+            continue;
+        }
         if (i < 16) {   /* v1co diag: every S1 name+pos */
             const char* s1n = nm ? nm : "?";
             int L = 0, k = 0;
@@ -2161,6 +2166,8 @@ static void scan_spawn_entities(DWORD board) {
                  g_ent_inst_count);
         log_mod(cbuf);
     }
+    if (sky_have_def() && !g_sky_pending && !g_sky_active && !g_sky_dead)
+        log_mod("  SKY: def present, no S1 ref, off");   /* v1z */
     {   /* v1bz: area quads from the level file (one S6 walk per area def) */
         int ad;
         for (ad = 0; ad < g_ent_count; ad++) {
@@ -4670,7 +4677,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1y log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1z log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
@@ -4746,6 +4753,7 @@ static void __thiscall level_start(void*) {
     g_order_count = 0;
     g_ent_inst_count = 0;
     g_ent_last_tick = 0;
+    sky_reset();   /* v1z */
     ev_level_start_service();   /* events preload + trig 2/3 autostart */
 }
 
@@ -4753,6 +4761,7 @@ static void __thiscall scene_end(void*) {
     DWORD board = player_board();
     despawn_all(board);
     bub_clear();   /* v1cp: free bubble visuals on update tick */
+    sky_reset();   /* v1z */
     g_cycle_started = false;
     g_active_board = 0;
     if (g_light_used && board) {
@@ -4861,6 +4870,7 @@ static void __thiscall game_update(void*) {
             for (ei = 0; ei < ENT_MAX_INST; ei++) g_ent_objs[ei] = 0;
             g_ent_inst_count = 0;
             g_ent_last_tick = 0;
+            sky_reset();   /* v1z: Cloudscape off until rescan */
         }
         return;
     }
@@ -4869,6 +4879,7 @@ static void __thiscall game_update(void*) {
     border_frame();    /* slot RGBA -> P1 border (overrides exe, Neon too) */
     glow_frame();      /* slot RGBA -> P1 emitter glow (Neon_colors GLOW) */
     entity_frame(board); /* named entities: Woodbridge motion, rest native-driven */
+    sky_tick(board);     /* v1z: Cloudscape sprite ensure (once per level) */
     push_frame(board);   /* v1p: E:Mousepush proximity volume (own gating) */
     bub_frame(board);  /* v1cq: drowning bubbles (update stage, like native) */
     bubsfx_service(board); /* v1da: pop-sfx cache/probe (same tick OK) */
@@ -4936,7 +4947,10 @@ static void __thiscall game_update(void*) {
 }
 
 static void __thiscall ball_update(void*, void*) {}
-static void __thiscall render_apply(void*, void*, float*) {}
+static void __thiscall render_apply(void* thisptr, void* dummy, float* vm) {
+    (void)thisptr; (void)dummy; (void)vm;
+    sky_render();   /* v1z: Cloudscape skybox quad (render thread) */
+}
 static void __thiscall cycle_option_change(void*, const char*, const char*) {}
 static DWORD g_traj_last_log = 0;   /* v1du: TRAJECTORY fire-log throttle */
 static void __thiscall event_collide(void* ball, void*, char* name) {
