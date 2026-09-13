@@ -1707,13 +1707,13 @@ static void push_frame(DWORD board) {
             *(float*)((char*)b + 0x178) += push;
         else
             *(float*)((char*)b + 0x170) += push;
-        /* v1s: shove jump — mouse moving 5+ frames straight, ball in
-         * vol, once per leg. 40.0 raised from 20.0 (too low). */
+        /* v1t: shove jump — mouse moving 5+ frames straight, ball in
+         * vol, once per leg. 150.0 per MAKYUNI (40 too low). */
         if (ride && !g_push_legfired && g_push_moven >= 5) {
             g_push_legfired = 1;
-            *(float*)((char*)b + 0x174) += 40.0f;
+            *(float*)((char*)b + 0x174) += 150.0f;
             snprintf(pbuf, sizeof(pbuf),
-                     "  PUSHQ: shove jump=40 ball=(%d,%d,%d)",
+                     "  PUSHQ: shove jump=150 ball=(%d,%d,%d)",
                      (int)bx, (int)by, (int)bz);
             log_mod(pbuf);
         }
@@ -4636,7 +4636,7 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
 
     {
         char ibuf[512];
-        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1s log=%s set=%s",
+        snprintf(ibuf, sizeof(ibuf), "INIT Battyball Entities Plus v1t log=%s set=%s",
                  g_log_path, g_set_path);
         log_mod(ibuf);
     }
