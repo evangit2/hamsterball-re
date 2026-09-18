@@ -183,7 +183,7 @@ static void Feature_SwirlZones(void *board, int level) {
     if (*(BYTE*)((char*)board+0x874)) return;
     if (!g_AthenaListGetIterator || !g_operatorNew) return;
     void* ext = GetBoardExt(board);
-    if (!ext) ext = EnsureBoardExt(board);
+    /* Get-only (no resurrect): teardown frames must not rebind zombie ext. */
     if (!ext) return;
 
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
@@ -560,7 +560,7 @@ static void Feature_BadBallSpawner(void *board, int level) {
     if (*(BYTE*)((char*)board+0x874)) return;
     if (!g_RNG || !g_BadBallCtor || !g_operatorNew || !g_AthenaListAppend) return;
     void* ext = GetBoardExt(board);
-    if (!ext) ext = EnsureBoardExt(board);
+    /* Get-only (no resurrect): teardown frames must not rebind zombie ext. */
     if (!ext) return;
 
     char spawnFlag = *(char *)((char *)ext + BRD_BB_FLAG);

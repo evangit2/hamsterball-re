@@ -429,11 +429,36 @@ static DWORD GetBoardFeat(void* board) {
     for (i = 0; i < MAX_EXT_MAP; i++) if (g_extMap[i].board == board) return g_extMap[i].feat;
     return 0;
 }
+/* Reclaim map entries whose board or ext died without AdvanceRace
+ * (quit-to-menu / game-exit paths). Called when the map is full so new
+ * boards never silently run ext-less (fix 2026-09-18). */
+static int SweepStaleExts(void) {
+    int i, freed = 0;
+    for (i = 0; i < MAX_EXT_MAP; i++) {
+        if (!g_extMap[i].board && !g_extMap[i].ext) continue;
+        /* Only reap when the BOARD is dead. A live board with NULL ext is a
+         * feat-only entry (scan ran before Ensure) — keep its feat bits. */
+        int bok = g_extMap[i].board && HeapValidate(GetProcessHeap(), 0, g_extMap[i].board);
+        if (!bok) {
+            if (g_extMap[i].ext && HeapValidate(GetProcessHeap(), 0, g_extMap[i].ext))
+                HeapFree(GetProcessHeap(), 0, g_extMap[i].ext);
+            g_extMap[i].board = NULL; g_extMap[i].ext = NULL;
+            g_extMap[i].extSize = 0; g_extMap[i].feat = 0;
+            freed = 1;
+        }
+    }
+    return freed;
+}
 static void OrBoardFeat(void* board, DWORD bits) {
     int i, freeIdx = -1;
     for (i = 0; i < MAX_EXT_MAP; i++) {
         if (g_extMap[i].board == board) { g_extMap[i].feat |= bits; return; }
         if (freeIdx==-1 && !g_extMap[i].board) freeIdx=i;
+    }
+    if (freeIdx==-1) {
+        SweepStaleExts();
+        for (i = 0; i < MAX_EXT_MAP; i++)
+            if (!g_extMap[i].board) { freeIdx=i; break; }
     }
     if (freeIdx!=-1) { g_extMap[freeIdx].board = board; g_extMap[freeIdx].feat = bits; g_extMap[freeIdx].extSize = EXT_SIZE; }
 }
@@ -442,6 +467,11 @@ static void SetBoardExt(void* board, void* ext) {
     for (i=0;i<MAX_EXT_MAP;i++) {
         if (g_extMap[i].board == board) { g_extMap[i].ext = ext; g_extMap[i].extSize = EXT_SIZE; return; }
         if (freeIdx==-1 && !g_extMap[i].board) freeIdx=i;
+    }
+    if (freeIdx==-1) {
+        SweepStaleExts();
+        for (i=0;i<MAX_EXT_MAP;i++)
+            if (!g_extMap[i].board) { freeIdx=i; break; }
     }
     if (freeIdx!=-1) { g_extMap[freeIdx].board = board; g_extMap[freeIdx].ext = ext; g_extMap[freeIdx].extSize = EXT_SIZE; }
 }
