@@ -68,7 +68,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     {
         char dbg[256];
-        wsprintfA(dbg, "CreateDynamicObjects: level=%d name='%s' board=0x%08X s1data=0x%08X", level, name, (DWORD)board, (DWORD)s1data);
+        wsprintfA(dbg, "CreateDynamicObjects: level=%d name='%.64s' board=0x%08X s1data=0x%08X", level, name, (DWORD)board, (DWORD)s1data);
         DebugLog(dbg);
     }
 

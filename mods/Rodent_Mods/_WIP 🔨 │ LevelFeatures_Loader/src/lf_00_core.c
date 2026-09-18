@@ -1365,8 +1365,8 @@ static void LoadRaceFiles(void) {
     HANDLE hFile = CreateFileA(g_raceFilesPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile==INVALID_HANDLE_VALUE) return;
     DWORD fileSize = GetFileSize(hFile, NULL);
-    if (fileSize>8192) fileSize=8192;
     char buf[8192]; DWORD bytesRead=0;
+    if (fileSize>=sizeof(buf)) fileSize=sizeof(buf)-1;
     ReadFile(hFile, buf, fileSize, &bytesRead, NULL);
     CloseHandle(hFile);
     buf[bytesRead]='\0';

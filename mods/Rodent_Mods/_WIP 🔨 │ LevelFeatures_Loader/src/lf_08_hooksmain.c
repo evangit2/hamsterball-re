@@ -29,7 +29,7 @@ static void UniversalConstructor(void *board, int raceIndex) {
     char resolved[MAX_PATH]; ResolveRacePath(resolved, rawPath);
     const char *meshPath = resolved;
     {
-        char dbg2[256]; wsprintfA(dbg2, "UniversalConstructor meshPath race=%d raw='%s' resolved='%s'", raceIndex, rawPath, meshPath);
+        char dbg2[600]; wsprintfA(dbg2, "UniversalConstructor meshPath race=%d raw='%s' resolved='%s'", raceIndex, rawPath, meshPath);
         DebugLog(dbg2);
     }
 
@@ -48,7 +48,7 @@ static void UniversalConstructor(void *board, int raceIndex) {
         } else {
             g_levelDir[0] = '\0';
         }
-        char dbg3[256]; wsprintfA(dbg3, "g_levelDir set to '%s'", g_levelDir);
+        char dbg3[320]; wsprintfA(dbg3, "g_levelDir set to '%s'", g_levelDir);
         DebugLog(dbg3);
     }
 
@@ -280,12 +280,19 @@ static void PatchAllocSizes(void) {
 /* Hook Tournament_AdvanceRace (0x00427080) to free ext on level unload */
 /* Non-static: referenced from naked asm below (_g_advanceTrampoline). */
 unsigned char* g_advanceTrampoline = NULL;
-static void (__stdcall *g_origAdvanceRace)(DWORD);
-/* Naked ECX-preserving wrapper: 0x427080 is __thiscall (mov esi,ecx) with
- * one stack arg. The C body would clobber ECX before reaching the trampoline,
- * so the original would run with a garbage `this`. Stash live regs across it. */
+static void (__thiscall *g_origAdvanceRace)(void *, DWORD);
+/* Live ECX (this) stashed by the naked Hook so Logic can invoke the original
+ * exactly once with the caller's ECX (single-execution fix 2026-09-18).
+ * Non-static: referenced from naked asm above (_g_savedAdvanceECX). */
+DWORD g_savedAdvanceECX = 0;
+/* Naked ECX-preserving wrapper: 0x427080 is __thiscall with one stack arg.
+ * Logic runs the original EXACTLY ONCE via the trampoline using the stashed
+ * ECX (single-execution fix 2026-09-18: an earlier revision both called the
+ * original inside Logic AND jumped to the trampoline here, running
+ * AdvanceRace twice per transition). */
 __attribute__((naked)) static void Hook_AdvanceRace(void) {
     __asm__ __volatile__(
+        "movl %%ecx, _g_savedAdvanceECX\n\t" /* stash this for Logic */
         "pushl %%ecx\n\t"
         "pushl %%edx\n\t"
         "pushl 12(%%esp)\n\t"   /* a1 (ret + 2 pushes above it) */
@@ -293,7 +300,7 @@ __attribute__((naked)) static void Hook_AdvanceRace(void) {
         "addl  $4, %%esp\n\t"
         "popl  %%edx\n\t"
         "popl  %%ecx\n\t"
-        "jmpl  *_g_advanceTrampoline\n\t"
+        "ret   $4\n\t"   /* orig already ran inside Logic; clean a1 */
         :: : "eax", "memory"
     );
 }
@@ -315,7 +322,7 @@ void __cdecl Hook_AdvanceRaceLogic(DWORD a1) { /* non-static + cdecl: referenced
     if (curBoard) {
         FreeBoardExt(curBoard);
     }
-    if (g_origAdvanceRace) g_origAdvanceRace(a1);
+    if (g_origAdvanceRace) g_origAdvanceRace((void*)g_savedAdvanceECX, a1);
     int j;
     for (j=0;j<MAX_EXT_MAP;j++) if (g_extMap[j].ext) {
         void* b = g_extMap[j].board;
@@ -352,7 +359,7 @@ static void InstallExtFreeHook(void) {
     memcpy(g_advanceTrampoline, orig, 6);
     g_advanceTrampoline[6]=0xE9;
     *(DWORD*)(g_advanceTrampoline+7) = (targetAddr+6) - ((DWORD)g_advanceTrampoline+11);
-    g_origAdvanceRace = (void (__stdcall *)(DWORD))g_advanceTrampoline;
+    g_origAdvanceRace = (void (__thiscall *)(void *, DWORD))g_advanceTrampoline;
     DWORD oldProtect;
     VirtualProtect(orig, 6, PAGE_EXECUTE_READWRITE, &oldProtect);
     orig[0]=0xE9;
@@ -420,7 +427,7 @@ static HANDLE WINAPI Hook_CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, 
     }
     HANDLE h2 = g_origCreateFileA(trial, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     if (h2 != INVALID_HANDLE_VALUE) {
-        char dbg[512]; wsprintfA(dbg, "Fallback: '%s' -> '%s' (OK)", lpFileName, trial);
+        char dbg[1024]; wsprintfA(dbg, "Fallback: '%s' -> '%s' (OK)", lpFileName, trial);
         DebugLog(dbg);
         InterlockedExchange(&g_inFileHookFallback, 0);
         return h2;
@@ -432,7 +439,7 @@ static HANDLE WINAPI Hook_CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, 
         strcat(trial, ".MESHWORLD");
         HANDLE h3 = g_origCreateFileA(trial, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
         if (h3 != INVALID_HANDLE_VALUE) {
-            char dbg2[512]; wsprintfA(dbg2, "Fallback (+.MESHWORLD): '%s' -> '%s' (OK)", lpFileName, trial);
+            char dbg2[1024]; wsprintfA(dbg2, "Fallback (+.MESHWORLD): '%s' -> '%s' (OK)", lpFileName, trial);
             DebugLog(dbg2);
             InterlockedExchange(&g_inFileHookFallback, 0);
             return h3;
@@ -466,7 +473,7 @@ static HANDLE WINAPI Hook_CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess,
     WCHAR trialW[MAX_PATH]; MultiByteToWideChar(CP_ACP, 0, trialAnsi, -1, trialW, MAX_PATH);
     HANDLE h2 = g_origCreateFileW(trialW, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     if (h2 != INVALID_HANDLE_VALUE) {
-        char dbg[512]; wsprintfA(dbg, "FallbackW: '%s' -> '%s' (OK)", ansi, trialAnsi);
+        char dbg[640]; wsprintfA(dbg, "FallbackW: '%s' -> '%s' (OK)", ansi, trialAnsi);
         DebugLog(dbg);
         InterlockedExchange(&g_inFileHookFallback, 0);
         return h2;
@@ -545,7 +552,21 @@ void DebugLog(const char *msg) {
     HANDLE hFile = CreateFileA(logPath, GENERIC_WRITE,
                                FILE_SHARE_READ, NULL, OPEN_ALWAYS,
                                FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile == INVALID_HANDLE_VALUE) return;
+    if (hFile == INVALID_HANDLE_VALUE) {
+        /* Stock installs under Program Files are not writable without
+         * elevation — fall back to %TEMP% so diagnostics still land
+         * (fix 2026-09-18). GetTempPathA ends with a separator. */
+        char tmp[MAX_PATH], tlog[MAX_PATH];
+        DWORD tl = GetTempPathA(MAX_PATH, tmp);
+        if (tl > 0 && tl < MAX_PATH - 12) {
+            strcpy(tlog, tmp);
+            strcat(tlog, "lfdebug.log");
+            hFile = CreateFileA(tlog, GENERIC_WRITE,
+                                FILE_SHARE_READ, NULL, OPEN_ALWAYS,
+                                FILE_ATTRIBUTE_NORMAL, NULL);
+        }
+        if (hFile == INVALID_HANDLE_VALUE) return;
+    }
     SetFilePointer(hFile, 0, NULL, FILE_END);
     DWORD written;
     WriteFile(hFile, msg, strlen(msg), &written, NULL);
@@ -801,10 +822,10 @@ static DWORD WINAPI PatchThread(LPVOID param) {
 
     GetConfigPath();
     {
-        char dbg_cp[256];
+        char dbg_cp[320];
         wsprintfA(dbg_cp, "GetConfigPath done: path='%s'", g_configPath[0] ? g_configPath : "(empty)");
         DebugLog(dbg_cp);
-        char dbg_rf[256]; wsprintfA(dbg_rf, "RaceFiles path='%s'", g_raceFilesPath[0] ? g_raceFilesPath : "(empty)");
+        char dbg_rf[320]; wsprintfA(dbg_rf, "RaceFiles path='%s'", g_raceFilesPath[0] ? g_raceFilesPath : "(empty)");
         DebugLog(dbg_rf);
     }
     // RaceFiles.txt: generate defaults if missing, then load
