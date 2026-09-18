@@ -1445,7 +1445,7 @@ static void GenerateRaceFiles(void) {
         const char *slash=strrchr(p, '\\'); if (slash) bare=slash+1;
         const char *slash2=strrchr(bare, '/'); if (slash2) bare=slash2+1;
         int pos=0;
-        pos+=sprintf(line+pos, "Race %d: %s\r\n", i, bare[0]?bare:"level1");
+        pos+=sprintf(line+pos, "Race %d: %.200s\r\n", i, bare[0]?bare:"level1");
         WriteFile(hFile, line, pos, &written, NULL);
     }
     CloseHandle(hFile);

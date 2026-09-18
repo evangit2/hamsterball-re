@@ -457,6 +457,7 @@ static HANDLE WINAPI Hook_CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess,
     if (err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
     if (!lpFileName || !g_levelDir[0]) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
     char ansi[MAX_PATH]; WideCharToMultiByte(CP_ACP, 0, lpFileName, -1, ansi, MAX_PATH, NULL, NULL);
+    ansi[MAX_PATH-1] = 0; /* truncation never leaves unterminated (menu-stage file storm) */
     const char *slash = strrchr(ansi, '\\');
     const char *slash2 = strrchr(ansi, '/');
     if (slash2 && (!slash || slash2 > slash)) slash = slash2;
@@ -471,6 +472,7 @@ static HANDLE WINAPI Hook_CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess,
     if (my_stricmp(trialAnsi, ansi)==0) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
     if (my_strnicmp(base, "lfdebug", 7)==0) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
     WCHAR trialW[MAX_PATH]; MultiByteToWideChar(CP_ACP, 0, trialAnsi, -1, trialW, MAX_PATH);
+    trialW[MAX_PATH-1] = 0; /* truncation never leaves unterminated */
     HANDLE h2 = g_origCreateFileW(trialW, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
     if (h2 != INVALID_HANDLE_VALUE) {
         char dbg[640]; wsprintfA(dbg, "FallbackW: '%s' -> '%s' (OK)", ansi, trialAnsi);
