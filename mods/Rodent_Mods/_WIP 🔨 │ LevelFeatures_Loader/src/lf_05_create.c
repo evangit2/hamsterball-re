@@ -240,8 +240,12 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
              * UNI_MESH_3 (0x85EC) is a mesh SLOT, not an AthenaList — appending to it
              * clobbers mesh pointers at 0x8620-0x862C via the iter array. */
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            /* Restore missing Gluebie list append (board+0x4378) — original does both */
-            g_AthenaListAppend((void*)((char*)board + 0x4378), (int)obj);
+            /* board+0x4378 is Dizzy's gluebie list (inited in 9a-extra2 for
+             * race 4 only). Other slots' 0x4378 has per-level meanings —
+             * appending there corrupts them, and nothing consumes a gluebie
+             * list outside Dizzy's RaceState (fix 2026-09-18). */
+            if (GetCurrentLevel(board) == 4)
+                g_AthenaListAppend((void*)((char*)board + 0x4378), (int)obj);
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
@@ -611,10 +615,13 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_LifterCtor(mem, (int)board, x, y, z, meshVal, num);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            /* Dual-append to legacy board+0x436C for Up's RaceState handler.
-             * Name-driven now — any LIFTER in any slot needs the list if meshed as Up.
-             * Keep unconditional (Up RaceState iterates 0x436C to call Lifter_Update). */
-            g_AthenaListAppend((void*)((char*)board + 0x436C), (int)obj);
+            /* Dual-append to legacy board+0x436C ONLY for Up identity.
+             * 0x436C is Up's lifter list (inited in 9a-extra); on other slots
+             * it holds per-level data (e.g. Dizzy tipper mesh from step 8b) —
+             * appending there corrupts it, and only Up's RaceState iterates
+             * the list (fix 2026-09-18). */
+            if (GetCurrentLevel(board) == 6)
+                g_AthenaListAppend((void*)((char*)board + 0x436C), (int)obj);
             renderOut = ((DWORD*)obj)[0x438];
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
@@ -638,7 +645,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── SAW (Toob) ── */
     if (my_stricmp(name, "SAW") == 0 && difficulty != 0) {
-        int pathObj = g_LevelFindObjectByName(meshWorld, "SAWPATH");
+        int pathObj = meshWorld ? g_LevelFindObjectByName(meshWorld, "SAWPATH") : 0;
         S1EnsureMeshWorld(board, ext, UNI_SAW_MESH, "Levels\\Level8-Saw");
         int meshVal = *(int*)((char*)ext + UNI_SAW_MESH);
         if (!meshVal) { DebugLog("SAW: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -655,7 +662,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
 
     /* ── SAW2 (Toob) ── */
     if (my_stricmp(name, "SAW2") == 0 && difficulty != 0) {
-        int pathObj = g_LevelFindObjectByName(meshWorld, "SMALLSAWPATH");
+        int pathObj = meshWorld ? g_LevelFindObjectByName(meshWorld, "SMALLSAWPATH") : 0;
         S1EnsureMeshWorld(board, ext, UNI_SAW_MESH, "Levels\\Level8-Saw");
         int meshVal = *(int*)((char*)ext + UNI_SAW_MESH);
         if (!meshVal) { DebugLog("SAW2: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -696,7 +703,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (!meshVal) { DebugLog("BLOCKDAWG: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         char pathName[] = "DAWGPATH0";
         pathName[8] = '0' + dawgNum;
-        int pathObj = g_LevelFindObjectByName(meshWorld, pathName);
+        int pathObj = meshWorld ? g_LevelFindObjectByName(meshWorld, pathName) : 0;
         void *mem = g_operatorNew(0x1154);
         if (mem) {
             obj = g_BlockdawgCtor(mem, (int)board, x, y, z, meshVal, pathObj);

@@ -72,6 +72,10 @@ static void Vac_BuildTubes(void *board, void *ext) {
     float inPos[8][3];
     int nIn = 0;
     if (!board || !ext) return;
+    /* Faces live in board+0x436C, which is Up's lifter list — only Up's
+     * RaceState iterates it. On other slots 0x436C has per-level meanings
+     * (Dizzy tipper mesh), so building here would corrupt them (fix 2026-09-18). */
+    if (GetCurrentLevel(board) != 6) return;
     if (!g_operatorNew || !g_VacFaceCtor || !g_AthenaListAppend ||
         !g_AthenaListInit || !g_AthenaListGetIterator) return;
     meshWorld = *(DWORD *)((char *)board + BOARD_MESHWORLD);
