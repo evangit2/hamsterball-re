@@ -36,7 +36,11 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     g_BoardCtor(mem, app);
     DebugLog("Board_ctor done");
 
-    /* Ext heap: allocate after base ctor so unified offsets have backing */
+    /* Ext heap: fresh lifecycle per construction. Drop any stale entry for
+     * this address first (heap reuse after quit-to-menu/restart paths that
+     * bypass AdvanceRace). Otherwise a new board inherits dead mesh pointers
+     * and feat bits -> use-after-free on race open (fix 2026-09-18). */
+    FreeBoardExt(mem);
     void *ext = EnsureBoardExt(mem);
     if (!ext) {
         DebugLog("UniversalBoardCtorLogic: EnsureBoardExt failed");

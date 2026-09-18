@@ -208,7 +208,8 @@ static CPUID_RNG_Fn_t              g_CPUIDRNG = NULL;
 void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair) {
     if (!board || !ball || !collPair) goto call_global;
     void* ext = GetBoardExt(board);
-    if (!ext) ext = EnsureBoardExt(board);
+    /* Get-only: an ext-less board is mid-teardown (ext freed on race close).
+     * Resurrecting one here would bind zombie state to a dying board. */
     if (!ext) goto call_global;
     int level = GetCurrentLevel(board);
     if (level == 0 || level > 15) goto call_global;
