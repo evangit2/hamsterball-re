@@ -176,6 +176,16 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         DebugLog("Step 9a-extra: legacy AthenaList at board+0x436C for Up");
     }
 
+    /* 9a-extra2: Dizzy race (level 4) needs a gluebie object list at
+     * board+0x4378. Native Dizzy ctor inits it (base Board_ctor does NOT —
+     * verified by disasm: it inits 0x8B8/0xCD4/0x10EC/0x2578/... but never
+     * 0x436C/0x4378). Without this, GLUEBIE appends to garbage → heap
+     * corruption on every Dizzy race open (fix 2026-09-18). */
+    if (raceIndex == 4 && g_AthenaListInit) {
+        g_AthenaListInit((void *)((char *)mem + 0x4378), 0);
+        DebugLog("Step 9a-extra2: gluebie list at board+0x4378 for Dizzy");
+    }
+
     /* 9b: eh_vector — lives in ext if offset >=0x6500 */
     if (g_ehVectorCtor && g_ehVectorCtorFn && g_Vec3ListFree &&
         ld->ehVectorOffset && ld->ehVectorCount > 0) {
