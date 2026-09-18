@@ -479,7 +479,7 @@ static void ScanFileForCollisions(void *board, void *ext, const char *filePath) 
         } else i++;
     }
     HeapFree(GetProcessHeap(),0,buf);
-    if (added) { char lg[96]; wsprintfA(lg, "FileScan: '%s' +%d N:/E:", filePath, added); DebugLog(lg); }
+    if (added) { char lg[320]; wsprintfA(lg, "FileScan: '%s' +%d N:/E:", filePath, added); DebugLog(lg); }
 }
 // Targeted scan: only scan mesh files actually referenced by S1 (not whole folder wildcard).
 // Prevents hitch from scanning 30+ files every level load. Falls back to basePath file.

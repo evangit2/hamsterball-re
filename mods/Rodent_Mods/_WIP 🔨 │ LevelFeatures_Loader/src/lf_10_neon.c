@@ -113,7 +113,7 @@ static int Neon_FileHasLights(const char *meshPath) {
     DWORD fsize, br;
     char *buf;
     int lc;
-    char dbg[256];
+    char dbg[384];
     if (!meshPath || !meshPath[0]) return 1;
     GetModuleFileNameA(NULL, exe, MAX_PATH);
     exe[MAX_PATH-1] = '\0';
@@ -266,7 +266,7 @@ static void Neon_BuildLights(void *board, void *ext) {
 /* Step 6c entry — called from UniversalConstructor after Pennant_PostSetup. */
 static void Neon_PostSetup(void *board, void *ext, int raceIndex, const char *meshPath) {
     int has;
-    char dbg[192];
+    char dbg[384];
     if (!board || !ext || !meshPath || !meshPath[0]) return;
     /* Every load starts inactive: ext can be a stale heap-reused entry from
      * a previous board at the same address (retry path), so a leftover 1
