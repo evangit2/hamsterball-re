@@ -391,7 +391,9 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
     *(DWORD *)(objDb + 0x89C + iter*4) = 0;
     if (!VirtualQuery((void*)(objDb + 0x898), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
     int count = *(int *)(objDb + 0x898);
-    if (count <=0 || count>8192) return;
+    /* Restore the iterator slot on EVERY exit — it was zeroed above. Leaving
+     * it 0 corrupts native S1 iteration that runs after us (fix 2026-09-19). */
+    if (count <=0 || count>8192) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
     if (!VirtualQuery((void*)(objDb + 0xCA0), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
     DWORD *array = *(DWORD **)(objDb + 0xCA0);
     if (!array) return;
@@ -527,7 +529,10 @@ static void ScanS1ReferencedMeshesForCollisions(void *board, void *ext, void *me
         if (name[0]=='N' && name[1]==':') continue;
         if (name[0]=='E' && name[1]==':') continue;
         int isPath = 0;
-        for (char *p=name; *p; p++) if (*p=='\\' || *p=='/') { isPath=1; break; }
+        /* Bounded slash scan: S1 names are game-parsed but file-swapped custom
+         * levels are the mod's whole use case — never walk past 512 bytes
+         * looking for NUL (fix 2026-09-19). */
+        for (char *p=name, *e=name+512; p<e && *p; p++) if (*p=='\\' || *p=='/') { isPath=1; break; }
         if (!isPath) {
             if (my_strnicmp(name, "Levels\\", 7)==0) isPath=1;
             if (my_strnicmp(name, "Meshes\\", 7)==0) isPath=1;
@@ -566,7 +571,9 @@ static void ScanS1ReferencedMeshesForCollisions(void *board, void *ext, void *me
         char tryPath[MAX_PATH];
         // If name already contains "levels\", use as-is; else prepend "levels\"
         if (my_strnicmp(name, "levels\\", 7)==0 || my_strnicmp(name, "levels/", 7)==0) {
-            strcpy(tryPath, name);
+            /* Bounded: a hostile/hand-made S1 name longer than MAX_PATH must
+             * truncate, not smash the stack (fix 2026-09-19). */
+            my_strncpy(tryPath, name, MAX_PATH);
         } else {
             // S1 refs are already PascalCase ("Levels\\...", "Meshes\\...") matching disk.
             // Do NOT lowercase: ext4/Wine is case-sensitive. Use name as-is.
@@ -577,12 +584,13 @@ static void ScanS1ReferencedMeshesForCollisions(void *board, void *ext, void *me
                 strcpy(tryPath, "meshes\\");
                 strcat(tryPath, name+7);
             } else {
-                strcpy(tryPath, name);
+                my_strncpy(tryPath, name, MAX_PATH);
             }
         }
         ScanFileForCollisions(board, ext, tryPath);
-        // also try with .MESHWORLD extension if no dot
-        if (!strchr(tryPath, '.')) {
+        // also try with .MESHWORLD extension if no dot (length-guarded: tryPath
+        // may now be truncated to MAX_PATH-1, so appending must not overflow)
+        if (!strchr(tryPath, '.') && strlen(tryPath)+10 < MAX_PATH) {
             char withExt2[MAX_PATH]; strcpy(withExt2, tryPath); strcat(withExt2, ".MESHWORLD");
             ScanFileForCollisions(board, ext, withExt2);
             strcpy(withExt2, tryPath); strcat(withExt2, ".MESH");
