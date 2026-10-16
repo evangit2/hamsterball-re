@@ -23,4 +23,7 @@ originals/installer/
 original/hamsterball.zip
 
 # Ghidra project files (local only - too large for git)
-analysis/ghidra/HamsterballProject/
+analysis/ghidra/HamsterballProject/originals/installed/Hamsterball.zip
+originals/installer/
+originals/installed/extracted/*.exe
+share_download.zip
