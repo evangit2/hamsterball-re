@@ -403,6 +403,50 @@ static void tint_ui(App* app, int mode) {
     }
 }
 
+/* UI read-back: are the Hammy slot materials still our color? */
+static void ui_check(App* app, int mode) {
+    static char line[256];
+    int o = 0, i;
+    const char* tag = "UI-CHECK mode=";
+    while (*tag) line[o++] = *tag++;
+    line[o++] = (char)('0' + mode);
+    unsigned int hex = g_ui[mode];
+    const char* H = "0123456789ABCDEF";
+    int want[3];
+    want[0] = (hex >> 16) & 0xFF;
+    want[1] = (hex >> 8) & 0xFF;
+    want[2] = hex & 0xFF;
+    for (i = 0; i < 3; i++) {
+        line[o++] = ' ';
+        line[o++] = 's';
+        line[o++] = (char)('0' + i);
+        line[o++] = '=';
+        DWORD off = 0x330 + (DWORD)i * 4;
+        if (!app || IsBadReadPtr((const void*)((char*)app + off), 4)) {
+            line[o++] = '?';
+            continue;
+        }
+        DWORD slot = *(DWORD*)((char*)app + off);
+        if (!slot || IsBadReadPtr((const void*)slot, 0x4C)) {
+            line[o++] = '0';
+            continue;
+        }
+        float* dif = (float*)(slot + 0xC);
+        int diff = 0, k;
+        for (k = 0; k < 3; k++) {
+            int v = (int)(dif[k] * 255.0f + 0.5f);
+            if (v < 0) v = 0;
+            if (v > 255) v = 255;
+            if (v != want[k]) diff = 1;
+            line[o++] = H[(v >> 4) & 0xF];
+            line[o++] = H[v & 0xF];
+        }
+        line[o++] = diff ? '!' : '.';
+    }
+    line[o] = '\0';
+    log_line(line);
+}
+
 static void write_slot(DWORD board, int slot, unsigned int hex) {
     float r = (float)((hex >> 16) & 0xFF) / 255.0f;
     float g = (float)((hex >> 8) & 0xFF) / 255.0f;
@@ -525,8 +569,11 @@ static void __thiscall game_update(void*) {
         }
     }
     if ((g_tick % 600) == 1) {
+        App* app = HBAPI(g_api).GetApp();
+        tint_ui(app, mode); /* re-assert: slots fill late, native may reset */
         if (sc) ball_check(board, mode);
-        probe_ui(HBAPI(g_api).GetApp(), mode);
+        ui_check(app, mode);
+        probe_ui(app, mode);
     }
 }
 
