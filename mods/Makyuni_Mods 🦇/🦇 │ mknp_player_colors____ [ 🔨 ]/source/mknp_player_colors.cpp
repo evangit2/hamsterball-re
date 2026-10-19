@@ -337,6 +337,42 @@ static void probe_ui(App* app, int mode) {
     log_line(line);
 }
 
+/* Read-back check: is the P1 tint actually in the table? Player 1 only. */
+static void ball_check(DWORD board, int mode) {
+    static char line[256];
+    int o = 0, i;
+    const char* tag = "BALL-CHECK mode=";
+    while (*tag) line[o++] = *tag++;
+    line[o++] = (char)('0' + mode);
+    line[o++] = ' ';
+    line[o++] = 'e'; line[o++] = 'x'; line[o++] = 'p'; line[o++] = '=';
+    unsigned int hex = g_ball[mode];
+    const char* H = "0123456789ABCDEF";
+    for (i = 7; i >= 0; i--) line[o++] = H[(hex >> (i * 4)) & 0xF];
+    line[o++] = ' ';
+    line[o++] = 'g'; line[o++] = 'o'; line[o++] = 't'; line[o++] = '=';
+    float* f = (float*)(board + BOARD_COLOR_BASE);
+    unsigned char want[4];
+    want[0] = (unsigned char)((hex >> 16) & 0xFF);
+    want[1] = (unsigned char)((hex >> 8) & 0xFF);
+    want[2] = (unsigned char)(hex & 0xFF);
+    want[3] = 255;
+    int diff = 0;
+    for (i = 0; i < 4; i++) {
+        int v = (int)(f[i] * 255.0f + 0.5f);
+        if (v < 0) v = 0;
+        if (v > 255) v = 255;
+        if (v != want[i]) diff = 1;
+        line[o++] = H[(v >> 4) & 0xF];
+        line[o++] = H[v & 0xF];
+    }
+    line[o++] = ' ';
+    if (diff) { line[o++] = 'D'; line[o++] = 'I'; line[o++] = 'F'; line[o++] = 'F'; }
+    else { line[o++] = 'O'; line[o++] = 'K'; }
+    line[o] = '\0';
+    log_line(line);
+}
+
 static void write_slot(DWORD board, int slot, unsigned int hex) {
     float r = (float)((hex >> 16) & 0xFF) / 255.0f;
     float g = (float)((hex >> 8) & 0xFF) / 255.0f;
@@ -416,7 +452,26 @@ static void __thiscall game_update(void*) {
        1P_mode covers Tournament and Time Trials (both run np==1). */
     int mode = (np <= 1) ? 0 : (np == 2) ? 1 : 2;
     write_slot(board, 0, g_ball[mode]);
-    if ((g_tick % 600) == 1) probe_ui(HBAPI(g_api).GetApp(), mode);
+    {
+        static int lastmode = -1;
+        if (mode != lastmode) {
+            static char ml[32];
+            int o = 0;
+            const char* t = "MODE now=";
+            while (*t) ml[o++] = *t++;
+            ml[o++] = (char)('0' + mode);
+            ml[o++] = ' ';
+            ml[o++] = 'n'; ml[o++] = 'p'; ml[o++] = '=';
+            ml[o++] = (char)('0' + np);
+            ml[o] = '\0';
+            log_line(ml);
+            lastmode = mode;
+        }
+    }
+    if ((g_tick % 600) == 1) {
+        ball_check(board, mode);
+        probe_ui(HBAPI(g_api).GetApp(), mode);
+    }
 }
 
 static void __thiscall ball_update(void*, void*) {}
