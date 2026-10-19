@@ -348,7 +348,9 @@ static void ball_check(DWORD board, int mode) {
     line[o++] = 'e'; line[o++] = 'x'; line[o++] = 'p'; line[o++] = '=';
     unsigned int hex = g_ball[mode];
     const char* H = "0123456789ABCDEF";
-    for (i = 7; i >= 0; i--) line[o++] = H[(hex >> (i * 4)) & 0xF];
+    for (i = 5; i >= 0; i--) line[o++] = H[(hex >> (i * 4)) & 0xF];
+    line[o++] = 'F';
+    line[o++] = 'F';
     line[o++] = ' ';
     line[o++] = 'g'; line[o++] = 'o'; line[o++] = 't'; line[o++] = '=';
     float* f = (float*)(board + BOARD_COLOR_BASE);
@@ -371,6 +373,34 @@ static void ball_check(DWORD board, int mode) {
     else { line[o++] = 'O'; line[o++] = 'K'; }
     line[o] = '\0';
     log_line(line);
+}
+
+/* Hammy portrait tint: App+0x330/334/338 hold sprite/material objects
+   (verified live: white 1,1,1,1 D3DMAT at +0xC). Writes Diffuse RGB only.
+   Validation: slot readable, dif alpha == 1.0 before first write per boot. */
+static int g_ui_ok[3] = { 0, 0, 0 };
+
+static void tint_ui(App* app, int mode) {
+    unsigned int hex = g_ui[mode];
+    float r = (float)((hex >> 16) & 0xFF) / 255.0f;
+    float g = (float)((hex >> 8) & 0xFF) / 255.0f;
+    float b = (float)(hex & 0xFF) / 255.0f;
+    int i;
+    for (i = 0; i < 3; i++) {
+        DWORD off = 0x330 + (DWORD)i * 4;
+        if (!app || IsBadReadPtr((const void*)((char*)app + off), 4)) continue;
+        DWORD slot = *(DWORD*)((char*)app + off);
+        if (!slot || IsBadReadPtr((const void*)slot, 0x4C)) continue;
+        float* dif = (float*)(slot + 0xC);
+        if (!g_ui_ok[i]) {
+            if (dif[3] != 1.0f) continue; /* not the expected material: skip */
+            g_ui_ok[i] = 1;
+        }
+        dif[0] = r;
+        dif[1] = g;
+        dif[2] = b;
+        dif[3] = 1.0f;
+    }
 }
 
 static void write_slot(DWORD board, int slot, unsigned int hex) {
@@ -441,17 +471,43 @@ static void __thiscall game_update(void*) {
     g_tick++;
     if ((g_tick % 120) == 0) read_set(); /* live edit ~every 2s */
 
+    /* UI tint runs with or without a scene (menus have no scene).
+       Fresh boot defaults to mode 0 (1P); races update it. */
+    static int last_ui_mode = -1;
     Scene* sc = HBAPI(g_api).GetScene();
-    if (!sc) return;
-    int np = sc->player_count;
-    if (np < 1) np = 1;
-    if (np > 4) np = 4;
+    int np = 0;
+    int mode = (last_ui_mode < 0) ? 0 : last_ui_mode;
+    if (sc) {
+        np = sc->player_count;
+        if (np < 1) np = 1;
+        if (np > 4) np = 4;
+        /* Player1 ball only (schema defines Player1 + Player1_UI).
+           1P_mode covers Tournament and Time Trials (both run np==1). */
+        mode = (np <= 1) ? 0 : (np == 2) ? 1 : 2;
+    }
     DWORD board = (DWORD)sc;
-
-    /* Player1 ball only (schema defines Player1 + Player1_UI).
-       1P_mode covers Tournament and Time Trials (both run np==1). */
-    int mode = (np <= 1) ? 0 : (np == 2) ? 1 : 2;
-    write_slot(board, 0, g_ball[mode]);
+    {
+        if (mode != last_ui_mode) {
+            last_ui_mode = mode;
+            tint_ui(HBAPI(g_api).GetApp(), mode);
+            {
+                static char ml[64];
+                int o = 0;
+                const char* t = "UI-APPLIED mode=";
+                while (*t) ml[o++] = *t++;
+                ml[o++] = (char)('0' + mode);
+                ml[o++] = ' ';
+                ml[o++] = 'u'; ml[o++] = 'i'; ml[o++] = '=';
+                const char* H2 = "0123456789ABCDEF";
+                unsigned int h2 = g_ui[mode];
+                int i2;
+                for (i2 = 5; i2 >= 0; i2--) ml[o++] = H2[(h2 >> (i2 * 4)) & 0xF];
+                ml[o] = '\0';
+                log_line(ml);
+            }
+        }
+    }
+    if (sc) write_slot(board, 0, g_ball[mode]);
     {
         static int lastmode = -1;
         if (mode != lastmode) {
@@ -469,7 +525,7 @@ static void __thiscall game_update(void*) {
         }
     }
     if ((g_tick % 600) == 1) {
-        ball_check(board, mode);
+        if (sc) ball_check(board, mode);
         probe_ui(HBAPI(g_api).GetApp(), mode);
     }
 }
