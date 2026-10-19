@@ -145,15 +145,18 @@ __asm__(
 " movl _g_hook_rgb2, %eax\n"
 " movl %eax, 8(%edx)\n"
 " movl %eax, -40(%edx)\n"
-" movl _g_hook_spc0, %eax\n"
-" movl %eax, -20(%edx)\n"
-" movl _g_hook_spc1, %eax\n"
-" movl %eax, -16(%edx)\n"
-" movl _g_hook_spc2, %eax\n"
-" movl %eax, -12(%edx)\n"
-" movl _g_br_natS2, %eax\n"
-" movl %eax, -8(%edx)\n"
-" movl _g_hook_pow, %eax\n"
+/* DOT-BISECT: P1 dif/spec/power native this build, emissive kept green.
+ * Others (full native + black spec) show their dots, so the hook is benign;
+ * the only P1-vs-others delta left is emissive. Dot back => a dif/spec
+ * write was the killer. Dot still missing => emissive wash (contrast) is
+ * the killer and we retint via diffuse-only next. */
+" movl _g_br_natD0, %eax\n"
+" movl %eax, -48(%edx)\n"
+" movl _g_br_natD1, %eax\n"
+" movl %eax, -44(%edx)\n"
+" movl _g_br_natD2, %eax\n"
+" movl %eax, -40(%edx)\n"
+" movl _g_br_natPow, %eax\n"
 " movl %eax, 12(%edx)\n"
 "9:\n"
 " popl %edx\n"
