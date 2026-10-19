@@ -32,6 +32,8 @@ extern float g_hook_spc2;
 extern float g_br_natD0;
 extern float g_br_natD1;
 extern float g_br_natD2;
+extern float g_hook_pow;
+extern float g_br_natPow;
 extern DWORD g_br_tramp;
 extern int g_br_inst;
 extern int g_br_natlock;
@@ -81,6 +83,10 @@ __asm__(
 "_g_br_natD1: .space 4\n"
 ".globl _g_br_natD2\n"
 "_g_br_natD2: .space 4\n"
+".globl _g_hook_pow\n"
+"_g_hook_pow: .space 4\n"
+".globl _g_br_natPow\n"
+"_g_br_natPow: .space 4\n"
 ".globl _g_br_tramp\n"
 "_g_br_tramp: .space 4\n"
 ".globl _g_br_inst\n"
@@ -126,6 +132,8 @@ __asm__(
 " movl %eax, -44(%edx)\n"
 " movl _g_br_natD2, %eax\n"
 " movl %eax, -40(%edx)\n"
+" movl _g_br_natPow, %eax\n"
+" movl %eax, 12(%edx)\n"
 " jmp 9f\n"
 "1:\n"
 " movl _g_hook_rgb0, %eax\n"
@@ -145,6 +153,8 @@ __asm__(
 " movl %eax, -12(%edx)\n"
 " movl _g_br_natS2, %eax\n"
 " movl %eax, -8(%edx)\n"
+" movl _g_hook_pow, %eax\n"
+" movl %eax, 12(%edx)\n"
 "9:\n"
 " popl %edx\n"
 " popl %eax\n"
@@ -246,6 +256,8 @@ static void br_resolve(App* app) {
     if (IsBadReadPtr((const void*)c20, 4)) { g_br_ok = 0; return; }
     float* c04 = (float*)(slot + 0x04);
     if (IsBadReadPtr((const void*)c04, 12)) { g_br_ok = 0; return; }
+    float* c40 = (float*)(slot + 0x40);
+    if (IsBadReadPtr((const void*)c40, 4)) { g_br_ok = 0; return; }
     float* c30 = (float*)(slot + 0x30);
     if (IsBadReadPtr((const void*)c30, 4)) { g_br_ok = 0; return; }
     float* c24 = (float*)(slot + 0x24);
@@ -262,6 +274,7 @@ static void br_resolve(App* app) {
         g_br_natD0 = c04[0];
         g_br_natD1 = c04[1];
         g_br_natD2 = c04[2];
+        g_br_natPow = c40[0];
         g_br_nat0 = c34[0];
         g_br_nat1 = c34[1];
         g_br_nat2 = c34[2];
@@ -295,6 +308,7 @@ static void br_resolve(App* app) {
         c04[0] = g_br_natD0;
         c04[1] = g_br_natD1;
         c04[2] = g_br_natD2;
+        c40[0] = g_br_natPow;
         c34[0] = g_br_nat0;
         c34[1] = g_br_nat1;
         c34[2] = g_br_nat2;

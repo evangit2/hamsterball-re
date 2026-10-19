@@ -751,6 +751,10 @@ static void __thiscall game_update(void*) {
         g_hook_spc0 = (float)((sp >> 16) & 0xFF) / 255.0f;
         g_hook_spc1 = (float)((sp >> 8) & 0xFF) / 255.0f;
         g_hook_spc2 = (float)(sp & 0xFF) / 255.0f;
+        /* SPEC-FLOOD test: power 25 = pinhead dot, easily missed. Force 1.0
+           (broad wash): if specular lighting works at all, P1 glows yellow
+           unmistakably. Revert/add key after MAKYUNI confirms. */
+        g_hook_pow = 1.0f;
     }
     /* P1 outline: border D3DMATERIAL8 inline at ball+0x1BC (per-ball struct,
        no bleed). Emissive <- Player1_ball_outline (renamed, was _E);
