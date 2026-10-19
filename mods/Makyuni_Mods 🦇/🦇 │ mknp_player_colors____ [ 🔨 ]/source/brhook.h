@@ -32,6 +32,12 @@ extern float g_hook_spc2;
 extern float g_br_natD0;
 extern float g_br_natD1;
 extern float g_br_natD2;
+extern float g_br_natA0;
+extern float g_br_natA1;
+extern float g_br_natA2;
+extern float g_hook_amb0;
+extern float g_hook_amb1;
+extern float g_hook_amb2;
 extern float g_hook_pow;
 extern float g_br_natPow;
 extern DWORD g_br_tramp;
@@ -85,6 +91,18 @@ __asm__(
 "_g_br_natD1: .space 4\n"
 ".globl _g_br_natD2\n"
 "_g_br_natD2: .space 4\n"
+".globl _g_br_natA0\n"
+"_g_br_natA0: .space 4\n"
+".globl _g_br_natA1\n"
+"_g_br_natA1: .space 4\n"
+".globl _g_br_natA2\n"
+"_g_br_natA2: .space 4\n"
+".globl _g_hook_amb0\n"
+"_g_hook_amb0: .space 4\n"
+".globl _g_hook_amb1\n"
+"_g_hook_amb1: .space 4\n"
+".globl _g_hook_amb2\n"
+"_g_hook_amb2: .space 4\n"
 ".globl _g_hook_pow\n"
 "_g_hook_pow: .space 4\n"
 ".globl _g_br_natPow\n"
@@ -138,6 +156,12 @@ __asm__(
 " movl %eax, -44(%edx)\n"
 " movl _g_br_natD2, %eax\n"
 " movl %eax, -40(%edx)\n"
+" movl _g_br_natA0, %eax\n"
+" movl %eax, -32(%edx)\n"
+" movl _g_br_natA1, %eax\n"
+" movl %eax, -28(%edx)\n"
+" movl _g_br_natA2, %eax\n"
+" movl %eax, -24(%edx)\n"
 " movl _g_br_natPow, %eax\n"
 " movl %eax, 12(%edx)\n"
 " jmp 9f\n"
@@ -155,6 +179,12 @@ __asm__(
 " movl %eax, 4(%edx)\n"
 " movl _g_hook_rgb2, %eax\n"
 " movl %eax, 8(%edx)\n"
+" movl _g_hook_amb0, %eax\n"
+" movl %eax, -32(%edx)\n"
+" movl _g_hook_amb1, %eax\n"
+" movl %eax, -28(%edx)\n"
+" movl _g_hook_amb2, %eax\n"
+" movl %eax, -24(%edx)\n"
 " jmp 5f\n"
 "4:\n"
 " movl _g_br_nat0, %eax\n"
@@ -169,6 +199,12 @@ __asm__(
 " movl %eax, -44(%edx)\n"
 " movl _g_br_natD2, %eax\n"
 " movl %eax, -40(%edx)\n"
+" movl _g_br_natA0, %eax\n"
+" movl %eax, -32(%edx)\n"
+" movl _g_br_natA1, %eax\n"
+" movl %eax, -28(%edx)\n"
+" movl _g_br_natA2, %eax\n"
+" movl %eax, -24(%edx)\n"
 "5:\n"
 " cmpl $0, _g_do_spec\n"
 " je 6f\n"
@@ -302,6 +338,8 @@ static void br_resolve(App* app) {
     if (IsBadReadPtr((const void*)c20, 4)) { g_br_ok = 0; return; }
     float* c04 = (float*)(slot + 0x04);
     if (IsBadReadPtr((const void*)c04, 12)) { g_br_ok = 0; return; }
+    float* c14 = (float*)(slot + 0x14);
+    if (IsBadReadPtr((const void*)c14, 12)) { g_br_ok = 0; return; }
     float* c40 = (float*)(slot + 0x40);
     if (IsBadReadPtr((const void*)c40, 4)) { g_br_ok = 0; return; }
     float* c30 = (float*)(slot + 0x30);
@@ -320,6 +358,9 @@ static void br_resolve(App* app) {
         g_br_natD0 = c04[0];
         g_br_natD1 = c04[1];
         g_br_natD2 = c04[2];
+        g_br_natA0 = c14[0];
+        g_br_natA1 = c14[1];
+        g_br_natA2 = c14[2];
         g_br_natPow = c40[0];
         g_br_nat0 = c34[0];
         g_br_nat1 = c34[1];
@@ -354,6 +395,9 @@ static void br_resolve(App* app) {
         c04[0] = g_br_natD0;
         c04[1] = g_br_natD1;
         c04[2] = g_br_natD2;
+        c14[0] = g_br_natA0;
+        c14[1] = g_br_natA1;
+        c14[2] = g_br_natA2;
         c40[0] = g_br_natPow;
         c34[0] = g_br_nat0;
         c34[1] = g_br_nat1;

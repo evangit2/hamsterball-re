@@ -815,6 +815,11 @@ static void __thiscall game_update(void*) {
            lights themselves carry zero specular - no material value can
            ever show. Park power at native until light injection lands. */
         g_hook_pow = g_br_natlock ? g_br_natPow : 25.0f;
+        /* anti-wash: damp P1 ambient to half native (white ambient is what
+           drowns the tint on bright levels). Others keep full native. */
+        g_hook_amb0 = (g_br_natlock ? g_br_natA0 : 1.0f) * 0.5f;
+        g_hook_amb1 = (g_br_natlock ? g_br_natA1 : 1.0f) * 0.5f;
+        g_hook_amb2 = (g_br_natlock ? g_br_natA2 : 1.0f) * 0.5f;
         g_do_body = has_ball;
         g_do_spec = has_spec;
     }
