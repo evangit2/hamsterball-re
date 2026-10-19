@@ -533,7 +533,7 @@ static void ui_check(App* app, int mode) {
 /* Status line (was TEMP GREEN TEST, now set-driven via the draw hook):
    hook/ok state, active mode, P1 RGB. No writes. */
 static void green_test(App* app) {
-    static char line[96];
+    static char line[160];
     int o = 0, k;
     const char* H = "0123456789ABCDEF";
     const char* t = "BALL-COLOR hook=";
@@ -554,6 +554,34 @@ static void green_test(App* app) {
     rgb[2] = g_hook_rgb2;
     for (k = 0; k < 3; k++) {
         int v = (int)(rgb[k] * 255.0f + 0.5f);
+        if (v < 0) v = 0;
+        if (v > 255) v = 255;
+        line[o++] = H[(v >> 4) & 0xF];
+        line[o++] = H[v & 0xF];
+    }
+    /* locked native: emissive triple + R + specular triple */
+    const char* t5 = " nt=";
+    while (*t5) line[o++] = *t5++;
+    float nt[4];
+    nt[0] = g_br_natR;
+    nt[1] = g_br_nat0;
+    nt[2] = g_br_nat1;
+    nt[3] = g_br_nat2;
+    for (k = 0; k < 4; k++) {
+        int v = (int)(nt[k] * 255.0f + 0.5f);
+        if (v < 0) v = 0;
+        if (v > 255) v = 255;
+        line[o++] = H[(v >> 4) & 0xF];
+        line[o++] = H[v & 0xF];
+    }
+    const char* t6 = " ns=";
+    while (*t6) line[o++] = *t6++;
+    float ns[3];
+    ns[0] = g_br_natS0;
+    ns[1] = g_br_natS1;
+    ns[2] = g_br_natS2;
+    for (k = 0; k < 3; k++) {
+        int v = (int)(ns[k] * 255.0f + 0.5f);
         if (v < 0) v = 0;
         if (v > 255) v = 255;
         line[o++] = H[(v >> 4) & 0xF];

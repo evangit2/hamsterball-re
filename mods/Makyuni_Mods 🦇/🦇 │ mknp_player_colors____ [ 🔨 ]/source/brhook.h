@@ -18,6 +18,10 @@ extern int g_br_ok;
 extern float g_br_nat0;
 extern float g_br_nat1;
 extern float g_br_nat2;
+extern float g_br_natS0;
+extern float g_br_natS1;
+extern float g_br_natS2;
+extern float g_br_natR;
 extern float g_hook_rgb0;
 extern float g_hook_rgb1;
 extern float g_hook_rgb2;
@@ -40,6 +44,14 @@ __asm__(
 "_g_br_nat1: .space 4\n"
 ".globl _g_br_nat2\n"
 "_g_br_nat2: .space 4\n"
+".globl _g_br_natS0\n"
+"_g_br_natS0: .space 4\n"
+".globl _g_br_natS1\n"
+"_g_br_natS1: .space 4\n"
+".globl _g_br_natS2\n"
+"_g_br_natS2: .space 4\n"
+".globl _g_br_natR\n"
+"_g_br_natR: .space 4\n"
 ".globl _g_hook_rgb0\n"
 "_g_hook_rgb0: .space 4\n"
 ".globl _g_hook_rgb1\n"
@@ -65,20 +77,34 @@ __asm__(
 " jz 9f\n"
 " cmpl _g_br_p1, %ecx\n"
 " je 1f\n"
+/* other balls: full native restore (emissive + specular + R). Partial
+ * restores tinted P3 red (R left at foreign value). */
+" movl _g_br_natR, %eax\n"
+" movl %eax, -4(%edx)\n"
 " movl _g_br_nat0, %eax\n"
 " movl %eax, (%edx)\n"
 " movl _g_br_nat1, %eax\n"
 " movl %eax, 4(%edx)\n"
 " movl _g_br_nat2, %eax\n"
 " movl %eax, 8(%edx)\n"
+" movl _g_br_natS0, %eax\n"
+" movl %eax, -16(%edx)\n"
+" movl _g_br_natS1, %eax\n"
+" movl %eax, -12(%edx)\n"
+" movl _g_br_natS2, %eax\n"
+" movl %eax, -8(%edx)\n"
 " jmp 9f\n"
 "1:\n"
+/* P1: set color to emissive AND specular (mode = 1P/2P/4P set key). */
 " movl _g_hook_rgb0, %eax\n"
 " movl %eax, (%edx)\n"
+" movl %eax, -16(%edx)\n"
 " movl _g_hook_rgb1, %eax\n"
 " movl %eax, 4(%edx)\n"
+" movl %eax, -12(%edx)\n"
 " movl _g_hook_rgb2, %eax\n"
 " movl %eax, 8(%edx)\n"
+" movl %eax, -8(%edx)\n"
 "9:\n"
 " popl %edx\n"
 " popl %eax\n"
@@ -148,22 +174,30 @@ static void br_resolve(App* app) {
     }
     char* slot = (char*)(arr + (DWORD)sub * 0x50);
     if (IsBadReadPtr((const void*)slot, 0x50)) { g_br_ok = 0; return; }
-    /* heal r1: +0x10 is native white */
+    /* heal r1: +0x10 is native white. SURGICAL: only repair exact r1
+       damage signature (0,1,0); never force white over native values
+       (animated levels may legitimately hold other colors there). */
     float* c10 = (float*)(slot + 0x10);
-    if (!IsBadReadPtr((const void*)c10, 16) && c10[3] == 1.0f) {
+    if (!IsBadReadPtr((const void*)c10, 16) && c10[3] == 1.0f &&
+        c10[0] == 0.0f && c10[1] == 1.0f && c10[2] == 0.0f) {
         c10[0] = 1.0f;
         c10[1] = 1.0f;
         c10[2] = 1.0f;
     }
+    float* c30 = (float*)(slot + 0x30);
+    if (IsBadReadPtr((const void*)c30, 4)) { g_br_ok = 0; return; }
+    float* c24 = (float*)(slot + 0x24);
+    if (IsBadReadPtr((const void*)c24, 12)) { g_br_ok = 0; return; }
     float* c34 = (float*)(slot + 0x34);
     if (IsBadReadPtr((const void*)c34, 12)) { g_br_ok = 0; return; }
-    /* Capture native ONCE per level (first resolve, before any draw).
-       Re-capturing mid-race absorbs our own green (P1 drew last frame)
-       and feeds it back to every ball = green drift. */
     if (!g_br_natlock) {
+        g_br_natR = c30[0];
         g_br_nat0 = c34[0];
         g_br_nat1 = c34[1];
         g_br_nat2 = c34[2];
+        g_br_natS0 = c24[0];
+        g_br_natS1 = c24[1];
+        g_br_natS2 = c24[2];
         /* sanity: lock only on plausible native (not our green) */
         if (!(c34[0] == 0.0f && c34[1] == 1.0f && c34[2] == 0.0f))
             g_br_natlock = 1;
