@@ -29,6 +29,9 @@ extern float g_hook_rgb2;
 extern float g_hook_spc0;
 extern float g_hook_spc1;
 extern float g_hook_spc2;
+extern float g_br_natD0;
+extern float g_br_natD1;
+extern float g_br_natD2;
 extern DWORD g_br_tramp;
 extern int g_br_inst;
 extern int g_br_natlock;
@@ -72,6 +75,12 @@ __asm__(
 "_g_hook_spc1: .space 4\n"
 ".globl _g_hook_spc2\n"
 "_g_hook_spc2: .space 4\n"
+".globl _g_br_natD0\n"
+"_g_br_natD0: .space 4\n"
+".globl _g_br_natD1\n"
+"_g_br_natD1: .space 4\n"
+".globl _g_br_natD2\n"
+"_g_br_natD2: .space 4\n"
 ".globl _g_br_tramp\n"
 "_g_br_tramp: .space 4\n"
 ".globl _g_br_inst\n"
@@ -95,37 +104,52 @@ __asm__(
 " jz 9f\n"
 " cmpl _g_br_p1, %ecx\n"
 " je 1f\n"
-/* other balls: BLACK spec test (all four incl +0x20). The last build left
- * +0x20 (native spec-R = 1.0) alive, so its "no change" proved nothing.
- * If highlights die now, slot spec is consumed (likely under a bright
- * light that saturates full-strength channels to white). */
+/* P1 vs others differ ONLY in emissive + diffuse (both = set color).
+ * Spec-zone (+0x20-2C) is native for everyone: the black test proved it
+ * is not the highlight source, and writing hue there only discolored P1.
+ * The bright top is white DIFFUSE x light -> tint diffuse (+0x04/08/0C).
+ * +0x10 (alpha), +0x30, +0x2C untouched. */
 " movl _g_br_natR, %eax\n"
 " movl %eax, -4(%edx)\n"
-" movl $0, -20(%edx)\n"
+" movl _g_br_nat20, %eax\n"
+" movl %eax, -20(%edx)\n"
 " movl _g_br_nat0, %eax\n"
 " movl %eax, (%edx)\n"
 " movl _g_br_nat1, %eax\n"
 " movl %eax, 4(%edx)\n"
 " movl _g_br_nat2, %eax\n"
 " movl %eax, 8(%edx)\n"
-" movl $0, -16(%edx)\n"
-" movl $0, -12(%edx)\n"
-" movl $0, -8(%edx)\n"
+" movl _g_br_natS0, %eax\n"
+" movl %eax, -16(%edx)\n"
+" movl _g_br_natS1, %eax\n"
+" movl %eax, -12(%edx)\n"
+" movl _g_br_natS2, %eax\n"
+" movl %eax, -8(%edx)\n"
+" movl _g_br_natD0, %eax\n"
+" movl %eax, -48(%edx)\n"
+" movl _g_br_natD1, %eax\n"
+" movl %eax, -44(%edx)\n"
+" movl _g_br_natD2, %eax\n"
+" movl %eax, -40(%edx)\n"
 " jmp 9f\n"
 "1:\n"
-/* P1: emissive = set color; specular = set color x 0.25 (dim, since the
- * specular light saturates full-strength channels to white). +0x30/+0x2C
- * untouched (native). */
 " movl _g_hook_rgb0, %eax\n"
 " movl %eax, (%edx)\n"
-" movl _g_hook_spc0, %eax\n"
-" movl %eax, -20(%edx)\n"
-" movl %eax, -16(%edx)\n"
-" movl _g_hook_spc1, %eax\n"
+" movl %eax, -48(%edx)\n"
+" movl _g_hook_rgb1, %eax\n"
 " movl %eax, 4(%edx)\n"
-" movl %eax, -12(%edx)\n"
-" movl _g_hook_spc2, %eax\n"
+" movl %eax, -44(%edx)\n"
+" movl _g_hook_rgb2, %eax\n"
 " movl %eax, 8(%edx)\n"
+" movl %eax, -40(%edx)\n"
+" movl _g_br_nat20, %eax\n"
+" movl %eax, -20(%edx)\n"
+" movl _g_br_natS0, %eax\n"
+" movl %eax, -16(%edx)\n"
+" movl _g_br_natS1, %eax\n"
+" movl %eax, -12(%edx)\n"
+" movl _g_br_natS2, %eax\n"
+" movl %eax, -8(%edx)\n"
 "9:\n"
 " popl %edx\n"
 " popl %eax\n"
@@ -208,6 +232,8 @@ static void br_resolve(App* app) {
     }
     float* c20 = (float*)(slot + 0x20);
     if (IsBadReadPtr((const void*)c20, 4)) { g_br_ok = 0; return; }
+    float* c04 = (float*)(slot + 0x04);
+    if (IsBadReadPtr((const void*)c04, 12)) { g_br_ok = 0; return; }
     float* c30 = (float*)(slot + 0x30);
     if (IsBadReadPtr((const void*)c30, 4)) { g_br_ok = 0; return; }
     float* c24 = (float*)(slot + 0x24);
@@ -221,6 +247,9 @@ static void br_resolve(App* app) {
     if (!g_br_natlock) {
         g_br_natR = c30[0];
         g_br_nat20 = c20[0];
+        g_br_natD0 = c04[0];
+        g_br_natD1 = c04[1];
+        g_br_natD2 = c04[2];
         g_br_nat0 = c34[0];
         g_br_nat1 = c34[1];
         g_br_nat2 = c34[2];
@@ -251,6 +280,9 @@ static void br_resolve(App* app) {
     } else if (g_br_needscrub) {
         c30[0] = g_br_natR;
         c20[0] = g_br_nat20;
+        c04[0] = g_br_natD0;
+        c04[1] = g_br_natD1;
+        c04[2] = g_br_natD2;
         c34[0] = g_br_nat0;
         c34[1] = g_br_nat1;
         c34[2] = g_br_nat2;
