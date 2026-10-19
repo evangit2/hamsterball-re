@@ -23,6 +23,7 @@ extern float g_hook_rgb1;
 extern float g_hook_rgb2;
 extern DWORD g_br_tramp;
 extern int g_br_inst;
+extern int g_br_natlock;
 
 extern "C" void ballhook_asm(void);
 __asm__(
@@ -49,6 +50,8 @@ __asm__(
 "_g_br_tramp: .space 4\n"
 ".globl _g_br_inst\n"
 "_g_br_inst: .space 4\n"
+".globl _g_br_natlock\n"
+"_g_br_natlock: .space 4\n"
 ".text\n"
 ".globl _ballhook_asm\n"
 "_ballhook_asm:\n"
@@ -154,10 +157,16 @@ static void br_resolve(App* app) {
     }
     float* c34 = (float*)(slot + 0x34);
     if (IsBadReadPtr((const void*)c34, 12)) { g_br_ok = 0; return; }
-    if (!(c34[0] == 0.0f && c34[1] == 1.0f && c34[2] == 0.0f)) {
+    /* Capture native ONCE per level (first resolve, before any draw).
+       Re-capturing mid-race absorbs our own green (P1 drew last frame)
+       and feeds it back to every ball = green drift. */
+    if (!g_br_natlock) {
         g_br_nat0 = c34[0];
         g_br_nat1 = c34[1];
         g_br_nat2 = c34[2];
+        /* sanity: lock only on plausible native (not our green) */
+        if (!(c34[0] == 0.0f && c34[1] == 1.0f && c34[2] == 0.0f))
+            g_br_natlock = 1;
     }
     g_br_mat = (DWORD)c34;
     g_br_ok = 1;

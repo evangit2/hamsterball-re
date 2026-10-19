@@ -688,7 +688,7 @@ static void __thiscall game_update(void*) {
     if (sc) br_resolve(HBAPI(g_api).GetApp());
     if (sc && (g_tick % 600) == 1) green_test(HBAPI(g_api).GetApp());
     if (!sc && g_deep_done) g_deep_done = 0; /* re-probe next race */
-    if (!sc) g_br_ok = 0; /* menu draws skip while cache is cold */
+    if (!sc) { g_br_ok = 0; g_br_natlock = 0; } /* menu: cold cache+relock */
     {
         static int lastmode = -1;
         if (mode != lastmode) {
