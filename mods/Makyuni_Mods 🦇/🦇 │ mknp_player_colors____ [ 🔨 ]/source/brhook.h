@@ -37,6 +37,8 @@ extern float g_br_natPow;
 extern DWORD g_br_tramp;
 extern int g_br_inst;
 extern int g_br_natlock;
+extern int g_do_body;
+extern int g_do_spec;
 extern int g_br_needscrub;
 extern int g_br_sub;
 
@@ -93,6 +95,10 @@ __asm__(
 "_g_br_inst: .space 4\n"
 ".globl _g_br_natlock\n"
 "_g_br_natlock: .space 4\n"
+".globl _g_do_body\n"
+"_g_do_body: .space 4\n"
+".globl _g_do_spec\n"
+"_g_do_spec: .space 4\n"
 ".globl _g_br_needscrub\n"
 "_g_br_needscrub: .space 4\n"
 ".globl _g_br_sub\n"
@@ -145,17 +151,52 @@ __asm__(
 " movl _g_hook_rgb2, %eax\n"
 " movl %eax, 8(%edx)\n"
 " movl %eax, -40(%edx)\n"
-/* DOT-BISECT: P1 dif/spec/power native this build, emissive kept green.
- * Others (full native + black spec) show their dots, so the hook is benign;
- * the only P1-vs-others delta left is emissive. Dot back => a dif/spec
- * write was the killer. Dot still missing => emissive wash (contrast) is
- * the killer and we retint via diffuse-only next. */
+/* DOT-BISECT step 2: P1 diffuse back to set color (spec still native).
+ * If the white dot turns body-colored/vanishes => dot follows diffuse.
+ * Gates: no ball key => P1 fully native; no spec key => spec-zone black. */
+" cmpl $0, _g_do_body\n"
+" je 4f\n"
+" movl _g_hook_rgb0, %eax\n"
+" movl %eax, (%edx)\n"
+" movl %eax, -48(%edx)\n"
+" movl _g_hook_rgb1, %eax\n"
+" movl %eax, 4(%edx)\n"
+" movl %eax, -44(%edx)\n"
+" movl _g_hook_rgb2, %eax\n"
+" movl %eax, 8(%edx)\n"
+" movl %eax, -40(%edx)\n"
+" jmp 5f\n"
+"4:\n"
+" movl _g_br_nat0, %eax\n"
+" movl %eax, (%edx)\n"
+" movl _g_br_nat1, %eax\n"
+" movl %eax, 4(%edx)\n"
+" movl _g_br_nat2, %eax\n"
+" movl %eax, 8(%edx)\n"
 " movl _g_br_natD0, %eax\n"
 " movl %eax, -48(%edx)\n"
 " movl _g_br_natD1, %eax\n"
 " movl %eax, -44(%edx)\n"
 " movl _g_br_natD2, %eax\n"
 " movl %eax, -40(%edx)\n"
+"5:\n"
+" cmpl $0, _g_do_spec\n"
+" je 6f\n"
+" movl _g_hook_spc0, %eax\n"
+" movl %eax, -20(%edx)\n"
+" movl _g_hook_spc1, %eax\n"
+" movl %eax, -16(%edx)\n"
+" movl _g_hook_spc2, %eax\n"
+" movl %eax, -12(%edx)\n"
+" movl _g_br_natS2, %eax\n"
+" movl %eax, -8(%edx)\n"
+" jmp 7f\n"
+"6:\n"
+" movl $0, -20(%edx)\n"
+" movl $0, -16(%edx)\n"
+" movl $0, -12(%edx)\n"
+" movl $0, -8(%edx)\n"
+"7:\n"
 " movl _g_br_natPow, %eax\n"
 " movl %eax, 12(%edx)\n"
 "9:\n"

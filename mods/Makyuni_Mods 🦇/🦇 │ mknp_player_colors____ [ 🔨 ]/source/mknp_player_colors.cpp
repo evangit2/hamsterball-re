@@ -59,6 +59,8 @@ static unsigned int g_ball[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
 static unsigned int g_spec[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
 static unsigned int g_outE[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
 static unsigned int g_ui[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
+/* presence gates: absent/commented key => field left native (no-op) */
+static int has_ball = 0, has_spec = 0, has_out = 0, has_ui = 0;
 
 static IModAPI* g_api = NULL;
 static HMODULE  g_module = NULL;
@@ -248,7 +250,9 @@ static void read_set(void) {
     const char *gs, *ge;
     char val[32];
     int m;
+    has_ball = has_spec = has_out = has_ui = 0;
     if (find_group(buf, "Player1_ball_color", &gs, &ge)) {
+        has_ball = 1;
         for (m = 0; m < 3; m++) {
             if (find_key_str(gs, ge, K_MODES[m], val, sizeof(val)))
                 g_ball[m] = parse_hex(val);
@@ -256,18 +260,21 @@ static void read_set(void) {
         }
     }
     if (find_group(buf, "Player1_ball_specular", &gs, &ge)) {
+        has_spec = 1;
         for (m = 0; m < 3; m++) {
             if (find_key_str(gs, ge, K_MODES[m], val, sizeof(val)))
                 g_spec[m] = parse_hex(val);
         }
     }
     if (find_group(buf, "Player1_ball_outline", &gs, &ge)) {
+        has_out = 1;
         for (m = 0; m < 3; m++) {
             if (find_key_str(gs, ge, K_MODES[m], val, sizeof(val)))
                 g_outE[m] = parse_hex(val);
         }
     }
     if (find_group(buf, "Player1_UI", &gs, &ge)) {
+        has_ui = 1;
         for (m = 0; m < 3; m++) {
             if (find_key_str(gs, ge, K_MODES[m], val, sizeof(val)))
                 g_ui[m] = parse_hex(val);
@@ -475,7 +482,8 @@ static void ball_check(DWORD board, int mode) {
 static int g_ui_ok[3] = { 0, 0, 0 };
 
 static void tint_ui(App* app, int mode) {
-    unsigned int hex = g_ui[mode];
+    /* absent UI key => restore plain white (native Hammy look) */
+    unsigned int hex = has_ui ? g_ui[mode] : 0xFFFFFF;
     float r = (float)((hex >> 16) & 0xFF) / 255.0f;
     float g = (float)((hex >> 8) & 0xFF) / 255.0f;
     float b = (float)(hex & 0xFF) / 255.0f;
@@ -739,7 +747,15 @@ static void __thiscall game_update(void*) {
             }
         }
     }
-    if (sc) write_slot(board, 0, g_ball[mode]);
+    /* presence flip mid-session (key commented out/added) => re-tint now */
+    {
+        static int last_has_ui = -1;
+        if (has_ui != last_has_ui) {
+            last_has_ui = has_ui;
+            tint_ui(HBAPI(g_api).GetApp(), mode);
+        }
+    }
+    if (sc && has_ball) write_slot(board, 0, g_ball[mode]);
     {
         unsigned int hex = g_ball[mode];
         g_mode = mode;
@@ -756,13 +772,27 @@ static void __thiscall game_update(void*) {
            lights themselves carry zero specular - no material value can
            ever show. Park power at native until light injection lands. */
         g_hook_pow = g_br_natlock ? g_br_natPow : 25.0f;
+        g_do_body = has_ball;
+        g_do_spec = has_spec;
     }
     /* P1 outline: border D3DMATERIAL8 inline at ball+0x1BC (per-ball struct,
        no bleed). Emissive <- Player1_ball_outline (renamed, was _E);
-       diffuse + alphas untouched. */
+       diffuse + alphas untouched. Absent key => restore native once. */
     {
         DWORD pb = g_br_p1;
-        if (pb && !IsBadReadPtr((const void*)pb, 0x300)) {
+        static float o_nat[3] = { 0.0f, 0.0f, 0.0f };
+        static int o_cap = 0, o_on = 0;
+        if (!has_out) {
+            if (o_on && o_cap && pb && !IsBadReadPtr((const void*)pb, 0x300)) {
+                char* m = (char*)pb + 0x1BC;
+                if (!IsBadReadPtr(m, 0x44)) {
+                    float* f = (float*)m;
+                    f[12] = o_nat[0]; f[13] = o_nat[1]; f[14] = o_nat[2];
+                    o_on = 0;
+                }
+            }
+        }
+        else if (pb && !IsBadReadPtr((const void*)pb, 0x300)) {
             char* m = (char*)pb + 0x1BC;
             if (!IsBadReadPtr(m, 0x44)) {
                 float* f = (float*)m;
@@ -785,9 +815,14 @@ static void __thiscall game_update(void*) {
                     log_line(ol);
                 }
                 unsigned int he = g_outE[mode];
+                if (!o_cap) {
+                    o_nat[0] = f[12]; o_nat[1] = f[13]; o_nat[2] = f[14];
+                    o_cap = 1;
+                }
                 f[12] = (float)((he >> 16) & 0xFF) / 255.0f;
                 f[13] = (float)((he >> 8) & 0xFF) / 255.0f;
                 f[14] = (float)(he & 0xFF) / 255.0f;
+                o_on = 1;
             }
         }
     }

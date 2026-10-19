@@ -30,7 +30,7 @@ Edit `mknp_player_colors.set` (next to the DLL in `Mods\`, NOT the game root):
 - `Player1_ball_outline`: Player 1 ball ring/outline emission color, same modes.
 - `Player1_UI`: Hammy1/Hammy2/Hammy3 portrait tint. `1P_mode` = Tournament and Time Trials menus (incl. Tournament win screen), `2P_mode` = 2-player menu, `4P_mode` = arena menu + in-game arena. (UI tint lands in the next build — this build wires the file + ball tint, and logs what the UI hook needs.)
 
-Hex RGB (`#`/`0x` prefixes and 3-digit shorthand accepted). Missing keys keep their current value, so partial sets are fine.
+Hex RGB (`#`/`0x` prefixes and 3-digit shorthand accepted). Missing keys keep their current value, so partial sets are fine. A key absent or commented out = that field untouched (native look).
 
 ## Technical Details
 
