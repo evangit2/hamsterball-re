@@ -28,6 +28,7 @@ extern float g_hook_rgb2;
 extern DWORD g_br_tramp;
 extern int g_br_inst;
 extern int g_br_natlock;
+extern int g_br_needscrub;
 
 extern "C" void ballhook_asm(void);
 __asm__(
@@ -64,6 +65,8 @@ __asm__(
 "_g_br_inst: .space 4\n"
 ".globl _g_br_natlock\n"
 "_g_br_natlock: .space 4\n"
+".globl _g_br_needscrub\n"
+"_g_br_needscrub: .space 4\n"
 ".text\n"
 ".globl _ballhook_asm\n"
 "_ballhook_asm:\n"
@@ -190,6 +193,10 @@ static void br_resolve(App* app) {
     if (IsBadReadPtr((const void*)c24, 12)) { g_br_ok = 0; return; }
     float* c34 = (float*)(slot + 0x34);
     if (IsBadReadPtr((const void*)c34, 12)) { g_br_ok = 0; return; }
+    /* Boot capture: the mesh is App-global, so level-1 values are the
+       pristine truth. Sanity rejects our green (retry next tick).
+       Later levels NEVER recapture (would absorb last race's residue);
+       they scrub the mat back to boot values on entry instead. */
     if (!g_br_natlock) {
         g_br_natR = c30[0];
         g_br_nat0 = c34[0];
@@ -201,6 +208,15 @@ static void br_resolve(App* app) {
         /* sanity: lock only on plausible native (not our green) */
         if (!(c34[0] == 0.0f && c34[1] == 1.0f && c34[2] == 0.0f))
             g_br_natlock = 1;
+    } else if (g_br_needscrub) {
+        c30[0] = g_br_natR;
+        c34[0] = g_br_nat0;
+        c34[1] = g_br_nat1;
+        c34[2] = g_br_nat2;
+        c24[0] = g_br_natS0;
+        c24[1] = g_br_natS1;
+        c24[2] = g_br_natS2;
+        g_br_needscrub = 0;
     }
     g_br_mat = (DWORD)c34;
     g_br_ok = 1;

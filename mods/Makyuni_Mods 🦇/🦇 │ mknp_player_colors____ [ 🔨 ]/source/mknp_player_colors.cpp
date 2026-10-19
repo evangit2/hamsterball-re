@@ -713,10 +713,14 @@ static void __thiscall game_update(void*) {
         g_hook_rgb1 = (float)((hex >> 8) & 0xFF) / 255.0f;
         g_hook_rgb2 = (float)(hex & 0xFF) / 255.0f;
     }
-    if (sc) br_resolve(HBAPI(g_api).GetApp());
+    if (sc) {
+        static DWORD lastsc = 0;
+        if ((DWORD)sc != lastsc) { lastsc = (DWORD)sc; g_br_needscrub = 1; }
+        br_resolve(HBAPI(g_api).GetApp());
+    }
     if (sc && (g_tick % 600) == 1) green_test(HBAPI(g_api).GetApp());
     if (!sc && g_deep_done) g_deep_done = 0; /* re-probe next race */
-    if (!sc) { g_br_ok = 0; g_br_natlock = 0; } /* menu: cold cache+relock */
+    if (!sc) { g_br_ok = 0; g_br_needscrub = 1; } /* menu: scrub on entry */
     {
         static int lastmode = -1;
         if (mode != lastmode) {
