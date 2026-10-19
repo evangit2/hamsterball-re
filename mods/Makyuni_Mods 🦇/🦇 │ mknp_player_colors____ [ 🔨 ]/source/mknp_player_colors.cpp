@@ -519,6 +519,81 @@ static void ui_check(App* app, int mode) {
     log_line(line);
 }
 
+/* TEMP GREEN TEST (revert after MAKYUNI confirms): P1 ball green through
+   every known per-ball vector: board table (existing), border sprite
+   material (ball+0x1BC D3DMATERIAL8, entities_plus pattern), ball mesh
+   mat0 Diffuse (App+0x244[754] MW, mat array +0x28 stride 0x50, dif +16). */
+static void green_test(App* app) {
+    void* b = (void*)HBAPI(g_api).GetPlayer();
+    static char line[256];
+    int o = 0;
+    const char* t = "GREEN-TEST ";
+    while (*t) line[o++] = *t++;
+    /* 1. border material (proven pattern) */
+    if (b && !IsBadReadPtr(b, 0x300)) {
+        char* m = (char*)b + 0x1BC;
+        if (!IsBadReadPtr(m, 0x44)) {
+            float* dif = (float*)m;
+            dif[0] = 0.0f;
+            dif[1] = 1.0f;
+            dif[2] = 0.0f;
+            dif[3] = 1.0f;
+            line[o++] = 'b';
+            line[o++] = 'd';
+            line[o++] = '=';
+            line[o++] = '1';
+        } else {
+            line[o++] = 'b';
+            line[o++] = 'd';
+            line[o++] = '=';
+            line[o++] = '0';
+        }
+    } else {
+        line[o++] = 'b';
+        line[o++] = '=';
+        line[o++] = '0';
+    }
+    line[o++] = ' ';
+    /* 2. ball mesh mat0 (best-effort, validated) */
+    do {
+        if (!b || IsBadReadPtr(b, 0x758)) break;
+        int idx = *(int*)((char*)b + 0x754);
+        if (idx < 0 || idx > 10) break;
+        if (!app || IsBadReadPtr((const void*)((char*)app + 0x244), 4)) break;
+        DWORD mw = *(DWORD*)((char*)app + 0x244 + (DWORD)idx * 4);
+        if (!mw || IsBadReadPtr((const void*)mw, 0x30)) break;
+        DWORD arr = *(DWORD*)(mw + 0x28);
+        if (!arr || IsBadReadPtr((const void*)arr, 0x50)) {
+            /* inline array fallback */
+            if (IsBadReadPtr((const void*)(mw + 0x28), 0x50)) break;
+            arr = (DWORD)(mw + 0x28);
+        }
+        float* dif = (float*)(arr + 0x10);
+        if (IsBadReadPtr((const void*)dif, 16)) break;
+        if (dif[3] != 1.0f) break; /* not a white diffuse: do not touch */
+        const char* H = "0123456789ABCDEF";
+        int k;
+        line[o++] = 'm';
+        line[o++] = 'a';
+        line[o++] = 't';
+        line[o++] = '=';
+        for (k = 0; k < 3; k++) {
+            int v = (int)(dif[k] * 255.0f + 0.5f);
+            if (v < 0) v = 0;
+            if (v > 255) v = 255;
+            line[o++] = H[(v >> 4) & 0xF];
+            line[o++] = H[v & 0xF];
+        }
+        line[o++] = '-';
+        line[o++] = '>';
+        dif[0] = 0.0f;
+        dif[1] = 1.0f;
+        dif[2] = 0.0f;
+    } while (0);
+    line[o] = '\0';
+    log_line(line);
+}
+
 static void write_slot(DWORD board, int slot, unsigned int hex) {
     float r = (float)((hex >> 16) & 0xFF) / 255.0f;
     float g = (float)((hex >> 8) & 0xFF) / 255.0f;
@@ -624,6 +699,7 @@ static void __thiscall game_update(void*) {
         }
     }
     if (sc) write_slot(board, 0, g_ball[mode]);
+    if (sc && (g_tick % 600) == 1) green_test(HBAPI(g_api).GetApp());
     {
         static int lastmode = -1;
         if (mode != lastmode) {
