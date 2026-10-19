@@ -22,6 +22,7 @@ extern float g_br_natS0;
 extern float g_br_natS1;
 extern float g_br_natS2;
 extern float g_br_natR;
+extern float g_br_nat20;
 extern float g_hook_rgb0;
 extern float g_hook_rgb1;
 extern float g_hook_rgb2;
@@ -53,6 +54,8 @@ __asm__(
 "_g_br_natS2: .space 4\n"
 ".globl _g_br_natR\n"
 "_g_br_natR: .space 4\n"
+".globl _g_br_nat20\n"
+"_g_br_nat20: .space 4\n"
 ".globl _g_hook_rgb0\n"
 "_g_hook_rgb0: .space 4\n"
 ".globl _g_hook_rgb1\n"
@@ -84,6 +87,8 @@ __asm__(
  * restores tinted P3 red (R left at foreign value). */
 " movl _g_br_natR, %eax\n"
 " movl %eax, -4(%edx)\n"
+" movl _g_br_nat20, %eax\n"
+" movl %eax, -20(%edx)\n"
 " movl _g_br_nat0, %eax\n"
 " movl %eax, (%edx)\n"
 " movl _g_br_nat1, %eax\n"
@@ -98,9 +103,11 @@ __asm__(
 " movl %eax, -8(%edx)\n"
 " jmp 9f\n"
 "1:\n"
-/* P1: set color to emissive AND specular (mode = 1P/2P/4P set key). */
+/* P1: set color to emissive AND specular (mode = 1P/2P/4P set key).
+ * Specular triple = +0x20/24/28; +0x2C left pristine. */
 " movl _g_hook_rgb0, %eax\n"
 " movl %eax, (%edx)\n"
+" movl %eax, -20(%edx)\n"
 " movl %eax, -16(%edx)\n"
 " movl _g_hook_rgb1, %eax\n"
 " movl %eax, 4(%edx)\n"
@@ -187,6 +194,8 @@ static void br_resolve(App* app) {
         c10[1] = 1.0f;
         c10[2] = 1.0f;
     }
+    float* c20 = (float*)(slot + 0x20);
+    if (IsBadReadPtr((const void*)c20, 4)) { g_br_ok = 0; return; }
     float* c30 = (float*)(slot + 0x30);
     if (IsBadReadPtr((const void*)c30, 4)) { g_br_ok = 0; return; }
     float* c24 = (float*)(slot + 0x24);
@@ -199,6 +208,7 @@ static void br_resolve(App* app) {
        they scrub the mat back to boot values on entry instead. */
     if (!g_br_natlock) {
         g_br_natR = c30[0];
+        g_br_nat20 = c20[0];
         g_br_nat0 = c34[0];
         g_br_nat1 = c34[1];
         g_br_nat2 = c34[2];
@@ -206,10 +216,29 @@ static void br_resolve(App* app) {
         g_br_natS1 = c24[1];
         g_br_natS2 = c24[2];
         /* sanity: lock only on plausible native (not our green) */
-        if (!(c34[0] == 0.0f && c34[1] == 1.0f && c34[2] == 0.0f))
+        if (!(c34[0] == 0.0f && c34[1] == 1.0f && c34[2] == 0.0f)) {
             g_br_natlock = 1;
+            /* one-time full material map: slot+0x00..+0x4C as raw bytes */
+            static int dump_done = 0;
+            if (!dump_done && !IsBadReadPtr((const void*)slot, 0x50)) {
+                dump_done = 1;
+                static char dl[220];
+                int q = 0, b;
+                const char* HX = "0123456789ABCDEF";
+                const char* dt = "MATDUMP ";
+                while (*dt) dl[q++] = *dt++;
+                unsigned char* rb = (unsigned char*)slot;
+                for (b = 0; b < 0x50 && q < 210; b++) {
+                    dl[q++] = HX[(rb[b] >> 4) & 0xF];
+                    dl[q++] = HX[rb[b] & 0xF];
+                }
+                dl[q] = '\0';
+                log_line(dl);
+            }
+        }
     } else if (g_br_needscrub) {
         c30[0] = g_br_natR;
+        c20[0] = g_br_nat20;
         c34[0] = g_br_nat0;
         c34[1] = g_br_nat1;
         c34[2] = g_br_nat2;
