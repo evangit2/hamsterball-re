@@ -18,12 +18,18 @@ Edit `mknp_player_colors.set` (next to the DLL in `Mods\`, NOT the game root):
 
 ```jsonc
 [
-  "Player1",    { "1P_mode": "FFFFFF", "2P_mode": "FFFFFF", "4P_mode": "FFFFFF" },
+  "Player1_ball_color",    { "1P_mode": "FFFFFF", "2P_mode": "FFFFFF", "4P_mode": "FFFFFF" },
+  "Player1_ball_specular", { "1P_mode": "FFFFFF", "2P_mode": "FFFFFF", "4P_mode": "FFFFFF" },
+  "Player1_ball_outline",  { "1P_mode": "FFFFFF", "2P_mode": "FFFFFF", "4P_mode": "FFFFFF" },
+  "Player1_ball_outline_E",{ "1P_mode": "FFFFFF", "2P_mode": "FFFFFF", "4P_mode": "FFFFFF" },
   "Player1_UI", { "1P_mode": "FFFFFF", "2P_mode": "FFFFFF", "4P_mode": "FFFFFF" }
 ]
 ```
 
-- `Player1`: Player 1 ball tint. `1P_mode` = Tournament and Time Trials, `2P_mode` = 2-player mode, `4P_mode` = 4-player arena (Rodent Rumble).
+- `Player1_ball_color`: Player 1 ball tint. `1P_mode` = Tournament and Time Trials, `2P_mode` = 2-player mode, `4P_mode` = 4-player arena (Rodent Rumble).
+- `Player1_ball_specular`: Player 1 ball specular color, same modes.
+- `Player1_ball_outline`: Player 1 ball ring/outline color, same modes.
+- `Player1_ball_outline_E`: Player 1 ball ring/outline emission color, same modes.
 - `Player1_UI`: Hammy1/Hammy2/Hammy3 portrait tint. `1P_mode` = Tournament and Time Trials menus (incl. Tournament win screen), `2P_mode` = 2-player menu, `4P_mode` = arena menu + in-game arena. (UI tint lands in the next build — this build wires the file + ball tint, and logs what the UI hook needs.)
 
 Hex RGB (`#`/`0x` prefixes and 3-digit shorthand accepted). Missing keys keep their current value, so partial sets are fine.

@@ -56,6 +56,9 @@ static unsigned int g_colors[NUM_COLORS] = {
 
 static const char* K_MODES[3] = { "1P_mode", "2P_mode", "4P_mode" };
 static unsigned int g_ball[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
+static unsigned int g_spec[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
+static unsigned int g_out[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
+static unsigned int g_outE[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
 static unsigned int g_ui[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
 
 static IModAPI* g_api = NULL;
@@ -127,7 +130,10 @@ static void create_defaults(void) {
     const char* defs =
         "// mknp_player_colors settings (jsonc — // and /* */ comments allowed)\r\n"
         "[\r\n"
-        "    \"Player1\",    { \"1P_mode\": \"FFFFFF\", \"2P_mode\": \"FFFFFF\", \"4P_mode\": \"FFFFFF\" },\r\n"
+        "    \"Player1_ball_color\",    { \"1P_mode\": \"FFFFFF\", \"2P_mode\": \"FFFFFF\", \"4P_mode\": \"FFFFFF\" },\r\n"
+        "    \"Player1_ball_specular\", { \"1P_mode\": \"FFFFFF\", \"2P_mode\": \"FFFFFF\", \"4P_mode\": \"FFFFFF\" },\r\n"
+        "    \"Player1_ball_outline\",   { \"1P_mode\": \"FFFFFF\", \"2P_mode\": \"FFFFFF\", \"4P_mode\": \"FFFFFF\" },\r\n"
+        "    \"Player1_ball_outline_E\", { \"1P_mode\": \"FFFFFF\", \"2P_mode\": \"FFFFFF\", \"4P_mode\": \"FFFFFF\" },\r\n"
         "    \"Player1_UI\", { \"1P_mode\": \"FFFFFF\", \"2P_mode\": \"FFFFFF\", \"4P_mode\": \"FFFFFF\" }\r\n"
         "]\r\n";;
     h = CreateFileA(g_config_path, GENERIC_WRITE, 0, NULL,
@@ -244,11 +250,29 @@ static void read_set(void) {
     const char *gs, *ge;
     char val[32];
     int m;
-    if (find_group(buf, "Player1", &gs, &ge)) {
+    if (find_group(buf, "Player1_ball_color", &gs, &ge)) {
         for (m = 0; m < 3; m++) {
             if (find_key_str(gs, ge, K_MODES[m], val, sizeof(val)))
                 g_ball[m] = parse_hex(val);
             /* missing mode: keep current value (partial sets allowed) */
+        }
+    }
+    if (find_group(buf, "Player1_ball_specular", &gs, &ge)) {
+        for (m = 0; m < 3; m++) {
+            if (find_key_str(gs, ge, K_MODES[m], val, sizeof(val)))
+                g_spec[m] = parse_hex(val);
+        }
+    }
+    if (find_group(buf, "Player1_ball_outline", &gs, &ge)) {
+        for (m = 0; m < 3; m++) {
+            if (find_key_str(gs, ge, K_MODES[m], val, sizeof(val)))
+                g_out[m] = parse_hex(val);
+        }
+    }
+    if (find_group(buf, "Player1_ball_outline_E", &gs, &ge)) {
+        for (m = 0; m < 3; m++) {
+            if (find_key_str(gs, ge, K_MODES[m], val, sizeof(val)))
+                g_outE[m] = parse_hex(val);
         }
     }
     if (find_group(buf, "Player1_UI", &gs, &ge)) {
@@ -588,8 +612,15 @@ static void green_test(App* app) {
         line[o++] = H[v & 0xF];
     }
     /* submesh slot identity: catches a fluctuating *(mw+4) */
-    const char* t7 = " sub=";
+    const char* t7 = " sp=";
     while (*t7) line[o++] = *t7++;
+    {
+        unsigned int sv = g_spec[g_mode];
+        int sh;
+        for (sh = 5; sh >= 0; sh--) line[o++] = H[(sv >> (sh * 4)) & 0xF];
+    }
+    const char* t7b = " sub=";
+    while (*t7b) line[o++] = *t7b++;
     line[o++] = (char)('0' + (g_br_sub > 9 ? 9 : g_br_sub));
     const char* t8 = " slot=";
     while (*t8) line[o++] = *t8++;
@@ -723,11 +754,48 @@ static void __thiscall game_update(void*) {
         g_hook_rgb0 = (float)((hex >> 16) & 0xFF) / 255.0f;
         g_hook_rgb1 = (float)((hex >> 8) & 0xFF) / 255.0f;
         g_hook_rgb2 = (float)(hex & 0xFF) / 255.0f;
-        /* specular at quarter strength: the spec light saturates full
-           channels to white, so full-strength hue never shows */
-        g_hook_spc0 = g_hook_rgb0 * 0.25f;
-        g_hook_spc1 = g_hook_rgb1 * 0.25f;
-        g_hook_spc2 = g_hook_rgb2 * 0.25f;
+        /* specular read verbatim from Player1_ball_specular (full strength) */
+        unsigned int sp = g_spec[mode];
+        g_hook_spc0 = (float)((sp >> 16) & 0xFF) / 255.0f;
+        g_hook_spc1 = (float)((sp >> 8) & 0xFF) / 255.0f;
+        g_hook_spc2 = (float)(sp & 0xFF) / 255.0f;
+    }
+    /* P1 outline: border D3DMATERIAL8 inline at ball+0x1BC (per-ball struct,
+       no bleed). Diffuse <- Player1_ball_outline, emissive <-
+       Player1_ball_outline_E; alphas preserved. */
+    {
+        DWORD pb = g_br_p1;
+        if (pb && !IsBadReadPtr((const void*)pb, 0x300)) {
+            char* m = (char*)pb + 0x1BC;
+            if (!IsBadReadPtr(m, 0x44)) {
+                float* f = (float*)m;
+                static int olog = 0;
+                if (g_tick - olog >= 600) {
+                    olog = g_tick;
+                    static char ol[48];
+                    int o = 0, i;
+                    const char* H2 = "0123456789ABCDEF";
+                    const char* t = "OUTLINE pre=";
+                    while (*t) ol[o++] = *t++;
+                    for (i = 0; i < 3; i++) {
+                        int v = (int)(f[i] * 255.0f + 0.5f);
+                        if (v < 0) v = 0;
+                        if (v > 255) v = 255;
+                        ol[o++] = H2[(v >> 4) & 0xF];
+                        ol[o++] = H2[v & 0xF];
+                    }
+                    ol[o] = '\0';
+                    log_line(ol);
+                }
+                unsigned int hd = g_out[mode], he = g_outE[mode];
+                f[0] = (float)((hd >> 16) & 0xFF) / 255.0f;
+                f[1] = (float)((hd >> 8) & 0xFF) / 255.0f;
+                f[2] = (float)(hd & 0xFF) / 255.0f;
+                f[12] = (float)((he >> 16) & 0xFF) / 255.0f;
+                f[13] = (float)((he >> 8) & 0xFF) / 255.0f;
+                f[14] = (float)(he & 0xFF) / 255.0f;
+            }
+        }
     }
     if (sc) {
         static DWORD lastsc = 0;

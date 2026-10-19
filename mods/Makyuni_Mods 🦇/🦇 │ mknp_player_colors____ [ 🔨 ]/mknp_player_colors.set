@@ -1,10 +1,19 @@
-// mknp_player_colors settings (jsonc — // and /* */ comments allowed)
-{
-  "p1_single": "FFFFFF",   // P1 in 1-player mode
-  "p1_2p":     "4A90D9",   // P1 in 2-player mode
-  "p1_4p":     "2ECC71",   // P1 in 4-player mode (Arena/Rumble)
-  "p2_2p":     "FF6B35",   // P2 in 2-player mode
-  "p2_4p":     "E74C3C",   // P2 in 4-player mode (Arena/Rumble)
-  "p3_4p":     "9B59B6",   // P3 in 4-player mode (Arena/Rumble)
-  "p4_4p":     "F1C40F"    // P4 in 4-player mode (Arena/Rumble)
-}
+
+
+// PLAYER COLORS MOD - SETTINGS //
+//
+
+
+[
+
+// ########################## │    P L A Y E R     C O L O R S    │ ############################
+
+    "Player1_ball_color",       { "1P_mode": "e11c1c",   "2P_mode": "f2ff00",   "4P_mode": "28ff00"   },
+    "Player1_ball_specular",    { "1P_mode": "e11c1c",   "2P_mode": "f2ff00",   "4P_mode": "28ff00"   },
+    "Player1_ball_outline",     { "1P_mode": "e11c1c",   "2P_mode": "f2ff00",   "4P_mode": "28ff00"   },
+    "Player1_ball_outline_E",   { "1P_mode": "e11c1c",   "2P_mode": "f2ff00",   "4P_mode": "28ff00"   },
+    "Player1_UI",               { "1P_mode": "e11c1c",   "2P_mode": "f2ff00",   "4P_mode": "28ff00"   }
+
+// #############################################################################################
+
+]
