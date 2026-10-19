@@ -6,7 +6,7 @@ lights + BallBorder ring + P1 glow) and `mknp_battyball_events` (custom
 both: install this DLL **instead of** the two old ones, never alongside
 them (two drivers for the same `E:` planes would double-play sounds).
 
-## What it does (v1z)
+## What it does (v1av)
 
 - Everything `mknp_battyball_entities` v1dx does (same S1 `GRID` cycle,
   `ENTITIES` defs, `grid_speed`, neon ring/glow, lights, TRAJ + LIGHTSON /
@@ -74,6 +74,66 @@ them (two drivers for the same `E:` planes would double-play sounds).
   height untouched. Restart fix: EV LEVEL forces full rescan (same-
   address board reuse no longer skips it); S1-not-ready retries ~10s
   instead of latching dead (log: S1 not ready, waiting...).
+- v1av: `Cloudscape` fog kill UNCONDITIONAL (fogentry read suspect) +
+  4-state diag `SKY: rs7/rs22/rs27/rs28` to verify the GET slot.
+- v1au: `Cloudscape` `blend` knob (def 0 = opaque; 1 = alpha blend,
+  SRCALPHA/INVSRCALPHA, entry states saved+restored). Soft edges blend in.
+  NOTE: fogentry=0 on LevelS (level fog already off; fog knob correctly idle).
+- v1at: `Cloudscape` `fog` knob (def 1 = level fog; 0 = unfogged).
+  Entry FOGENABLE saved via GetRenderState (vtbl[0x33]) + restored exactly.
+- v1as: `Cloudscape` knobs (def keys verbatim): `scale` (quad size x,
+  def 1), `ambient` (base brightness +, def 1), `emission` (added floor,
+  def 0). Brightness = ambient + emission (def = v1ar look).
+- v1ar: `Cloudscape` BLACK fixed (Ghidra: RenderQuad forces LIGHTING=1 via
+  0x402860; ctor material Diffuse=white+Ambient=black = black on lightless
+  levels). Ours now Diffuse=black + Emissive=white (pure texture, all races).
+- v1aq: `Cloudscape` Sky-race native test (draw native board+0x4374 sprite
+  from hook + dump native-vs-ours fields; native alloc 0xD4, same ctor/path).
+- v1ap: `Cloudscape` NO state touches (kills+restore-to-1 were black
+  suspect #1) + Sky-slot side-by-side with native + sprite mat dump.
+- v1ao: `Cloudscape` native order (quad FIRST, level overdraws) + double-quad
+  prime (2nd finds stages hot via own 0x402860 bind) + minimal dance.
+- v1an: `Cloudscape` double-render (orig, quad, orig): painter-order
+  buries quad, zero depth dependence. Base has no Clear, per-frame-pure.
+- v1am: `Cloudscape` DIAGNOSTIC (same visual): + `744=` basis ptr
+  pre/post (view-swap proof; fix writes itself).
+- v1al: `Cloudscape` DIAGNOSTIC (same visual as v1ak): logs
+  `SKY: pre/post 7a8/7b0/7c0/700/70c/70d/s4/gfx` (find the prime delta).
+- v1ak: `Cloudscape` ZENABLE ON around post-base quad (base leaves it
+  OFF; left ON after, native-Sky exit state).
+- v1aj: `Cloudscape` post-base draw (invoke-wrapper: orig first, then
+  quad; depth level-fresh, stages hot; base-only, `orig=` in log).
+- v1ai: `Cloudscape` + fog kill around early quad (entry fog blacks it).
+- v1ah: `Cloudscape` minimal early (bisect result: quad-only positions
+  right, full state dance broke frame): early = quad + LIGHTING kill
+  only. Intermediate entry is lit, Sky entry is not.
+
+- v1af: `Cloudscape` early-path lighting: v1ae forced LIGHTING=1 after
+  the quad, blackening the level it was meant to sit behind (native
+  never touches RS137, entry is already unlit). Early path now does
+  exactly the native ops, nothing more.
+- v1ae: `Cloudscape` draw-FIRST (native order): slot-24 vtable wrap draws
+  the quad before the level render (native `0x410E80` calls quad, then
+  base `0x40B420`), transparent naked wrapper + per-class originals.
+  Late onRenderApply path retired when wrap live. Native Sky Level9
+  CLOUDSCAPE sits at the same coords you use, so S1 pos was never the
+  bug, order was.
+- v1ad: `Cloudscape` layer + pause: onRenderApply fires with ZENABLE off
+  (giant quad overdraws level) -> force Z on around quad, restore off;
+  paused skips draw (entity stages dead = black quad).
+- v1ac: `Cloudscape` lighting (black-rect candidate): onRenderApply fires in
+  entity phase (LIGHTING=1, sprite renders black); native Sky draws in
+  level phase (unlit). RS 137 off/on around the quad + `SKY: sprdims`
+  and `SKY: draws=N` diag lines.
+- v1ab: `Cloudscape` crash fix (v1aa called the state fn thiscall-shaped:
+  wrong args + ESP off by 4 = d3d8 crash. Native pushes 3 args and ECX
+  is leftover garbage at both sites, so the fn is stdcall(dev,st,val).
+  Sprite alloc 0x10F4 = native size).
+- v1aa: `Cloudscape` black-rect fix: render-state toggle now calls the
+  `gfx+0x154` render-device vtable (native `0x410E80` shape, binary-
+  verified) instead of the gfx vtable, exact `textures\clouds.png` path,
+  + `SKY: tex=ok/MISSING` probe line proving the file exists in the
+  Battyball install.
 - v1z: `Cloudscape` behaviour — Sky Race's cloud skybox on any level.
   S1 `REF:Cloudscape` point sets the position (native reads it from the
   `CLOUDSCAPE` file entry). Load is `Sprite_ctor` (0x45D0C0, op_new
@@ -112,7 +172,7 @@ them (two drivers for the same `E:` planes would double-play sounds).
 ## Log
 
 ```
-INIT Battyball Entities Plus v1z log=... set=...
+INIT Battyball Entities Plus v1av log=... set=...
 SET init: N sound events
 NEWBOARD ...
 EV LEVEL start
