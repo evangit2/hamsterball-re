@@ -520,134 +520,79 @@ static void ui_check(App* app, int mode) {
     log_line(line);
 }
 
-/* TEMP GREEN TEST (revert after MAKYUNI confirms): P1 ball green through
-   every known per-ball vector: board table (existing), border sprite
-   material (ball+0x1BC D3DMATERIAL8, entities_plus pattern), ball mesh
-   mat0 Diffuse (App+0x244[754] MW, mat array +0x28 stride 0x50, dif +16). */
+/* TEMP GREEN TEST (revert after MAKYUNI confirms): P1 ball BODY green via the
+   native mesh material path (0x4701FB: mat = *(*(mw+8)+0x28) + *(mw+4)*0x50,
+   Diffuse at +16). Outline untouched (no border writes). */
 static void green_test(App* app) {
-    void* b = (void*)HBAPI(g_api).GetPlayer();
     static char line[256];
     int o = 0;
     const char* t = "GREEN-TEST ";
     while (*t) line[o++] = *t++;
-    /* 1. border material (proven pattern) */
-    if (b && !IsBadReadPtr(b, 0x300)) {
-        char* m = (char*)b + 0x1BC;
-        if (!IsBadReadPtr(m, 0x44)) {
-            float* dif = (float*)m;
-            dif[0] = 0.0f;
-            dif[1] = 1.0f;
-            dif[2] = 0.0f;
-            dif[3] = 1.0f;
-            float* emi = (float*)(m + 0x30);
-            emi[0] = 0.0f;
-            emi[1] = 1.0f;
-            emi[2] = 0.0f;
-            line[o++] = 'b';
-            line[o++] = 'd';
-            line[o++] = '=';
-            line[o++] = '1';
-        } else {
-            line[o++] = 'b';
-            line[o++] = 'd';
-            line[o++] = '=';
-            line[o++] = '0';
-        }
-    } else {
-        line[o++] = 'b';
-        line[o++] = '=';
-        line[o++] = '0';
-    }
-    line[o++] = ' ';
-    /* 2. ball mesh mat0 (best-effort, validated) */
     do {
+        void* b = (void*)HBAPI(g_api).GetPlayer();
         if (!b || IsBadReadPtr(b, 0x758)) {
-            line[o++] = 'm';
-            line[o++] = 's';
-            line[o++] = 't';
-            line[o++] = '=';
-            line[o++] = 'b';
-            line[o++] = 'a';
-            line[o++] = 'l';
-            line[o++] = 'l';
+            line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
+            line[o++] = '='; line[o++] = 'b'; line[o++] = 'a';
+            line[o++] = 'l'; line[o++] = 'l';
             break;
         }
-        int idx = *(int*)((char*)b + 0x754);
-        if (idx < 0 || idx > 10) {
-            line[o++] = 'm';
-            line[o++] = 's';
-            line[o++] = 't';
-            line[o++] = '=';
-            line[o++] = 'i';
-            line[o++] = 'd';
+        int meshidx = *(int*)((char*)b + 0x754);
+        if (meshidx < 0 || meshidx > 10) {
+            line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
+            line[o++] = '='; line[o++] = 'i'; line[o++] = 'd';
             line[o++] = 'x';
             break;
         }
-        if (!app || IsBadReadPtr((const void*)((char*)app + 0x244), 4)) {
-            line[o++] = 'm';
-            line[o++] = 's';
-            line[o++] = 't';
-            line[o++] = '=';
-            line[o++] = 'a';
-            line[o++] = 'p';
+        if (!app || IsBadReadPtr((const void*)((char*)app + 0x248), 4)) {
+            line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
+            line[o++] = '='; line[o++] = 'a'; line[o++] = 'p';
             line[o++] = 'p';
             break;
         }
-        DWORD mw = *(DWORD*)((char*)app + 0x244 + (DWORD)idx * 4);
-        if (!mw || IsBadReadPtr((const void*)mw, 0x30)) {
-            line[o++] = 'm';
-            line[o++] = 's';
-            line[o++] = 't';
-            line[o++] = '=';
-            line[o++] = 'm';
-            line[o++] = 'w';
+        DWORD mw = *(DWORD*)((char*)app + 0x244 + (DWORD)meshidx * 4);
+        if (!mw || IsBadReadPtr((const void*)mw, 0x10)) {
+            line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
+            line[o++] = '='; line[o++] = 'm'; line[o++] = 'w';
             break;
         }
-        DWORD arr = *(DWORD*)(mw + 0x28);
+        /* native: inner = *(mw+8); arr = *(inner+0x28); idx = *(mw+4) */
+        DWORD inner = *(DWORD*)(mw + 8);
+        if (!inner || IsBadReadPtr((const void*)inner, 0x2C)) {
+            line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
+            line[o++] = '='; line[o++] = 'i'; line[o++] = 'n';
+            line[o++] = 'r';
+            break;
+        }
+        DWORD arr = *(DWORD*)(inner + 0x28);
+        int sub = *(int*)(mw + 4);
+        if (sub < 0 || sub > 64) sub = 0;
         if (!arr || IsBadReadPtr((const void*)arr, 0x50)) {
-            /* inline array fallback */
-            if (IsBadReadPtr((const void*)(mw + 0x28), 0x50)) {
-                line[o++] = 'm';
-                line[o++] = 's';
-                line[o++] = 't';
-                line[o++] = '=';
-                line[o++] = 'a';
-                line[o++] = 'r';
-                line[o++] = 'r';
-                break;
-            }
-            arr = (DWORD)(mw + 0x28);
+            line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
+            line[o++] = '='; line[o++] = 'a'; line[o++] = 'r';
+            line[o++] = 'r';
+            break;
         }
-        float* dif = (float*)(arr + 0x10);
+        float* dif = (float*)(arr + (DWORD)sub * 0x50 + 0x10);
         if (IsBadReadPtr((const void*)dif, 16)) {
-            line[o++] = 'm';
-            line[o++] = 's';
-            line[o++] = 't';
-            line[o++] = '=';
-            line[o++] = 'd';
-            line[o++] = 'i';
+            line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
+            line[o++] = '='; line[o++] = 'd'; line[o++] = 'i';
             line[o++] = 'f';
             break;
         }
         if (dif[3] != 1.0f) {
-            line[o++] = 'm';
-            line[o++] = 's';
-            line[o++] = 't';
-            line[o++] = '=';
-            line[o++] = 'a';
+            line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
+            line[o++] = '='; line[o++] = 'a';
             const char* H2 = "0123456789ABCDEF";
             int wb = (int)(dif[3] * 255.0f + 0.5f);
             if (wb < 0) wb = 0;
             if (wb > 255) wb = 255;
             line[o++] = H2[(wb >> 4) & 0xF];
             line[o++] = H2[wb & 0xF];
-            break; /* unexpected alpha: do not touch */
+            break;
         }
         const char* H = "0123456789ABCDEF";
         int k;
-        line[o++] = 'm';
-        line[o++] = 'a';
-        line[o++] = 't';
+        line[o++] = 'm'; line[o++] = 'a'; line[o++] = 't';
         line[o++] = '=';
         for (k = 0; k < 3; k++) {
             int v = (int)(dif[k] * 255.0f + 0.5f);
@@ -656,8 +601,7 @@ static void green_test(App* app) {
             line[o++] = H[(v >> 4) & 0xF];
             line[o++] = H[v & 0xF];
         }
-        line[o++] = '-';
-        line[o++] = '>';
+        line[o++] = '-'; line[o++] = '>';
         dif[0] = 0.0f;
         dif[1] = 1.0f;
         dif[2] = 0.0f;
