@@ -57,7 +57,6 @@ static unsigned int g_colors[NUM_COLORS] = {
 static const char* K_MODES[3] = { "1P_mode", "2P_mode", "4P_mode" };
 static unsigned int g_ball[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
 static unsigned int g_spec[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
-static unsigned int g_out[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
 static unsigned int g_outE[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
 static unsigned int g_ui[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
 
@@ -132,8 +131,7 @@ static void create_defaults(void) {
         "[\r\n"
         "    \"Player1_ball_color\",    { \"1P_mode\": \"FFFFFF\", \"2P_mode\": \"FFFFFF\", \"4P_mode\": \"FFFFFF\" },\r\n"
         "    \"Player1_ball_specular\", { \"1P_mode\": \"FFFFFF\", \"2P_mode\": \"FFFFFF\", \"4P_mode\": \"FFFFFF\" },\r\n"
-        "    \"Player1_ball_outline\",   { \"1P_mode\": \"FFFFFF\", \"2P_mode\": \"FFFFFF\", \"4P_mode\": \"FFFFFF\" },\r\n"
-        "    \"Player1_ball_outline_E\", { \"1P_mode\": \"FFFFFF\", \"2P_mode\": \"FFFFFF\", \"4P_mode\": \"FFFFFF\" },\r\n"
+        "    \"Player1_ball_outline\", { \"1P_mode\": \"FFFFFF\", \"2P_mode\": \"FFFFFF\", \"4P_mode\": \"FFFFFF\" },\r\n"
         "    \"Player1_UI\", { \"1P_mode\": \"FFFFFF\", \"2P_mode\": \"FFFFFF\", \"4P_mode\": \"FFFFFF\" }\r\n"
         "]\r\n";;
     h = CreateFileA(g_config_path, GENERIC_WRITE, 0, NULL,
@@ -264,12 +262,6 @@ static void read_set(void) {
         }
     }
     if (find_group(buf, "Player1_ball_outline", &gs, &ge)) {
-        for (m = 0; m < 3; m++) {
-            if (find_key_str(gs, ge, K_MODES[m], val, sizeof(val)))
-                g_out[m] = parse_hex(val);
-        }
-    }
-    if (find_group(buf, "Player1_ball_outline_E", &gs, &ge)) {
         for (m = 0; m < 3; m++) {
             if (find_key_str(gs, ge, K_MODES[m], val, sizeof(val)))
                 g_outE[m] = parse_hex(val);
@@ -761,8 +753,8 @@ static void __thiscall game_update(void*) {
         g_hook_spc2 = (float)(sp & 0xFF) / 255.0f;
     }
     /* P1 outline: border D3DMATERIAL8 inline at ball+0x1BC (per-ball struct,
-       no bleed). Diffuse <- Player1_ball_outline, emissive <-
-       Player1_ball_outline_E; alphas preserved. */
+       no bleed). Emissive <- Player1_ball_outline (renamed, was _E);
+       diffuse + alphas untouched. */
     {
         DWORD pb = g_br_p1;
         if (pb && !IsBadReadPtr((const void*)pb, 0x300)) {
@@ -778,7 +770,7 @@ static void __thiscall game_update(void*) {
                     const char* t = "OUTLINE pre=";
                     while (*t) ol[o++] = *t++;
                     for (i = 0; i < 3; i++) {
-                        int v = (int)(f[i] * 255.0f + 0.5f);
+                        int v = (int)(f[12 + i] * 255.0f + 0.5f);
                         if (v < 0) v = 0;
                         if (v > 255) v = 255;
                         ol[o++] = H2[(v >> 4) & 0xF];
@@ -787,10 +779,7 @@ static void __thiscall game_update(void*) {
                     ol[o] = '\0';
                     log_line(ol);
                 }
-                unsigned int hd = g_out[mode], he = g_outE[mode];
-                f[0] = (float)((hd >> 16) & 0xFF) / 255.0f;
-                f[1] = (float)((hd >> 8) & 0xFF) / 255.0f;
-                f[2] = (float)(hd & 0xFF) / 255.0f;
+                unsigned int he = g_outE[mode];
                 f[12] = (float)((he >> 16) & 0xFF) / 255.0f;
                 f[13] = (float)((he >> 8) & 0xFF) / 255.0f;
                 f[14] = (float)(he & 0xFF) / 255.0f;

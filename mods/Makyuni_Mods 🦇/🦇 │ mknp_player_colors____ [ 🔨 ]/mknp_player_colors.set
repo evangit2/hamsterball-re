@@ -10,8 +10,7 @@
 
     "Player1_ball_color",       { "1P_mode": "e11c1c",   "2P_mode": "f2ff00",   "4P_mode": "28ff00"   },
     "Player1_ball_specular",    { "1P_mode": "e11c1c",   "2P_mode": "f2ff00",   "4P_mode": "28ff00"   },
-    "Player1_ball_outline",     { "1P_mode": "e11c1c",   "2P_mode": "f2ff00",   "4P_mode": "28ff00"   },
-    "Player1_ball_outline_E",   { "1P_mode": "e11c1c",   "2P_mode": "f2ff00",   "4P_mode": "28ff00"   },
+    "Player1_ball_outline",   { "1P_mode": "e11c1c",   "2P_mode": "f2ff00",   "4P_mode": "28ff00"   },
     "Player1_UI",               { "1P_mode": "e11c1c",   "2P_mode": "f2ff00",   "4P_mode": "28ff00"   }
 
 // #############################################################################################
