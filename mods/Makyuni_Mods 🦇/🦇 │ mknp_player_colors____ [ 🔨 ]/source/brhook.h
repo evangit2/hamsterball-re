@@ -249,6 +249,77 @@ static void br_resolve(App* app) {
     }
     g_br_mat = (DWORD)c34;
     g_br_ok = 1;
+    /* SPEC2: slot spec (+0x20) is 0.0437 yet the highlight is white, so the
+       draw consumes specular from the +0x44 extension struct. Dump it once;
+       write set-color spec there only when strictly validated (white triple
+       + alpha 1.0 at +0x20..+0x2C). Writes run every tick to hold against
+       native rewrites; logs throttled to ~10s. */
+    {
+        static int speclog = 0;
+        DWORD ext = 0;
+        if (!IsBadReadPtr((const void*)(slot + 0x44), 4))
+            ext = *(DWORD*)(slot + 0x44);
+        if (!ext || IsBadReadPtr((const void*)ext, 0x50)) {
+            if (g_tick - speclog >= 600) {
+                speclog = g_tick;
+                log_line("SPEC2 ext=0");
+            }
+        } else {
+            static int specdump = 0;
+            float* e = (float*)ext;
+            if (!specdump) {
+                specdump = 1;
+                if (!IsBadReadPtr((const void*)ext, 0x50)) {
+                    static char sd[220];
+                    int q = 0, b;
+                    const char* HX = "0123456789ABCDEF";
+                    const char* dt = "SPEC2DUMP ";
+                    while (*dt) sd[q++] = *dt++;
+                    unsigned char* rb = (unsigned char*)ext;
+                    for (b = 0; b < 0x50 && q < 210; b++) {
+                        sd[q++] = HX[(rb[b] >> 4) & 0xF];
+                        sd[q++] = HX[rb[b] & 0xF];
+                    }
+                    sd[q] = '\0';
+                    log_line(sd);
+                }
+            }
+            int w = 0;
+            char pre[7];
+            const char* H2 = "0123456789ABCDEF";
+            int k;
+            for (k = 0; k < 3; k++) {
+                int v = (int)(e[8 + k] * 255.0f + 0.5f);
+                if (v < 0) v = 0;
+                if (v > 255) v = 255;
+                pre[k * 2] = H2[(v >> 4) & 0xF];
+                pre[k * 2 + 1] = H2[v & 0xF];
+            }
+            pre[6] = '\0';
+            if (!IsBadReadPtr((const void*)e, 0x30) &&
+                e[8] > 0.95f && e[8] < 1.05f &&
+                e[9] > 0.95f && e[9] < 1.05f &&
+                e[10] > 0.95f && e[10] < 1.05f && e[11] == 1.0f) {
+                e[8] = g_hook_rgb0;
+                e[9] = g_hook_rgb1;
+                e[10] = g_hook_rgb2;
+                w = 1;
+            }
+            if (g_tick - speclog >= 600) {
+                speclog = g_tick;
+                static char sl[64];
+                int o = 0, i;
+                const char* st = "SPEC2 wrote=";
+                while (*st) sl[o++] = *st++;
+                sl[o++] = (char)('0' + w);
+                const char* st2 = " pre=";
+                while (*st2) sl[o++] = *st2++;
+                for (i = 0; i < 6; i++) sl[o++] = pre[i];
+                sl[o] = '\0';
+                log_line(sl);
+            }
+        }
+    }
 }
 
 #endif /* BRHOOK_H */
