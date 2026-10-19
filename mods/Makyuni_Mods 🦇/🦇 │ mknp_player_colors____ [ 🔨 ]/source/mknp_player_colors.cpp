@@ -723,6 +723,11 @@ static void __thiscall game_update(void*) {
         g_hook_rgb0 = (float)((hex >> 16) & 0xFF) / 255.0f;
         g_hook_rgb1 = (float)((hex >> 8) & 0xFF) / 255.0f;
         g_hook_rgb2 = (float)(hex & 0xFF) / 255.0f;
+        /* specular at quarter strength: the spec light saturates full
+           channels to white, so full-strength hue never shows */
+        g_hook_spc0 = g_hook_rgb0 * 0.25f;
+        g_hook_spc1 = g_hook_rgb1 * 0.25f;
+        g_hook_spc2 = g_hook_rgb2 * 0.25f;
     }
     if (sc) {
         static DWORD lastsc = 0;

@@ -26,6 +26,9 @@ extern float g_br_nat20;
 extern float g_hook_rgb0;
 extern float g_hook_rgb1;
 extern float g_hook_rgb2;
+extern float g_hook_spc0;
+extern float g_hook_spc1;
+extern float g_hook_spc2;
 extern DWORD g_br_tramp;
 extern int g_br_inst;
 extern int g_br_natlock;
@@ -63,6 +66,12 @@ __asm__(
 "_g_hook_rgb1: .space 4\n"
 ".globl _g_hook_rgb2\n"
 "_g_hook_rgb2: .space 4\n"
+".globl _g_hook_spc0\n"
+"_g_hook_spc0: .space 4\n"
+".globl _g_hook_spc1\n"
+"_g_hook_spc1: .space 4\n"
+".globl _g_hook_spc2\n"
+"_g_hook_spc2: .space 4\n"
 ".globl _g_br_tramp\n"
 "_g_br_tramp: .space 4\n"
 ".globl _g_br_inst\n"
@@ -86,13 +95,13 @@ __asm__(
 " jz 9f\n"
 " cmpl _g_br_p1, %ecx\n"
 " je 1f\n"
-/* other balls: full native restore (emissive + R + +0x20), EXCEPT the
- * spec-zone (-16/-12/-8 = +0x24/28/2C) which goes BLACK as a diagnostic:
- * if slot spec is consumed, all non-P1 highlights die this build. */
+/* other balls: BLACK spec test (all four incl +0x20). The last build left
+ * +0x20 (native spec-R = 1.0) alive, so its "no change" proved nothing.
+ * If highlights die now, slot spec is consumed (likely under a bright
+ * light that saturates full-strength channels to white). */
 " movl _g_br_natR, %eax\n"
 " movl %eax, -4(%edx)\n"
-" movl _g_br_nat20, %eax\n"
-" movl %eax, -20(%edx)\n"
+" movl $0, -20(%edx)\n"
 " movl _g_br_nat0, %eax\n"
 " movl %eax, (%edx)\n"
 " movl _g_br_nat1, %eax\n"
@@ -104,18 +113,19 @@ __asm__(
 " movl $0, -8(%edx)\n"
 " jmp 9f\n"
 "1:\n"
-/* P1: set color to emissive AND specular (mode = 1P/2P/4P set key).
- * Specular triple = +0x20/24/28; +0x2C left pristine. */
+/* P1: emissive = set color; specular = set color x 0.25 (dim, since the
+ * specular light saturates full-strength channels to white). +0x30/+0x2C
+ * untouched (native). */
 " movl _g_hook_rgb0, %eax\n"
 " movl %eax, (%edx)\n"
+" movl _g_hook_spc0, %eax\n"
 " movl %eax, -20(%edx)\n"
 " movl %eax, -16(%edx)\n"
-" movl _g_hook_rgb1, %eax\n"
+" movl _g_hook_spc1, %eax\n"
 " movl %eax, 4(%edx)\n"
 " movl %eax, -12(%edx)\n"
-" movl _g_hook_rgb2, %eax\n"
+" movl _g_hook_spc2, %eax\n"
 " movl %eax, 8(%edx)\n"
-" movl %eax, -8(%edx)\n"
 "9:\n"
 " popl %edx\n"
 " popl %eax\n"
