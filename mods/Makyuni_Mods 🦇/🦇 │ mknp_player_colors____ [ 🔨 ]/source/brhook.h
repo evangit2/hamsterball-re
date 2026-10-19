@@ -156,14 +156,21 @@ __asm__(
  * Gates: no ball key => P1 fully native; no spec key => spec-zone black. */
 " cmpl $0, _g_do_body\n"
 " je 4f\n"
-" movl _g_hook_rgb0, %eax\n"
+/* step 3 (dif-only isolation): emissive restored native even with the
+ * ball key present. If the body still tints green => diffuse channel is
+ * live (dot green => dot follows diffuse). If the body goes vanilla
+ * white => diffuse writes are dead and the body was emissive-only. */
+" movl _g_br_nat0, %eax\n"
 " movl %eax, (%edx)\n"
+" movl _g_br_nat1, %eax\n"
+" movl %eax, 4(%edx)\n"
+" movl _g_br_nat2, %eax\n"
+" movl %eax, 8(%edx)\n"
+" movl _g_hook_rgb0, %eax\n"
 " movl %eax, -48(%edx)\n"
 " movl _g_hook_rgb1, %eax\n"
-" movl %eax, 4(%edx)\n"
 " movl %eax, -44(%edx)\n"
 " movl _g_hook_rgb2, %eax\n"
-" movl %eax, 8(%edx)\n"
 " movl %eax, -40(%edx)\n"
 " jmp 5f\n"
 "4:\n"

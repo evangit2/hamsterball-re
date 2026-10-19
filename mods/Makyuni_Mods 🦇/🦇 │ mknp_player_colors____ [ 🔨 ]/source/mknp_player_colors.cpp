@@ -296,6 +296,49 @@ static void log_line(const char* msg) {
 
 #include "brhook.h"
 
+/* MATLOG: per-ball material identity. Resolves every ball in the scene
+   list to its color-slot base: same ptr for all => shared mesh material;
+   distinct ptrs => per-ball materials. */
+static void matlog(App* app, void* sc) {
+    if (!sc || !app) return;
+    if (IsBadReadPtr(sc, 0x29D8)) return;
+    DWORD bl = *(DWORD*)((char*)sc + 0x29D4);
+    if (!bl || IsBadReadPtr((const void*)bl, 0x410)) return;
+    int n = *(int*)(bl + 4);
+    if (n < 1 || n > 8) return;
+    DWORD items = *(DWORD*)(bl + 0x40C);
+    if (!items || IsBadReadPtr((const void*)items, (DWORD)n * 4)) return;
+    static char line[160];
+    int o = 0, i;
+    const char* H = "0123456789ABCDEF";
+    const char* t = "MATLOG n=";
+    while (*t) line[o++] = *t++;
+    line[o++] = (char)('0' + n);
+    for (i = 0; i < n && o < 140; i++) {
+        DWORD b = *(DWORD*)(items + (DWORD)i * 4);
+        line[o++] = ' ';
+        line[o++] = (char)('0' + i);
+        line[o++] = '=';
+        if (!b || IsBadReadPtr((const void*)b, 0x758)) { line[o++] = '?'; continue; }
+        int idx = *(int*)((char*)b + 0x754);
+        if (idx < 0 || idx > 10) idx = 0;
+        if (IsBadReadPtr((const void*)((char*)app + 0x244), 4)) { line[o++] = '?'; continue; }
+        DWORD mw = *(DWORD*)((char*)app + 0x244 + (DWORD)idx * 4);
+        if (!mw || IsBadReadPtr((const void*)mw, 0x30)) { line[o++] = '?'; continue; }
+        DWORD inner = *(DWORD*)(mw + 8);
+        if (!inner || IsBadReadPtr((const void*)inner, 0x30)) { line[o++] = '?'; continue; }
+        DWORD arr = *(DWORD*)(inner + 0x28);
+        int sub = *(int*)(mw + 4);
+        if (sub < 0 || sub > 64) sub = 0;
+        if (!arr || IsBadReadPtr((const void*)arr, 0x50)) { line[o++] = '?'; continue; }
+        unsigned int sv = arr + (DWORD)sub * 0x50;
+        int sh;
+        for (sh = 7; sh >= 0; sh--) line[o++] = H[(sv >> (sh * 4)) & 0xF];
+    }
+    line[o] = '\0';
+    log_line(line);
+}
+
 /* P1 hook color (floats, storage in brhook.h .bss; fed from g_ball). */
 static int g_mode = 0;
 
@@ -832,6 +875,7 @@ static void __thiscall game_update(void*) {
         br_resolve(HBAPI(g_api).GetApp());
     }
     if (sc && (g_tick % 600) == 1) green_test(HBAPI(g_api).GetApp());
+    if (sc && (g_tick % 600) == 301) matlog(HBAPI(g_api).GetApp(), sc);
     if (!sc && g_deep_done) g_deep_done = 0; /* re-probe next race */
     if (!sc) { g_br_ok = 0; g_br_needscrub = 1; } /* menu: scrub on entry */
     {
