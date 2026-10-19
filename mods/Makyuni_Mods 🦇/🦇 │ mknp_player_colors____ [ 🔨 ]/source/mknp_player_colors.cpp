@@ -271,6 +271,8 @@ static void log_line(const char* msg) {
     CloseHandle(h);
 }
 
+#include "brhook.h"
+
 static int hex4(unsigned int v, char* out) {
     const char* H = "0123456789ABCDEF";
     int i;
@@ -602,9 +604,7 @@ static void green_test(App* app) {
             line[o++] = H[v & 0xF];
         }
         line[o++] = '-'; line[o++] = '>';
-        c34[0] = 0.0f;
-        c34[1] = 1.0f;
-        c34[2] = 0.0f;
+        /* r3: hook owns +0x34 now; per-tick write removed (neutered) */
     } while (0);
     line[o] = '\0';
     log_line(line);
@@ -677,6 +677,10 @@ static void __thiscall game_update(void*) {
     if (!g_started || !g_api) return;
     g_tick++;
     if ((g_tick % 120) == 0) read_set(); /* live edit ~every 2s */
+    {
+        static int hook_tried = 0;
+        if (!hook_tried) { hook_tried = 1; ballhook_install(); }
+    }
 
     /* UI tint runs with or without a scene (menus have no scene).
        Fresh boot defaults to mode 0 (1P); races update it. */
@@ -715,8 +719,10 @@ static void __thiscall game_update(void*) {
         }
     }
     if (sc) write_slot(board, 0, g_ball[mode]);
+    if (sc) br_resolve(HBAPI(g_api).GetApp());
     if (sc && (g_tick % 600) == 1) green_test(HBAPI(g_api).GetApp());
     if (!sc && g_deep_done) g_deep_done = 0; /* re-probe next race */
+    if (!sc) g_br_ok = 0; /* menu draws skip while cache is cold */
     {
         static int lastmode = -1;
         if (mode != lastmode) {
