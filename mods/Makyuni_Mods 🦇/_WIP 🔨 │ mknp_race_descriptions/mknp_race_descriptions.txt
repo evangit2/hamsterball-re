@@ -1,0 +1,37 @@
+# mknp_race_descriptions — tourney menu texts per race
+# Format:
+#   [Level N]
+#   Your description text here.
+#   Multi-line descriptions are joined with spaces.
+# Lines starting with # or ; are comments.
+# Missing levels keep the stock game description.
+
+[Level 1]  # Warm-Up Race
+
+[Level 2]  # Beginner Race
+
+[Level 3]  # Intermediate Race
+
+[Level 4]  # Dizzy Race
+
+[Level 5]  # Tower Race
+
+[Level 6]  # Up Race
+
+[Level 7]  # Neon Race
+
+[Level 8]  # Expert Race
+
+[Level 9]  # Odd Race
+
+[Level 10]  # Toob Race
+
+[Level 11]  # Wobbly Race
+
+[Level 12]  # Glass Race
+
+[Level 13]  # Sky Race
+
+[Level 14]  # Master Race
+
+[Level 15]  # Impossible Race

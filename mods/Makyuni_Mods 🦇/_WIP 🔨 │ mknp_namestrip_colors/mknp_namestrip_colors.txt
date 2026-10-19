@@ -1,0 +1,124 @@
+; mknp_namestrip_colors config — per-level name-strip RGBA
+; Values are floats (0.0 to 1.0). Stock: R=1.0 G=1.0 B=0.0 A=0.75
+; Levels 1-15 = Races, Arenas 1-15 = Arenas
+; Re-read ~every 2 seconds. Edit at runtime!
+
+; Warm-Up
+Level 1 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Beginner
+Level 2 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Intermediate
+Level 3 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Dizzy
+Level 4 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Tower
+Level 5 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Up
+Level 6 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Neon
+Level 7 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Expert
+Level 8 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Odd
+Level 9 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Toob
+Level 10 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Wobbly
+Level 11 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Glass
+Level 12 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Sky
+Level 13 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Master
+Level 14 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Impossible
+Level 15 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Warm-Up Arena
+Arena 1 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Beginner Arena
+Arena 2 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Intermediate Arena
+Arena 3 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Dizzy Arena
+Arena 4 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Tower Arena
+Arena 5 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Up Arena
+Arena 6 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Neon Arena
+Arena 7 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Expert Arena
+Arena 8 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Odd Arena
+Arena 9 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Toob Arena
+Arena 10 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Wobbly Arena
+Arena 11 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Glass Arena
+Arena 12 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Sky Arena
+Arena 13 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Master Arena
+Arena 14 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
+
+; Impossible Arena
+Arena 15 =
+R = 1.0, G = 1.0, B = 1.0, A = 1.0
