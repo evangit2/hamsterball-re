@@ -66,6 +66,7 @@ static char g_config_path[MAX_PATH];
 static char g_log_path[MAX_PATH];
 
 static int g_started = 0;
+static int g_deep_done = 0;
 static unsigned int g_tick = 0;
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -538,6 +539,10 @@ static void green_test(App* app) {
             dif[1] = 1.0f;
             dif[2] = 0.0f;
             dif[3] = 1.0f;
+            float* emi = (float*)(m + 0x30);
+            emi[0] = 0.0f;
+            emi[1] = 1.0f;
+            emi[2] = 0.0f;
             line[o++] = 'b';
             line[o++] = 'd';
             line[o++] = '=';
@@ -556,21 +561,88 @@ static void green_test(App* app) {
     line[o++] = ' ';
     /* 2. ball mesh mat0 (best-effort, validated) */
     do {
-        if (!b || IsBadReadPtr(b, 0x758)) break;
+        if (!b || IsBadReadPtr(b, 0x758)) {
+            line[o++] = 'm';
+            line[o++] = 's';
+            line[o++] = 't';
+            line[o++] = '=';
+            line[o++] = 'b';
+            line[o++] = 'a';
+            line[o++] = 'l';
+            line[o++] = 'l';
+            break;
+        }
         int idx = *(int*)((char*)b + 0x754);
-        if (idx < 0 || idx > 10) break;
-        if (!app || IsBadReadPtr((const void*)((char*)app + 0x244), 4)) break;
+        if (idx < 0 || idx > 10) {
+            line[o++] = 'm';
+            line[o++] = 's';
+            line[o++] = 't';
+            line[o++] = '=';
+            line[o++] = 'i';
+            line[o++] = 'd';
+            line[o++] = 'x';
+            break;
+        }
+        if (!app || IsBadReadPtr((const void*)((char*)app + 0x244), 4)) {
+            line[o++] = 'm';
+            line[o++] = 's';
+            line[o++] = 't';
+            line[o++] = '=';
+            line[o++] = 'a';
+            line[o++] = 'p';
+            line[o++] = 'p';
+            break;
+        }
         DWORD mw = *(DWORD*)((char*)app + 0x244 + (DWORD)idx * 4);
-        if (!mw || IsBadReadPtr((const void*)mw, 0x30)) break;
+        if (!mw || IsBadReadPtr((const void*)mw, 0x30)) {
+            line[o++] = 'm';
+            line[o++] = 's';
+            line[o++] = 't';
+            line[o++] = '=';
+            line[o++] = 'm';
+            line[o++] = 'w';
+            break;
+        }
         DWORD arr = *(DWORD*)(mw + 0x28);
         if (!arr || IsBadReadPtr((const void*)arr, 0x50)) {
             /* inline array fallback */
-            if (IsBadReadPtr((const void*)(mw + 0x28), 0x50)) break;
+            if (IsBadReadPtr((const void*)(mw + 0x28), 0x50)) {
+                line[o++] = 'm';
+                line[o++] = 's';
+                line[o++] = 't';
+                line[o++] = '=';
+                line[o++] = 'a';
+                line[o++] = 'r';
+                line[o++] = 'r';
+                break;
+            }
             arr = (DWORD)(mw + 0x28);
         }
         float* dif = (float*)(arr + 0x10);
-        if (IsBadReadPtr((const void*)dif, 16)) break;
-        if (dif[3] != 1.0f) break; /* not a white diffuse: do not touch */
+        if (IsBadReadPtr((const void*)dif, 16)) {
+            line[o++] = 'm';
+            line[o++] = 's';
+            line[o++] = 't';
+            line[o++] = '=';
+            line[o++] = 'd';
+            line[o++] = 'i';
+            line[o++] = 'f';
+            break;
+        }
+        if (dif[3] != 1.0f) {
+            line[o++] = 'm';
+            line[o++] = 's';
+            line[o++] = 't';
+            line[o++] = '=';
+            line[o++] = 'a';
+            const char* H2 = "0123456789ABCDEF";
+            int wb = (int)(dif[3] * 255.0f + 0.5f);
+            if (wb < 0) wb = 0;
+            if (wb > 255) wb = 255;
+            line[o++] = H2[(wb >> 4) & 0xF];
+            line[o++] = H2[wb & 0xF];
+            break; /* unexpected alpha: do not touch */
+        }
         const char* H = "0123456789ABCDEF";
         int k;
         line[o++] = 'm';
@@ -700,6 +772,7 @@ static void __thiscall game_update(void*) {
     }
     if (sc) write_slot(board, 0, g_ball[mode]);
     if (sc && (g_tick % 600) == 1) green_test(HBAPI(g_api).GetApp());
+    if (!sc && g_deep_done) g_deep_done = 0; /* re-probe next race */
     {
         static int lastmode = -1;
         if (mode != lastmode) {
@@ -716,14 +789,13 @@ static void __thiscall game_update(void*) {
             lastmode = mode;
         }
     }
+    if (sc && !g_deep_done) { g_deep_done = 1; deep_probe(HBAPI(g_api).GetApp()); }
     if ((g_tick % 600) == 1) {
-        static int deep_done = 0;
         App* app = HBAPI(g_api).GetApp();
         tint_ui(app, mode); /* re-assert: slots fill late, native may reset */
         if (sc) ball_check(board, mode);
         ui_check(app, mode);
         probe_ui(app, mode);
-        if (!deep_done) { deep_done = 1; deep_probe(app); }
     }
 }
 
