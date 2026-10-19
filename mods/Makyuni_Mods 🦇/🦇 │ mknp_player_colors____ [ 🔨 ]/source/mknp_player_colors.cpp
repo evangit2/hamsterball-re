@@ -273,6 +273,9 @@ static void log_line(const char* msg) {
 
 #include "brhook.h"
 
+/* P1 hook color (floats, storage in brhook.h .bss; fed from g_ball). */
+static int g_mode = 0;
+
 static int hex4(unsigned int v, char* out) {
     const char* H = "0123456789ABCDEF";
     int i;
@@ -527,85 +530,35 @@ static void ui_check(App* app, int mode) {
    texture, so: (1) restore +0x10 to white, (2) drive green through +0x34
    instead, mirroring mknp_bumper_colors (released, working: emissive RGB
    at slot +0x34/38/3C, stride 0x50). Outline untouched. */
+/* Status line (was TEMP GREEN TEST, now set-driven via the draw hook):
+   hook/ok state, active mode, P1 RGB. No writes. */
 static void green_test(App* app) {
-    static char line[256];
-    int o = 0;
-    const char* t = "GREEN-TEST ";
-    while (*t) line[o++] = *t++;
+    static char line[96];
+    int o = 0, k;
     const char* H = "0123456789ABCDEF";
-    int k;
-    do {
-        void* b = (void*)HBAPI(g_api).GetPlayer();
-        if (!b || IsBadReadPtr(b, 0x758)) {
-            line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
-            line[o++] = '='; line[o++] = 'b'; line[o++] = 'a';
-            line[o++] = 'l'; line[o++] = 'l';
-            break;
-        }
-        int meshidx = *(int*)((char*)b + 0x754);
-        if (meshidx < 0 || meshidx > 10) meshidx = 0;
-        if (!app || IsBadReadPtr((const void*)((char*)app + 0x248), 4)) {
-            line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
-            line[o++] = '='; line[o++] = 'a'; line[o++] = 'p';
-            line[o++] = 'p';
-            break;
-        }
-        DWORD mw = *(DWORD*)((char*)app + 0x244 + (DWORD)meshidx * 4);
-        if (!mw || IsBadReadPtr((const void*)mw, 0x10)) {
-            line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
-            line[o++] = '='; line[o++] = 'm'; line[o++] = 'w';
-            break;
-        }
-        DWORD inner = *(DWORD*)(mw + 8);
-        if (!inner || IsBadReadPtr((const void*)inner, 0x2C)) {
-            line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
-            line[o++] = '='; line[o++] = 'i'; line[o++] = 'n';
-            line[o++] = 'r';
-            break;
-        }
-        DWORD arr = *(DWORD*)(inner + 0x28);
-        int sub = *(int*)(mw + 4);
-        if (sub < 0 || sub > 64) sub = 0;
-        if (!arr || IsBadReadPtr((const void*)arr, 0x50)) {
-            line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
-            line[o++] = '='; line[o++] = 'a'; line[o++] = 'r';
-            line[o++] = 'r';
-            break;
-        }
-        char* slot = (char*)(arr + (DWORD)sub * 0x50);
-        if (IsBadReadPtr((const void*)slot, 0x50)) {
-            line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
-            line[o++] = '='; line[o++] = 's'; line[o++] = 'l';
-            line[o++] = 'o'; line[o++] = 't';
-            break;
-        }
-        /* (1) restore +0x10 RGB to white (undo r1) */
-        float* c10 = (float*)(slot + 0x10);
-        line[o++] = 'r'; line[o++] = '1'; line[o++] = '=';
-        for (k = 0; k < 3; k++) {
-            int v = (int)(c10[k] * 255.0f + 0.5f);
-            if (v < 0) v = 0;
-            if (v > 255) v = 255;
-            line[o++] = H[(v >> 4) & 0xF];
-            line[o++] = H[v & 0xF];
-        }
-        c10[0] = 1.0f;
-        c10[1] = 1.0f;
-        c10[2] = 1.0f;
-        line[o++] = ' ';
-        /* (2) bumper-pattern green at +0x34 RGB */
-        float* c34 = (float*)(slot + 0x34);
-        line[o++] = 'r'; line[o++] = '2'; line[o++] = '=';
-        for (k = 0; k < 3; k++) {
-            int v = (int)(c34[k] * 255.0f + 0.5f);
-            if (v < 0) v = 0;
-            if (v > 255) v = 255;
-            line[o++] = H[(v >> 4) & 0xF];
-            line[o++] = H[v & 0xF];
-        }
-        line[o++] = '-'; line[o++] = '>';
-        /* r3: hook owns +0x34 now; per-tick write removed (neutered) */
-    } while (0);
+    const char* t = "BALL-COLOR hook=";
+    (void)app;
+    while (*t) line[o++] = *t++;
+    line[o++] = (char)('0' + (g_br_inst == 1 ? 1 : 0));
+    const char* t2 = " ok=";
+    while (*t2) line[o++] = *t2++;
+    line[o++] = (char)('0' + (g_br_ok ? 1 : 0));
+    const char* t3 = " mode=";
+    while (*t3) line[o++] = *t3++;
+    line[o++] = (char)('0' + g_mode);
+    const char* t4 = " rgb=";
+    while (*t4) line[o++] = *t4++;
+    float rgb[3];
+    rgb[0] = g_hook_rgb0;
+    rgb[1] = g_hook_rgb1;
+    rgb[2] = g_hook_rgb2;
+    for (k = 0; k < 3; k++) {
+        int v = (int)(rgb[k] * 255.0f + 0.5f);
+        if (v < 0) v = 0;
+        if (v > 255) v = 255;
+        line[o++] = H[(v >> 4) & 0xF];
+        line[o++] = H[v & 0xF];
+    }
     line[o] = '\0';
     log_line(line);
 }
@@ -679,7 +632,13 @@ static void __thiscall game_update(void*) {
     if ((g_tick % 120) == 0) read_set(); /* live edit ~every 2s */
     {
         static int hook_tried = 0;
-        if (!hook_tried) { hook_tried = 1; ballhook_install(); }
+        if (!hook_tried) {
+            hook_tried = 1;
+            ballhook_install();
+            g_hook_rgb0 = 0.27f;
+            g_hook_rgb1 = 0.27f;
+            g_hook_rgb2 = 0.27f;
+        }
     }
 
     /* UI tint runs with or without a scene (menus have no scene).
@@ -719,6 +678,13 @@ static void __thiscall game_update(void*) {
         }
     }
     if (sc) write_slot(board, 0, g_ball[mode]);
+    {
+        unsigned int hex = g_ball[mode];
+        g_mode = mode;
+        g_hook_rgb0 = (float)((hex >> 16) & 0xFF) / 255.0f;
+        g_hook_rgb1 = (float)((hex >> 8) & 0xFF) / 255.0f;
+        g_hook_rgb2 = (float)(hex & 0xFF) / 255.0f;
+    }
     if (sc) br_resolve(HBAPI(g_api).GetApp());
     if (sc && (g_tick % 600) == 1) green_test(HBAPI(g_api).GetApp());
     if (!sc && g_deep_done) g_deep_done = 0; /* re-probe next race */

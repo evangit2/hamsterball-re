@@ -18,6 +18,9 @@ extern int g_br_ok;
 extern float g_br_nat0;
 extern float g_br_nat1;
 extern float g_br_nat2;
+extern float g_hook_rgb0;
+extern float g_hook_rgb1;
+extern float g_hook_rgb2;
 extern DWORD g_br_tramp;
 extern int g_br_inst;
 
@@ -36,6 +39,12 @@ __asm__(
 "_g_br_nat1: .space 4\n"
 ".globl _g_br_nat2\n"
 "_g_br_nat2: .space 4\n"
+".globl _g_hook_rgb0\n"
+"_g_hook_rgb0: .space 4\n"
+".globl _g_hook_rgb1\n"
+"_g_hook_rgb1: .space 4\n"
+".globl _g_hook_rgb2\n"
+"_g_hook_rgb2: .space 4\n"
 ".globl _g_br_tramp\n"
 "_g_br_tramp: .space 4\n"
 ".globl _g_br_inst\n"
@@ -61,9 +70,12 @@ __asm__(
 " movl %eax, 8(%edx)\n"
 " jmp 9f\n"
 "1:\n"
-" movl $0, (%edx)\n"
-" movl $0x3F800000, 4(%edx)\n"
-" movl $0, 8(%edx)\n"
+" movl _g_hook_rgb0, %eax\n"
+" movl %eax, (%edx)\n"
+" movl _g_hook_rgb1, %eax\n"
+" movl %eax, 4(%edx)\n"
+" movl _g_hook_rgb2, %eax\n"
+" movl %eax, 8(%edx)\n"
 "9:\n"
 " popl %edx\n"
 " popl %eax\n"
