@@ -104,27 +104,22 @@ __asm__(
 " jz 9f\n"
 " cmpl _g_br_p1, %ecx\n"
 " je 1f\n"
-/* P1 vs others differ ONLY in emissive + diffuse (both = set color).
- * Spec-zone (+0x20-2C) is native for everyone: the black test proved it
- * is not the highlight source, and writing hue there only discolored P1.
- * The bright top is white DIFFUSE x light -> tint diffuse (+0x04/08/0C).
- * +0x10 (alpha), +0x30, +0x2C untouched. */
+/* P1 vs others differ ONLY in emissive + diffuse (both = set color) plus
+ * P1's set specular. Others get a BLACK spec-zone: with SPECULARENABLE now
+ * forced on for the body, native spec-R=1.0 would paint red dots on them.
+ * The black test proved zeroing is visually safe. +0x30/+0x2C untouched. */
 " movl _g_br_natR, %eax\n"
 " movl %eax, -4(%edx)\n"
-" movl _g_br_nat20, %eax\n"
-" movl %eax, -20(%edx)\n"
+" movl $0, -20(%edx)\n"
 " movl _g_br_nat0, %eax\n"
 " movl %eax, (%edx)\n"
 " movl _g_br_nat1, %eax\n"
 " movl %eax, 4(%edx)\n"
 " movl _g_br_nat2, %eax\n"
 " movl %eax, 8(%edx)\n"
-" movl _g_br_natS0, %eax\n"
-" movl %eax, -16(%edx)\n"
-" movl _g_br_natS1, %eax\n"
-" movl %eax, -12(%edx)\n"
-" movl _g_br_natS2, %eax\n"
-" movl %eax, -8(%edx)\n"
+" movl $0, -16(%edx)\n"
+" movl $0, -12(%edx)\n"
+" movl $0, -8(%edx)\n"
 " movl _g_br_natD0, %eax\n"
 " movl %eax, -48(%edx)\n"
 " movl _g_br_natD1, %eax\n"
@@ -187,6 +182,23 @@ static void ballhook_install(void) {
     g_br_tramp = (DWORD)t;
     g_br_inst = 1;
     log_line("BALLHOOK installed");
+    /* SPEC-EN: Ball_Render kills specular for the body (0x4041CF: push 0 =
+       SetRenderState(29,0)) then re-enables it for the outline (0x4042EF:
+       push 1). Flip the body site to 1 once per boot so P1's set specular
+       can show; verify-or-skip (fresh image each launch). Others get a
+       black spec-zone per draw, so only P1 gains a dot. */
+    {
+        unsigned char* s = (unsigned char*)0x4041CF;
+        if (!IsBadReadPtr((void*)s, 2) && s[0] == 0x6A && s[1] == 0x00) {
+            DWORD o2 = 0;
+            if (VirtualProtect((void*)s, 2, PAGE_EXECUTE_READWRITE, &o2)) {
+                s[1] = 0x01;
+                VirtualProtect((void*)s, 2, o2, &o2);
+                FlushInstructionCache(GetCurrentProcess(), (void*)s, 2);
+                log_line("SPEC patch 6A00->6A01 ok");
+            } else log_line("SPEC patch unprotect failed");
+        } else log_line("SPEC patch site unexpected, skipped");
+    }
 }
 
 /* Resolve + cache the P1 mesh-mat slot (native chain:
