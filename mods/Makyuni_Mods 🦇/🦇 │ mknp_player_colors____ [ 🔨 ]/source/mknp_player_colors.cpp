@@ -587,6 +587,17 @@ static void green_test(App* app) {
         line[o++] = H[(v >> 4) & 0xF];
         line[o++] = H[v & 0xF];
     }
+    /* submesh slot identity: catches a fluctuating *(mw+4) */
+    const char* t7 = " sub=";
+    while (*t7) line[o++] = *t7++;
+    line[o++] = (char)('0' + (g_br_sub > 9 ? 9 : g_br_sub));
+    const char* t8 = " slot=";
+    while (*t8) line[o++] = *t8++;
+    {
+        unsigned int sv = g_br_mat ? g_br_mat - 0x34 : 0;
+        int sh;
+        for (sh = 7; sh >= 0; sh--) line[o++] = H[(sv >> (sh * 4)) & 0xF];
+    }
     line[o] = '\0';
     log_line(line);
 }

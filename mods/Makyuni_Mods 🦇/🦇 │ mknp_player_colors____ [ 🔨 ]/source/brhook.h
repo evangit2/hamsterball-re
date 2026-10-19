@@ -30,6 +30,7 @@ extern DWORD g_br_tramp;
 extern int g_br_inst;
 extern int g_br_natlock;
 extern int g_br_needscrub;
+extern int g_br_sub;
 
 extern "C" void ballhook_asm(void);
 __asm__(
@@ -70,6 +71,8 @@ __asm__(
 "_g_br_natlock: .space 4\n"
 ".globl _g_br_needscrub\n"
 "_g_br_needscrub: .space 4\n"
+".globl _g_br_sub\n"
+"_g_br_sub: .space 4\n"
 ".text\n"
 ".globl _ballhook_asm\n"
 "_ballhook_asm:\n"
@@ -83,8 +86,9 @@ __asm__(
 " jz 9f\n"
 " cmpl _g_br_p1, %ecx\n"
 " je 1f\n"
-/* other balls: full native restore (emissive + specular + R). Partial
- * restores tinted P3 red (R left at foreign value). */
+/* other balls: full native restore (emissive + R + +0x20), EXCEPT the
+ * spec-zone (-16/-12/-8 = +0x24/28/2C) which goes BLACK as a diagnostic:
+ * if slot spec is consumed, all non-P1 highlights die this build. */
 " movl _g_br_natR, %eax\n"
 " movl %eax, -4(%edx)\n"
 " movl _g_br_nat20, %eax\n"
@@ -95,12 +99,9 @@ __asm__(
 " movl %eax, 4(%edx)\n"
 " movl _g_br_nat2, %eax\n"
 " movl %eax, 8(%edx)\n"
-" movl _g_br_natS0, %eax\n"
-" movl %eax, -16(%edx)\n"
-" movl _g_br_natS1, %eax\n"
-" movl %eax, -12(%edx)\n"
-" movl _g_br_natS2, %eax\n"
-" movl %eax, -8(%edx)\n"
+" movl $0, -16(%edx)\n"
+" movl $0, -12(%edx)\n"
+" movl $0, -8(%edx)\n"
 " jmp 9f\n"
 "1:\n"
 /* P1: set color to emissive AND specular (mode = 1P/2P/4P set key).
@@ -178,6 +179,7 @@ static void br_resolve(App* app) {
     DWORD arr = *(DWORD*)(inner + 0x28);
     int sub = *(int*)(mw + 4);
     if (sub < 0 || sub > 64) sub = 0;
+    g_br_sub = sub;
     if (!arr || IsBadReadPtr((const void*)arr, 0x50)) {
         g_br_ok = 0;
         return;
