@@ -67,8 +67,8 @@ __asm__(
 "9:\n"
 " popl %edx\n"
 " popl %eax\n"
-" pushl $0xFFFFFFFF\n"
-" movl %fs:0, %eax\n"
+/* stolen prologue lives in the trampoline; replaying it here would push
+ * twice and shift ESP (v1 crash). Jump straight to the trampoline. */
 " jmp *_g_br_tramp\n");
 
 static void ballhook_install(void) {
