@@ -520,14 +520,18 @@ static void ui_check(App* app, int mode) {
     log_line(line);
 }
 
-/* TEMP GREEN TEST (revert after MAKYUNI confirms): P1 ball BODY green via the
-   native mesh material path (0x4701FB: mat = *(*(mw+8)+0x28) + *(mw+4)*0x50,
-   Diffuse at +16). Outline untouched (no border writes). */
+/* TEMP GREEN TEST r2 (revert after MAKYUNI confirms):
+   r1 wrote +0x10 (Diffuse-assumed) white->green and the ball lost its
+   texture, so: (1) restore +0x10 to white, (2) drive green through +0x34
+   instead, mirroring mknp_bumper_colors (released, working: emissive RGB
+   at slot +0x34/38/3C, stride 0x50). Outline untouched. */
 static void green_test(App* app) {
     static char line[256];
     int o = 0;
     const char* t = "GREEN-TEST ";
     while (*t) line[o++] = *t++;
+    const char* H = "0123456789ABCDEF";
+    int k;
     do {
         void* b = (void*)HBAPI(g_api).GetPlayer();
         if (!b || IsBadReadPtr(b, 0x758)) {
@@ -537,12 +541,7 @@ static void green_test(App* app) {
             break;
         }
         int meshidx = *(int*)((char*)b + 0x754);
-        if (meshidx < 0 || meshidx > 10) {
-            line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
-            line[o++] = '='; line[o++] = 'i'; line[o++] = 'd';
-            line[o++] = 'x';
-            break;
-        }
+        if (meshidx < 0 || meshidx > 10) meshidx = 0;
         if (!app || IsBadReadPtr((const void*)((char*)app + 0x248), 4)) {
             line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
             line[o++] = '='; line[o++] = 'a'; line[o++] = 'p';
@@ -555,7 +554,6 @@ static void green_test(App* app) {
             line[o++] = '='; line[o++] = 'm'; line[o++] = 'w';
             break;
         }
-        /* native: inner = *(mw+8); arr = *(inner+0x28); idx = *(mw+4) */
         DWORD inner = *(DWORD*)(mw + 8);
         if (!inner || IsBadReadPtr((const void*)inner, 0x2C)) {
             line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
@@ -572,39 +570,41 @@ static void green_test(App* app) {
             line[o++] = 'r';
             break;
         }
-        float* dif = (float*)(arr + (DWORD)sub * 0x50 + 0x10);
-        if (IsBadReadPtr((const void*)dif, 16)) {
+        char* slot = (char*)(arr + (DWORD)sub * 0x50);
+        if (IsBadReadPtr((const void*)slot, 0x50)) {
             line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
-            line[o++] = '='; line[o++] = 'd'; line[o++] = 'i';
-            line[o++] = 'f';
+            line[o++] = '='; line[o++] = 's'; line[o++] = 'l';
+            line[o++] = 'o'; line[o++] = 't';
             break;
         }
-        if (dif[3] != 1.0f) {
-            line[o++] = 'm'; line[o++] = 's'; line[o++] = 't';
-            line[o++] = '='; line[o++] = 'a';
-            const char* H2 = "0123456789ABCDEF";
-            int wb = (int)(dif[3] * 255.0f + 0.5f);
-            if (wb < 0) wb = 0;
-            if (wb > 255) wb = 255;
-            line[o++] = H2[(wb >> 4) & 0xF];
-            line[o++] = H2[wb & 0xF];
-            break;
-        }
-        const char* H = "0123456789ABCDEF";
-        int k;
-        line[o++] = 'm'; line[o++] = 'a'; line[o++] = 't';
-        line[o++] = '=';
+        /* (1) restore +0x10 RGB to white (undo r1) */
+        float* c10 = (float*)(slot + 0x10);
+        line[o++] = 'r'; line[o++] = '1'; line[o++] = '=';
         for (k = 0; k < 3; k++) {
-            int v = (int)(dif[k] * 255.0f + 0.5f);
+            int v = (int)(c10[k] * 255.0f + 0.5f);
+            if (v < 0) v = 0;
+            if (v > 255) v = 255;
+            line[o++] = H[(v >> 4) & 0xF];
+            line[o++] = H[v & 0xF];
+        }
+        c10[0] = 1.0f;
+        c10[1] = 1.0f;
+        c10[2] = 1.0f;
+        line[o++] = ' ';
+        /* (2) bumper-pattern green at +0x34 RGB */
+        float* c34 = (float*)(slot + 0x34);
+        line[o++] = 'r'; line[o++] = '2'; line[o++] = '=';
+        for (k = 0; k < 3; k++) {
+            int v = (int)(c34[k] * 255.0f + 0.5f);
             if (v < 0) v = 0;
             if (v > 255) v = 255;
             line[o++] = H[(v >> 4) & 0xF];
             line[o++] = H[v & 0xF];
         }
         line[o++] = '-'; line[o++] = '>';
-        dif[0] = 0.0f;
-        dif[1] = 1.0f;
-        dif[2] = 0.0f;
+        c34[0] = 0.0f;
+        c34[1] = 1.0f;
+        c34[2] = 0.0f;
     } while (0);
     line[o] = '\0';
     log_line(line);
