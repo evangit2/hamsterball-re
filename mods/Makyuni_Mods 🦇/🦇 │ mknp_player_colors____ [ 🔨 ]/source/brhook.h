@@ -142,36 +142,19 @@ __asm__(
 " movl %eax, 12(%edx)\n"
 " jmp 9f\n"
 "1:\n"
-" movl _g_hook_rgb0, %eax\n"
-" movl %eax, (%edx)\n"
-" movl %eax, -48(%edx)\n"
-" movl _g_hook_rgb1, %eax\n"
-" movl %eax, 4(%edx)\n"
-" movl %eax, -44(%edx)\n"
-" movl _g_hook_rgb2, %eax\n"
-" movl %eax, 8(%edx)\n"
-" movl %eax, -40(%edx)\n"
-/* DOT-BISECT step 2: P1 diffuse back to set color (spec still native).
- * If the white dot turns body-colored/vanishes => dot follows diffuse.
- * Gates: no ball key => P1 fully native; no spec key => spec-zone black. */
+/* DOT SOLVED: the dot reads the DIFFUSE slot (+0x04/08/0C), the body reads
+ * EMISSIVE (+0x34/38/3C) - independent channels. Proved by the white-body /
+ * body-colored-dot bisect (diffuse writes never tinted the body). Wiring:
+ * emissive <- Player1_ball_color, diffuse <- Player1_ball_specular.
+ * Missing keys leave their channel native. */
 " cmpl $0, _g_do_body\n"
 " je 4f\n"
-/* step 3 (dif-only isolation): emissive restored native even with the
- * ball key present. If the body still tints green => diffuse channel is
- * live (dot green => dot follows diffuse). If the body goes vanilla
- * white => diffuse writes are dead and the body was emissive-only. */
-" movl _g_br_nat0, %eax\n"
-" movl %eax, (%edx)\n"
-" movl _g_br_nat1, %eax\n"
-" movl %eax, 4(%edx)\n"
-" movl _g_br_nat2, %eax\n"
-" movl %eax, 8(%edx)\n"
 " movl _g_hook_rgb0, %eax\n"
-" movl %eax, -48(%edx)\n"
+" movl %eax, (%edx)\n"
 " movl _g_hook_rgb1, %eax\n"
-" movl %eax, -44(%edx)\n"
+" movl %eax, 4(%edx)\n"
 " movl _g_hook_rgb2, %eax\n"
-" movl %eax, -40(%edx)\n"
+" movl %eax, 8(%edx)\n"
 " jmp 5f\n"
 "4:\n"
 " movl _g_br_nat0, %eax\n"
@@ -190,6 +173,12 @@ __asm__(
 " cmpl $0, _g_do_spec\n"
 " je 6f\n"
 " movl _g_hook_spc0, %eax\n"
+" movl %eax, -48(%edx)\n"
+" movl _g_hook_spc1, %eax\n"
+" movl %eax, -44(%edx)\n"
+" movl _g_hook_spc2, %eax\n"
+" movl %eax, -40(%edx)\n"
+" movl _g_hook_spc0, %eax\n"
 " movl %eax, -20(%edx)\n"
 " movl _g_hook_spc1, %eax\n"
 " movl %eax, -16(%edx)\n"
@@ -199,6 +188,12 @@ __asm__(
 " movl %eax, -8(%edx)\n"
 " jmp 7f\n"
 "6:\n"
+" movl _g_br_natD0, %eax\n"
+" movl %eax, -48(%edx)\n"
+" movl _g_br_natD1, %eax\n"
+" movl %eax, -44(%edx)\n"
+" movl _g_br_natD2, %eax\n"
+" movl %eax, -40(%edx)\n"
 " movl $0, -20(%edx)\n"
 " movl $0, -16(%edx)\n"
 " movl $0, -12(%edx)\n"

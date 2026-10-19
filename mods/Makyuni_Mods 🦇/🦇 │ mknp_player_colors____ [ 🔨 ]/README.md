@@ -26,7 +26,7 @@ Edit `mknp_player_colors.set` (next to the DLL in `Mods\`, NOT the game root):
 ```
 
 - `Player1_ball_color`: Player 1 ball tint. `1P_mode` = Tournament and Time Trials, `2P_mode` = 2-player mode, `4P_mode` = 4-player arena (Rodent Rumble).
-- `Player1_ball_specular`: Player 1 ball specular color, same modes.
+- `Player1_ball_specular`: Player 1 dot (specular highlight) color, same modes. Engine quirk: the dot reads the material's diffuse channel, the body the emissive one — the two never mix.
 - `Player1_ball_outline`: Player 1 ball ring/outline emission color, same modes.
 - `Player1_UI`: Hammy1/Hammy2/Hammy3 portrait tint. `1P_mode` = Tournament and Time Trials menus (incl. Tournament win screen), `2P_mode` = 2-player menu, `4P_mode` = arena menu + in-game arena. (UI tint lands in the next build — this build wires the file + ball tint, and logs what the UI hook needs.)
 
