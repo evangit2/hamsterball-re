@@ -4,7 +4,7 @@ Per-player ball colors for Hamsterball Plus.
 
 ## What It Does
 
-Tints player balls to hex colors from `mknp_player_colors.set` (jsonc — `//` and `/* */` comments allowed). Supports all 4 players across 1P/2P/4P modes. Config re-read ~every 2 seconds — edit at runtime, no restart needed.
+Tints player balls to hex colors from `mknp_player_colors.set` (jsonc — `//` and `/* */` comments allowed). Player1 ball follows the current mode (Tournament and Time Trials both run 1-player). Supports all 4 players across 1P/2P/4P modes. Config re-read ~every 2 seconds — edit at runtime, no restart needed.
 
 ## Installation (Hamsterball Plus required)
 
@@ -17,16 +17,14 @@ Tints player balls to hex colors from `mknp_player_colors.set` (jsonc — `//` a
 Edit `mknp_player_colors.set` (next to the DLL in `Mods\`, NOT the game root):
 
 ```jsonc
-{
-  "p1_single": "FFFFFF",   // P1 in 1-player mode
-  "p1_2p":     "4A90D9",   // P1 in 2-player mode
-  "p1_4p":     "2ECC71",   // P1 in 4-player mode (Arena/Rumble)
-  "p2_2p":     "FF6B35",   // P2 in 2-player mode
-  "p2_4p":     "E74C3C",   // P2 in 4-player mode (Arena/Rumble)
-  "p3_4p":     "9B59B6",   // P3 in 4-player mode (Arena/Rumble)
-  "p4_4p":     "F1C40F"    // P4 in 4-player mode (Arena/Rumble)
-}
+[
+  "Player1",    { "1P_mode": "FFFFFF", "2P_mode": "FFFFFF", "4P_mode": "FFFFFF" },
+  "Player1_UI", { "1P_mode": "FFFFFF", "2P_mode": "FFFFFF", "4P_mode": "FFFFFF" }
+]
 ```
+
+- `Player1`: Player 1 ball tint. `1P_mode` = Tournament and Time Trials, `2P_mode` = 2-player mode, `4P_mode` = 4-player arena (Rodent Rumble).
+- `Player1_UI`: Hammy1/Hammy2/Hammy3 portrait tint. `1P_mode` = Tournament and Time Trials menus (incl. Tournament win screen), `2P_mode` = 2-player menu, `4P_mode` = arena menu + in-game arena. (UI tint lands in the next build — this build wires the file + ball tint, and logs what the UI hook needs.)
 
 Hex RGB (`#`/`0x` prefixes and 3-digit shorthand accepted). Missing keys keep their current value, so partial sets are fine.
 

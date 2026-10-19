@@ -48,22 +48,22 @@
 #define BOARD_COLOR_BASE    0x3AB0
 #define BOARD_COLOR_STRIDE  0x14
 
-#define NUM_COLORS 7
+#define NUM_COLORS 7 /* legacy count, see g_ball/g_ui */
 static unsigned int g_colors[NUM_COLORS] = {
-    0xFFFFFF, 0x4A90D9, 0x2ECC71,
-    0xFF6B35, 0xE74C3C, 0x9B59B6, 0xF1C40F
-};
+    0xFFFFFF, 0xFFFFFF, 0xFFFFFF,
+    0xFFFFFF, 0xFFFFFF, 0xFFFFFF, 0xFFFFFF
+}; /* legacy, unused */
 
-static const char* K_KEYS[NUM_COLORS] = {
-    "p1_single", "p1_2p", "p1_4p",
-    "p2_2p", "p2_4p", "p3_4p", "p4_4p"
-};
+static const char* K_MODES[3] = { "1P_mode", "2P_mode", "4P_mode" };
+static unsigned int g_ball[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
+static unsigned int g_ui[3] = { 0xFFFFFF, 0xFFFFFF, 0xFFFFFF };
 
 static IModAPI* g_api = NULL;
 static HMODULE  g_module = NULL;
 
 static char g_dll_dir[MAX_PATH];
 static char g_config_path[MAX_PATH];
+static char g_log_path[MAX_PATH];
 
 static int g_started = 0;
 static unsigned int g_tick = 0;
@@ -125,15 +125,10 @@ static void create_defaults(void) {
     if (h != INVALID_HANDLE_VALUE) { CloseHandle(h); return; }
     const char* defs =
         "// mknp_player_colors settings (jsonc — // and /* */ comments allowed)\r\n"
-        "{\r\n"
-        "  \"p1_single\": \"FFFFFF\",   // P1 in 1-player mode\r\n"
-        "  \"p1_2p\":     \"4A90D9\",   // P1 in 2-player mode\r\n"
-        "  \"p1_4p\":     \"2ECC71\",   // P1 in 4-player mode (Arena/Rumble)\r\n"
-        "  \"p2_2p\":     \"FF6B35\",   // P2 in 2-player mode\r\n"
-        "  \"p2_4p\":     \"E74C3C\",   // P2 in 4-player mode (Arena/Rumble)\r\n"
-        "  \"p3_4p\":     \"9B59B6\",   // P3 in 4-player mode (Arena/Rumble)\r\n"
-        "  \"p4_4p\":     \"F1C40F\"    // P4 in 4-player mode (Arena/Rumble)\r\n"
-        "}\r\n";
+        "[\r\n"
+        "    \"Player1\",    { \"1P_mode\": \"FFFFFF\", \"2P_mode\": \"FFFFFF\", \"4P_mode\": \"FFFFFF\" },\r\n"
+        "    \"Player1_UI\", { \"1P_mode\": \"FFFFFF\", \"2P_mode\": \"FFFFFF\", \"4P_mode\": \"FFFFFF\" }\r\n"
+        "]\r\n";;
     h = CreateFileA(g_config_path, GENERIC_WRITE, 0, NULL,
                     CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h != INVALID_HANDLE_VALUE) {
@@ -175,12 +170,42 @@ static int strip_jsonc(const char* src, int n, char* dst, int cap) {
     return o;
 }
 
-/* Find "key" : "value" — copies value (no escapes) into out. Returns 1 on hit. */
-static int find_key_str(const char* buf, const char* key, char* out, int cap) {
-    int kl = 0;
-    while (key[kl]) kl++;
+/* Find "Group" { ... } — sets *s/*e to the brace span. Returns 1 on hit. */
+static int find_group(const char* buf, const char* name, const char** s, const char** e) {
+    int nl = 0;
+    while (name[nl]) nl++;
     const char* p = buf;
     while (*p) {
+        if (*p != '"') { p++; continue; }
+        int i = 0;
+        while (i < nl && p[1 + i] == name[i]) i++;
+        if (i != nl || p[1 + i] != '"') { p++; continue; }
+        p += 1 + i + 1;
+        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' || *p == ',') p++;
+        if (*p == ':') {
+            p++;
+            while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+        }
+        if (*p != '{') continue;
+        *s = p;
+        int depth = 0;
+        while (*p) {
+            if (*p == '{') depth++;
+            else if (*p == '}') { depth--; if (!depth) { *e = p; return 1; } }
+            p++;
+        }
+        return 0;
+    }
+    return 0;
+}
+
+/* Find "key" : "value" within [gs, ge) — copies value (no escapes) into out. Returns 1 on hit. */
+/* Find "key" : "value" — copies value (no escapes) into out. Returns 1 on hit. */
+static int find_key_str(const char* gs, const char* ge, const char* key, char* out, int cap) {
+    int kl = 0;
+    while (key[kl]) kl++;
+    const char* p = gs;
+    while (p < ge && *p) {
         if (*p != '"') { p++; continue; }
         const char* k = p + 1;
         int i = 0;
@@ -215,12 +240,101 @@ static void read_set(void) {
     raw[got] = '\0';
 
     strip_jsonc(raw, (int)got, buf, sizeof(buf));
-    for (int k = 0; k < NUM_COLORS; k++) {
-        char val[32];
-        if (find_key_str(buf, K_KEYS[k], val, sizeof(val)))
-            g_colors[k] = parse_hex(val);
-        /* missing key: keep current value (partial sets allowed) */
+    const char *gs, *ge;
+    char val[32];
+    int m;
+    if (find_group(buf, "Player1", &gs, &ge)) {
+        for (m = 0; m < 3; m++) {
+            if (find_key_str(gs, ge, K_MODES[m], val, sizeof(val)))
+                g_ball[m] = parse_hex(val);
+            /* missing mode: keep current value (partial sets allowed) */
+        }
     }
+    if (find_group(buf, "Player1_UI", &gs, &ge)) {
+        for (m = 0; m < 3; m++) {
+            if (find_key_str(gs, ge, K_MODES[m], val, sizeof(val)))
+                g_ui[m] = parse_hex(val);
+        }
+    }
+}
+
+static void log_line(const char* msg) {
+    HANDLE h = CreateFileA(g_log_path, GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                           OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return;
+    SetFilePointer(h, 0, NULL, FILE_END);
+    DWORD wrote = 0, n = 0;
+    while (msg[n]) n++;
+    WriteFile(h, msg, n, &wrote, NULL);
+    WriteFile(h, "\r\n", 2, &wrote, NULL);
+    CloseHandle(h);
+}
+
+/* UI probe: Hammy texture slots (App+0x330/334/338) + mode fields. Read-only. */
+static int hex4(unsigned int v, char* out) {
+    const char* H = "0123456789ABCDEF";
+    int i;
+    for (i = 0; i < 8; i++) out[i] = H[(v >> (28 - i * 4)) & 0xF];
+    out[8] = '\0';
+    return 8;
+}
+
+static void probe_ui(App* app, int mode) {
+    static char line[512];
+    int o = 0, i;
+    const char* tag = "UI-PROBE mode=";
+    while (*tag) line[o++] = *tag++;
+    line[o++] = (char)('0' + mode);
+    for (i = 0; i < 3; i++) {
+        DWORD off = 0x330 + (DWORD)i * 4;
+        line[o++] = ' ';
+        line[o++] = 's';
+        line[o++] = (char)('0' + i);
+        line[o++] = '=';
+        if (!app || IsBadReadPtr((const void*)((char*)app + off), 4)) {
+            line[o++] = '?';
+            continue;
+        }
+        DWORD slot = *(DWORD*)((char*)app + off);
+        if (!slot || IsBadReadPtr((const void*)slot, 0x4C)) {
+            line[o++] = '0';
+            continue;
+        }
+        char hb[9];
+        hex4(slot, hb);
+        for (int k = 0; k < 8; k++) line[o++] = hb[k];
+        line[o++] = ':';
+        /* guessed D3DMAT at sprite+0xC: dif rgba floats */
+        float* f = (float*)(slot + 0xC);
+        for (int k = 0; k < 4; k++) {
+            int v = (int)(f[k] * 100.0f);
+            if (v < -9999) v = -9999;
+            if (v > 99999) v = 99999;
+            char nb[8];
+            int n2 = 0, neg = 0;
+            if (v < 0) { neg = 1; v = -v; }
+            do { nb[n2++] = (char)('0' + v % 10); v /= 10; } while (v && n2 < 6);
+            if (neg && o + 1 < (int)sizeof(line)) line[o++] = '-';
+            while (n2 && o + 1 < (int)sizeof(line)) line[o++] = nb[--n2];
+            if (k < 3 && o + 1 < (int)sizeof(line)) line[o++] = ',';
+        }
+    }
+    /* App gameMode1-4 (+0x550..0x55C, unverified offsets, raw read) */
+    line[o++] = ' ';
+    line[o++] = 'g';
+    line[o++] = 'm';
+    for (i = 0; i < 4; i++) {
+        line[o++] = '=';
+        if (!app || IsBadReadPtr((const void*)((char*)app + 0x550 + i * 4), 4)) {
+            line[o++] = '?';
+        } else {
+            char hb[9];
+            hex4(*(DWORD*)((char*)app + 0x550 + i * 4), hb);
+            for (int k = 0; k < 8; k++) line[o++] = hb[k];
+        }
+    }
+    line[o] = '\0';
+    log_line(line);
 }
 
 static void write_slot(DWORD board, int slot, unsigned int hex) {
@@ -264,9 +378,26 @@ static void __thiscall init_impl(void* thisptr, IModAPI* api) {
     else
         nc_strncpy(g_config_path, "mknp_player_colors.set", MAX_PATH - 1);
 
+    if (g_dll_dir[0])
+        path_join(g_log_path, g_dll_dir, "mknp_player_colors.log");
+    else
+        nc_strncpy(g_log_path, "mknp_player_colors.log", MAX_PATH - 1);
+
     create_defaults();
     read_set();
     g_started = 1;
+    {
+        static char init[320];
+        int o = 0, i;
+        const char* t = "INIT log=";
+        while (*t) init[o++] = *t++;
+        for (i = 0; g_log_path[i] && o + 1 < (int)sizeof(init); i++) init[o++] = g_log_path[i];
+        t = " set=";
+        while (*t) init[o++] = *t++;
+        for (i = 0; g_config_path[i] && o + 1 < (int)sizeof(init); i++) init[o++] = g_config_path[i];
+        init[o] = '\0';
+        log_line(init);
+    }
 }
 
 static void __thiscall game_update(void*) {
@@ -281,11 +412,11 @@ static void __thiscall game_update(void*) {
     if (np > 4) np = 4;
     DWORD board = (DWORD)sc;
 
-    int p1 = (np <= 1) ? 0 : (np == 2) ? 1 : 2;
-    write_slot(board, 0, g_colors[p1]);
-    if (np >= 2) write_slot(board, 1, g_colors[(np >= 3) ? 4 : 3]);
-    if (np >= 3) write_slot(board, 2, g_colors[5]);
-    if (np >= 4) write_slot(board, 3, g_colors[6]);
+    /* Player1 ball only (schema defines Player1 + Player1_UI).
+       1P_mode covers Tournament and Time Trials (both run np==1). */
+    int mode = (np <= 1) ? 0 : (np == 2) ? 1 : 2;
+    write_slot(board, 0, g_ball[mode]);
+    if ((g_tick % 600) == 1) probe_ui(HBAPI(g_api).GetApp(), mode);
 }
 
 static void __thiscall ball_update(void*, void*) {}
