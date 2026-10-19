@@ -1,6 +1,7 @@
 #!/bin/bash
 # build.sh - Cross-compile mknp_player_colors (HB+ v2.1) with MinGW
-set -e
+# NOTE: no `set -e` here on purpose — the header MUST be restored even
+# when the compile fails, otherwise sed layers `//` prefixes on every run.
 cd "$(dirname "$0")"
 
 # Disable static_asserts in HamsterballAPI.h that fail under MinGW (pack #pragma shifts offsets)
@@ -21,8 +22,9 @@ i686-w64-mingw32-g++ -shared -o mknp_player_colors.dll mknp_player_colors.cpp no
   -Wl,--exclude-symbols,_memcpy -Wl,--exclude-symbols,_memset \
   -Wl,--exclude-symbols,_malloc -Wl,--exclude-symbols,_free \
   -lm
+GCC_EXIT=$?
 
-# Restore original header
+# Restore original header — ALWAYS, even on compile failure
 mv HamsterballAPI.h.bak HamsterballAPI.h
 
 echo "=== Build complete: mknp_player_colors.dll ==="
@@ -30,3 +32,4 @@ echo "=== Exports ==="
 i686-w64-mingw32-objdump -p mknp_player_colors.dll 2>/dev/null | grep -i "Export" -A5 || true
 echo "=== DLL dependencies ==="
 i686-w64-mingw32-objdump -p mknp_player_colors.dll 2>/dev/null | grep "DLL Name" || true
+exit $GCC_EXIT

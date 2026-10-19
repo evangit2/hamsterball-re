@@ -270,7 +270,6 @@ static void log_line(const char* msg) {
     CloseHandle(h);
 }
 
-/* UI probe: Hammy texture slots (App+0x330/334/338) + mode fields. Read-only. */
 static int hex4(unsigned int v, char* out) {
     const char* H = "0123456789ABCDEF";
     int i;
@@ -278,6 +277,79 @@ static int hex4(unsigned int v, char* out) {
     out[8] = '\0';
     return 8;
 }
+/* Wide probe: identify hammy slot object layout + ball mesh material.
+   Logs vtable, then every offset holding four consecutive 1.0f (D3DMAT-like)
+   within +0..+0x100 of slot (hammy) / +0..+0x400 of ball mesh. Read-only. */
+static void scan_white(const char* base, int span, char* line, int* po, int cap) {
+    int o = *po, off;
+    for (off = 0; off + 16 <= span; off += 4) {
+        float* f = (float*)(base + off);
+        if (IsBadReadPtr((const void*)f, 16)) break;
+        if (f[0] == 1.0f && f[1] == 1.0f && f[2] == 1.0f && f[3] == 1.0f) {
+            char hb[9];
+            hex4((unsigned int)off, hb);
+            if (o + 10 >= cap) break;
+            line[o++] = '@';
+            for (int k = 4; k < 8; k++) line[o++] = hb[k];
+        }
+    }
+    *po = o;
+}
+
+static void deep_probe(App* app) {
+    static char line[512];
+    int o = 0, i;
+    const char* tag = "DEEP";
+    while (*tag) line[o++] = *tag++;
+    for (i = 0; i < 3; i++) {
+        DWORD off = 0x330 + (DWORD)i * 4;
+        line[o++] = ' ';
+        line[o++] = 'h';
+        line[o++] = (char)('0' + i);
+        line[o++] = '=';
+        if (!app || IsBadReadPtr((const void*)((char*)app + off), 4)) {
+            line[o++] = '?';
+            continue;
+        }
+        DWORD slot = *(DWORD*)((char*)app + off);
+        if (!slot || IsBadReadPtr((const void*)slot, 4)) {
+            line[o++] = '0';
+            continue;
+        }
+        DWORD vt = *(DWORD*)slot;
+        char hb[9];
+        hex4(slot, hb);
+        for (int k = 0; k < 8; k++) line[o++] = hb[k];
+        line[o++] = ':';
+        hex4(vt, hb);
+        for (int k = 0; k < 8; k++) line[o++] = hb[k];
+        scan_white((const char*)slot, 0x100, line, &o, (int)sizeof(line));
+    }
+    /* ball mesh material hunt: App+0x244[0] object + white clusters */
+    line[o++] = ' ';
+    line[o++] = 'm';
+    line[o++] = '=';
+    if (!app || IsBadReadPtr((const void*)((char*)app + 0x244), 4)) {
+        line[o++] = '?';
+    } else {
+        DWORD mesh = *(DWORD*)((char*)app + 0x244);
+        if (!mesh || IsBadReadPtr((const void*)mesh, 4)) {
+            line[o++] = '0';
+        } else {
+            char hb[9];
+            hex4(mesh, hb);
+            for (int k = 0; k < 8; k++) line[o++] = hb[k];
+            line[o++] = ':';
+            hex4(*(DWORD*)mesh, hb);
+            for (int k = 0; k < 8; k++) line[o++] = hb[k];
+            scan_white((const char*)mesh, 0x400, line, &o, (int)sizeof(line));
+        }
+    }
+    line[o] = '\0';
+    log_line(line);
+}
+
+/* UI probe: Hammy texture slots (App+0x330/334/338) + mode fields. Read-only. */
 
 static void probe_ui(App* app, int mode) {
     static char line[512];
@@ -569,11 +641,13 @@ static void __thiscall game_update(void*) {
         }
     }
     if ((g_tick % 600) == 1) {
+        static int deep_done = 0;
         App* app = HBAPI(g_api).GetApp();
         tint_ui(app, mode); /* re-assert: slots fill late, native may reset */
         if (sc) ball_check(board, mode);
         ui_check(app, mode);
         probe_ui(app, mode);
+        if (!deep_done) { deep_done = 1; deep_probe(app); }
     }
 }
 
