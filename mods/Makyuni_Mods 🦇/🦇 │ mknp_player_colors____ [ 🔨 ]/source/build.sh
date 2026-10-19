@@ -1,5 +1,5 @@
 #!/bin/bash
-# build.sh - Cross-compile mknp_ball_colors (HB+ v2.1) with MinGW
+# build.sh - Cross-compile mknp_player_colors (HB+ v2.1) with MinGW
 set -e
 cd "$(dirname "$0")"
 
@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 cp HamsterballAPI.h HamsterballAPI.h.bak
 sed -i 's/static_assert(/\/\/ static_assert(/g' HamsterballAPI.h
 
-i686-w64-mingw32-g++ -shared -o mknp_ball_colors.dll mknp_ball_colors.cpp nocrt.cpp \
+i686-w64-mingw32-g++ -shared -o mknp_player_colors.dll mknp_player_colors.cpp nocrt.cpp \
   -I. -O2 -msse2 -mfpmath=sse -mwindows \
   -fno-exceptions -fno-rtti -fno-threadsafe-statics \
   -fno-asynchronous-unwind-tables -fno-unwind-tables \
@@ -25,8 +25,8 @@ i686-w64-mingw32-g++ -shared -o mknp_ball_colors.dll mknp_ball_colors.cpp nocrt.
 # Restore original header
 mv HamsterballAPI.h.bak HamsterballAPI.h
 
-echo "=== Build complete: mknp_ball_colors.dll ==="
+echo "=== Build complete: mknp_player_colors.dll ==="
 echo "=== Exports ==="
-i686-w64-mingw32-objdump -p mknp_ball_colors.dll 2>/dev/null | grep -i "Export" -A5 || true
+i686-w64-mingw32-objdump -p mknp_player_colors.dll 2>/dev/null | grep -i "Export" -A5 || true
 echo "=== DLL dependencies ==="
-i686-w64-mingw32-objdump -p mknp_ball_colors.dll 2>/dev/null | grep "DLL Name" || true
+i686-w64-mingw32-objdump -p mknp_player_colors.dll 2>/dev/null | grep "DLL Name" || true
