@@ -131,6 +131,57 @@ static StringSite g_string_sites[] = {
 // ===========================================================================
 
 static char g_config_path[MAX_PATH] = {0};
+
+// -- Probe logging (diagnostic build): mknp_menus_plus.log next to the .set --
+static HANDLE g_log = INVALID_HANDLE_VALUE;
+
+static void log_open(void)
+{
+    char logPath[MAX_PATH];
+    logPath[0] = '\0';
+    const char* cfg = g_config_path;
+    int i = 0, last = -1;
+    while (cfg[i] && i < MAX_PATH - 1) { if (cfg[i] == '\\' || cfg[i] == '/') last = i; i++; }
+    if (last > 0) {
+        int k = 0;
+        for (; k < last + 1 && k < MAX_PATH - 24; k++) logPath[k] = cfg[k];
+        logPath[k] = '\0';
+        nc_strcat(logPath, "mknp_menus_plus.log");
+        g_log = CreateFileA(logPath, GENERIC_WRITE, FILE_SHARE_READ,
+                            NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    }
+    if (g_log == INVALID_HANDLE_VALUE) {
+        char tmp[MAX_PATH];
+        DWORD tl = GetTempPathA(MAX_PATH - 24, tmp);
+        if (tl > 0 && tl < MAX_PATH - 24) {
+            nc_strcpy(logPath, tmp);
+            nc_strcat(logPath, "mknp_menus_plus.log");
+            g_log = CreateFileA(logPath, GENERIC_WRITE, FILE_SHARE_READ,
+                                NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        }
+    }
+    if (g_log != INVALID_HANDLE_VALUE) {
+        const char* init = "INIT mknp_menus_plus probe\r\n";
+        DWORD w = 0;
+        WriteFile(g_log, init, (DWORD)nc_strlen(init), &w, NULL);
+    }
+}
+
+static void log_msg(const char* s)
+{
+    if (g_log == INVALID_HANDLE_VALUE) return;
+    DWORD w = 0;
+    WriteFile(g_log, s, (DWORD)nc_strlen(s), &w, NULL);
+    WriteFile(g_log, "\r\n", 2, &w, NULL);
+}
+
+static void mlog(const char* fmt, const char* a, int b)
+{
+    char buf[400];
+    buf[0] = '\0';
+    nc_snprintf(buf, sizeof(buf), fmt, a, b);
+    log_msg(buf);
+}
 static unsigned char* g_cave_mem = NULL;
 static int g_reload_counter = 0;
 
@@ -686,6 +737,15 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
         }
     }
 
+    {
+        char ebuf[48];
+        int el = elemNameLen < 44 ? elemNameLen : 44;
+        int k = 0;
+        for (; k < el; k++) ebuf[k] = elemName[k];
+        ebuf[k] = '\0';
+        mlog("ELEM %s %d", ebuf, matched_color_idx * 100 + matched_string_idx);
+    }
+
     tk = next_token(p);
     if (tk.type == JTK_RBRACE) return;
 
@@ -892,11 +952,12 @@ static void read_config(void)
 {
     HANDLE h = CreateFileA(g_config_path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
                            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (h == INVALID_HANDLE_VALUE) return;
+    if (h == INVALID_HANDLE_VALUE) { log_msg("OPEN FAIL"); return; }
 
     DWORD bytesRead = 0;
     ReadFile(h, g_json_buffer, sizeof(g_json_buffer) - 1, &bytesRead, NULL);
     CloseHandle(h);
+    mlog("OPEN bytes=%d", "", (int)bytesRead);
     if (bytesRead == 0) return;
 
     g_json_buffer[bytesRead] = '\0';
@@ -1067,6 +1128,7 @@ static void install_patches(void)
         patch_site(&g_sites[i], cave);
         offset += cave_size + 4;
     }
+    mlog("CAVES %d", "", (int)NUM_SITES);
 }
 
 // ===========================================================================
@@ -1112,6 +1174,8 @@ static void __thiscall init_impl(void* thisptr, void* modApi)
     g_colors[27][3] = 1.0f;
 
     init_config_path();
+    log_open();
+    mlog("PATH %s", g_config_path, 0);
     create_default_config();
     init_path_buffers();  // Must be before read_config so paths can be written
     read_config();
