@@ -172,7 +172,7 @@ BOOL APIENTRY DllMain(HMODULE hMod, DWORD reason, LPVOID)
                                        NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
                 if (h != INVALID_HANDLE_VALUE) {
                     DWORD w = 0;
-                    WriteFile(h, "ATTACH", 6, &w, NULL);
+                    WriteFile(h, "ATTACH v04", 10, &w, NULL);
                     CloseHandle(h);
                 }
             }

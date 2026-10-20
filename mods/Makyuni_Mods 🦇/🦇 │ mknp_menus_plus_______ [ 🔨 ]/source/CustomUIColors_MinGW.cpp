@@ -1222,12 +1222,27 @@ static void* g_vtable[17] = {
 };
 
 extern "C" __declspec(dllexport) HamsterballAPI* CreateModInstance() {
-    HANDLE hm = CreateFileA("mknp_menus_plus_create.txt", GENERIC_WRITE, FILE_SHARE_READ,
-                            NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hm != INVALID_HANDLE_VALUE) {
-        DWORD ww = 0;
-        WriteFile(hm, "CREATE", 6, &ww, NULL);
-        CloseHandle(hm);
+    MEMORY_BASIC_INFORMATION cmbi;
+    if (VirtualQuery((void*)CreateModInstance, &cmbi, sizeof(cmbi))) {
+        HMODULE cself = (HMODULE)cmbi.AllocationBase;
+        char cdir[MAX_PATH];
+        DWORD clen = GetModuleFileNameA(cself, cdir, MAX_PATH - 1);
+        if (clen > 0) {
+            int clast = -1;
+            for (int i = 0; cdir[i] && i < MAX_PATH - 1; i++)
+                if (cdir[i] == '\\' || cdir[i] == '/') clast = i;
+            if (clast > 0 && clast < MAX_PATH - 28) {
+                cdir[clast + 1] = '\0';
+                lstrcatA(cdir, "mknp_menus_plus_create.txt");
+                HANDLE hm = CreateFileA(cdir, GENERIC_WRITE, FILE_SHARE_READ,
+                                        NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                if (hm != INVALID_HANDLE_VALUE) {
+                    DWORD ww = 0;
+                    WriteFile(hm, "CREATE", 6, &ww, NULL);
+                    CloseHandle(hm);
+                }
+            }
+        }
     }
     void* obj = nc_malloc(8);
     if (!obj) return NULL;
