@@ -153,31 +153,10 @@ int nc_snprintf(char* buf, size_t size, const char* fmt, ...) {
 
 } // extern "C"
 
-// DllMain — minimal, no CRT init. Attach-probe: drops a marker file so we
-// can tell DLL-never-loaded apart from init-never-called.
+// DllMain — minimal, no CRT init.
 extern HANDLE g_log;
-BOOL APIENTRY DllMain(HMODULE hMod, DWORD reason, LPVOID)
+BOOL APIENTRY DllMain(HMODULE, DWORD reason, LPVOID)
 {
-    if (reason == 1) { /* DLL_PROCESS_ATTACH */
-        char dir[MAX_PATH];
-        DWORD len = GetModuleFileNameA(hMod, dir, MAX_PATH - 1);
-        if (len > 0) {
-            int last = -1;
-            for (int i = 0; dir[i] && i < MAX_PATH - 1; i++)
-                if (dir[i] == '\\' || dir[i] == '/') last = i;
-            if (last > 0) {
-                dir[last + 1] = '\0';
-                lstrcatA(dir, "mknp_menus_plus_attach.txt");
-                HANDLE h = CreateFileA(dir, GENERIC_WRITE, FILE_SHARE_READ,
-                                       NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-                if (h != INVALID_HANDLE_VALUE) {
-                    DWORD w = 0;
-                    WriteFile(h, "ATTACH v04", 10, &w, NULL);
-                    CloseHandle(h);
-                }
-            }
-        }
-    }
     if (reason == 0) { /* DLL_PROCESS_DETACH */
         if (g_log != INVALID_HANDLE_VALUE) { CloseHandle(g_log); g_log = INVALID_HANDLE_VALUE; }
     }
