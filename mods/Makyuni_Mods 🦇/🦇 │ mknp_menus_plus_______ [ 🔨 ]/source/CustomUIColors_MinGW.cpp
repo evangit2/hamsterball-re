@@ -841,7 +841,7 @@ static void init_config_path(void)
                 *(last + 1) = '\0';
                 nc_strncpy(g_config_path, dllPath, MAX_PATH - 1);
                 nc_strncpy(g_config_path + nc_strlen(g_config_path),
-                           "mknp_menus_plus.jsonc",
+                           "mknp_menus_plus.set",
                            MAX_PATH - nc_strlen(g_config_path) - 1);
                 g_config_path[MAX_PATH - 1] = '\0';
                 return;
@@ -850,7 +850,7 @@ static void init_config_path(void)
     }
 
     // Fallback: use current directory
-    nc_strncpy(g_config_path, "mknp_menus_plus.jsonc", MAX_PATH - 1);
+    nc_strncpy(g_config_path, "mknp_menus_plus.set", MAX_PATH - 1);
 }
 
 static const char* DEFAULT_CONFIG =

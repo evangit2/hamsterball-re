@@ -1,9 +1,9 @@
 /*
  * CustomUIColors.cpp — HB+ v2.0 Mod
  *
- * Reads mknp_menus_plus.txt and patches menu UI colors in Hamsterball.
+ * Reads mknp_menus_plus.set and patches menu UI colors in Hamsterball.
  *
- * Config format (mknp_menus_plus.txt):
+ * Config format (mknp_menus_plus.set):
  *   - LOADING SCREEN -
  *   "Click here" button - Off = #FFFFFF
  *   "Click here" button - On = #FFFFFF
@@ -204,9 +204,9 @@ static void init_config_path(void)
     GetModuleFileNameA(hSelf, g_config_path, MAX_PATH);
     char* p = strrchr(g_config_path, '\\');
     if (p) {
-        strcpy(p + 1, "mknp_menus_plus.txt");
+        strcpy(p + 1, "mknp_menus_plus.set");
     } else {
-        strcpy(g_config_path, "mknp_menus_plus.txt");
+        strcpy(g_config_path, "mknp_menus_plus.set");
     }
 }
 
