@@ -133,7 +133,7 @@ static StringSite g_string_sites[] = {
 static char g_config_path[MAX_PATH] = {0};
 
 // -- Probe logging (diagnostic build): mknp_menus_plus.log next to the .set --
-static HANDLE g_log = INVALID_HANDLE_VALUE;
+HANDLE g_log = INVALID_HANDLE_VALUE;
 
 static void log_open(void)
 {
