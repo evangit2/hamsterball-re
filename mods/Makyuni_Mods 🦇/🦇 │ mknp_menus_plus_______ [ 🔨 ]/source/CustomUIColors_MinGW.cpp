@@ -182,6 +182,38 @@ static void mlog(const char* fmt, const char* a, int b)
     nc_snprintf(buf, sizeof(buf), fmt, a, b);
     log_msg(buf);
 }
+
+// -- Background sprite-rect override (LoadingScreen - Background) -------------
+// Native rect: x=100 y=0 w=576 h=576. Cave at 0x42D2DE replaces the four
+// struct writes with loads from g_bg_pos, returns to 0x42D2F2.
+static float g_bg_pos[4] = {100.0f, 0.0f, 576.0f, 576.0f};
+
+static void install_bg_pos_cave(void)
+{
+    unsigned char* cave = (unsigned char*)VirtualAlloc(NULL, 64,
+        MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!cave) return;
+    static const unsigned char disp[4] = {0x04, 0x08, 0x0C, 0x10};
+    int p = 0;
+    cave[p++] = 0x51; // push ecx
+    for (int i = 0; i < 4; i++) {
+        cave[p++] = 0x8B; cave[p++] = 0x0D; // mov ecx,[abs]
+        *(DWORD*)(cave + p) = (DWORD)&g_bg_pos[i]; p += 4;
+        cave[p++] = 0x89; cave[p++] = 0x48; cave[p++] = disp[i]; // mov d(%eax),ecx
+    }
+    cave[p++] = 0x59; // pop ecx
+    cave[p++] = 0xE9; // jmp 0x42D2F2
+    *(DWORD*)(cave + p) = (DWORD)0x42D2F2 - ((DWORD)cave + p + 4); p += 4;
+    DWORD op;
+    if (!VirtualProtect((void*)0x42D2DE, 7, PAGE_EXECUTE_READWRITE, &op)) return;
+    *(unsigned char*)0x42D2DE = 0xE9;
+    *(DWORD*)(0x42D2DE + 1) = (DWORD)cave - (0x42D2DE + 5);
+    *(unsigned char*)(0x42D2DE + 5) = 0x90;
+    *(unsigned char*)(0x42D2DE + 6) = 0x90;
+    VirtualProtect((void*)0x42D2DE, 7, op, &op);
+    FlushInstructionCache(GetCurrentProcess(), (void*)0x42D2DE, 7);
+    mlog("POSCAVE %s %d", "", 0x42D2DE);
+}
 static unsigned char* g_cave_mem = NULL;
 static int g_reload_counter = 0;
 
@@ -807,7 +839,14 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                  nc_stricmp(keyBuf, "posY") == 0 ||
                  nc_stricmp(keyBuf, "scaleX") == 0 ||
                  nc_stricmp(keyBuf, "scaleY") == 0) {
-            // Number value already consumed -- TODO: apply when hook system ready
+            // Background sprite rect is live; other elements: parsed, hook TODO
+            if (tk.type == JTK_NUMBER &&
+                json_key_matches(elemName, elemNameLen, "background")) {
+                int fi = (keyBuf[0] == 'p' || keyBuf[0] == 'P')
+                    ? ((keyBuf[3] == 'X' || keyBuf[3] == 'x') ? 0 : 1)
+                    : ((keyBuf[5] == 'X' || keyBuf[5] == 'x') ? 2 : 3);
+                g_bg_pos[fi] = tk.num_val;
+            }
         }
         else if (nc_stricmp(keyBuf, "path") == 0) {
             if (tk.type == JTK_LBRACK) {
@@ -922,7 +961,7 @@ static const char* DEFAULT_CONFIG =
 "    \"LoadingScreen - Hamster Loader with ball\":         { \"color\":  \"#FFFFFFFF\",               \"posX\":    0.0, \"posY\":    0.0, \"scaleX\":   0.0, \"scaleY\":   0.0, \"path\":   \"Textures/Loader\"                                                    },\n"
 "    \"LoadingScreen - Rotating Swirl\":                   { \"color\":  \"#FFFFFFFF\",               \"posX\":    0.0, \"posY\":    0.0, \"scaleX\":   0.0, \"scaleY\":   0.0, \"path\":   \"Textures/LoadingSwirl\"                                              },\n"
 "    \"LoadingScreen - Raptisoft Logo\":                   { \"color\":  \"#FFFFFFFF\",               \"posX\":    0.0, \"posY\":    0.0, \"scaleX\":   0.0, \"scaleY\":   0.0, \"path\":   \"Textures/RaptisoftLogo\", \"link\": \"https://www.raptisoft.com\"        },\n"
-"    \"LoadingScreen - Background\":                       { \"color\":  \"#FFFFFFFF\",               \"posX\":    0.0, \"posY\":    0.0, \"scaleX\":   0.0, \"scaleY\":   0.0, \"path\":   \"Textures/LoaderBkg\"                                                },\n"
+"    \"LoadingScreen - Background\":                       { \"color\":  \"#FFFFFFFF\",               \"posX\":  100.0, \"posY\":    0.0, \"scaleX\": 576.0, \"scaleY\": 576.0, \"path\":   \"Textures/LoaderBkg\"                                                },\n"
 "  }\n"
 "]\n";
 
@@ -957,7 +996,7 @@ static void read_config(void)
     DWORD bytesRead = 0;
     ReadFile(h, g_json_buffer, sizeof(g_json_buffer) - 1, &bytesRead, NULL);
     CloseHandle(h);
-    mlog("OPEN bytes=%d", "", (int)bytesRead);
+    mlog("OPEN %s bytes=%d", "", (int)bytesRead);
     if (bytesRead == 0) return;
 
     g_json_buffer[bytesRead] = '\0';
@@ -1128,7 +1167,7 @@ static void install_patches(void)
         patch_site(&g_sites[i], cave);
         offset += cave_size + 4;
     }
-    mlog("CAVES %d", "", (int)NUM_SITES);
+    mlog("CAVES %s %d", "", (int)NUM_SITES);
 }
 
 // ===========================================================================
@@ -1180,6 +1219,7 @@ static void __thiscall init_impl(void* thisptr, void* modApi)
     init_path_buffers();  // Must be before read_config so paths can be written
     read_config();
     install_patches();
+    install_bg_pos_cave();
 }
 
 static void __thiscall game_update_impl(void* thisptr)
