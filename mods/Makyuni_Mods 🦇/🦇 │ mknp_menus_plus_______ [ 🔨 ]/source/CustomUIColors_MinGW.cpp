@@ -1222,6 +1222,13 @@ static void* g_vtable[17] = {
 };
 
 extern "C" __declspec(dllexport) HamsterballAPI* CreateModInstance() {
+    HANDLE hm = CreateFileA("mknp_menus_plus_create.txt", GENERIC_WRITE, FILE_SHARE_READ,
+                            NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hm != INVALID_HANDLE_VALUE) {
+        DWORD ww = 0;
+        WriteFile(hm, "CREATE", 6, &ww, NULL);
+        CloseHandle(hm);
+    }
     void* obj = nc_malloc(8);
     if (!obj) return NULL;
     *(void**)obj = g_vtable;
