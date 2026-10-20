@@ -186,7 +186,7 @@ static void mlog(const char* fmt, const char* a, int b)
 // -- Background sprite-rect override (LoadingScreen - Background) -------------
 // Native rect: x=100 y=0 w=576 h=576. Cave at 0x42D2DE replaces the four
 // struct writes with loads from g_bg_pos, returns to 0x42D2F2.
-static float g_bg_pos[4] = {100.0f, 0.0f, 576.0f, 576.0f};
+static float g_bg_pos[4] = {100.0f, 0.0f, 600.0f, 600.0f};
 
 static void install_bg_pos_cave(void)
 {
@@ -961,7 +961,7 @@ static const char* DEFAULT_CONFIG =
 "    \"LoadingScreen - Hamster Loader with ball\":         { \"color\":  \"#FFFFFFFF\",               \"posX\":    0.0, \"posY\":    0.0, \"scaleX\":   0.0, \"scaleY\":   0.0, \"path\":   \"Textures/Loader\"                                                    },\n"
 "    \"LoadingScreen - Rotating Swirl\":                   { \"color\":  \"#FFFFFFFF\",               \"posX\":    0.0, \"posY\":    0.0, \"scaleX\":   0.0, \"scaleY\":   0.0, \"path\":   \"Textures/LoadingSwirl\"                                              },\n"
 "    \"LoadingScreen - Raptisoft Logo\":                   { \"color\":  \"#FFFFFFFF\",               \"posX\":    0.0, \"posY\":    0.0, \"scaleX\":   0.0, \"scaleY\":   0.0, \"path\":   \"Textures/RaptisoftLogo\", \"link\": \"https://www.raptisoft.com\"        },\n"
-"    \"LoadingScreen - Background\":                       { \"color\":  \"#FFFFFFFF\",               \"posX\":  100.0, \"posY\":    0.0, \"scaleX\": 576.0, \"scaleY\": 576.0, \"path\":   \"Textures/LoaderBkg\"                                                },\n"
+"    \"LoadingScreen - Background\":                       { \"color\":  \"#FFFFFFFF\",               \"posX\":  100.0, \"posY\":    0.0, \"scaleX\": 600.0, \"scaleY\": 600.0, \"path\":   \"Textures/LoaderBkg\"                                                },\n"
 "  }\n"
 "]\n";
 
