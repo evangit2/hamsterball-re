@@ -162,7 +162,7 @@ static void log_open(void)
         }
     }
     if (g_log != INVALID_HANDLE_VALUE) {
-        const char* init = "INIT menus_plus teststr2\r\n";
+        const char* init = "INIT menus_plus verbuf\r\n";
         DWORD w = 0;
         WriteFile(g_log, init, (DWORD)nc_strlen(init), &w, NULL);
     }
@@ -332,13 +332,11 @@ static void install_ver_datapatch(void)
 static void apply_version_draw(void)
 {
     if (g_dry_run && !ENABLE_VERSION) { mlog("SKIP verdraw %s %d", "", 0); return; }
-    // TEST: version slot draws hardcoded "TEST" at native pos (525,265),
-    // version color + shadow stock. Proves custom-buffer-to-screen.
+    // Version slot = the new string. Buffer/pos come from the .set Version
+    // block; stock V3.6 is bypassed (nothing draws it anymore).
     install_ver_datapatch();
-    nc_strcpy(g_ver_buf, "TEST");
-    mlog("TESTSET %s %d", "", 0);
-    ver_push32(0x426479, 0x20D);
-    ver_push32(0x426474, 0x109);
+    ver_push32(0x426479, (DWORD)g_ver_x);
+    ver_push32(0x426474, (DWORD)g_ver_y);
 }
 // True if a redirected image resolves to a real file (game-root relative).
 // The menu draws a NULL texture as a null-call Draw crash, so never
