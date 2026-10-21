@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02u — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02w — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -191,7 +191,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02u self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02w self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -339,7 +339,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02u: single small line with bottom-right shadow (version-text style).
+/* v02w: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -385,6 +385,7 @@ static void draw_status(void* font, const char* text) {
 static void draw_direct(void);
 static void draw_from_frame(void);
 static DWORD g_slotRet;
+static DWORD g_dummy;         /* branchless store sink */
 
 /* ── .set file + dev keybindings ───────────────────────────────────── */
 /* mknp_devmode.set (jsonc, next to the DLL) maps action names to
@@ -1372,35 +1373,43 @@ static void install_draw_hook(void) {
     *(DWORD*)p = (HOOK2_ADDR + 7) - ((DWORD)p + 4);
     p += 4;
 
-    /* Transparent capture: count the hit, record the live font, jump
-     * to the trampoline. No stack use, no register use (flags saved and
-     * restored), no branches: orig+7 sees exactly the caller state.
-     * Drawing happens in the frame hook, never here. */
-    /* Branchless dual-mode detour: capture always, route orig's return
-     * via CMOV (no branches). Boot mode (g_postBoot=0) writes retC back
-     * over itself (no-op) and jumps to the trampoline: orig returns
-     * straight to the caller, nothing else runs on this path. Post-boot
-     * mode routes through afterCode (draw + return to caller). orig+7
-     * always sees exact caller state (flags restored via popfd). */
+    /* Branchless dual-mode detour with reentry-safe slot: capture
+     * always, route orig's return via CMOV (no branches).
+     * route = postBoot && !inDraw. Boot mode and our-own-draw reentry
+     * write retC back over itself (no-op) and store to a dummy (the live
+     * slot untouched); post-boot mode stores retC and routes through
+     * afterCode (draw + return to caller). All entry registers and flags
+     * are restored, so orig+7 sees exactly the caller state. */
     p = cave;
     *p++ = 0x9C;                                 /* pushfd */
+    *p++ = 0x51;                                 /* push ecx */
+    *p++ = 0x50;                                 /* push eax */
     *p++ = 0xFF; *p++ = 0x05;                    /* inc dword [g_hitCount] */
     *(DWORD*)p = (DWORD)&g_hitCount; p += 4;
     *p++ = 0x89; *p++ = 0x0D;                    /* mov [g_drawFont],ecx */
     *(DWORD*)p = (DWORD)&g_drawFont; p += 4;
-    *p++ = 0x8B; *p++ = 0x44; *p++ = 0x24; *p++ = 0x04;
-                                                 /* mov eax,[esp+4] (retC) */
-    *p++ = 0xA3;                                /* mov [g_slotRet],eax */
+    *p++ = 0x8B; *p++ = 0x44; *p++ = 0x24; *p++ = 0x0C;
+                                                 /* mov eax,[esp+12] (retC) */
+    *p++ = 0x8D; *p++ = 0x0D;                    /* lea ecx,[g_slotRet] */
     *(DWORD*)p = (DWORD)&g_slotRet; p += 4;
+    *p++ = 0x8D; *p++ = 0x15;                    /* lea edx,[g_dummy] */
+    *(DWORD*)p = (DWORD)&g_dummy; p += 4;
+    *p++ = 0xA0;                                /* mov al,[g_postBoot] */
+    *(DWORD*)p = (DWORD)&g_postBoot; p += 4;
+    *p++ = 0x8A; *p++ = 0x0D;                    /* mov cl,[g_inDraw] */
+    *(DWORD*)p = (DWORD)&g_inDraw; p += 4;
+    *p++ = 0x80; *p++ = 0xF1; *p++ = 0x01;       /* xor cl,1 */
+    *p++ = 0x20; *p++ = 0xC8;                    /* and al,cl (route? ZF) */
+    *p++ = 0x0F; *p++ = 0x44; *p++ = 0xCA;       /* cmovz ecx,edx */
+    *p++ = 0x89; *p++ = 0x01;                    /* mov [ecx],eax */
     *p++ = 0xBA;                                /* mov edx,afterAddr */
     afterImm = p;
     *(DWORD*)p = 0; p += 4;                      /* patched below */
-    *p++ = 0x80; *p++ = 0x3D;                    /* cmp byte [g_postBoot],1 */
-    *(DWORD*)p = (DWORD)&g_postBoot; p += 4;
-    *p++ = 0x01;
-    *p++ = 0x0F; *p++ = 0x45; *p++ = 0xD0;       /* cmovne edx,eax */
-    *p++ = 0x89; *p++ = 0x54; *p++ = 0x24; *p++ = 0x04;
-                                                 /* mov [esp+4],edx */
+    *p++ = 0x0F; *p++ = 0x44; *p++ = 0xD0;       /* cmovz edx,eax */
+    *p++ = 0x89; *p++ = 0x54; *p++ = 0x24; *p++ = 0x0C;
+                                                 /* mov [esp+12],edx */
+    *p++ = 0x58;                                 /* pop eax */
+    *p++ = 0x59;                                 /* pop ecx */
     *p++ = 0x9D;                                 /* popfd */
     *p++ = 0xE9;                                /* jmp trampoline */
     *(DWORD*)p = (DWORD)tramp - ((DWORD)p + 4);
