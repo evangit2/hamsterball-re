@@ -162,7 +162,7 @@ static void log_open(void)
         }
     }
     if (g_log != INVALID_HANDLE_VALUE) {
-        const char* init = "INIT mknp_menus_plus probe\r\n";
+        const char* init = "INIT menus_plus novercave\r\n";
         DWORD w = 0;
         WriteFile(g_log, init, (DWORD)nc_strlen(init), &w, NULL);
     }
@@ -189,7 +189,7 @@ static void mlog(const char* fmt, const char* a, int b)
 // struct writes with loads from g_bg_pos, returns to 0x42D2F2.
 static float g_bg_pos[4] = {100.0f, 0.0f, 600.0f, 600.0f};
 
-static const int g_dry_run = 1; // isolate crash: parse+log only, zero patches
+static const int g_dry_run = 0; // full mod minus version JMPs (bisect)
 #define ENABLE_VERSION 0 // back to full dry-run for fingerprint build
 
 static void install_bg_pos_cave(void)
@@ -1378,8 +1378,6 @@ static void __thiscall init_impl(void* thisptr, void* modApi)
     read_config();
     install_patches();
     install_bg_pos_cave();
-    install_ver_str_cave();
-    install_ver_post_cave();
     {
         // FNV-1a over the menu-draw region: proves whether his exe matches mine
         unsigned char* p = (unsigned char*)0x426000;
