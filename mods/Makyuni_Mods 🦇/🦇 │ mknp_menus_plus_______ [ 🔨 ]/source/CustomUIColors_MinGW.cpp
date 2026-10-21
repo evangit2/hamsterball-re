@@ -341,7 +341,7 @@ static void install_title_caves(void)
 #if TITLE_ENABLE
     install_title_cave0();
 #else
-    mlog("TITLENONE %d", 0);
+    mlog("TITLENONE %s %d", "", 0);
 #endif
 }
 
