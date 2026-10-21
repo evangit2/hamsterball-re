@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v01u — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v01v — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -151,7 +151,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v01u self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v01v self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -299,7 +299,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v01u: single small line with bottom-right shadow (version-text style).
+/* v01v: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -592,13 +592,37 @@ static void dev_action_fire(const char* name) {
         ind_wait_text();
         g_indState = IND_WAIT;
         {   /* one-shot resolution facts: why freeze will/won't engage */
-            DWORD bb = 0;
+            DWORD app = 0, raw = 0, bb = 0;
             char nm[16] = {0};
-            int ok = wait_board_ok(&bb, nm);
-            int flg = (ok && !IsBadReadPtr((void*)bb, BOARD_PAUSE + 1))
-                      ? *(BYTE*)(bb + BOARD_PAUSE) : -1;
-            log_msg("DEVBIND WAIT-enter: board=%p name=%.11s flag=%d\n",
-                    (void*)bb, nm, flg);
+            char hex[40];
+            int ok, flg = -1, vt = 0, r178 = 0, hi = 0, k;
+            ok = wait_board_ok(&bb, nm);
+            if (!IsBadReadPtr((void*)APP_PTR, 4)) {
+                app = *(DWORD*)APP_PTR;
+                if (app > 0x10000 &&
+                    !IsBadReadPtr((void*)(app + APP_BOARD), 4)) {
+                    raw = *(DWORD*)(app + APP_BOARD);
+                    r178 = 1;
+                    if (raw > 0x10000 &&
+                        !IsBadReadPtr((void*)raw, 4))
+                        vt = *(DWORD*)raw;
+                    for (k = 0; k < 12 && hi < 36; k++) {
+                        BYTE c = 0;
+                        if (raw > 0x10000 &&
+                            !IsBadReadPtr((void*)(raw + BOARD_NAME + (DWORD)k), 1))
+                            c = *(BYTE*)(raw + BOARD_NAME + (DWORD)k);
+                        hex[hi++] = "0123456789ABCDEF"[(c >> 4) & 15];
+                        hex[hi++] = "0123456789ABCDEF"[c & 15];
+                        hex[hi++] = ' ';
+                    }
+                    hex[hi] = 0;
+                    if (ok && !IsBadReadPtr((void*)bb, BOARD_PAUSE + 1))
+                        flg = *(BYTE*)(bb + BOARD_PAUSE);
+                }
+            }
+            if (!hi) { hex[0] = '-'; hex[1] = 0; }
+            log_msg("DEVBIND WAIT-enter: app=%p raw178=%s%p vtbl=%08X namehex=%s flag=%d\n",
+                    (void*)app, r178 ? "" : "BAD+", (void*)raw, vt, hex, flg);
         }
         log_msg("DEVBIND reset-best-times: awaiting level (ALL)\n");
         return;
@@ -809,8 +833,8 @@ static void draw_direct(void) {
     if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
 
     text = g_devmode ? "devmode: on" : "devmode: off";
-    /* v01u: exactly one status draw per frame. The 0x46C1F1 frame hook
-     * arms one draw per frame; this consumes it. (v01u's 33ms time gate
+    /* v01v: exactly one status draw per frame. The 0x46C1F1 frame hook
+     * arms one draw per frame; this consumes it. (v01v's 33ms time gate
      * skipped whole frames -> fast blink. Same-frame overdraw is
      * invisible; zero-draw frames blink — so arm-per-frame + consume.) */
     if (!g_drawArmed) return;
@@ -981,7 +1005,7 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v01u: arms one draw per frame */
+    install_frame_hook();  /* v01v: arms one draw per frame */
     install_draw_hook();   /* DrawGlyph post-draw consumes the arm */
     CreateThread(NULL, 0, poll_thread, NULL, 0, NULL);
     return 0;
