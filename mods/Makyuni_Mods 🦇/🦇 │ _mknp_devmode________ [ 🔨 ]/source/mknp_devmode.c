@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v01t — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v01u — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -120,7 +120,7 @@ static volatile int g_inDraw = 0;     /* reentrancy guard for our own draw */
 static void* g_drawFont = 0;          /* live Font* captured from the hook's ECX */
 static int g_drawCount = 0;           /* successful draw attempts (diagnostic) */
 
-/* ── Log (mknp_devmode.log next to the DLL, %TEMP% fallback) ────────── */
+/* ── Log (_mknp_devmode.log next to the DLL, %TEMP% fallback) ────────── */
 
 static FILE* g_log = NULL;
 
@@ -140,18 +140,18 @@ static void log_open(void) {
         }
     }
     if (dir[0]) {
-        snprintf(path, MAX_PATH, "%smknp_devmode.log", dir);
+        snprintf(path, MAX_PATH, "%s_mknp_devmode.log", dir);
         g_log = fopen(path, "a");
     }
     if (!g_log) {
         char tmp[MAX_PATH];
         if (GetTempPathA(MAX_PATH, tmp)) {
-            snprintf(path, MAX_PATH, "%smknp_devmode.log", tmp);
+            snprintf(path, MAX_PATH, "%s_mknp_devmode.log", tmp);
             g_log = fopen(path, "a");
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v01t self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v01u self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -162,6 +162,60 @@ static void log_msg(const char* fmt, ...) {
     vfprintf(g_log, fmt, ap);
     va_end(ap);
     fflush(g_log);
+}
+
+/* ── Devmode persistence (_mknp_devmode.state next to the DLL) ──────── */
+/* Remember the F8 toggle across runs: 1 byte ("1"/"0"). Loaded in init
+ * (default OFF when missing/unreadable), saved on every F8 toggle. */
+
+#define STATE_FNAME "_mknp_devmode.state"
+
+static void state_load(void) {
+    char dir[MAX_PATH], path[MAX_PATH], buf[8];
+    HMODULE hSelf = NULL;
+    FILE* f;
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                         | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                         (LPCSTR)state_load, &hSelf) && hSelf) {
+        GetModuleFileNameA(hSelf, dir, MAX_PATH);
+        {
+            char* slash = strrchr(dir, '\\');
+            if (slash) {
+                strcpy(slash + 1, STATE_FNAME);
+                f = fopen(dir, "r");
+                if (f) {
+                    if (fgets(buf, sizeof(buf), f) && buf[0] == '1')
+                        g_devmode = 1;
+                    fclose(f);
+                    log_msg("STATE loaded devmode=%d\n", g_devmode);
+                    return;
+                }
+            }
+        }
+    }
+    log_msg("STATE no file, devmode=%d\n", g_devmode);
+}
+
+static void state_save(void) {
+    char dir[MAX_PATH];
+    HMODULE hSelf = NULL;
+    FILE* f;
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                         | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                         (LPCSTR)state_save, &hSelf) && hSelf) {
+        GetModuleFileNameA(hSelf, dir, MAX_PATH);
+        {
+            char* slash = strrchr(dir, '\\');
+            if (slash) {
+                strcpy(slash + 1, STATE_FNAME);
+                f = fopen(dir, "w");
+                if (f) {
+                    fputc(g_devmode ? '1' : '0', f);
+                    fclose(f);
+                }
+            }
+        }
+    }
 }
 
 /* ── Crash spy (first-chance VEH): logs REAL fault EIP, then passes ── */
@@ -245,7 +299,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v01t: single small line with bottom-right shadow (version-text style).
+/* v01u: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -498,37 +552,6 @@ static int reset_best_times_sel(int sel) {
     return 1;
 }
 
-static void dev_action_fire(const char* name) {
-    if (!strcmp(name, "Time Trials - Reset Best Times")) {
-        if (g_indState != IND_REST) return;   /* only from resting state */
-        g_indSel = -1;                        /* selector starts at ALL */
-        g_indUntil = 0;                       /* WAIT is sticky, no expiry */
-        ind_wait_text();
-        g_indState = IND_WAIT;
-        log_msg("DEVBIND reset-best-times: awaiting level (ALL)\n");
-        return;
-    }
-    log_msg("DEVBIND unhandled action: %s\n", name);
-    /* unknown actions show their name briefly in yellow (legacy path) */
-    strncpy(g_indicator, name, 127);
-    g_indicator[127] = 0;
-    g_indState = IND_WAIT;
-    g_indUntil = GetTickCount() + IND_MS;
-}
-
-/* F8 poll on a private background thread: Sleep(16) loop, edge-detect,
- * toggle + log. Zero game interaction, works in every game state. Exits
- * when the App quit flag is set (polite shutdown, no hang). */
-
-/* ── WAIT-state input capture ─────────────────────────────────────── */
-/* While devmode is ON and the indicator is WAIT, freeze the game with its
- * own pause: the poll loop holds board+0x874=1 on the live race board and
- * restores the prior value on every WAIT exit (confirm, escape, timeout,
- * devmode off). Dev keys are never eaten — the selector keeps its plain
- * GetAsyncKeyState edges. Identity guard: App+0x178 must name a *Board
- * (menu shells are skipped, never written). The native pause menu may
- * show while frozen; gameplay, timers and physics all stop. */
-
 #define APP_BOARD     0x178u
 #define BOARD_PAUSE   0x874u
 #define BOARD_NAME    0x868u
@@ -560,6 +583,47 @@ static int wait_board_ok(DWORD *boardOut, char *nameOut) {
     *boardOut = board;
     return 1;
 }
+
+static void dev_action_fire(const char* name) {
+    if (!strcmp(name, "Time Trials - Reset Best Times")) {
+        if (g_indState != IND_REST) return;   /* only from resting state */
+        g_indSel = -1;                        /* selector starts at ALL */
+        g_indUntil = 0;                       /* WAIT is sticky, no expiry */
+        ind_wait_text();
+        g_indState = IND_WAIT;
+        {   /* one-shot resolution facts: why freeze will/won't engage */
+            DWORD bb = 0;
+            char nm[16] = {0};
+            int ok = wait_board_ok(&bb, nm);
+            int flg = (ok && !IsBadReadPtr((void*)bb, BOARD_PAUSE + 1))
+                      ? *(BYTE*)(bb + BOARD_PAUSE) : -1;
+            log_msg("DEVBIND WAIT-enter: board=%p name=%.11s flag=%d\n",
+                    (void*)bb, nm, flg);
+        }
+        log_msg("DEVBIND reset-best-times: awaiting level (ALL)\n");
+        return;
+    }
+    log_msg("DEVBIND unhandled action: %s\n", name);
+    /* unknown actions show their name briefly in yellow (legacy path) */
+    strncpy(g_indicator, name, 127);
+    g_indicator[127] = 0;
+    g_indState = IND_WAIT;
+    g_indUntil = GetTickCount() + IND_MS;
+}
+
+/* F8 poll on a private background thread: Sleep(16) loop, edge-detect,
+ * toggle + log. Zero game interaction, works in every game state. Exits
+ * when the App quit flag is set (polite shutdown, no hang). */
+
+/* ── WAIT-state input capture ─────────────────────────────────────── */
+/* While devmode is ON and the indicator is WAIT, freeze the game with its
+ * own pause: the poll loop holds board+0x874=1 on the live race board and
+ * restores the prior value on every WAIT exit (confirm, escape, timeout,
+ * devmode off). Dev keys are never eaten — the selector keeps its plain
+ * GetAsyncKeyState edges. Identity guard: App+0x178 must name a *Board
+ * (menu shells are skipped, never written). The native pause menu may
+ * show while frozen; gameplay, timers and physics all stop. */
+
 
 static void wait_freeze_tick(void) {
     DWORD board;
@@ -610,6 +674,7 @@ static DWORD WINAPI poll_thread(LPVOID param) {
         down = (ks & 0x8000) != 0;
         if (down && !g_prevF8) {
             g_devmode = !g_devmode;
+            state_save();
             log_msg("F8 devmode=%d (%s)\n", g_devmode, g_devmode ? "on" : "off");
             if (g_devmode && set_changed()) set_load();
             if (!g_devmode && g_indState == IND_WAIT) {
@@ -744,8 +809,8 @@ static void draw_direct(void) {
     if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
 
     text = g_devmode ? "devmode: on" : "devmode: off";
-    /* v01t: exactly one status draw per frame. The 0x46C1F1 frame hook
-     * arms one draw per frame; this consumes it. (v01t's 33ms time gate
+    /* v01u: exactly one status draw per frame. The 0x46C1F1 frame hook
+     * arms one draw per frame; this consumes it. (v01u's 33ms time gate
      * skipped whole frames -> fast blink. Same-frame overdraw is
      * invisible; zero-draw frames blink — so arm-per-frame + consume.) */
     if (!g_drawArmed) return;
@@ -912,10 +977,11 @@ static void install_draw_hook(void) {
 static DWORD WINAPI init_thread(LPVOID param) {
     (void)param;
     log_open();
+    state_load();   /* restore last F8 toggle */
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v01t: arms one draw per frame */
+    install_frame_hook();  /* v01u: arms one draw per frame */
     install_draw_hook();   /* DrawGlyph post-draw consumes the arm */
     CreateThread(NULL, 0, poll_thread, NULL, 0, NULL);
     return 0;
