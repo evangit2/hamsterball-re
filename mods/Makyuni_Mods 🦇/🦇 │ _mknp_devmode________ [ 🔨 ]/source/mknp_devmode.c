@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02h — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02i — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -151,7 +151,7 @@ static DWORD g_lastDrawTick = 0;   /* fallback throttle when C6F1 never fires */
 static int g_frameHookOk = 0;     /* 1 once the 0x46C1F1 frame hook is live */
 static volatile int g_inDraw = 0;     /* reentrancy guard for our own draw */
 static void* g_drawFont = 0;
-static DWORD g_drawXf = 0x004CF300u;   /* xform of the live DrawGlyph call */          /* live Font* captured from the hook's ECX */
+          /* live Font* captured from the hook's ECX */
 static int g_drawCount = 0;           /* successful draw attempts (diagnostic) */
 
 /* ── Log (_mknp_devmode.log next to the DLL, %TEMP% fallback) ────────── */
@@ -185,7 +185,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02h self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02i self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -333,7 +333,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02h: single small line with bottom-right shadow (version-text style).
+/* v02i: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -345,7 +345,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
 static void draw_status_ex(void* font, const char* text, int x, int y, DWORD scaleBits, const DWORD* rgb) {
     const unsigned int one = 0x3F800000u;   /* 1.0f */
     const unsigned int zero = 0x00000000u;  /* 0.0f */
-    DWORD xf = g_drawXf ? g_drawXf : 0x004CF300u;   /* live call xform, identity fallback */
+    const unsigned int xf = 0x004CF300u;    /* static identity transform */
     DWORD params[8];
     DWORD saved = 0;
     int poked = 0;
@@ -777,8 +777,8 @@ static void wait_enter_diag(void)
                     st, (void*)g_tapBoard, tv, tx);
             }
         }
-        log_msg("DEVBIND WAIT-enter: xform=%p app=%p raw178=%s%p vtbl=%08X namehex=%s flag=%d\n",
-                (void*)g_drawXf, (void*)app, r178 ? "" : "BAD+", (void*)raw, vt, hex, flg);
+        log_msg("DEVBIND WAIT-enter: app=%p raw178=%s%p vtbl=%08X namehex=%s flag=%d\n",
+                (void*)app, r178 ? "" : "BAD+", (void*)raw, vt, hex, flg);
     }
 
 static void dev_action_fire(const char* name) {
@@ -1300,9 +1300,6 @@ static void install_draw_hook(void) {
      * ECX (font) and p4 (xform) so the post-draw uses the exact font and
      * coordinate space the game is drawing with. */
     p = cave;
-    *p++ = 0x8B; *p++ = 0x44; *p++ = 0x24; *p++ = 0x10;   /* mov eax,[esp+16] (p4 xform) */
-    *p++ = 0xA3;                                         /* mov [g_drawXf],eax */
-    *(DWORD*)p = (DWORD)&g_drawXf; p += 4;
     *p++ = 0x89; *p++ = 0x0D;                    /* mov [g_drawFont],ecx */
     *(DWORD*)p = (DWORD)&g_drawFont; p += 4;
     *p++ = 0x83; *p++ = 0x3D;                    /* cmp byte ptr [g_inDraw],1 */
@@ -1348,7 +1345,7 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v02h: arms one draw per frame */
+    install_frame_hook();  /* v02i: arms one draw per frame */
     install_draw_hook();
     install_pause_tap();
     CreateThread(NULL, 0, hook_thread, NULL, 0, NULL);   /* DrawGlyph post-draw consumes the arm */
