@@ -326,9 +326,10 @@ static void install_title_cave0(void)
     title_cave_jmp(0x4261FF, cave, 0x89);
 }
 
-// Zero-or-native tile cave builder (tiles 1-3). native_ops = exact bytes of
-// the original rect writes starting at site; resume = draw-block continue.
-static void install_title_zero_cave(DWORD site, DWORD resume,
+// Hide-or-native tile cave builder (tiles 1-3). Hidden = parked fully
+// off-screen (0,2000,400,300): valid dims, zero pixels. (Zeroed rects
+// crashed real Windows at menu Draw; degenerate w/h suspected.)
+static void install_title_hide_cave(DWORD site, DWORD resume,
                                     const unsigned char* native_ops, int native_len,
                                     unsigned char expect)
 {
@@ -340,10 +341,13 @@ static void install_title_zero_cave(DWORD site, DWORD resume,
     *(DWORD*)(cave + p) = (DWORD)&g_title_active; p += 4;
     cave[p++] = 0x00;
     jz = p; cave[p++] = 0x74; cave[p++] = 0x00;
-    for (int i = 0; i < 4; i++) { // mod: zero rect (hide tile)
-        cave[p++] = 0xC7; cave[p++] = 0x40;
-        cave[p++] = (unsigned char)(0x04 + i * 4);
-        *(DWORD*)(cave + p) = 0x00000000; p += 4;
+    { // mod: park off-screen (0,2000,400,300)
+        static const DWORD off[4] = {0x00000000, 0x44FA0000, 0x43C80000, 0x43960000};
+        for (int i = 0; i < 4; i++) {
+            cave[p++] = 0xC7; cave[p++] = 0x40;
+            cave[p++] = (unsigned char)(0x04 + i * 4);
+            *(DWORD*)(cave + p) = off[i]; p += 4;
+        }
     }
     cave[p++] = 0xE9;
     *(DWORD*)(cave + p) = (DWORD)resume - ((DWORD)cave + p + 4); p += 4;
@@ -366,9 +370,9 @@ static void install_title_caves(void)
         0x89,0x58,0x04, 0x89,0x68,0x08,
         0x89,0x58,0x0C, 0x89,0x68,0x10 };
     install_title_cave0();
-    install_title_zero_cave(0x42625D, 0x42626D, n1, sizeof(n1), 0x89);
-    install_title_zero_cave(0x4262AF, 0x4262BF, n2, sizeof(n2), 0xC7);
-    install_title_zero_cave(0x426301, 0x42630D, n3, sizeof(n3), 0x89);
+    install_title_hide_cave(0x42625D, 0x42626D, n1, sizeof(n1), 0x89);
+    install_title_hide_cave(0x4262AF, 0x4262BF, n2, sizeof(n2), 0xC7);
+    install_title_hide_cave(0x426301, 0x42630D, n3, sizeof(n3), 0x89);
 }
 
 // Post-draw: restore font scale to 1.0 so other texts sharing the font stay
