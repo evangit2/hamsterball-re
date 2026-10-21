@@ -4,16 +4,41 @@ import io
 import os
 import subprocess
 import time
+import weakref
 from pathlib import Path
 from typing import Optional
 
 import psutil
 
-from .config import Config
+from .config import Config, match_slot_proc
 from . import fpsmod
 
 
+def any_game_live(exclude_pids: Optional[set] = None) -> list[int]:
+    """PIDs of all live Hamsterball game processes, optionally excluding some.
+
+    Zombie (defunct) entries are ignored — they are already dead.
+    """
+    found: list[int] = []
+    for proc in psutil.process_iter(["pid", "name", "status"]):
+        try:
+            if (proc.info.get("name") or "").lower() != "hamsterball.exe":
+                continue
+            if proc.info.get("status") == psutil.STATUS_ZOMBIE:
+                continue
+            pid = proc.info["pid"]
+            if not exclude_pids or pid not in exclude_pids:
+                found.append(pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return found
+
+
 class GameManager:
+    # All live managers, for cross-slot safety decisions (e.g. wineserver -k
+    # must not nuke other slots' Wine when any game is still running).
+    _registry: "weakref.WeakSet[GameManager]" = weakref.WeakSet()
+
     def __init__(self, cfg: Optional[Config] = None):
         self.cfg = cfg or Config()
         self.xvfb_proc: Optional[subprocess.Popen] = None
@@ -21,8 +46,10 @@ class GameManager:
         self.wineserver_proc: Optional[subprocess.Popen] = None
         self.log_file: Optional[io.TextIOWrapper] = None
         self.start_time: Optional[float] = None
+        self.pinned_pid: Optional[int] = None
         self._lock = asyncio.Lock()
         self._started_by_hbtestd = False
+        GameManager._registry.add(self)
 
     async def start_xvfb(self) -> bool:
         """Start a virtual X server if not already running."""
@@ -85,10 +112,12 @@ class GameManager:
                 return {"success": False, "error": f"fps mod install failed: {msg}"}
             fps_mod_files = msg  # type: ignore[assignment]
 
-        # If game is already running on the right display, reuse it.
+        # If our slot's game is already running (pinned or freshly scanned),
+        # reuse it — never another slot's game.
         existing_pid = self._find_game_pid()
         if existing_pid:
             self.start_time = time.time()
+            self.pinned_pid = existing_pid
             return {
                 "success": True,
                 "pid": existing_pid,
@@ -101,11 +130,7 @@ class GameManager:
             self.log_file.close()
         self.log_file = open(self.cfg.log_path, "a")
 
-        env = os.environ.copy()
-        env["DISPLAY"] = self.cfg.display
-        if self.cfg.libgl_software:
-            env["LIBGL_ALWAYS_SOFTWARE"] = "1"
-        # Ensure d3d8.dll proxy is loaded as native (not Wine builtin)
+        env = self.cfg.launch_env()
         env.setdefault("WINEDLLOVERRIDES", "d3d8=native")
         env.setdefault("WINEDEBUG", "-all")
 
@@ -143,6 +168,10 @@ class GameManager:
                 "stdout_tail": self._tail_log(10),
             }
 
+        # Pin the PID we launched so later lookups never latch onto another
+        # slot's (or another user's) game, even with an identical exe name.
+        self.pinned_pid = pid
+
         result = {"success": True, "pid": pid, "display": self.cfg.display}
         if fps_mod_files:
             result["fps_mod_installed"] = fps_mod_files
@@ -159,9 +188,15 @@ class GameManager:
         if self.cfg.fps_mod_enabled:
             fpsmod.uninstall_mod(self.cfg)
 
-        # Kill the game first
+        own_pids: set[int] = set()
+        if self.game_proc and self.game_proc.pid:
+            own_pids.add(self.game_proc.pid)
+
+        # Kill our slot's game only: prefer the pinned PID, else a scoped scan.
+        # Never touch other slots' (or other users') games by bare name.
         pid = self._find_game_pid()
         if pid:
+            own_pids.add(pid)
             try:
                 p = psutil.Process(pid)
                 p.terminate()
@@ -172,6 +207,7 @@ class GameManager:
                 killed.append({"what": "game", "pid": pid})
             except Exception as e:
                 killed.append({"what": "game", "pid": pid, "error": str(e)})
+            self.pinned_pid = None
 
         if self.game_proc and self.game_proc.poll() is None:
             self.game_proc.terminate()
@@ -181,17 +217,27 @@ class GameManager:
                 self.game_proc.kill()
             killed.append({"what": "game_proc", "pid": self.game_proc.pid})
 
-        # Kill wineserver (cleans up lingering Wine processes)
-        try:
-            wineserver_proc = subprocess.run(
-                [self.cfg.wine_binary, "server", "-k"],
-                capture_output=True,
-                text=True,
-                timeout=10,
+        # wineserver -k kills EVERY Wine process on this host, including other
+        # users' games. Only run it when no game processes remain at all.
+        others = any_game_live(exclude_pids=own_pids)
+        if not others:
+            try:
+                env = self.cfg.launch_env()
+                wineserver_proc = subprocess.run(
+                    [self.cfg.wine_binary, "server", "-k"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    env=env,
+                )
+                killed.append({"what": "wineserver", "status": wineserver_proc.returncode})
+            except Exception as e:
+                killed.append({"what": "wineserver", "error": str(e)})
+        else:
+            killed.append(
+                {"what": "wineserver", "status": "skipped",
+                 "reason": f"{len(others)} other game(s) still running"}
             )
-            killed.append({"what": "wineserver", "status": wineserver_proc.returncode})
-        except Exception as e:
-            killed.append({"what": "wineserver", "error": str(e)})
 
         # Shutdown Xvfb if we started it
         if self.xvfb_proc and self.xvfb_proc.poll() is None:
@@ -206,28 +252,71 @@ class GameManager:
         self._started_by_hbtestd = False
         return {"success": True, "killed": killed}
 
+    def _proc_matches_slot(self, proc: psutil.Process) -> bool:
+        """Scoped ownership check: cmdline path or cwd ties it to our game dir."""
+        try:
+            with proc.oneshot():
+                name = proc.name()
+                try:
+                    cmdline = proc.cmdline()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    cmdline = []
+                try:
+                    cwd = proc.cwd()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    cwd = ""
+            return match_slot_proc(
+                name,
+                cmdline,
+                cwd,
+                self.cfg.game_executable_path,
+                os.path.basename(self.cfg.game_executable_path),
+                self.cfg.game_dir,
+            )
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
+
+    def _pinned_pid_live(self) -> Optional[int]:
+        """Return the pinned PID if it is still our slot's live game."""
+        if not self.pinned_pid:
+            return None
+        try:
+            p = psutil.Process(self.pinned_pid)
+            if p.status() == psutil.STATUS_ZOMBIE:
+                self.pinned_pid = None
+                return None
+            if self._proc_matches_slot(p):
+                return self.pinned_pid
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+        self.pinned_pid = None
+        return None
+
     def _find_game_pid(self) -> Optional[int]:
-        exe_path = self.cfg.game_executable_path.lower()
-        exe_name = os.path.basename(exe_path).lower()
-        game_dir = self.cfg.game_dir.lower()
+        # Fast path: the PID we launched (or explicitly reused).
+        pinned = self._pinned_pid_live()
+        if pinned:
+            return pinned
 
-        for proc in psutil.process_iter(["pid", "name", "cmdline"]):
-            name = (proc.info.get("name") or "").lower()
-            cmdline = proc.info.get("cmdline") or []
-
-            # Wine may expose the Windows PE name as the Linux process name
-            if name == exe_name:
-                return proc.info["pid"]
-
-            for s in cmdline:
-                lower = (s or "").lower().rstrip('"')
-                # Exact absolute path match (Wine launch)
-                if lower == exe_path:
-                    return proc.info["pid"]
-                # Must contain the real game directory to avoid matching
-                # strings like Ghidra's --program /Hamsterball.exe
-                if game_dir in lower and lower.endswith(exe_name):
-                    return proc.info["pid"]
+        # Scoped scan: only processes tied to this slot's game dir.
+        # (Zombies ignored; bare name matches ignored — they latch onto
+        # other users' games.)
+        for proc in psutil.process_iter(["pid", "name", "status"]):
+            try:
+                if proc.info.get("status") == psutil.STATUS_ZOMBIE:
+                    continue
+                name = (proc.info.get("name") or "").lower()
+                exe_name = os.path.basename(self.cfg.game_executable_path).lower()
+                if name != exe_name and name != "wine" and name != "wine64":
+                    continue
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            try:
+                p = psutil.Process(proc.info["pid"])
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            if self._proc_matches_slot(p):
+                return p.pid
         return None
 
     def is_running(self) -> bool:

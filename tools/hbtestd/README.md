@@ -60,6 +60,37 @@ Then restart Hermes or reload MCP servers.
 | `estimate_fps(samples)` | Approximate FPS from captures |
 | `wait(seconds)` | Sleep |
 
+## Multi-User Slots
+
+Several users can run live games at once. Each *slot* is an isolated
+`{display, game_dir, screenshot/log paths}` instance; every tool takes an
+optional `slot` parameter (default `"default"`, which preserves the old
+single-user behavior exactly).
+
+```python
+start_game(slot="bob")          # launch bob's game
+read_memory(address="0x4FDEEC", data_type="u32", slot="bob")
+screenshot(slot="bob")          # -> /tmp/hbtestd_screenshot_bob.png
+stop_game(slot="bob")           # kills only bob's game
+list_slots()                    # configured slots + live status
+```
+
+Extra slots come from `HBTESTD_SLOTS` JSON in the server's environment
+(unknown keys are rejected at startup):
+
+```bash
+HBTESTD_SLOTS='{"bob": {"display": ":100", "game_dir": "/home/evan/hb_bob"}}'
+```
+
+Slot safety rules (enforced in code, not convention):
+- PID lookups are scoped to the slot's game dir (exact exe path in cmdline
+  or process cwd); a bare `Hamsterball.exe` name match never counts, so one
+  slot can never latch onto another user's game. Zombies are ignored.
+- Launched PIDs are pinned; lookups prefer the pin while it is alive.
+- `stop_game` / crash-test cleanup kill only their own process tree.
+  `wineserver -k` runs only when zero game processes remain system-wide.
+- Optional per-slot `wineprefix` isolates Wine prefixes between slots.
+
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -72,6 +103,8 @@ Then restart Hermes or reload MCP servers.
 | `HBTESTD_SCREENSHOT_PATH` | `/tmp/hbtestd_screenshot.png` | Default screenshot file |
 | `HBTESTD_LOG_PATH` | `/tmp/hbtestd.log` | Game stdout/stderr log |
 | `HBTESTD_LIBGL_SOFTWARE` | `1` | Force llvmpipe software rendering |
+| `HBTESTD_SLOTS` | _(unset)_ | Extra slots JSON: `{"name": {"display", "game_dir", ...}}` |
+| `HBTESTD_WINEPREFIX` | _(unset)_ | Isolated Wine prefix for the default slot |
 
 ## Runtime Telemetry
 

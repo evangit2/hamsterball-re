@@ -25,7 +25,7 @@ from typing import Optional
 
 import psutil
 
-from .config import Config
+from .config import Config, match_slot_proc
 
 
 @dataclass
@@ -101,31 +101,82 @@ class DllTester:
         except Exception:
             return False
 
-    def _kill_game(self) -> None:
-        """Kill any running game/wine processes."""
-        for proc in psutil.process_iter(["pid", "name", "cmdline"]):
-            name = (proc.info.get("name") or "").lower()
-            if name in ("hamsterball.exe", "wine", "wine64", "wineserver"):
+    def _kill_game(self, own_proc: Optional[subprocess.Popen] = None) -> None:
+        """Kill only our own test game process tree.
+
+        Previously this killed every wine/Hamsterball process on the host plus
+        `wineserver -k`, which nuked other users' live games. Now it kills the
+        given Popen and its children; the global wineserver -k only runs when
+        no game processes remain at all.
+        """
+        from .gamemgr import any_game_live
+
+        targets: set[int] = set()
+        if own_proc is not None and own_proc.pid:
+            targets.add(own_proc.pid)
+            try:
+                parent = psutil.Process(own_proc.pid)
+                for child in parent.children(recursive=True):
+                    targets.add(child.pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        else:
+            # No explicit proc: clean up this slot's leftover game, if any.
+            leftover = self._is_game_running()
+            if leftover:
+                targets.add(leftover)
                 try:
-                    proc.kill()
+                    for child in psutil.Process(leftover).children(recursive=True):
+                        targets.add(child.pid)
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
-        # Also try wine server cleanup
-        try:
-            subprocess.run(
-                [self.cfg.wine_binary, "server", "-k"],
-                capture_output=True,
-                timeout=5,
-            )
-        except Exception:
-            pass
+        for pid in targets:
+            try:
+                psutil.Process(pid).kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        if not any_game_live(exclude_pids=targets):
+            try:
+                subprocess.run(
+                    [self.cfg.wine_binary, "server", "-k"],
+                    capture_output=True,
+                    timeout=5,
+                    env=self.cfg.launch_env(),
+                )
+            except Exception:
+                pass
 
     def _is_game_running(self) -> Optional[int]:
-        """Check if the game process is running, return PID or None."""
-        for proc in psutil.process_iter(["pid", "name"]):
-            name = (proc.info.get("name") or "").lower()
-            if name == "hamsterball.exe":
-                return proc.info["pid"]
+        """Check if this slot's game process is running, return PID or None."""
+        exe_name = os.path.basename(self.cfg.game_executable_path).lower()
+        for proc in psutil.process_iter(["pid", "name", "status"]):
+            try:
+                if proc.info.get("status") == psutil.STATUS_ZOMBIE:
+                    continue
+                name = (proc.info.get("name") or "").lower()
+                if name != exe_name and name != "wine" and name != "wine64":
+                    continue
+                p = psutil.Process(proc.info["pid"])
+                with p.oneshot():
+                    try:
+                        cmdline = p.cmdline()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        cmdline = []
+                    try:
+                        cwd = p.cwd()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        cwd = ""
+                if match_slot_proc(
+                    name,
+                    cmdline,
+                    cwd,
+                    self.cfg.game_executable_path,
+                    exe_name,
+                    self.cfg.game_dir,
+                ):
+                    return p.pid
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
         return None
 
     def test_dll(
@@ -168,7 +219,7 @@ class DllTester:
         original_path = self._dll_path(target_dll)
         backup_path = self._backup_path(target_dll)
 
-        # Kill any existing game
+        # Kill any existing game (ours only — other users' games are untouched)
         self._kill_game()
         time.sleep(0.5)
 
@@ -200,11 +251,8 @@ class DllTester:
             if os.path.exists(p):
                 os.remove(p)
 
-        # Prepare environment
-        env = os.environ.copy()
-        env["DISPLAY"] = self.cfg.display
-        if self.cfg.libgl_software:
-            env["LIBGL_ALWAYS_SOFTWARE"] = "1"
+        # Prepare environment (per-slot display/prefix)
+        env = self.cfg.launch_env()
         env.setdefault("WINEDEBUG", "-all")
 
         # Launch the game
@@ -240,8 +288,8 @@ class DllTester:
                 proc.kill()
                 proc.wait(timeout=2)
 
-        # Kill wine processes
-        self._kill_game()
+        # Kill our test game process tree (other users' games untouched)
+        self._kill_game(proc)
         time.sleep(cleanup_delay)
 
         # Restore original DLL

@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 import psutil
 
-from .config import Config
+from .config import Config, match_slot_proc
 
 # Known Hamsterball static addresses (image base 0x400000)
 # g_App is a singleton stored as a pointer at DAT_005341E0 (set by App_Ctor).
@@ -156,23 +156,35 @@ class Telemetry:
         }
 
     def _find_game_pid(self) -> Optional[int]:
-        exe_path = self.cfg.game_executable_path.lower()
-        exe_name = os.path.basename(exe_path).lower()
-        game_dir = self.cfg.game_dir.lower()
-
-        for proc in psutil.process_iter(["pid", "name", "cmdline"]):
-            name = (proc.info.get("name") or "").lower()
-            cmdline = proc.info.get("cmdline") or []
-
-            if name == exe_name:
-                return proc.info["pid"]
-
-            for s in cmdline:
-                lower = (s or "").lower().rstrip('"')
-                if lower == exe_path:
-                    return proc.info["pid"]
-                if game_dir in lower and lower.endswith(exe_name):
-                    return proc.info["pid"]
+        exe_name = os.path.basename(self.cfg.game_executable_path).lower()
+        for proc in psutil.process_iter(["pid", "name", "status"]):
+            try:
+                if proc.info.get("status") == psutil.STATUS_ZOMBIE:
+                    continue
+                name = (proc.info.get("name") or "").lower()
+                if name != exe_name and name != "wine" and name != "wine64":
+                    continue
+                p = psutil.Process(proc.info["pid"])
+                with p.oneshot():
+                    try:
+                        cmdline = p.cmdline()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        cmdline = []
+                    try:
+                        cwd = p.cwd()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        cwd = ""
+                if match_slot_proc(
+                    name,
+                    cmdline,
+                    cwd,
+                    self.cfg.game_executable_path,
+                    exe_name,
+                    self.cfg.game_dir,
+                ):
+                    return p.pid
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
         return None
 
     def estimate_fps_from_screenshots(self, samples: int = 5, interval: float = 0.2) -> dict[str, Any]:
