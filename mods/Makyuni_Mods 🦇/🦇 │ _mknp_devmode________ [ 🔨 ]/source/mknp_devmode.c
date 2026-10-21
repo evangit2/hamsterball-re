@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v01x — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v01y — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -151,7 +151,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v01x self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v01y self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -299,7 +299,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v01x: single small line with bottom-right shadow (version-text style).
+/* v01y: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -673,8 +673,25 @@ static void dev_action_fire(const char* name) {
                         !IsBadReadPtr((void*)(aa + 0x23Cu), 4))
                         st = *(int*)(aa + 0x23Cu);
                 }
-                log_msg("DEVBIND WAIT-enter: race=%d tap=%p\n",
-                        st, (void*)g_tapBoard);
+                {   /* tap facts: vtable + name bytes at tap+0x868 */
+                    DWORD tv = 0;
+                    char tx[40]; int th = 0, k;
+                    if (g_tapBoard > 0x10000 &&
+                        !IsBadReadPtr((void*)g_tapBoard, 4))
+                        tv = *(DWORD*)g_tapBoard;
+                    for (k = 0; k < 8 && th < 32; k++) {
+                        BYTE c = 0;
+                        if (g_tapBoard > 0x10000 &&
+                            !IsBadReadPtr((void*)(g_tapBoard + BOARD_NAME + (DWORD)k), 1))
+                            c = *(BYTE*)(g_tapBoard + BOARD_NAME + (DWORD)k);
+                        tx[th++] = "0123456789ABCDEF"[(c >> 4) & 15];
+                        tx[th++] = "0123456789ABCDEF"[c & 15];
+                        tx[th++] = ' ';
+                    }
+                    tx[th] = 0;
+                    log_msg("DEVBIND WAIT-enter: race=%d tap=%p tapvt=%08X tapname=%s\n",
+                            st, (void*)g_tapBoard, tv, tx);
+                }
             }
             log_msg("DEVBIND WAIT-enter: app=%p raw178=%s%p vtbl=%08X namehex=%s flag=%d\n",
                     (void*)app, r178 ? "" : "BAD+", (void*)raw, vt, hex, flg);
@@ -705,22 +722,23 @@ static void dev_action_fire(const char* name) {
 
 
 static int tap_board_ok(DWORD *boardOut, char *nameOut) {
-    DWORD tb = g_tapBoard, vt;
+    DWORD tb = g_tapBoard;
     int i;
+    /* No vtable/name gates here: this ECX comes straight out of the game's
+     * own pause check (mov 0x874(%ecx),%al), so +0x874 IS a pause flag on
+     * it by construction. Readability guards only (object may die). */
     if (!g_tapOk || tb < 0x10000) return 0;
     if (IsBadReadPtr((void*)tb, 4)) return 0;
-    vt = *(DWORD*)tb;
-    if (!vt || vt < 0x10000 || vt == SHELL_VTBL) return 0;  /* menu shell */
-    if (IsBadReadPtr((void*)tb, BOARD_PAUSE + 1) ||
-        IsBadReadPtr((void*)(tb + BOARD_NAME), 12)) return 0;
+    if (IsBadReadPtr((void*)(tb + BOARD_PAUSE), 1)) return 0;
+    if (IsBadWritePtr((void*)(tb + BOARD_PAUSE), 1)) return 0;
     for (i = 0; i < 11; i++) {
-        char c = *(char*)(tb + BOARD_NAME + (DWORD)i);
+        char c = '?';
+        if (!IsBadReadPtr((void*)(tb + BOARD_NAME + (DWORD)i), 1))
+            c = *(char*)(tb + BOARD_NAME + (DWORD)i);
         nameOut[i] = (c >= 32 && c < 127) ? c : 0;
-        if (!c) break;
+        if (!c || c == '?') { if (!c) break; else nameOut[i] = '?'; }
     }
     nameOut[11] = 0;
-    if (!strstr(nameOut, "Board")) return 0;
-    if (IsBadWritePtr((void*)(tb + BOARD_PAUSE), 1)) return 0;
     *boardOut = tb;
     return 1;
 }
@@ -910,8 +928,8 @@ static void draw_direct(void) {
     if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
 
     text = g_devmode ? "devmode: on" : "devmode: off";
-    /* v01x: exactly one status draw per frame. The 0x46C1F1 frame hook
-     * arms one draw per frame; this consumes it. (v01x's 33ms time gate
+    /* v01y: exactly one status draw per frame. The 0x46C1F1 frame hook
+     * arms one draw per frame; this consumes it. (v01y's 33ms time gate
      * skipped whole frames -> fast blink. Same-frame overdraw is
      * invisible; zero-draw frames blink — so arm-per-frame + consume.) */
     if (!g_drawArmed) return;
@@ -1082,7 +1100,7 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v01x: arms one draw per frame */
+    install_frame_hook();  /* v01y: arms one draw per frame */
     install_draw_hook();
     install_pause_tap();   /* DrawGlyph post-draw consumes the arm */
     CreateThread(NULL, 0, poll_thread, NULL, 0, NULL);
