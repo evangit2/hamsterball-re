@@ -150,7 +150,8 @@ static volatile int g_drawArmed = 0;  /* set each frame by C6F1; consumed by Dra
 static DWORD g_lastDrawTick = 0;   /* fallback throttle when C6F1 never fires */
 static int g_frameHookOk = 0;     /* 1 once the 0x46C1F1 frame hook is live */
 static volatile int g_inDraw = 0;     /* reentrancy guard for our own draw */
-static void* g_drawFont = 0;          /* live Font* captured from the hook's ECX */
+static void* g_drawFont = 0;
+static DWORD g_drawXf = 0x004CF300u;   /* xform of the live DrawGlyph call */          /* live Font* captured from the hook's ECX */
 static int g_drawCount = 0;           /* successful draw attempts (diagnostic) */
 
 /* ── Log (_mknp_devmode.log next to the DLL, %TEMP% fallback) ────────── */
@@ -1148,7 +1149,6 @@ static int font_ready(void* font, const char* s) {
 }
 
 static int g_entryCount = 0;
-static DWORD g_drawXf = 0x004CF300u;   /* xform of the live DrawGlyph call */
 
 static void draw_direct(void) {
     DWORD app;
