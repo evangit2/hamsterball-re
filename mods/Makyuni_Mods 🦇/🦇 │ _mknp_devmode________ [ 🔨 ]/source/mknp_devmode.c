@@ -1,5 +1,5 @@
 /*
- /* mknp_devmode v01j — F8 toggles a devmode flag with on-screen status text.
+ /* mknp_devmode v01o — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -9,6 +9,8 @@
   *    post-draw emits one direct DrawGlyph call (machine-code stub, no
   *    inline-asm pushes) with the live hook font.
   * Both installs are verify-or-skip from the init thread, never DllMain.
+  *  - Dev keybinds come from mknp_devmode.set (jsonc, next to the DLL):
+  *    CTRL+<key> fires the action only while devmode is ON (1s cooldown).
   */
 
 #define WIN32_LEAN_AND_MEAN
@@ -18,6 +20,9 @@
 #include <stdarg.h>
 
 #include "bass_proxy.h"   /* BASS proxy exports + load_real_bass + patch helpers */
+
+#include <stdlib.h>
+#include <ctype.h>
 
 /* ── Addresses ─────────────────────────────────────────────────────── */
 
@@ -29,15 +34,41 @@
 #define HOOK_ADDR   0x0046C1F1u   /* frame epilogue: 5E 83 C4 08 C3 */
 #define HOOK2_ADDR  0x00457440u   /* Font_DrawGlyph entry (SEH frame, replayed by trampoline) */
 #define VK_F8       0x77
+#define VK_CTRL     0x11   /* either CTRL key via GetAsyncKeyState */
 
 #define DEV_X 20
 #define DEV_Y 20
+#define IND_X 20           /* indicator line: below devmode line */
+#define IND_Y 44
+#define IND_SCALE 0x3F4CCCCDu  /* 0.8f bits: slightly smaller via Font+0x428 */
+#define IND_MS 3000            /* indicator message visible time */
+
+/* ── Indicator string ──────────────────────────────────────────────── */
+/* Resting state "-". Dev events show a message for IND_MS, then revert. */
+
+static char g_indicator[128] = "-";
+static DWORD g_indUntil = 0;   /* GetTickCount expiry; 0 = resting */
+
+static void indicator_show(const char* s) {
+    strncpy(g_indicator, s, 127);
+    g_indicator[127] = 0;
+    g_indUntil = GetTickCount() + IND_MS;
+}
+
+static const char* indicator_text(void) {
+    if (g_indUntil && (int)(GetTickCount() - g_indUntil) >= 0) {
+        g_indUntil = 0;
+        strcpy(g_indicator, "-");
+    }
+    return g_indicator;
+}
 
 /* ── State ─────────────────────────────────────────────────────────── */
 
 static int g_devmode = 0;     /* the devmode variable: F8 toggles 0/1 */
 static int g_prevF8  = 0;     /* previous F8 down-state (edge detect) */
 static volatile int g_drawArmed = 0;  /* set each frame by C6F1; consumed by DrawGlyph hook */
+static int g_frameHookOk = 0;     /* 1 once the 0x46C1F1 frame hook is live */
 static volatile int g_inDraw = 0;     /* reentrancy guard for our own draw */
 static void* g_drawFont = 0;          /* live Font* captured from the hook's ECX */
 static int g_drawCount = 0;           /* successful draw attempts (diagnostic) */
@@ -73,7 +104,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT mknp_devmode v01j self=%p\n", hSelf);
+    fprintf(g_log, "INIT mknp_devmode v01o self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -167,19 +198,42 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v01j: single white pass, NO scale tweak. (v01i's 0.75-scale colored
- * path rendered nothing — the scaled Scene_CreateObject4f path needs
- * setup our post-draw context lacks. White glyph sprites always draw.) */
-static void draw_status(void* font, const char* text) {
+/* v01o: single small line with bottom-right shadow (version-text style).
+ * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
+ * 0.75-scale colored path rendered nothing — the scaled
+ * Scene_CreateObject4f path needs setup our post-draw context lacks.
+ * White glyph sprites always draw.) */
+/* Draw one shadowed line. scaleBits=0 means native size; otherwise the
+ * value is poked into Font+0x428 (native per-font scale, 1.0 = normal;
+ * 0x4574C1 takes the scaled path when it differs) and restored after. */
+static void draw_status_ex(void* font, const char* text, int x, int y, DWORD scaleBits) {
     const unsigned int one = 0x3F800000u;   /* 1.0f */
+    const unsigned int zero = 0x00000000u;  /* 0.0f */
     const unsigned int xf = 0x004CF300u;    /* static identity transform */
     DWORD params[8];
-    params[0] = (DWORD)text;
-    params[1] = (DWORD)DEV_X;
-    params[2] = (DWORD)DEV_Y;
+    DWORD saved = 0;
+    int poked = 0;
+    if (scaleBits && !IsBadReadPtr((char*)font + 0x428, 4) &&
+        !IsBadWritePtr((char*)font + 0x428, 4)) {
+        saved = *(DWORD*)((char*)font + 0x428);
+        *(DWORD*)((char*)font + 0x428) = scaleBits;
+        poked = 1;
+    }
+    params[0] = (DWORD)text;                /* shadow: black, +1,+1 */
+    params[1] = (DWORD)(x + 1);
+    params[2] = (DWORD)(y + 1);
     params[3] = xf;
+    params[4] = zero; params[5] = zero; params[6] = zero; params[7] = one;
+    call_thiscall_n(FN_DRAWGLYPH, (DWORD)font, params, 8);
+    params[1] = (DWORD)x;                   /* face: white at x,y */
+    params[2] = (DWORD)y;
     params[4] = one; params[5] = one; params[6] = one; params[7] = one;
     call_thiscall_n(FN_DRAWGLYPH, (DWORD)font, params, 8);
+    if (poked) *(DWORD*)((char*)font + 0x428) = saved;
+}
+
+static void draw_status(void* font, const char* text) {
+    draw_status_ex(font, text, DEV_X, DEV_Y, 0);
 }
 
 /* ── Per-frame handler (runs on the game thread at the epilogue) ───── */
@@ -187,6 +241,216 @@ static void draw_status(void* font, const char* text) {
 /* Font_DrawGlyph post-hook (g_drawArmed hands one draw per frame).     */
 
 static void draw_direct(void);
+
+/* ── .set file + dev keybindings ───────────────────────────────────── */
+/* mknp_devmode.set (jsonc, next to the DLL) maps action names to
+ * { "keybinding": "X" }. While devmode is ON, CTRL+X fires the action
+ * (edge-detect, 1s global cooldown between dev fires). Devmode OFF =
+ * keybinds do nothing. Set reloads when its mtime changes. */
+
+#define MAX_BINDS   16
+#define SET_FNAME "_mknp_devmode.set"
+
+typedef struct { char name[96]; char key; UINT vk; int prev; } devbind_t;
+static devbind_t g_binds[MAX_BINDS];
+static int g_nbinds = 0;
+static char g_setPath[MAX_PATH] = {0};
+static DWORD g_setTick = 0;        /* last mtime check (GetTickCount) */
+static DWORD s_lastDevFire = 0;    /* GetTickCount of last dev bind fire */
+
+static const char* s_p;            /* set parser cursor */
+
+static void ps_skip_ws(void) {
+    while (*s_p == ' ' || *s_p == '\t' || *s_p == '\r' || *s_p == '\n') s_p++;
+}
+
+/* parse a "..." string (unescaped, truncated); 1 = ok */
+static int ps_string(char* out, int outsz) {
+    int n = 0;
+    if (*s_p != '"') return 0;
+    s_p++;
+    while (*s_p && *s_p != '"') {
+        char c = *s_p++;
+        if (c == '\\' && *s_p) {
+            char e = *s_p++;
+            c = (e == 'n') ? '\n' : (e == 't') ? '\t' : (e == 'r') ? '\r' : e;
+        }
+        if (n + 1 < outsz) out[n++] = c;
+    }
+    out[n] = 0;
+    if (*s_p == '"') s_p++;
+    return 1;
+}
+
+/* strip // comments (outside strings), in place */
+static void set_strip(char* b) {
+    int i = 0, j = 0, instr = 0;
+    while (b[i]) {
+        char c = b[i];
+        if (instr) {
+            b[j++] = c;
+            if (c == '\\' && b[i + 1]) { b[j++] = b[i + 1]; i += 2; continue; }
+            if (c == '"') instr = 0;
+            i++;
+        } else if (c == '"') { instr = 1; b[j++] = c; i++; }
+        else if (c == '/' && b[i + 1] == '/') { while (b[i] && b[i] != '\n') i++; }
+        else { b[j++] = c; i++; }
+    }
+    b[j] = 0;
+}
+
+/* scan stripped jsonc: "Action" : { ... "keybinding" : "X" ... } */
+static void set_parse(const char* buf) {
+    char objkey[8][96];
+    int bd = 0, i;
+    for (i = 0; i < 8; i++) objkey[i][0] = 0;
+    g_nbinds = 0;
+    s_p = buf;
+    for (;;) {
+        ps_skip_ws();
+        if (!*s_p) break;
+        if (*s_p == '{') {
+            s_p++;
+            if (bd < 7) { bd++; objkey[bd][0] = 0; }
+            continue;
+        }
+        if (*s_p == '}') { s_p++; if (bd > 0) bd--; continue; }
+        if (*s_p == '"') {
+            char s[96], v[96];
+            const char* q;
+            ps_string(s, sizeof s);
+            q = s_p;
+            while (*q == ' ' || *q == '\t' || *q == '\r' || *q == '\n') q++;
+            if (*q != ':') continue;   /* bare string, not a key */
+            s_p = q + 1;
+            ps_skip_ws();
+            if (*s_p == '{') {
+                s_p++;
+                if (bd < 7) {
+                    bd++;
+                    strncpy(objkey[bd], s, 95);
+                    objkey[bd][95] = 0;
+                }
+                continue;
+            }
+            if (*s_p == '"') {
+                ps_string(v, sizeof v);
+                if (!strcmp(s, "keybinding") && v[0] && g_nbinds < MAX_BINDS) {
+                    char k = (char)toupper((unsigned char)v[0]);
+                    if ((k >= 'A' && k <= 'Z') || (k >= '0' && k <= '9')) {
+                        devbind_t* b = &g_binds[g_nbinds++];
+                        strncpy(b->name, objkey[bd], 95);
+                        b->name[95] = 0;
+                        b->key = k;
+                        b->vk = (UINT)k;   /* A-Z 0-9 VK == ASCII uppercase */
+                        b->prev = 0;
+                    } else {
+                        log_msg("SET skip bad keybinding '%s'\n", v);
+                    }
+                }
+                continue;
+            }
+            while (*s_p && *s_p != ',' && *s_p != '}' && *s_p != ']') s_p++;
+            continue;
+        }
+        s_p++;
+    }
+    log_msg("SET parsed: %d binds\n", g_nbinds);
+    for (i = 0; i < g_nbinds; i++)
+        log_msg("SET bind '%s' -> CTRL+%c\n", g_binds[i].name, g_binds[i].key);
+}
+
+static void set_locate(void) {
+    HMODULE hSelf = NULL;
+    if (g_setPath[0]) return;
+    if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                         | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                         (LPCSTR)set_locate, &hSelf) && hSelf) {
+        GetModuleFileNameA(hSelf, g_setPath, MAX_PATH);
+        {
+            char* slash = strrchr(g_setPath, '\\');
+            if (slash) strcpy(slash + 1, SET_FNAME);
+            else g_setPath[0] = 0;
+        }
+    }
+}
+
+/* 1 = file mtime changed since last call (primes on first call) */
+static int set_changed(void) {
+    WIN32_FILE_ATTRIBUTE_DATA fad;
+    static DWORD s_lo = 0, s_hi = 0;
+    static int s_have = 0;
+    if (!g_setPath[0]) return 0;
+    if (!GetFileAttributesExA(g_setPath, GetFileExInfoStandard, &fad)) return 0;
+    if (!s_have || fad.ftLastWriteTime.dwLowDateTime != s_lo ||
+        fad.ftLastWriteTime.dwHighDateTime != s_hi) {
+        s_lo = fad.ftLastWriteTime.dwLowDateTime;
+        s_hi = fad.ftLastWriteTime.dwHighDateTime;
+        s_have = 1;
+        return 1;
+    }
+    return 0;
+}
+
+static void set_load(void) {
+    FILE* f;
+    long n;
+    char* buf;
+    set_locate();
+    if (!g_setPath[0]) return;
+    f = fopen(g_setPath, "rb");
+    if (!f) { log_msg("SET no file: %s\n", g_setPath); return; }
+    fseek(f, 0, SEEK_END); n = ftell(f); fseek(f, 0, SEEK_SET);
+    if (n <= 0 || n > 65536) { fclose(f); return; }
+    buf = (char*)malloc((size_t)n + 1);
+    if (!buf) { fclose(f); return; }
+    if (fread(buf, 1, (size_t)n, f) != (size_t)n) { free(buf); fclose(f); return; }
+    buf[n] = 0;
+    fclose(f);
+    set_strip(buf);
+    set_parse(buf);
+    free(buf);
+}
+
+/* ── Dev actions (game memory writes) ───────────────────────────────── */
+
+/* BestTime table: App+0x86c, 20 DWORDs. Fresh-profile default is
+ * 0x05F5E09C (99999900; the loader's rep stos fill), NOT zero. */
+
+#define APP_BESTTIME    0x86cu
+#define BESTTIME_NATIVE 0x05F5E09Cu
+#define BESTTIME_COUNT  20
+
+static void reset_best_times(void) {
+    DWORD app;
+    int i;
+    if (IsBadReadPtr((void*)APP_PTR, 4)) {
+        log_msg("DEVBIND reset-best-times: no App\n");
+        return;
+    }
+    app = *(DWORD*)APP_PTR;
+    if (!app || app < 0x10000 || IsBadReadPtr((void*)app, 0x900)) {
+        log_msg("DEVBIND reset-best-times: bad App %p\n", (void*)app);
+        return;
+    }
+    if (IsBadWritePtr((void*)(app + APP_BESTTIME), BESTTIME_COUNT * 4)) {
+        log_msg("DEVBIND reset-best-times: App+0x86c not writable\n");
+        return;
+    }
+    for (i = 0; i < BESTTIME_COUNT; i++)
+        *(DWORD*)(app + APP_BESTTIME + (DWORD)i * 4) = BESTTIME_NATIVE;
+    log_msg("DEVBIND reset-best-times: 20 slots at App+0x86c = 0x05F5E09C\n");
+}
+
+static void dev_action_fire(const char* name) {
+    if (!strcmp(name, "Time Trials - Reset Best Times")) {
+        reset_best_times();
+        indicator_show("Time Trials - Best Times - reset");
+        return;
+    }
+    log_msg("DEVBIND unhandled action: %s\n", name);
+    indicator_show(name);
+}
 
 /* F8 poll on a private background thread: Sleep(16) loop, edge-detect,
  * toggle + log. Zero game interaction, works in every game state. Exits
@@ -197,13 +461,49 @@ static DWORD WINAPI poll_thread(LPVOID param) {
         SHORT ks;
         int down;
         Sleep(16);
+        /* .set hot-reload (mtime check, 1s throttle) */
+        {
+            DWORD now = GetTickCount();
+            if ((now - g_setTick) > 1000) {
+                g_setTick = now;
+                if (set_changed()) set_load();
+            }
+        }
         ks = GetAsyncKeyState(VK_F8);
         down = (ks & 0x8000) != 0;
         if (down && !g_prevF8) {
             g_devmode = !g_devmode;
             log_msg("F8 devmode=%d (%s)\n", g_devmode, g_devmode ? "on" : "off");
+            if (g_devmode && set_changed()) set_load();
         }
         g_prevF8 = down;
+        /* dev keybinds: devmode ON + CTRL held, 1s global cooldown */
+        {
+            int ctrl = (GetAsyncKeyState(VK_CTRL) & 0x8000) != 0;
+            int i;
+            if (g_devmode && ctrl) {
+                DWORD now = GetTickCount();
+                if ((now - s_lastDevFire) >= 1000) {
+                    for (i = 0; i < g_nbinds; i++) {
+                        int d = (GetAsyncKeyState((int)g_binds[i].vk) & 0x8000) != 0;
+                        if (d && !g_binds[i].prev) {
+                            log_msg("DEVBIND fire '%s' (CTRL+%c)\n", g_binds[i].name, g_binds[i].key);
+                            dev_action_fire(g_binds[i].name);
+                            s_lastDevFire = now;
+                            g_binds[i].prev = d;
+                            break;   /* one bind per press */
+                        }
+                        g_binds[i].prev = d;
+                    }
+                } else {
+                    for (i = 0; i < g_nbinds; i++)
+                        g_binds[i].prev = (GetAsyncKeyState((int)g_binds[i].vk) & 0x8000) != 0;
+                }
+            } else {
+                for (i = 0; i < g_nbinds; i++) g_binds[i].prev = 0;
+            }
+        }
+        if (!g_frameHookOk) g_drawArmed = 1;   /* fallback armer */
         if (!IsBadReadPtr((void*)APP_PTR, 4)) {
             DWORD app = *(DWORD*)APP_PTR;
             if (app && app > 0x10000 && !IsBadReadPtr((void*)app, 0x320)) {
@@ -256,15 +556,15 @@ static void draw_direct(void) {
     if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
 
     text = g_devmode ? "devmode: on" : "devmode: off";
-    /* v01g: font cascade — hook font first (whatever the game draws with),
-     * then App slots 0x318/0x320/0x324. In-race HUD draws with the 72pt
-     * timer font (App+0x328) which lacks our glyphs entirely (live-verified
-     * flag=0), so hook-font-only probing goes silent in races. */
-    font = g_drawFont;
-    if (font && font_ready(font, text)) goto probed;
+    /* v01o: exactly one status draw per frame. The 0x46C1F1 frame hook
+     * arms one draw per frame; this consumes it. (v01o's 33ms time gate
+     * skipped whole frames -> fast blink. Same-frame overdraw is
+     * invisible; zero-draw frames blink — so arm-per-frame + consume.) */
+    if (!g_drawArmed) return;
+    g_drawArmed = 0;
     font = 0;
     if (!IsBadReadPtr((void*)app, 0x330)) {
-        static const DWORD slots[] = { 0x318u, 0x320u, 0x324u };
+        static const DWORD slots[] = { 0x320u, 0x318u, 0x324u };
         int i;
         for (i = 0; i < 3 && !font; i++) {
             void* f;
@@ -272,6 +572,10 @@ static void draw_direct(void) {
             f = *(void**)(app + slots[i]);
             if (f && font_ready(f, text)) font = f;
         }
+    }
+    if (!font) {
+        font = g_drawFont;
+        if (font && !font_ready(font, text)) font = 0;
     }
     if (!font) {
         if (g_entryCount <= 20) log_msg("ENTRY n=%d NOFONT\n", g_entryCount - 1);
@@ -284,7 +588,44 @@ probed:
     if (g_drawCount < 6) log_msg("DRAW n=%d font=%p textptr=%p text=%s\n", g_drawCount, font, text, text);
     g_drawCount++;
     draw_status(font, text);
+    if (font_ready(font, indicator_text()))
+        draw_status_ex(font, indicator_text(), IND_X, IND_Y, IND_SCALE);
     g_inDraw = 0;
+}
+
+/* ── Frame hook (0x46C1F1 epilogue): arms one status draw per frame ─── */
+/* Stolen bytes (5): 5E 83 C4 08 C3 (pop esi / add esp,8 / ret).
+ * Cave sets g_drawArmed=1, replays the epilogue, returns to the caller.
+ * Runs on the game thread once per frame. */
+
+static void install_frame_hook(void) {
+    BYTE* a = (BYTE*)HOOK_ADDR;
+    unsigned char* cave;
+    unsigned char* p;
+    if (IsBadReadPtr((void*)HOOK_ADDR, 5)) {
+        log_msg("FRAMEHOOK skip: 0x46C1F1 unreadable\n");
+        return;
+    }
+    if (!(a[0] == 0x5E && a[1] == 0x83 && a[2] == 0xC4 && a[3] == 0x08 && a[4] == 0xC3)) {
+        log_msg("FRAMEHOOK skip: bytes mismatch %02X %02X %02X %02X %02X\n",
+                a[0], a[1], a[2], a[3], a[4]);
+        return;
+    }
+    cave = (unsigned char*)alloc_executable(16);
+    if (!cave) {
+        log_msg("FRAMEHOOK skip: VirtualAlloc failed\n");
+        return;
+    }
+    p = cave;
+    *p++ = 0xC6; *p++ = 0x05;                    /* mov byte [armed],1 */
+    *(DWORD*)p = (DWORD)&g_drawArmed; p += 4;
+    *p++ = 0x01;
+    *p++ = 0x5E;                                /* pop esi */
+    *p++ = 0x83; *p++ = 0xC4; *p++ = 0x08;      /* add esp,8 */
+    *p++ = 0xC3;                                /* ret */
+    install_jmp_hook_nop(HOOK_ADDR, (DWORD)cave, 5);
+    g_frameHookOk = 1;
+    log_msg("FRAMEHOOK installed at 0x46C1F1 -> cave %p\n", cave);
 }
 
 /* ── Hook install (init thread only): DrawGlyph detour ──────────────── */
@@ -384,8 +725,10 @@ static DWORD WINAPI init_thread(LPVOID param) {
     (void)param;
     log_open();
     AddVectoredExceptionHandler(1, crash_spy);
+    set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_draw_hook();   /* v01f: single hook (C6F1 epilogue dropped) */
+    install_frame_hook();  /* v01o: arms one draw per frame */
+    install_draw_hook();   /* DrawGlyph post-draw consumes the arm */
     CreateThread(NULL, 0, poll_thread, NULL, 0, NULL);
     return 0;
 }

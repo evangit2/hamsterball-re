@@ -5,6 +5,10 @@ F8 toggles a `devmode` variable. A status line top-left always shows the state:
 - `devmode: off`
 - `devmode: on`
 
+## Set file
+
+Copy `_mknp_devmode.set` next to the installed DLL. Add more `"Name": { "keybinding": "X" }` entries (A-Z, 0-9) as new actions land — unknown names log `DEVBIND unhandled action` and change nothing.
+
 ## Install
 
 Rename `_mknp_devmode.dll` to `bass.dll`, keep the stock DLL as `bass_real.dll`.
@@ -12,13 +16,17 @@ Rename `_mknp_devmode.dll` to `bass.dll`, keep the stock DLL as `bass_real.dll`.
 ## How it works
 
 - **F8 poll** runs on a private background thread (`Sleep(16)` loop, edge-detect so holding F8 toggles exactly once). Zero game interaction, works in every game state.
-- **Status draw** piggybacks the game's own text rendering: a `Font_DrawGlyph (0x00457440)` entry detour runs the original via trampoline (SEH setup replayed verbatim), then draws one status line with the live hook font through an emitted machine-code stub (no inline-asm pushes).
-- Font cascade: live hook font first, then App slots `0x318/0x320/0x324`, with per-glyph readiness probing and null-gating throughout.
+- **Status draw** piggybacks the game's own text rendering: a `Font_DrawGlyph (0x00457440)` entry detour runs the original via trampoline (SEH setup replayed verbatim), then draws two status lines per frame through an emitted machine-code stub (no inline-asm pushes).
+- A `0x46C1F1` frame-epilogue hook arms exactly one draw per frame (no blink); small font first (App `0x320` gothic16, then `0x318/0x324`, hook font last); two-pass shadow (black +1,+1, then white).
+- Dev keybinds from `_mknp_devmode.set` (jsonc, next to the DLL): each `"Action": { "keybinding": "X" }` fires on CTRL+X only while devmode is ON (1s global cooldown, devmode OFF = nothing). Set hot-reloads on change.
+- `Time Trials - Reset Best Times` (CTRL+B): writes the native fresh-profile default `0x05F5E09C` to all 20 BestTime slots (`App+0x86c`). The default is NOT zero (verified in the loader: missing registry = `rep stos` fill). The indicator line shows `Time Trials - Best Times - reset` for 3s.
+- Indicator line under the devmode line, same format with shadow, slightly smaller (0.8x via the native per-font scale at `Font+0x428` — the game itself writes `0x3F4CCCCD` there). Resting text `-`; dev events show a message for 3s, then revert.
 - Log: `mknp_devmode.log` next to the DLL (`%TEMP%` fallback), INIT line on load, one line per toggle.
 
 ## Files
 
 - `_mknp_devmode.dll` — the compiled mod (rename to `bass.dll` to install)
+- `_mknp_devmode.set` — keybinding map (copy next to the installed DLL, unrenamed)
 - `source/mknp_devmode.c` — source code
 - `source/bass_proxy.h` — shared BASS proxy boilerplate
 - `source/bass.def` — undecorated BASS export definitions
