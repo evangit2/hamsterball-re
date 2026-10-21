@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v01v — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v01w — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -151,7 +151,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v01v self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v01w self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -299,7 +299,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v01v: single small line with bottom-right shadow (version-text style).
+/* v01w: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -552,6 +552,50 @@ static int reset_best_times_sel(int sel) {
     return 1;
 }
 
+/* ── Pause-reader tap (0x469D2D): capture the TRUE board ───────────── */
+/* App+0x178 can be a menu shell (vtable 0x4D911C) while the live race board
+ * lives elsewhere. The game's own pause check (mov 0x874(%ecx),%al) always
+ * runs with the true object, so a verify-or-skip detour stashes ECX on
+ * every hit. wait_freeze_tick prefers the tap board, App+0x178 fallback. */
+
+#define PAUSETAP_ADDR 0x469D2Du
+#define PAUSETAP_NEXT 0x469D33u
+#define SHELL_VTBL    0x4D911Cu
+
+static DWORD g_tapBoard = 0;   /* last ECX seen by the game's pause reader */
+static int g_tapOk = 0;        /* 1 once the tap is installed */
+
+static void install_pause_tap(void) {
+    BYTE* a = (BYTE*)PAUSETAP_ADDR;
+    unsigned char* cave;
+    unsigned char* q;
+    if (IsBadReadPtr((void*)PAUSETAP_ADDR, 6)) {
+        log_msg("PAUSETAP skip: 0x469D2D unreadable\n");
+        return;
+    }
+    if (!(a[0] == 0x8A && a[1] == 0x81 && a[2] == 0x74 &&
+          a[3] == 0x08 && a[4] == 0x00 && a[5] == 0x00)) {
+        log_msg("PAUSETAP skip: bytes mismatch %02X %02X %02X %02X %02X %02X\n",
+                a[0], a[1], a[2], a[3], a[4], a[5]);
+        return;
+    }
+    cave = (unsigned char*)alloc_executable(32);
+    if (!cave) {
+        log_msg("PAUSETAP skip: VirtualAlloc failed\n");
+        return;
+    }
+    q = cave;
+    *q++ = 0x89; *q++ = 0x0D;                    /* mov [g_tapBoard],ecx */
+    *(DWORD*)q = (DWORD)&g_tapBoard; q += 4;
+    *q++ = 0x8A; *q++ = 0x81;                    /* replay: mov 0x874(ecx),al */
+    *q++ = 0x74; *q++ = 0x08; *q++ = 0x00; *q++ = 0x00;
+    *q++ = 0xE9;                                 /* jmp back to 0x469D33 */
+    *(DWORD*)q = PAUSETAP_NEXT - ((DWORD)cave + 19); q += 4;
+    install_jmp_hook_nop(PAUSETAP_ADDR, (DWORD)cave, 6);
+    g_tapOk = 1;
+    log_msg("PAUSETAP installed at 0x469D2D -> cave %p\n", cave);
+}
+
 #define APP_BOARD     0x178u
 #define BOARD_PAUSE   0x874u
 #define BOARD_NAME    0x868u
@@ -621,6 +665,17 @@ static void dev_action_fire(const char* name) {
                 }
             }
             if (!hi) { hex[0] = '-'; hex[1] = 0; }
+            {   /* App+0x23C: 1 means a race is actually running */
+                int st = -9;
+                if (!IsBadReadPtr((void*)APP_PTR, 4)) {
+                    DWORD aa = *(DWORD*)APP_PTR;
+                    if (aa > 0x10000 &&
+                        !IsBadReadPtr((void*)(aa + 0x23Cu), 4))
+                        st = *(int*)(aa + 0x23Cu);
+                }
+                log_msg("DEVBIND WAIT-enter: race=%d tap=%p\n",
+                        st, (void*)g_tapBoard);
+            }
             log_msg("DEVBIND WAIT-enter: app=%p raw178=%s%p vtbl=%08X namehex=%s flag=%d\n",
                     (void*)app, r178 ? "" : "BAD+", (void*)raw, vt, hex, flg);
         }
@@ -649,6 +704,27 @@ static void dev_action_fire(const char* name) {
  * show while frozen; gameplay, timers and physics all stop. */
 
 
+static int tap_board_ok(DWORD *boardOut, char *nameOut) {
+    DWORD tb = g_tapBoard, vt;
+    int i;
+    if (!g_tapOk || tb < 0x10000) return 0;
+    if (IsBadReadPtr((void*)tb, 4)) return 0;
+    vt = *(DWORD*)tb;
+    if (!vt || vt < 0x10000 || vt == SHELL_VTBL) return 0;  /* menu shell */
+    if (IsBadReadPtr((void*)tb, BOARD_PAUSE + 1) ||
+        IsBadReadPtr((void*)(tb + BOARD_NAME), 12)) return 0;
+    for (i = 0; i < 11; i++) {
+        char c = *(char*)(tb + BOARD_NAME + (DWORD)i);
+        nameOut[i] = (c >= 32 && c < 127) ? c : 0;
+        if (!c) break;
+    }
+    nameOut[11] = 0;
+    if (!strstr(nameOut, "Board")) return 0;
+    if (IsBadWritePtr((void*)(tb + BOARD_PAUSE), 1)) return 0;
+    *boardOut = tb;
+    return 1;
+}
+
 static void wait_freeze_tick(void) {
     DWORD board;
     char name[16];
@@ -664,7 +740,8 @@ static void wait_freeze_tick(void) {
         }
         return;
     }
-    if (!wait_board_ok(&board, name)) return;   /* menus: nothing to freeze */
+    if (!tap_board_ok(&board, name) &&
+        !wait_board_ok(&board, name)) return;   /* menus: nothing to freeze */
     if (!g_wePaused || g_pauseBoard != board) {
         g_pauseSaved = *(BYTE*)(board + BOARD_PAUSE);
         *(BYTE*)(board + BOARD_PAUSE) = 1;
@@ -833,8 +910,8 @@ static void draw_direct(void) {
     if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
 
     text = g_devmode ? "devmode: on" : "devmode: off";
-    /* v01v: exactly one status draw per frame. The 0x46C1F1 frame hook
-     * arms one draw per frame; this consumes it. (v01v's 33ms time gate
+    /* v01w: exactly one status draw per frame. The 0x46C1F1 frame hook
+     * arms one draw per frame; this consumes it. (v01w's 33ms time gate
      * skipped whole frames -> fast blink. Same-frame overdraw is
      * invisible; zero-draw frames blink — so arm-per-frame + consume.) */
     if (!g_drawArmed) return;
@@ -1005,8 +1082,9 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v01v: arms one draw per frame */
-    install_draw_hook();   /* DrawGlyph post-draw consumes the arm */
+    install_frame_hook();  /* v01w: arms one draw per frame */
+    install_draw_hook();
+    install_pause_tap();   /* DrawGlyph post-draw consumes the arm */
     CreateThread(NULL, 0, poll_thread, NULL, 0, NULL);
     return 0;
 }
