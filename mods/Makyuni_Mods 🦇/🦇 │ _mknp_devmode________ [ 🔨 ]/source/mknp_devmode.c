@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02k — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02l — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -154,6 +154,8 @@ static void* g_drawFont = 0;
           /* live Font* captured from the hook's ECX */
 static int g_drawCount = 0;           /* successful draw attempts (diagnostic) */
 static volatile int g_hitCount = 0;     /* DrawGlyph cave entries (diagnostic) */
+static volatile int g_drawLock = 0;       /* cave spinlock: serializes threads */
+static DWORD g_drawTid = 0;               /* owning thread id (0 = free) */
 
 /* ── Log (_mknp_devmode.log next to the DLL, %TEMP% fallback) ────────── */
 
@@ -186,7 +188,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02k self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02l self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -334,7 +336,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02k: single small line with bottom-right shadow (version-text style).
+/* v02l: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -1303,6 +1305,29 @@ static void install_draw_hook(void) {
     p = cave;
     *p++ = 0xFF; *p++ = 0x05;                    /* inc dword [g_hitCount] */
     *(DWORD*)p = (DWORD)&g_hitCount; p += 4;
+    /* Cross-thread guard: the slotRet slot below is process-global. Same
+     * thread reentry skips (old behavior); another thread spins until
+     * AFTER releases. ECX (font) preserved across the acquire. */
+    *p++ = 0x51;                                 /* push ecx */
+    *p++ = 0x52;                                 /* push edx */
+    *p++ = 0x64; *p++ = 0xA1; *p++ = 0x24; *p++ = 0x00; *p++ = 0x00; *p++ = 0x00;
+                                                 /* mov eax,fs:[0x24] (tid) */
+    *p++ = 0x3B; *p++ = 0x05;                    /* cmp eax,[g_drawTid] */
+    *(DWORD*)p = (DWORD)&g_drawTid; p += 4;
+    *p++ = 0x74; *p++ = 0x1A;                    /* je SKIP (same thread) */
+    *p++ = 0xB8; *p++ = 0x01; *p++ = 0x00; *p++ = 0x00; *p++ = 0x00;
+                                                 /* ACQ: mov eax,1 */
+    *p++ = 0x87; *p++ = 0x05;                    /* xchg eax,[g_drawLock] */
+    *(DWORD*)p = (DWORD)&g_drawLock; p += 4;
+    *p++ = 0x85; *p++ = 0xC0;                    /* test eax,eax */
+    *p++ = 0x75; *p++ = 0xF1;                    /* jnz ACQ */
+    *p++ = 0x64; *p++ = 0xA1; *p++ = 0x24; *p++ = 0x00; *p++ = 0x00; *p++ = 0x00;
+                                                 /* mov eax,fs:[0x24] (tid) */
+    *p++ = 0xA3;                                 /* mov [g_drawTid],eax */
+    *(DWORD*)p = (DWORD)&g_drawTid; p += 4;
+                                                 /* SKIP: */
+    *p++ = 0x5A;                                 /* pop edx */
+    *p++ = 0x59;                                 /* pop ecx */
     *p++ = 0x89; *p++ = 0x0D;                    /* mov [g_drawFont],ecx */
     *(DWORD*)p = (DWORD)&g_drawFont; p += 4;
     *p++ = 0x83; *p++ = 0x3D;                    /* cmp byte ptr [g_inDraw],1 */
@@ -1318,8 +1343,14 @@ static void install_draw_hook(void) {
     *p++ = 0xE9;                                /* jmp trampoline */
     *(DWORD*)p = (DWORD)tramp - ((DWORD)p + 4);
     p += 4;
-    /* AFTER (0x1D): orig did RET 0x20 -> stack holds caller frame.
-     * draw, then push the saved retC and return to the caller. */
+    /* AFTER: orig did RET 0x20 -> stack holds caller frame.
+     * Release the spinlock, draw, then push the saved retC and return. */
+    *p++ = 0xC7; *p++ = 0x05;                    /* mov dword [g_drawLock],0 */
+    *(DWORD*)p = (DWORD)&g_drawLock; p += 4;
+    *p++ = 0x00; *p++ = 0x00; *p++ = 0x00; *p++ = 0x00;
+    *p++ = 0xC7; *p++ = 0x05;                    /* mov dword [g_drawTid],0 */
+    *(DWORD*)p = (DWORD)&g_drawTid; p += 4;
+    *p++ = 0x00; *p++ = 0x00; *p++ = 0x00; *p++ = 0x00;
     *p++ = 0x60;                                /* pushad */
     *p++ = 0x9C;                                /* pushfd */
     *p++ = 0xE8;                                /* call draw_direct */
