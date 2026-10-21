@@ -1,5 +1,5 @@
 /*
- /* mknp_devmode v01o — F8 toggles a devmode flag with on-screen status text.
+ /* mknp_devmode v01p — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -35,6 +35,10 @@
 #define HOOK2_ADDR  0x00457440u   /* Font_DrawGlyph entry (SEH frame, replayed by trampoline) */
 #define VK_F8       0x77
 #define VK_CTRL     0x11   /* either CTRL key via GetAsyncKeyState */
+#define VK_LEFT     0x25
+#define VK_RIGHT    0x27
+#define VK_RETURN   0x0D
+#define VK_ESCAPE   0x1B
 
 #define DEV_X 20
 #define DEV_Y 20
@@ -43,22 +47,61 @@
 #define IND_SCALE 0x3F4CCCCDu  /* 0.8f bits: slightly smaller via Font+0x428 */
 #define IND_MS 3000            /* indicator message visible time */
 
-/* ── Indicator string ──────────────────────────────────────────────── */
-/* Resting state "-". Dev events show a message for IND_MS, then revert. */
+/* ── Indicator states ──────────────────────────────────────────────── */
+/* REST (white "-") -> WAIT (yellow, level select) -> OK (green) / FAIL
+ * (red) -> auto-revert to REST after IND_MS. Only CTRL+key from REST
+ * enters WAIT; devmode OFF forces REST. */
+
+typedef enum { IND_REST = 0, IND_WAIT = 1, IND_OK = 2, IND_FAIL = 3 } ind_state_t;
 
 static char g_indicator[128] = "-";
-static DWORD g_indUntil = 0;   /* GetTickCount expiry; 0 = resting */
+static ind_state_t g_indState = IND_REST;
+static int g_indSel = -1;              /* -1 = ALL, 0..14 = LEVEL01..15 */
+static DWORD g_indUntil = 0;           /* OK/FAIL auto-revert expiry */
 
-static void indicator_show(const char* s) {
-    strncpy(g_indicator, s, 127);
-    g_indicator[127] = 0;
-    g_indUntil = GetTickCount() + IND_MS;
+/* face colors as float-bit DWORDs: white / yellow / green / red */
+static const DWORD IND_RGB[4][3] = {
+    { 0x3F800000u, 0x3F800000u, 0x3F800000u },
+    { 0x3F800000u, 0x3F800000u, 0x00000000u },
+    { 0x00000000u, 0x3F800000u, 0x00000000u },
+    { 0x3F800000u, 0x00000000u, 0x00000000u },
+};
+static const DWORD WHITE3[3] = { 0x3F800000u, 0x3F800000u, 0x3F800000u };
+
+static void ind_set_sel_text(char* dst) {
+    /* append "ALL" or "LEVELxx" for g_indSel */
+    if (g_indSel < 0) {
+        strcpy(dst, "ALL");
+    } else {
+        int lv = g_indSel + 1;
+        strcpy(dst, "LEVEL");
+        dst[5] = (char)('0' + lv / 10);
+        dst[6] = (char)('0' + lv % 10);
+        dst[7] = 0;
+    }
+}
+
+static void ind_wait_text(void) {
+    strcpy(g_indicator, "RESET BEST TIME: ");
+    ind_set_sel_text(g_indicator + strlen(g_indicator));
+}
+
+static void ind_done_text(const char* prefix) {
+    strcpy(g_indicator, prefix);
+    ind_set_sel_text(g_indicator + strlen(g_indicator));
+}
+
+static void ind_to_rest(void) {
+    g_indState = IND_REST;
+    g_indUntil = 0;
+    strcpy(g_indicator, "-");
 }
 
 static const char* indicator_text(void) {
+    /* Any state carrying an expiry reverts after IND_MS. The reset
+     * selector's WAIT is sticky (g_indUntil == 0) until enter/escape. */
     if (g_indUntil && (int)(GetTickCount() - g_indUntil) >= 0) {
-        g_indUntil = 0;
-        strcpy(g_indicator, "-");
+        ind_to_rest();
     }
     return g_indicator;
 }
@@ -104,7 +147,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT mknp_devmode v01o self=%p\n", hSelf);
+    fprintf(g_log, "INIT mknp_devmode v01p self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -198,15 +241,16 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v01o: single small line with bottom-right shadow (version-text style).
+/* v01p: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
  * White glyph sprites always draw.) */
 /* Draw one shadowed line. scaleBits=0 means native size; otherwise the
  * value is poked into Font+0x428 (native per-font scale, 1.0 = normal;
- * 0x4574C1 takes the scaled path when it differs) and restored after. */
-static void draw_status_ex(void* font, const char* text, int x, int y, DWORD scaleBits) {
+ * 0x4574C1 takes the scaled path when it differs) and restored after.
+ * rgb = face color as 3 float-bit DWORDs (shadow stays black). */
+static void draw_status_ex(void* font, const char* text, int x, int y, DWORD scaleBits, const DWORD* rgb) {
     const unsigned int one = 0x3F800000u;   /* 1.0f */
     const unsigned int zero = 0x00000000u;  /* 0.0f */
     const unsigned int xf = 0x004CF300u;    /* static identity transform */
@@ -225,15 +269,15 @@ static void draw_status_ex(void* font, const char* text, int x, int y, DWORD sca
     params[3] = xf;
     params[4] = zero; params[5] = zero; params[6] = zero; params[7] = one;
     call_thiscall_n(FN_DRAWGLYPH, (DWORD)font, params, 8);
-    params[1] = (DWORD)x;                   /* face: white at x,y */
+    params[1] = (DWORD)x;                   /* face at x,y in rgb */
     params[2] = (DWORD)y;
-    params[4] = one; params[5] = one; params[6] = one; params[7] = one;
+    params[4] = rgb[0]; params[5] = rgb[1]; params[6] = rgb[2]; params[7] = one;
     call_thiscall_n(FN_DRAWGLYPH, (DWORD)font, params, 8);
     if (poked) *(DWORD*)((char*)font + 0x428) = saved;
 }
 
 static void draw_status(void* font, const char* text) {
-    draw_status_ex(font, text, DEV_X, DEV_Y, 0);
+    draw_status_ex(font, text, DEV_X, DEV_Y, 0, WHITE3);
 }
 
 /* ── Per-frame handler (runs on the game thread at the epilogue) ───── */
@@ -420,36 +464,52 @@ static void set_load(void) {
 #define APP_BESTTIME    0x86cu
 #define BESTTIME_NATIVE 0x05F5E09Cu
 #define BESTTIME_COUNT  20
+#define BESTTIME_RACES  15   /* slots 0..14 = LEVEL01..15; 15..19 are arenas */
 
-static void reset_best_times(void) {
+/* Reset BestTime slots. sel < 0 = ALL 15 races, else single slot sel.
+ * LEVEL01..15 map to slots 0..14 (the loader fills the 80-byte blob in
+ * race order; per-race best updates index by the board's level index).
+ * Returns 1 on success, 0 when game memory is not writable (FAIL state). */
+static int reset_best_times_sel(int sel) {
     DWORD app;
-    int i;
+    int i, lo, hi;
     if (IsBadReadPtr((void*)APP_PTR, 4)) {
         log_msg("DEVBIND reset-best-times: no App\n");
-        return;
+        return 0;
     }
     app = *(DWORD*)APP_PTR;
     if (!app || app < 0x10000 || IsBadReadPtr((void*)app, 0x900)) {
         log_msg("DEVBIND reset-best-times: bad App %p\n", (void*)app);
-        return;
+        return 0;
     }
     if (IsBadWritePtr((void*)(app + APP_BESTTIME), BESTTIME_COUNT * 4)) {
         log_msg("DEVBIND reset-best-times: App+0x86c not writable\n");
-        return;
+        return 0;
     }
-    for (i = 0; i < BESTTIME_COUNT; i++)
+    lo = (sel < 0) ? 0 : sel;
+    hi = (sel < 0) ? BESTTIME_RACES - 1 : sel;
+    for (i = lo; i <= hi; i++)
         *(DWORD*)(app + APP_BESTTIME + (DWORD)i * 4) = BESTTIME_NATIVE;
-    log_msg("DEVBIND reset-best-times: 20 slots at App+0x86c = 0x05F5E09C\n");
+    log_msg("DEVBIND reset-best-times: slots %d..%d at App+0x86c = 0x05F5E09C\n", lo, hi);
+    return 1;
 }
 
 static void dev_action_fire(const char* name) {
     if (!strcmp(name, "Time Trials - Reset Best Times")) {
-        reset_best_times();
-        indicator_show("Time Trials - Best Times - reset");
+        if (g_indState != IND_REST) return;   /* only from resting state */
+        g_indSel = -1;                        /* selector starts at ALL */
+        g_indUntil = 0;                       /* WAIT is sticky, no expiry */
+        ind_wait_text();
+        g_indState = IND_WAIT;
+        log_msg("DEVBIND reset-best-times: awaiting level (ALL)\n");
         return;
     }
     log_msg("DEVBIND unhandled action: %s\n", name);
-    indicator_show(name);
+    /* unknown actions show their name briefly in yellow (legacy path) */
+    strncpy(g_indicator, name, 127);
+    g_indicator[127] = 0;
+    g_indState = IND_WAIT;
+    g_indUntil = GetTickCount() + IND_MS;
 }
 
 /* F8 poll on a private background thread: Sleep(16) loop, edge-detect,
@@ -475,6 +535,10 @@ static DWORD WINAPI poll_thread(LPVOID param) {
             g_devmode = !g_devmode;
             log_msg("F8 devmode=%d (%s)\n", g_devmode, g_devmode ? "on" : "off");
             if (g_devmode && set_changed()) set_load();
+            if (!g_devmode && g_indState == IND_WAIT) {
+                ind_to_rest();   /* leaving devmode cancels level select */
+                log_msg("DEVBIND reset-best-times: cancelled (devmode off)\n");
+            }
         }
         g_prevF8 = down;
         /* dev keybinds: devmode ON + CTRL held, 1s global cooldown */
@@ -502,6 +566,45 @@ static DWORD WINAPI poll_thread(LPVOID param) {
             } else {
                 for (i = 0; i < g_nbinds; i++) g_binds[i].prev = 0;
             }
+        }
+        /* WAIT-state level select: arrows cycle ALL <-> LEVEL01..15
+         * (wrap), enter confirms, escape cancels. Devmode ON only. */
+        {
+            static int prevL = 0, prevR = 0, prevE = 0, prevX = 0;
+            int l = 0, r = 0, e = 0, x = 0;
+            if (g_devmode && g_indState == IND_WAIT) {
+                l = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
+                r = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
+                e = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
+                x = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+                if ((l && !prevL) || (r && !prevR)) {
+                    int dir = (l && !prevL) ? -1 : 1;
+                    g_indSel += dir;
+                    if (g_indSel < -1) g_indSel = BESTTIME_RACES - 1;
+                    if (g_indSel > BESTTIME_RACES - 1) g_indSel = -1;
+                    ind_wait_text();
+                    log_msg("DEVBIND reset-best-times: select %s\n", g_indicator);
+                }
+                if (e && !prevE) {
+                    if (reset_best_times_sel(g_indSel)) {
+                        ind_done_text("DONE - RESET BEST TIME: ");
+                        g_indState = IND_OK;
+                    } else {
+                        ind_done_text("FAIL - RESET BEST TIME: ");
+                        g_indState = IND_FAIL;
+                    }
+                    g_indUntil = GetTickCount() + IND_MS;
+                    log_msg("DEVBIND reset-best-times: %s (%s)\n",
+                            g_indState == IND_OK ? "SUCCESS" : "FAILED", g_indicator);
+                }
+                if (x && !prevX) {
+                    ind_to_rest();
+                    log_msg("DEVBIND reset-best-times: cancelled (escape)\n");
+                }
+            } else {
+                l = r = e = x = 0;
+            }
+            prevL = l; prevR = r; prevE = e; prevX = x;
         }
         if (!g_frameHookOk) g_drawArmed = 1;   /* fallback armer */
         if (!IsBadReadPtr((void*)APP_PTR, 4)) {
@@ -556,8 +659,8 @@ static void draw_direct(void) {
     if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
 
     text = g_devmode ? "devmode: on" : "devmode: off";
-    /* v01o: exactly one status draw per frame. The 0x46C1F1 frame hook
-     * arms one draw per frame; this consumes it. (v01o's 33ms time gate
+    /* v01p: exactly one status draw per frame. The 0x46C1F1 frame hook
+     * arms one draw per frame; this consumes it. (v01p's 33ms time gate
      * skipped whole frames -> fast blink. Same-frame overdraw is
      * invisible; zero-draw frames blink — so arm-per-frame + consume.) */
     if (!g_drawArmed) return;
@@ -589,7 +692,7 @@ probed:
     g_drawCount++;
     draw_status(font, text);
     if (font_ready(font, indicator_text()))
-        draw_status_ex(font, indicator_text(), IND_X, IND_Y, IND_SCALE);
+        draw_status_ex(font, indicator_text(), IND_X, IND_Y, IND_SCALE, IND_RGB[g_indState]);
     g_inDraw = 0;
 }
 
@@ -727,7 +830,7 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v01o: arms one draw per frame */
+    install_frame_hook();  /* v01p: arms one draw per frame */
     install_draw_hook();   /* DrawGlyph post-draw consumes the arm */
     CreateThread(NULL, 0, poll_thread, NULL, 0, NULL);
     return 0;
