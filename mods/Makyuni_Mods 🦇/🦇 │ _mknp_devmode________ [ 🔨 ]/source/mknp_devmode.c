@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v01y — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v01z — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -151,7 +151,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v01y self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v01z self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -299,7 +299,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v01y: single small line with bottom-right shadow (version-text style).
+/* v01z: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -712,6 +712,80 @@ static void dev_action_fire(const char* name) {
  * when the App quit flag is set (polite shutdown, no hang). */
 
 /* ── WAIT-state input capture ─────────────────────────────────────── */
+/* ── WAIT input capture (LL hooks): game can't pause/unpause ────────── */
+/* While devmode is ON and the indicator is WAIT, a WH_KEYBOARD_LL hook eats
+ * the pause-bound keys (arrows/Enter/Escape + everything but F8/Ctrl/Alt)
+ * and a WH_MOUSE_LL hook eats right-button down/up, so the game can neither
+ * open its pause menu nor receive gameplay input. The selector is fed from
+ * hook-recorded flags (InterlockedExchange edges) — dev keys keep working
+ * even though the game never sees them. Foreground gate is pid-based
+ * (fg window's pid == our pid == the game, we're its DLL), so other apps
+ * are never affected. If hooks fail, the poll loop falls back to
+ * GetAsyncKeyState edges (selector works, game also sees the keys). */
+
+static HHOOK g_kbHook = NULL, g_msHook = NULL;
+static volatile LONG g_hL = 0, g_hR = 0, g_hE = 0, g_hX = 0;
+
+static int fg_is_game(void) {
+    HWND fg = GetForegroundWindow();
+    DWORD pid = 0;
+    if (!fg) return 0;
+    GetWindowThreadProcessId(fg, &pid);
+    return pid == GetCurrentProcessId();
+}
+
+static LRESULT CALLBACK kb_proc(int code, WPARAM wp, LPARAM lp) {
+    if (code == HC_ACTION && (wp == WM_KEYDOWN || wp == WM_SYSKEYDOWN)) {
+        DWORD vk = ((KBDLLHOOKSTRUCT*)lp)->vkCode;
+        if (g_devmode && g_indState == IND_WAIT && fg_is_game()) {
+            if (vk == (DWORD)VK_LEFT) {
+                InterlockedExchange(&g_hL, 1); return 1;
+            }
+            if (vk == (DWORD)VK_RIGHT) {
+                InterlockedExchange(&g_hR, 1); return 1;
+            }
+            if (vk == (DWORD)VK_RETURN) {
+                InterlockedExchange(&g_hE, 1); return 1;
+            }
+            if (vk == (DWORD)VK_ESCAPE) {
+                InterlockedExchange(&g_hX, 1); return 1;
+            }
+            /* F8/Ctrl/Alt stay live; eat the rest */
+            if (vk != (DWORD)VK_F8 && vk != (DWORD)VK_CONTROL &&
+                vk != 0xA2u && vk != 0xA3u && vk != (DWORD)VK_MENU &&
+                vk != 0xA4u && vk != 0xA5u) return 1;
+        }
+    }
+    return CallNextHookEx(g_kbHook, code, wp, lp);
+}
+
+static LRESULT CALLBACK ms_proc(int code, WPARAM wp, LPARAM lp) {
+    (void)lp;
+    if (code == HC_ACTION && (wp == WM_RBUTTONDOWN || wp == WM_RBUTTONUP)) {
+        if (g_devmode && g_indState == IND_WAIT && fg_is_game()) return 1;
+    }
+    return CallNextHookEx(g_msHook, code, wp, lp);
+}
+
+static DWORD WINAPI hook_thread(LPVOID param) {
+    HMODULE self = NULL;
+    MSG m;
+    (void)param;
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
+                     | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                     (LPCSTR)kb_proc, &self);
+    g_kbHook = SetWindowsHookExA(WH_KEYBOARD_LL, kb_proc, self, 0);
+    g_msHook = SetWindowsHookExA(WH_MOUSE_LL, ms_proc, self, 0);
+    log_msg("KBHOOK kbd=%s mouse=%s\n",
+            g_kbHook ? "ok" : "FAILED", g_msHook ? "ok" : "FAILED");
+    if (!g_kbHook && !g_msHook) return 1;
+    while (GetMessageA(&m, NULL, 0, 0) > 0) {
+        TranslateMessage(&m);
+        DispatchMessageA(&m);
+    }
+    return 0;
+}
+
 /* While devmode is ON and the indicator is WAIT, freeze the game with its
  * own pause: the poll loop holds board+0x874=1 on the live race board and
  * restores the prior value on every WAIT exit (confirm, escape, timeout,
@@ -830,24 +904,32 @@ static DWORD WINAPI poll_thread(LPVOID param) {
         }
         /* WAIT-state level select: arrows cycle ALL <-> LEVEL01..15
          * (wrap), enter confirms, escape cancels. Devmode ON only.
-         * Dev keys use plain GetAsyncKeyState edges (nothing is eaten,
-         * nothing is hidden from the game). The freeze is handled by
-         * wait_freeze_tick above (native pause held + restored). */
+         * Pause-bound keys (arrows/Enter/Escape, right mouse) are eaten
+         * by LL hooks so the game can neither pause nor unpause; the
+         * selector is fed from hook flags (GetAsyncKeyState fallback if
+         * the hooks failed). The freeze is held by wait_freeze_tick. */
         wait_freeze_tick();   /* HOLD native pause while WAIT, restore after */
         {
             static int prevL = 0, prevR = 0, prevE = 0, prevX = 0;
             int l = 0, r = 0, e = 0, x = 0;
             if (g_devmode && g_indState == IND_WAIT) {
-                l = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
-                r = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
-                e = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
-                x = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
-                l = l && !prevL; r = r && !prevR;
-                e = e && !prevE; x = x && !prevX;
-                prevL = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
-                prevR = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
-                prevE = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
-                prevX = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+                if (g_kbHook) {
+                    l = InterlockedExchange(&g_hL, 0);
+                    r = InterlockedExchange(&g_hR, 0);
+                    e = InterlockedExchange(&g_hE, 0);
+                    x = InterlockedExchange(&g_hX, 0);
+                } else {
+                    l = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
+                    r = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
+                    e = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
+                    x = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+                    l = l && !prevL; r = r && !prevR;
+                    e = e && !prevE; x = x && !prevX;
+                    prevL = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
+                    prevR = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
+                    prevE = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
+                    prevX = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+                }
                 if (l || r) {
                     g_indSel += l ? -1 : 1;
                     if (g_indSel < -1) g_indSel = BESTTIME_RACES - 1;
@@ -928,8 +1010,8 @@ static void draw_direct(void) {
     if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
 
     text = g_devmode ? "devmode: on" : "devmode: off";
-    /* v01y: exactly one status draw per frame. The 0x46C1F1 frame hook
-     * arms one draw per frame; this consumes it. (v01y's 33ms time gate
+    /* v01z: exactly one status draw per frame. The 0x46C1F1 frame hook
+     * arms one draw per frame; this consumes it. (v01z's 33ms time gate
      * skipped whole frames -> fast blink. Same-frame overdraw is
      * invisible; zero-draw frames blink — so arm-per-frame + consume.) */
     if (!g_drawArmed) return;
@@ -1100,9 +1182,10 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v01y: arms one draw per frame */
+    install_frame_hook();  /* v01z: arms one draw per frame */
     install_draw_hook();
-    install_pause_tap();   /* DrawGlyph post-draw consumes the arm */
+    install_pause_tap();
+    CreateThread(NULL, 0, hook_thread, NULL, 0, NULL);   /* DrawGlyph post-draw consumes the arm */
     CreateThread(NULL, 0, poll_thread, NULL, 0, NULL);
     return 0;
 }
