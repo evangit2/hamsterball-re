@@ -708,11 +708,11 @@ static void apply_string(const StringSite* site, const char* text)
     int copyLen = (int)nc_strlen(text) + 1;
     int cap = site->maxLength + 1;  // never spill into the neighboring string
     if (copyLen > cap) { copyLen = cap; mlog("TRUNC %s %d", "", site->maxLength); }
-    if (copyLen == cap && cap > 0) ((char*)site->address)[cap - 1] = '\0';
     if (!VirtualProtect((void*)site->address, site->maxLength + 1,
                         PAGE_READWRITE, &old_protect))
         return;
     nc_memcpy((void*)site->address, text, copyLen);
+    if (copyLen == cap && cap > 0) ((char*)site->address)[cap - 1] = '\0';
     VirtualProtect((void*)site->address, site->maxLength + 1, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), (void*)site->address, site->maxLength + 1);
 }
