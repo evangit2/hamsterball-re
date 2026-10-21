@@ -190,7 +190,7 @@ static void mlog(const char* fmt, const char* a, int b)
 static float g_bg_pos[4] = {100.0f, 0.0f, 600.0f, 600.0f};
 
 static const int g_dry_run = 1; // isolate crash: parse+log only, zero patches
-#define ENABLE_VERSION 1 // quarter-bisect: version geometry/string only
+#define ENABLE_VERSION 0 // back to full dry-run for fingerprint build
 
 static void install_bg_pos_cave(void)
 {
@@ -1380,6 +1380,27 @@ static void __thiscall init_impl(void* thisptr, void* modApi)
     install_bg_pos_cave();
     install_ver_str_cave();
     install_ver_post_cave();
+    {
+        // FNV-1a over the menu-draw region: proves whether his exe matches mine
+        unsigned char* p = (unsigned char*)0x426000;
+        unsigned int h = 2166136261u;
+        for (int i = 0; i < 0x500; i++) { h ^= p[i]; h *= 16777619u; }
+        char hb[9]; const char* dig = "0123456789ABCDEF";
+        for (int i = 0; i < 8; i++) hb[7 - i] = dig[(h >> (i * 4)) & 15];
+        hb[8] = 0;
+        mlog("CODEHASH %s %d", hb, 0);
+        // first bytes at the menu-draw hook sites
+        unsigned char* s1 = (unsigned char*)0x42646A;
+        unsigned char* s2 = (unsigned char*)0x426484;
+        char b1[13], b2[13];
+        for (int i = 0; i < 6; i++) {
+            b1[i * 2] = dig[(s1[i] >> 4) & 15]; b1[i * 2 + 1] = dig[s1[i] & 15];
+            b2[i * 2] = dig[(s2[i] >> 4) & 15]; b2[i * 2 + 1] = dig[s2[i] & 15];
+        }
+        b1[12] = 0; b2[12] = 0;
+        mlog("SITEA %s %d", b1, 0);
+        mlog("SITEB %s %d", b2, 0);
+    }
 }
 
 static void __thiscall game_update_impl(void* thisptr)
