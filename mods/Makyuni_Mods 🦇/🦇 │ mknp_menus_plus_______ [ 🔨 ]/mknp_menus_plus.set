@@ -31,8 +31,7 @@
     },
     // ========================= MAIN MENU =========================
     {
-        "MainMenuScreen - Version":                           { "color":  "#FFFFFFFF",               "posX":  336.0, "posY":  386.0, "scaleX":   1.0, "scaleY":   1.0, "size": 3, "string": "V3.6.C"                                                                },
-        "MainMenuScreen - Background":                       { "color":  "#FFFFFFFF",               "posX":    0.0, "posY":    0.0, "scaleX": 800.0, "scaleY": 600.0, "path":   "Textures/LoaderBkg"                                                    }
+        "MainMenuScreen - Version":                           { "color":  "#FFFFFFFF",               "posX":  336.0, "posY":  386.0, "scaleX":   1.0, "scaleY":   1.0, "size": 3, "string": "V3.6.C"                                                                }
     }
     // ==================================================================
   

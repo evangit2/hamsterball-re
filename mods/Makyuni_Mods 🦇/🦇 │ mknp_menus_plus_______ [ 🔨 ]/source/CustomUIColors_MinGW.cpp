@@ -226,16 +226,6 @@ static int g_ver_y = 0x109;
 static int g_ver_size = 3;
 static DWORD g_ver_scale_bits = 0x3F800000; // size/3.0f as float bits (1.0 = stock)
 
-// Title backdrop master switch. 2026-10-21: every build that applied ANY
-// title change (rect cave, tint floats, path redirect — singly or combined)
-// crashed real Windows at menu Draw (5 consecutive crashes, two different
-// EIPs). Root cause unknown; my Linux rig cannot reach the menu to repro.
-// Parked at 0 until the cause is found offline. 1 = full feature.
-#define TITLE_ENABLE 0
-// Push order in each tile's tint block is [A,B,G,R]; rect layout (x,y,w,h).
-static int g_title_active = 0;
-static DWORD g_title_rect[4] = {0x00000000, 0x00000000, 0x43C80000, 0x43960000};
-static DWORD g_title_colpush[4] = {0x3F800000, 0x3F800000, 0x3F800000, 0x3F800000};
 
 static void ver_push32(DWORD pushAddr, DWORD val)
 {
@@ -274,77 +264,6 @@ static void install_ver_str_cave(void)
     FlushInstructionCache(GetCurrentProcess(), (void*)0x42646A, 6);
 }
 
-// -- Title backdrop rect caves ------------------------------------------------
-// Tile0 (site 0x4261FF, resume 0x42621B): mod rect when active, native else.
-// Tiles1-3 (sites 0x42625D/0x4262AF/0x426301, resumes 0x42626D/0x4262BF/
-// 0x42630D): zero rect when active (single fullscreen tile0), native else.
-static void title_cave_jmp(DWORD site, unsigned char* cave, unsigned char expect)
-{
-    if (*(unsigned char*)site != expect) {
-        mlog("TITLECAVE SKIP %s %d", "", site);
-        return;
-    }
-    DWORD op;
-    if (!VirtualProtect((void*)site, 5, PAGE_EXECUTE_READWRITE, &op)) return;
-    *(unsigned char*)site = 0xE9;
-    *(DWORD*)(site + 1) = (DWORD)cave - (site + 5);
-    VirtualProtect((void*)site, 5, op, &op);
-    FlushInstructionCache(GetCurrentProcess(), (void*)site, 5);
-    mlog("TITLECAVE %s %d", "", site);
-}
-
-static void install_title_cave0(void)
-{
-    unsigned char* cave = (unsigned char*)VirtualAlloc(NULL, 128,
-        MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!cave) return;
-    int p = 0, jz;
-    cave[p++] = 0x80; cave[p++] = 0x3D; // cmp byte [g_title_active],0
-    *(DWORD*)(cave + p) = (DWORD)&g_title_active; p += 4;
-    cave[p++] = 0x00;
-    jz = p; cave[p++] = 0x74; cave[p++] = 0x00; // jz native (fixup)
-    // mod branch: shadow + mod rect + keep ebx/ebp for the other tiles
-    cave[p++] = 0xC7; cave[p++] = 0x00; // movl $shadow,(%eax)
-    *(DWORD*)(cave + p) = 0x4CF584; p += 4;
-    for (int i = 0; i < 4; i++) {
-        cave[p++] = 0x8B; cave[p++] = 0x15; // mov edx,[rect+i]
-        *(DWORD*)(cave + p) = (DWORD)&g_title_rect[i]; p += 4;
-        cave[p++] = 0x89; cave[p++] = 0x50; // mov [eax+disp8],edx
-        cave[p++] = (unsigned char)(0x04 + i * 4);
-    }
-    cave[p++] = 0xBB; *(DWORD*)(cave + p) = 0x43C80000; p += 4; // ebx=400
-    cave[p++] = 0xBD; *(DWORD*)(cave + p) = 0x43960000; p += 4; // ebp=300
-    cave[p++] = 0xE9; // jmp 0x42621B
-    *(DWORD*)(cave + p) = (DWORD)0x42621B - ((DWORD)cave + p + 4); p += 4;
-    // native branch: exact original writes 0x4261FF-0x42621A
-    cave[jz + 1] = (unsigned char)(p - (jz + 2));
-    cave[p++] = 0x89; cave[p++] = 0x58; cave[p++] = 0x04;
-    cave[p++] = 0x89; cave[p++] = 0x58; cave[p++] = 0x08;
-    cave[p++] = 0xC7; cave[p++] = 0x00;
-    *(DWORD*)(cave + p) = 0x4CF584; p += 4;
-    cave[p++] = 0xBB; *(DWORD*)(cave + p) = 0x43C80000; p += 4;
-    cave[p++] = 0xBD; *(DWORD*)(cave + p) = 0x43960000; p += 4;
-    cave[p++] = 0x89; cave[p++] = 0x58; cave[p++] = 0x0C;
-    cave[p++] = 0x89; cave[p++] = 0x68; cave[p++] = 0x10;
-    cave[p++] = 0xE9;
-    *(DWORD*)(cave + p) = (DWORD)0x42621B - ((DWORD)cave + p + 4); p += 4;
-    title_cave_jmp(0x4261FF, cave, 0x89);
-}
-
-// Hide-or-native tile cave builder (tiles 1-3): retired 2026-10-21 —
-// zero/off-screen rects crashed real Windows at menu Draw. Tiles keep
-// stock quads; invisibility comes from alpha-0 tint (apply_title_color).
-// (Body removed; kept as a note so nobody re-adds rect hiding.)
-
-static void install_title_caves(void)
-{
-#if TITLE_ENABLE
-    install_title_cave0();
-#else
-    mlog("TITLENONE %s %d", "", 0);
-#endif
-}
-
 // Post-draw: restore font scale to 1.0 so other texts sharing the font stay
 // stock. Site = 0x426484 (4B mov) + 0x426488 (1B pop edi) = 5B JMP.
 // EAX dead after the call (next use is pops), so clobbering it is safe.
@@ -379,53 +298,6 @@ static void apply_version_draw(void)
     ver_push32(0x426479, (DWORD)g_ver_x);
     ver_push32(0x426474, (DWORD)g_ver_y);
 }
-// -- Title backdrop tint -------------------------------------------------------
-static const DWORD TITLE_TINT_PUSHES[16] = {
-    0x004261E1, 0x004261E6, 0x004261EB, 0x004261F0,
-    0x00426239, 0x0042623E, 0x00426243, 0x00426248,
-    0x0042628B, 0x00426290, 0x00426295, 0x0042629A,
-    0x004262DD, 0x004262E2, 0x004262E7, 0x004262EC
-};
-
-static void apply_title_color(void)
-{
-#if TITLE_ENABLE
-    // Tiles 1-3: stock floats for now. (Alpha-0 experiment reverted
-    // 2026-10-21: every build carrying a zeroed first float crashed real
-    // Windows at menu Draw. If stock floats boot, the zero was guilty.)
-    // Tile0 uses the user color.
-    for (int i = 0; i < 16; i++) {
-        DWORD bits;
-        if (!g_title_active) {
-            bits = 0x3F800000;
-        } else if ((i >> 2) >= 1) {
-            bits = 0x3F800000;
-        } else {
-            bits = g_title_colpush[i & 3];
-        }
-        ver_push32(TITLE_TINT_PUSHES[i], bits);
-    }
-#endif
-}
-
-// True if the title image resolves to a real file (game-root relative).
-// The game draws a NULL texture as a null-call Draw crash, so never
-// redirect a push to a file that is not there.
-static int title_file_exists(const char* raw)
-{
-    char cand[160];
-    const char* exts[4] = { "", ".png", ".bmp", ".tga" };
-    for (int e = 0; e < 4; e++) {
-        nc_snprintf(cand, sizeof(cand), "%s%s", raw, exts[e]);
-        if (GetFileAttributesA(cand) != (DWORD)-1) return 1;
-        nc_snprintf(cand, sizeof(cand), "Textures\\%s%s", raw, exts[e]);
-        if (GetFileAttributesA(cand) != (DWORD)-1) return 1;
-        nc_snprintf(cand, sizeof(cand), "textures\\%s%s", raw, exts[e]);
-        if (GetFileAttributesA(cand) != (DWORD)-1) return 1;
-    }
-    return 0;
-}
-
 static unsigned char* g_cave_mem = NULL;
 static int g_reload_counter = 0;
 
@@ -849,10 +721,6 @@ static PathSlot g_path_slots[] = {
     {"loadingscreen - background", 0x0042CAC3, "loaderbkg.png",      0},
     {"hamsterball logo",   0x00429905, "titletext-left.png",         0},
     {"hamsterball logo",   0x0042993A, "titletext-right.png",        1},
-    {"mainmenuscreen - background", 0x0042A582, "title1.png",        0},
-    {"mainmenuscreen - background", 0x0042A599, "title2.png",        0},
-    {"mainmenuscreen - background", 0x0042A5B0, "title3.png",        0},
-    {"mainmenuscreen - background", 0x0042A5C7, "title4.png",        0},
 };
 
 #define NUM_PATH_SLOTS (sizeof(g_path_slots) / sizeof(g_path_slots[0]))
@@ -966,8 +834,6 @@ static void apply_string_patch(DWORD address, const char* text, int maxLen)
 
 static void parse_element_values(JsonParser* p, const char* elemName, int elemNameLen)
 {
-    if (json_key_matches(elemName, elemNameLen, "mainmenuscreen - background"))
-        g_title_active = 1;
     JsonToken tk = next_token(p);
     if (tk.type != JTK_LBRACE) {
         if (tk.type != JTK_END) skip_value(p);
@@ -1022,34 +888,6 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
 
         tk = next_token(p);
 
-        if (nc_stricmp(keyBuf, "color") == 0 &&
-            json_key_matches(elemName, elemNameLen, "mainmenuscreen - background")) {
-            // Title backdrop tint (UNVERIFIED: assumed same tint-float layout
-            // as the loading bg; test with a saturated color and compare).
-            DWORD hex = 0xFFFFFFFF;
-            if (tk.type == JTK_STRING) {
-                parse_hex_color(tk.start, tk.length, &hex);
-            } else if (tk.type == JTK_LBRACK) {
-                int got = 0;
-                tk = next_token(p);
-                while (tk.type != JTK_RBRACK && tk.type != JTK_END) {
-                    if (tk.type == JTK_STRING) {
-                        if (!got && parse_hex_color(tk.start, tk.length, &hex))
-                            got = 1;
-                    }
-                    tk = next_token(p);
-                    if (tk.type == JTK_COMMA) tk = next_token(p);
-                }
-            } else {
-                skip_value(p);
-            }
-            float r, g, b, a;
-            hex_to_floats(hex, &r, &g, &b, &a);
-            nc_memcpy(&g_title_colpush[0], &a, 4);
-            nc_memcpy(&g_title_colpush[1], &b, 4);
-            nc_memcpy(&g_title_colpush[2], &g, 4);
-            nc_memcpy(&g_title_colpush[3], &r, 4);
-        }
         if (nc_stricmp(keyBuf, "color") == 0 && matched_color_idx >= 0) {
             if (tk.type == JTK_LBRACK) {
                 int color_idx = 0;
@@ -1103,15 +941,6 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                 g_bg_pos[fi] = tk.num_val;
             }
             if (tk.type == JTK_NUMBER &&
-                json_key_matches(elemName, elemNameLen, "mainmenuscreen - background")) {
-                // tile-0 rect (x,y,w,h) as float bits; tiles 1-3 are zeroed
-                int fi = (keyBuf[0] == 'p' || keyBuf[0] == 'P')
-                    ? ((keyBuf[3] == 'X' || keyBuf[3] == 'x') ? 0 : 1)
-                    : ((keyBuf[5] == 'X' || keyBuf[5] == 'x') ? 2 : 3);
-                float fv = tk.num_val;
-                nc_memcpy(&g_title_rect[fi], &fv, 4);
-            }
-            if (tk.type == JTK_NUMBER &&
                 json_key_matches(elemName, elemNameLen, "mainmenuscreen - version")) {
                 int fi = (keyBuf[3] == 'X' || keyBuf[3] == 'x') ? 0 : 1;
                 if (fi == 0) g_ver_x = (int)tk.num_val;
@@ -1144,14 +973,7 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                         for (int i = 0; i < (int)NUM_PATH_SLOTS; i++) {
                             if (g_path_slots[i].arrayIndex == arr_idx &&
                                 json_key_matches(elemName, elemNameLen, g_path_slots[i].jsonName)) {
-#if TITLE_ENABLE
                                 apply_path_to_slot(i, pathBuf);
-#else
-                                if (!json_key_matches(g_path_slots[i].jsonName,
-                                                      (int)nc_strlen(g_path_slots[i].jsonName),
-                                                      "mainmenuscreen - background"))
-                                    apply_path_to_slot(i, pathBuf);
-#endif
                                 break;
                             }
                         }
@@ -1161,34 +983,14 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                     if (tk.type == JTK_COMMA) tk = next_token(p);
                 }
             } else if (tk.type == JTK_STRING) {
-                // Single path — assign to ALL matching slots (arrayIndex=0),
-                // EXCEPT the title backdrop: only its first slot (tile0's
-                // load) is redirected. Feeding all 4 title slots the same
-                // file crashed real Windows at menu Draw (triple-verified);
-                // suspect the boot texture list dedupes/skews on duplicates.
-                // Tiles 1-3 keep their stock files (hidden via alpha 0).
+                // Single path — assign to first matching slot (arrayIndex=0)
                 char pathBuf[128];
                 copy_json_string(tk.start, tk.length, pathBuf, sizeof(pathBuf));
-                int title_done = 0;
                 for (int i = 0; i < (int)NUM_PATH_SLOTS; i++) {
                     if (g_path_slots[i].arrayIndex == 0 &&
                         json_key_matches(elemName, elemNameLen, g_path_slots[i].jsonName)) {
-                        if (json_key_matches(g_path_slots[i].jsonName,
-                                             (int)nc_strlen(g_path_slots[i].jsonName),
-                                             "mainmenuscreen - background")) {
-#if TITLE_ENABLE
-                            if (title_done) continue;
-                            title_done = 1;
-                            if (!title_file_exists(pathBuf)) {
-                                mlog("TITLEPATH MISSING %s %d", pathBuf, 0);
-                                continue;
-                            }
-                            mlog("TITLEPATH %s %d", pathBuf, 0);
-#else
-                            continue; // parked: keep stock title loads
-#endif
-                        }
                         apply_path_to_slot(i, pathBuf);
+                        break;
                     }
                 }
             } else {
@@ -1276,9 +1078,7 @@ static const char* DEFAULT_CONFIG =
 ",\n"
 "    // ========================= MAIN MENU =========================\n"
 "    {\n"
-"        \"MainMenuScreen - Version\":                           { \"color\":  \"#FFFFFFFF\",               \"posX\":  336.0, \"posY\":  386.0, \"scaleX\":   1.0, \"scaleY\":   1.0, \"size\": 3, \"string\": \"V3.6.C\" },\n"
-"        \"MainMenuScreen - Background\":                       { \"color\":  \"#FFFFFFFF\",               \"posX\":    0.0, \"posY\":    0.0, \"scaleX\": 800.0, \"scaleY\": 600.0, \"path\":   \"Textures/LoaderBkg\" },\n"
-"    }\n"
+"        \"MainMenuScreen - Version\":                           { \"color\":  \"#FFFFFFFF\",               \"posX\":  336.0, \"posY\":  386.0, \"scaleX\":   1.0, \"scaleY\":   1.0, \"size\": 3, \"string\": \"V3.6.C\" }\n""    }\n"
 "]\n";
 
 static void create_default_config(void)
@@ -1305,7 +1105,6 @@ static char g_clean_json[16384];
 
 static void read_config(void)
 {
-    g_title_active = 0;
     HANDLE h = CreateFileA(g_config_path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
                            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) { log_msg("OPEN FAIL"); return; }
@@ -1375,7 +1174,6 @@ static void read_config(void)
     }
 
     apply_version_draw();
-    apply_title_color();
 }
 
 // ===========================================================================
@@ -1542,7 +1340,6 @@ static void __thiscall init_impl(void* thisptr, void* modApi)
     install_bg_pos_cave();
     install_ver_str_cave();
     install_ver_post_cave();
-    install_title_caves();
 }
 
 static void __thiscall game_update_impl(void* thisptr)
