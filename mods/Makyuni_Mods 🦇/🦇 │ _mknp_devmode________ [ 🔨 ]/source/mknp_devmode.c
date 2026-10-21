@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v01w — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v01x — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -151,7 +151,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v01w self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v01x self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -299,7 +299,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v01w: single small line with bottom-right shadow (version-text style).
+/* v01x: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -590,7 +590,7 @@ static void install_pause_tap(void) {
     *q++ = 0x8A; *q++ = 0x81;                    /* replay: mov 0x874(ecx),al */
     *q++ = 0x74; *q++ = 0x08; *q++ = 0x00; *q++ = 0x00;
     *q++ = 0xE9;                                 /* jmp back to 0x469D33 */
-    *(DWORD*)q = PAUSETAP_NEXT - ((DWORD)cave + 19); q += 4;
+    *(DWORD*)q = PAUSETAP_NEXT - ((DWORD)q + 4); q += 4;
     install_jmp_hook_nop(PAUSETAP_ADDR, (DWORD)cave, 6);
     g_tapOk = 1;
     log_msg("PAUSETAP installed at 0x469D2D -> cave %p\n", cave);
@@ -910,8 +910,8 @@ static void draw_direct(void) {
     if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
 
     text = g_devmode ? "devmode: on" : "devmode: off";
-    /* v01w: exactly one status draw per frame. The 0x46C1F1 frame hook
-     * arms one draw per frame; this consumes it. (v01w's 33ms time gate
+    /* v01x: exactly one status draw per frame. The 0x46C1F1 frame hook
+     * arms one draw per frame; this consumes it. (v01x's 33ms time gate
      * skipped whole frames -> fast blink. Same-frame overdraw is
      * invisible; zero-draw frames blink — so arm-per-frame + consume.) */
     if (!g_drawArmed) return;
@@ -1082,7 +1082,7 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v01w: arms one draw per frame */
+    install_frame_hook();  /* v01x: arms one draw per frame */
     install_draw_hook();
     install_pause_tap();   /* DrawGlyph post-draw consumes the arm */
     CreateThread(NULL, 0, poll_thread, NULL, 0, NULL);
