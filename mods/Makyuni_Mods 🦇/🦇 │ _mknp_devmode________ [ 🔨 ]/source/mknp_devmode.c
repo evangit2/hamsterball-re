@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v01s — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v01t — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -12,7 +12,7 @@
   *  - Dev keybinds come from mknp_devmode.set (jsonc, next to the DLL):
   *    CTRL+<key> fires the action only while devmode is ON (1s cooldown).
   *  - While devmode is ON and the indicator is in WAIT (level select), the
-  *    poll loop force-holds the race board's pause flag at 0, so Enter/Escape
+  *    poll loop XX
   *    can never latch the pause menu. Dev keys are never eaten or hidden —
   *    the selector uses plain GetAsyncKeyState edges.
   */
@@ -151,7 +151,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v01s self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v01t self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -245,7 +245,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v01s: single small line with bottom-right shadow (version-text style).
+/* v01t: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -521,58 +521,74 @@ static void dev_action_fire(const char* name) {
  * when the App quit flag is set (polite shutdown, no hang). */
 
 /* ── WAIT-state input capture ─────────────────────────────────────── */
-/* While devmode is ON and the indicator is WAIT, the game must not pause:
- * the poll loop force-holds board+0x874=0 on the live race board, so an
- * Esc/Enter that opens the pause menu is undone within one 16ms tick
- * (menu can never visibly latch). Dev keys are NOT touched — the selector
- * keeps its proven GetAsyncKeyState edges. Identity guard: App+0x178 must
- * name a *Board (menu shells are skipped, never written). */
+/* While devmode is ON and the indicator is WAIT, freeze the game with its
+ * own pause: the poll loop holds board+0x874=1 on the live race board and
+ * restores the prior value on every WAIT exit (confirm, escape, timeout,
+ * devmode off). Dev keys are never eaten — the selector keeps its plain
+ * GetAsyncKeyState edges. Identity guard: App+0x178 must name a *Board
+ * (menu shells are skipped, never written). The native pause menu may
+ * show while frozen; gameplay, timers and physics all stop. */
 
 #define APP_BOARD     0x178u
 #define BOARD_PAUSE   0x874u
 #define BOARD_NAME    0x868u
 
-static int g_wasPaused = 0;   /* transition latch for the suppress log */
+static int g_wePaused = 0;        /* 1 while WE hold the pause */
+static BYTE g_pauseSaved = 0;     /* flag value before we took over */
+static DWORD g_pauseBoard = 0;    /* board we paused (0 = none) */
 
-static void suppress_pause_during_wait(void) {
+static int wait_board_ok(DWORD *boardOut, char *nameOut) {
     DWORD app, board;
-    char name[16];
     int i;
-    if (!g_devmode || g_indState != IND_WAIT) {   /* other states: game normal */
-        g_wasPaused = 0;
-        return;
-    }
-    if (IsBadReadPtr((void*)APP_PTR, 4)) return;
+    if (IsBadReadPtr((void*)APP_PTR, 4)) return 0;
     app = *(DWORD*)APP_PTR;
-    if (!app || app < 0x10000 || IsBadReadPtr((void*)app, APP_BOARD + 4)) {
-        g_wasPaused = 0;
-        return;
-    }
+    if (!app || app < 0x10000 || IsBadReadPtr((void*)app, APP_BOARD + 4))
+        return 0;
     board = *(DWORD*)(app + APP_BOARD);
     if (!board || board < 0x10000 ||
         IsBadReadPtr((void*)board, BOARD_PAUSE + 1) ||
-        IsBadReadPtr((void*)(board + BOARD_NAME), 12)) {
-        g_wasPaused = 0;
-        return;
-    }
+        IsBadReadPtr((void*)(board + BOARD_NAME), 12))
+        return 0;
     for (i = 0; i < 11; i++) {
         char c = *(char*)(board + BOARD_NAME + (DWORD)i);
-        name[i] = (c >= 32 && c < 127) ? c : 0;
+        nameOut[i] = (c >= 32 && c < 127) ? c : 0;
         if (!c) break;
     }
-    name[11] = 0;
-    if (!strstr(name, "Board")) {   /* menu shell, not a race/arena board */
-        g_wasPaused = 0;
+    nameOut[11] = 0;
+    if (!strstr(nameOut, "Board")) return 0;   /* menu shell, not a board */
+    if (IsBadWritePtr((void*)(board + BOARD_PAUSE), 1)) return 0;
+    *boardOut = board;
+    return 1;
+}
+
+static void wait_freeze_tick(void) {
+    DWORD board;
+    char name[16];
+    if (!g_devmode || g_indState != IND_WAIT) {
+        if (g_wePaused) {   /* any WAIT exit: give the pause flag back */
+            if (g_pauseBoard && !IsBadReadPtr((void*)g_pauseBoard, BOARD_PAUSE + 1) &&
+                !IsBadWritePtr((void*)(g_pauseBoard + BOARD_PAUSE), 1)) {
+                *(BYTE*)(g_pauseBoard + BOARD_PAUSE) = g_pauseSaved;
+                log_msg("DEVBIND WAIT exit: pause restored to %d\n", g_pauseSaved);
+            }
+            g_wePaused = 0;
+            g_pauseBoard = 0;
+        }
         return;
     }
-    if (*(BYTE*)(board + BOARD_PAUSE)) {
-        if (IsBadWritePtr((void*)(board + BOARD_PAUSE), 1)) return;
-        *(BYTE*)(board + BOARD_PAUSE) = 0;
-        if (!g_wasPaused)
-            log_msg("DEVBIND pause-suppressed during WAIT (%s)\n", name);
-        g_wasPaused = 1;
-    } else {
-        g_wasPaused = 0;
+    if (!wait_board_ok(&board, name)) return;   /* menus: nothing to freeze */
+    if (!g_wePaused || g_pauseBoard != board) {
+        g_pauseSaved = *(BYTE*)(board + BOARD_PAUSE);
+        *(BYTE*)(board + BOARD_PAUSE) = 1;
+        g_wePaused = 1;
+        g_pauseBoard = board;
+        log_msg("DEVBIND WAIT: game frozen (pause held, was %d) on %s\n",
+                g_pauseSaved, name);
+        return;
+    }
+    if (!*(BYTE*)(board + BOARD_PAUSE)) {
+        *(BYTE*)(board + BOARD_PAUSE) = 1;   /* menu RESUME clicked: re-hold */
+        log_msg("DEVBIND WAIT: pause re-held\n");
     }
 }
 
@@ -631,9 +647,9 @@ static DWORD WINAPI poll_thread(LPVOID param) {
         /* WAIT-state level select: arrows cycle ALL <-> LEVEL01..15
          * (wrap), enter confirms, escape cancels. Devmode ON only.
          * Dev keys use plain GetAsyncKeyState edges (nothing is eaten,
-         * nothing is hidden from the game). The pause menu is handled
-         * separately by suppress_pause_during_wait. */
-        suppress_pause_during_wait();
+         * nothing is hidden from the game). The freeze is handled by
+         * wait_freeze_tick above (native pause held + restored). */
+        wait_freeze_tick();   /* HOLD native pause while WAIT, restore after */
         {
             static int prevL = 0, prevR = 0, prevE = 0, prevX = 0;
             int l = 0, r = 0, e = 0, x = 0;
@@ -728,8 +744,8 @@ static void draw_direct(void) {
     if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
 
     text = g_devmode ? "devmode: on" : "devmode: off";
-    /* v01s: exactly one status draw per frame. The 0x46C1F1 frame hook
-     * arms one draw per frame; this consumes it. (v01s's 33ms time gate
+    /* v01t: exactly one status draw per frame. The 0x46C1F1 frame hook
+     * arms one draw per frame; this consumes it. (v01t's 33ms time gate
      * skipped whole frames -> fast blink. Same-frame overdraw is
      * invisible; zero-draw frames blink — so arm-per-frame + consume.) */
     if (!g_drawArmed) return;
@@ -899,7 +915,7 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v01s: arms one draw per frame */
+    install_frame_hook();  /* v01t: arms one draw per frame */
     install_draw_hook();   /* DrawGlyph post-draw consumes the arm */
     CreateThread(NULL, 0, poll_thread, NULL, 0, NULL);
     return 0;
