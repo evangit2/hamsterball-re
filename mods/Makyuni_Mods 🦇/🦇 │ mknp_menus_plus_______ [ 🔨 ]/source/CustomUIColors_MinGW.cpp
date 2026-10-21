@@ -380,14 +380,14 @@ static const DWORD TITLE_TINT_PUSHES[16] = {
 
 static void apply_title_color(void)
 {
-    // Tiles 1-3: alpha 0 (invisible, stock quads kept per MAKYUNI).
-    // Push order per block is [A,B,G,R]; tile0 uses the user color.
+    // Tiles 1-3: stock floats for now. (Alpha-0 experiment reverted
+    // 2026-10-21: every build carrying a zeroed first float crashed real
+    // Windows at menu Draw. If stock floats boot, the zero was guilty.)
+    // Tile0 uses the user color.
     for (int i = 0; i < 16; i++) {
         DWORD bits;
         if (!g_title_active) {
             bits = 0x3F800000;
-        } else if ((i >> 2) >= 1 && (i & 3) == 0) {
-            bits = 0x00000000; // alpha 0
         } else if ((i >> 2) >= 1) {
             bits = 0x3F800000;
         } else {
@@ -395,6 +395,24 @@ static void apply_title_color(void)
         }
         ver_push32(TITLE_TINT_PUSHES[i], bits);
     }
+}
+
+// True if the title image resolves to a real file (game-root relative).
+// The game draws a NULL texture as a null-call Draw crash, so never
+// redirect a push to a file that is not there.
+static int title_file_exists(const char* raw)
+{
+    char cand[160];
+    const char* exts[4] = { "", ".png", ".bmp", ".tga" };
+    for (int e = 0; e < 4; e++) {
+        nc_snprintf(cand, sizeof(cand), "%s%s", raw, exts[e]);
+        if (GetFileAttributesA(cand) != (DWORD)-1) return 1;
+        nc_snprintf(cand, sizeof(cand), "Textures\\%s%s", raw, exts[e]);
+        if (GetFileAttributesA(cand) != (DWORD)-1) return 1;
+        nc_snprintf(cand, sizeof(cand), "textures\\%s%s", raw, exts[e]);
+        if (GetFileAttributesA(cand) != (DWORD)-1) return 1;
+    }
+    return 0;
 }
 
 static unsigned char* g_cave_mem = NULL;
@@ -1142,6 +1160,11 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                                              "mainmenuscreen - background")) {
                             if (title_done) continue;
                             title_done = 1;
+                            if (!title_file_exists(pathBuf)) {
+                                mlog("TITLEPATH MISSING %s %d", pathBuf, 0);
+                                continue;
+                            }
+                            mlog("TITLEPATH %s %d", pathBuf, 0);
                         }
                         apply_path_to_slot(i, pathBuf);
                     }
