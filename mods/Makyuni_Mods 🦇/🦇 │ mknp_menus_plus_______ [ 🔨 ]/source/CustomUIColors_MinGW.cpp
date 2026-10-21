@@ -226,6 +226,12 @@ static int g_ver_y = 0x109;
 static int g_ver_size = 3;
 static DWORD g_ver_scale_bits = 0x3F800000; // size/3.0f as float bits (1.0 = stock)
 
+// -- Main-menu title backdrop (2x2 mosaic -> single image) --------------------
+// Push order in each tile's tint block is [A,B,G,R]; rect layout (x,y,w,h).
+static int g_title_active = 0;
+static DWORD g_title_rect[4] = {0x00000000, 0x00000000, 0x43C80000, 0x43960000};
+static DWORD g_title_colpush[4] = {0x3F800000, 0x3F800000, 0x3F800000, 0x3F800000};
+
 static void ver_push32(DWORD pushAddr, DWORD val)
 {
     DWORD op;
@@ -263,6 +269,108 @@ static void install_ver_str_cave(void)
     FlushInstructionCache(GetCurrentProcess(), (void*)0x42646A, 6);
 }
 
+// -- Title backdrop rect caves ------------------------------------------------
+// Tile0 (site 0x4261FF, resume 0x42621B): mod rect when active, native else.
+// Tiles1-3 (sites 0x42625D/0x4262AF/0x426301, resumes 0x42626D/0x4262BF/
+// 0x42630D): zero rect when active (single fullscreen tile0), native else.
+static void title_cave_jmp(DWORD site, unsigned char* cave, unsigned char expect)
+{
+    if (*(unsigned char*)site != expect) {
+        mlog("TITLECAVE SKIP %s %d", "", site);
+        return;
+    }
+    DWORD op;
+    if (!VirtualProtect((void*)site, 5, PAGE_EXECUTE_READWRITE, &op)) return;
+    *(unsigned char*)site = 0xE9;
+    *(DWORD*)(site + 1) = (DWORD)cave - (site + 5);
+    VirtualProtect((void*)site, 5, op, &op);
+    FlushInstructionCache(GetCurrentProcess(), (void*)site, 5);
+    mlog("TITLECAVE %s %d", "", site);
+}
+
+static void install_title_cave0(void)
+{
+    unsigned char* cave = (unsigned char*)VirtualAlloc(NULL, 128,
+        MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!cave) return;
+    int p = 0, jz;
+    cave[p++] = 0x80; cave[p++] = 0x3D; // cmp byte [g_title_active],0
+    *(DWORD*)(cave + p) = (DWORD)&g_title_active; p += 4;
+    cave[p++] = 0x00;
+    jz = p; cave[p++] = 0x74; cave[p++] = 0x00; // jz native (fixup)
+    // mod branch: shadow + mod rect + keep ebx/ebp for the other tiles
+    cave[p++] = 0xC7; cave[p++] = 0x00; // movl $shadow,(%eax)
+    *(DWORD*)(cave + p) = 0x4CF584; p += 4;
+    for (int i = 0; i < 4; i++) {
+        cave[p++] = 0x8B; cave[p++] = 0x15; // mov edx,[rect+i]
+        *(DWORD*)(cave + p) = (DWORD)&g_title_rect[i]; p += 4;
+        cave[p++] = 0x89; cave[p++] = 0x50; // mov [eax+disp8],edx
+        cave[p++] = (unsigned char)(0x04 + i * 4);
+    }
+    cave[p++] = 0xBB; *(DWORD*)(cave + p) = 0x43C80000; p += 4; // ebx=400
+    cave[p++] = 0xBD; *(DWORD*)(cave + p) = 0x43960000; p += 4; // ebp=300
+    cave[p++] = 0xE9; // jmp 0x42621B
+    *(DWORD*)(cave + p) = (DWORD)0x42621B - ((DWORD)cave + p + 4); p += 4;
+    // native branch: exact original writes 0x4261FF-0x42621A
+    cave[jz + 1] = (unsigned char)(p - (jz + 2));
+    cave[p++] = 0x89; cave[p++] = 0x58; cave[p++] = 0x04;
+    cave[p++] = 0x89; cave[p++] = 0x58; cave[p++] = 0x08;
+    cave[p++] = 0xC7; cave[p++] = 0x00;
+    *(DWORD*)(cave + p) = 0x4CF584; p += 4;
+    cave[p++] = 0xBB; *(DWORD*)(cave + p) = 0x43C80000; p += 4;
+    cave[p++] = 0xBD; *(DWORD*)(cave + p) = 0x43960000; p += 4;
+    cave[p++] = 0x89; cave[p++] = 0x58; cave[p++] = 0x0C;
+    cave[p++] = 0x89; cave[p++] = 0x68; cave[p++] = 0x10;
+    cave[p++] = 0xE9;
+    *(DWORD*)(cave + p) = (DWORD)0x42621B - ((DWORD)cave + p + 4); p += 4;
+    title_cave_jmp(0x4261FF, cave, 0x89);
+}
+
+// Zero-or-native tile cave builder (tiles 1-3). native_ops = exact bytes of
+// the original rect writes starting at site; resume = draw-block continue.
+static void install_title_zero_cave(DWORD site, DWORD resume,
+                                    const unsigned char* native_ops, int native_len,
+                                    unsigned char expect)
+{
+    unsigned char* cave = (unsigned char*)VirtualAlloc(NULL, 96,
+        MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!cave) return;
+    int p = 0, jz;
+    cave[p++] = 0x80; cave[p++] = 0x3D;
+    *(DWORD*)(cave + p) = (DWORD)&g_title_active; p += 4;
+    cave[p++] = 0x00;
+    jz = p; cave[p++] = 0x74; cave[p++] = 0x00;
+    for (int i = 0; i < 4; i++) { // mod: zero rect (hide tile)
+        cave[p++] = 0xC7; cave[p++] = 0x40;
+        cave[p++] = (unsigned char)(0x04 + i * 4);
+        *(DWORD*)(cave + p) = 0x00000000; p += 4;
+    }
+    cave[p++] = 0xE9;
+    *(DWORD*)(cave + p) = (DWORD)resume - ((DWORD)cave + p + 4); p += 4;
+    cave[jz + 1] = (unsigned char)(p - (jz + 2));
+    for (int i = 0; i < native_len; i++) cave[p++] = native_ops[i];
+    cave[p++] = 0xE9;
+    *(DWORD*)(cave + p) = (DWORD)resume - ((DWORD)cave + p + 4); p += 4;
+    title_cave_jmp(site, cave, expect);
+}
+
+static void install_title_caves(void)
+{
+    static const unsigned char n1[] = {
+        0x89,0x58,0x04, 0xC7,0x40,0x08,0x00,0x00,0x00,0x00,
+        0x89,0x58,0x0C, 0x89,0x68,0x10 };
+    static const unsigned char n2[] = {
+        0xC7,0x40,0x04,0x00,0x00,0x00,0x00,
+        0x89,0x68,0x08, 0x89,0x58,0x0C, 0x89,0x68,0x10 };
+    static const unsigned char n3[] = {
+        0x89,0x58,0x04, 0x89,0x68,0x08,
+        0x89,0x58,0x0C, 0x89,0x68,0x10 };
+    install_title_cave0();
+    install_title_zero_cave(0x42625D, 0x42626D, n1, sizeof(n1), 0x89);
+    install_title_zero_cave(0x4262AF, 0x4262BF, n2, sizeof(n2), 0xC7);
+    install_title_zero_cave(0x426301, 0x42630D, n3, sizeof(n3), 0x89);
+}
+
 // Post-draw: restore font scale to 1.0 so other texts sharing the font stay
 // stock. Site = 0x426484 (4B mov) + 0x426488 (1B pop edi) = 5B JMP.
 // EAX dead after the call (next use is pops), so clobbering it is safe.
@@ -297,6 +405,22 @@ static void apply_version_draw(void)
     ver_push32(0x426479, (DWORD)g_ver_x);
     ver_push32(0x426474, (DWORD)g_ver_y);
 }
+// -- Title backdrop tint -------------------------------------------------------
+static const DWORD TITLE_TINT_PUSHES[16] = {
+    0x004261E1, 0x004261E6, 0x004261EB, 0x004261F0,
+    0x00426239, 0x0042623E, 0x00426243, 0x00426248,
+    0x0042628B, 0x00426290, 0x00426295, 0x0042629A,
+    0x004262DD, 0x004262E2, 0x004262E7, 0x004262EC
+};
+
+static void apply_title_color(void)
+{
+    for (int i = 0; i < 16; i++) {
+        DWORD bits = g_title_active ? g_title_colpush[i & 3] : 0x3F800000;
+        ver_push32(TITLE_TINT_PUSHES[i], bits);
+    }
+}
+
 static unsigned char* g_cave_mem = NULL;
 static int g_reload_counter = 0;
 
@@ -717,9 +841,13 @@ static PathSlot g_path_slots[] = {
     {"loader _no_ ball",   0x0042CA3F, "Loader(Grey).png",           0},
     {"rotating swirl",     0x0042CA81, "Loadingswirl.png",           0},
     {"raptisoft logo",     0x0042CB4E, "textures\\raptisoftlogo.png", 0},
-    {"background",         0x0042CAC3, "loaderbkg.png",              0},
+    {"loadingscreen - background", 0x0042CAC3, "loaderbkg.png",      0},
     {"hamsterball logo",   0x00429905, "titletext-left.png",         0},
     {"hamsterball logo",   0x0042993A, "titletext-right.png",        1},
+    {"mainmenuscreen - background", 0x0042A582, "title1.png",        0},
+    {"mainmenuscreen - background", 0x0042A599, "title2.png",        0},
+    {"mainmenuscreen - background", 0x0042A5B0, "title3.png",        0},
+    {"mainmenuscreen - background", 0x0042A5C7, "title4.png",        0},
 };
 
 #define NUM_PATH_SLOTS (sizeof(g_path_slots) / sizeof(g_path_slots[0]))
@@ -833,6 +961,8 @@ static void apply_string_patch(DWORD address, const char* text, int maxLen)
 
 static void parse_element_values(JsonParser* p, const char* elemName, int elemNameLen)
 {
+    if (json_key_matches(elemName, elemNameLen, "mainmenuscreen - background"))
+        g_title_active = 1;
     JsonToken tk = next_token(p);
     if (tk.type != JTK_LBRACE) {
         if (tk.type != JTK_END) skip_value(p);
@@ -887,6 +1017,34 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
 
         tk = next_token(p);
 
+        if (nc_stricmp(keyBuf, "color") == 0 &&
+            json_key_matches(elemName, elemNameLen, "mainmenuscreen - background")) {
+            // Title backdrop tint (UNVERIFIED: assumed same tint-float layout
+            // as the loading bg; test with a saturated color and compare).
+            DWORD hex = 0xFFFFFFFF;
+            if (tk.type == JTK_STRING) {
+                parse_hex_color(tk.start, tk.length, &hex);
+            } else if (tk.type == JTK_LBRACK) {
+                int got = 0;
+                tk = next_token(p);
+                while (tk.type != JTK_RBRACK && tk.type != JTK_END) {
+                    if (tk.type == JTK_STRING) {
+                        if (!got && parse_hex_color(tk.start, tk.length, &hex))
+                            got = 1;
+                    }
+                    tk = next_token(p);
+                    if (tk.type == JTK_COMMA) tk = next_token(p);
+                }
+            } else {
+                skip_value(p);
+            }
+            float r, g, b, a;
+            hex_to_floats(hex, &r, &g, &b, &a);
+            nc_memcpy(&g_title_colpush[0], &a, 4);
+            nc_memcpy(&g_title_colpush[1], &b, 4);
+            nc_memcpy(&g_title_colpush[2], &g, 4);
+            nc_memcpy(&g_title_colpush[3], &r, 4);
+        }
         if (nc_stricmp(keyBuf, "color") == 0 && matched_color_idx >= 0) {
             if (tk.type == JTK_LBRACK) {
                 int color_idx = 0;
@@ -933,11 +1091,20 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                  nc_stricmp(keyBuf, "scaleY") == 0) {
             // Background sprite rect is live; other elements: parsed, hook TODO
             if (tk.type == JTK_NUMBER &&
-                json_key_matches(elemName, elemNameLen, "background")) {
+                json_key_matches(elemName, elemNameLen, "loadingscreen - background")) {
                 int fi = (keyBuf[0] == 'p' || keyBuf[0] == 'P')
                     ? ((keyBuf[3] == 'X' || keyBuf[3] == 'x') ? 0 : 1)
                     : ((keyBuf[5] == 'X' || keyBuf[5] == 'x') ? 2 : 3);
                 g_bg_pos[fi] = tk.num_val;
+            }
+            if (tk.type == JTK_NUMBER &&
+                json_key_matches(elemName, elemNameLen, "mainmenuscreen - background")) {
+                // tile-0 rect (x,y,w,h) as float bits; tiles 1-3 are zeroed
+                int fi = (keyBuf[0] == 'p' || keyBuf[0] == 'P')
+                    ? ((keyBuf[3] == 'X' || keyBuf[3] == 'x') ? 0 : 1)
+                    : ((keyBuf[5] == 'X' || keyBuf[5] == 'x') ? 2 : 3);
+                float fv = tk.num_val;
+                nc_memcpy(&g_title_rect[fi], &fv, 4);
             }
             if (tk.type == JTK_NUMBER &&
                 json_key_matches(elemName, elemNameLen, "mainmenuscreen - version")) {
@@ -982,14 +1149,15 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                     if (tk.type == JTK_COMMA) tk = next_token(p);
                 }
             } else if (tk.type == JTK_STRING) {
-                // Single path — assign to first matching slot (arrayIndex=0)
+                // Single path — assign to ALL matching slots (arrayIndex=0).
+                // (Title bg has 4 slots sharing one name; loading/logo have
+                // only one arrayIndex=0 slot each, so they are unaffected.)
                 char pathBuf[128];
                 copy_json_string(tk.start, tk.length, pathBuf, sizeof(pathBuf));
                 for (int i = 0; i < (int)NUM_PATH_SLOTS; i++) {
                     if (g_path_slots[i].arrayIndex == 0 &&
                         json_key_matches(elemName, elemNameLen, g_path_slots[i].jsonName)) {
                         apply_path_to_slot(i, pathBuf);
-                        break;
                     }
                 }
             } else {
@@ -1078,6 +1246,7 @@ static const char* DEFAULT_CONFIG =
 "    // ========================= MAIN MENU =========================\n"
 "    {\n"
 "        \"MainMenuScreen - Version\":                           { \"color\":  \"#FFFFFFFF\",               \"posX\":  336.0, \"posY\":  386.0, \"scaleX\":   1.0, \"scaleY\":   1.0, \"size\": 3, \"string\": \"V3.6.C\" },\n"
+"        \"MainMenuScreen - Background\":                       { \"color\":  \"#FFFFFFFF\",               \"posX\":    0.0, \"posY\":    0.0, \"scaleX\": 800.0, \"scaleY\": 600.0, \"path\":   \"Textures/LoaderBkg\" },\n"
 "    }\n"
 "]\n";
 
@@ -1105,6 +1274,7 @@ static char g_clean_json[16384];
 
 static void read_config(void)
 {
+    g_title_active = 0;
     HANDLE h = CreateFileA(g_config_path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
                            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE) { log_msg("OPEN FAIL"); return; }
@@ -1174,6 +1344,7 @@ static void read_config(void)
     }
 
     apply_version_draw();
+    apply_title_color();
 }
 
 // ===========================================================================
@@ -1340,6 +1511,7 @@ static void __thiscall init_impl(void* thisptr, void* modApi)
     install_bg_pos_cave();
     install_ver_str_cave();
     install_ver_post_cave();
+    install_title_caves();
 }
 
 static void __thiscall game_update_impl(void* thisptr)
