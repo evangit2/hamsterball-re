@@ -1125,14 +1125,24 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                     if (tk.type == JTK_COMMA) tk = next_token(p);
                 }
             } else if (tk.type == JTK_STRING) {
-                // Single path — assign to ALL matching slots (arrayIndex=0).
-                // (Title bg has 4 slots sharing one name; loading/logo have
-                // only one arrayIndex=0 slot each, so they are unaffected.)
+                // Single path — assign to ALL matching slots (arrayIndex=0),
+                // EXCEPT the title backdrop: only its first slot (tile0's
+                // load) is redirected. Feeding all 4 title slots the same
+                // file crashed real Windows at menu Draw (triple-verified);
+                // suspect the boot texture list dedupes/skews on duplicates.
+                // Tiles 1-3 keep their stock files (hidden via alpha 0).
                 char pathBuf[128];
                 copy_json_string(tk.start, tk.length, pathBuf, sizeof(pathBuf));
+                int title_done = 0;
                 for (int i = 0; i < (int)NUM_PATH_SLOTS; i++) {
                     if (g_path_slots[i].arrayIndex == 0 &&
                         json_key_matches(elemName, elemNameLen, g_path_slots[i].jsonName)) {
+                        if (json_key_matches(g_path_slots[i].jsonName,
+                                             (int)nc_strlen(g_path_slots[i].jsonName),
+                                             "mainmenuscreen - background")) {
+                            if (title_done) continue;
+                            title_done = 1;
+                        }
                         apply_path_to_slot(i, pathBuf);
                     }
                 }
