@@ -162,7 +162,7 @@ static void log_open(void)
         }
     }
     if (g_log != INVALID_HANDLE_VALUE) {
-        const char* init = "INIT menus_plus teststr\r\n";
+        const char* init = "INIT menus_plus teststr2\r\n";
         DWORD w = 0;
         WriteFile(g_log, init, (DWORD)nc_strlen(init), &w, NULL);
     }
@@ -315,11 +315,12 @@ static void install_ver_datapatch(void)
     }
     unsigned char* fe = (unsigned char*)0x426462;
     if (fe[0] == 0x8B && fe[1] == 0x47 && fe[2] == 0x28) {
-        if (VirtualProtect((void*)0x426462, 5, PAGE_EXECUTE_READWRITE, &op)) {
+        if (VirtualProtect((void*)0x426462, 8, PAGE_EXECUTE_READWRITE, &op)) {
             fe[0] = 0xB8; // mov eax, imm32(g_ver_buf)
             *(DWORD*)(fe + 1) = (DWORD)g_ver_buf;
-            VirtualProtect((void*)0x426462, 5, op, &op);
-            FlushInstructionCache(GetCurrentProcess(), (void*)0x426462, 5);
+            fe[5] = 0x66; fe[6] = 0x90; fe[7] = 0x90; // lea -> 3-byte NOP
+            VirtualProtect((void*)0x426462, 8, op, &op);
+            FlushInstructionCache(GetCurrentProcess(), (void*)0x426462, 8);
         }
     }
     if (!g_verdat_logged) {
@@ -707,6 +708,7 @@ static void apply_string(const StringSite* site, const char* text)
     int copyLen = (int)nc_strlen(text) + 1;
     int cap = site->maxLength + 1;  // never spill into the neighboring string
     if (copyLen > cap) { copyLen = cap; mlog("TRUNC %s %d", "", site->maxLength); }
+    if (copyLen == cap && cap > 0) ((char*)site->address)[cap - 1] = '\0';
     if (!VirtualProtect((void*)site->address, site->maxLength + 1,
                         PAGE_READWRITE, &old_protect))
         return;
@@ -772,19 +774,18 @@ static StringElementMap g_string_element_map[] = {
     {"click here",               0},
     {"mainmenuscreen - version", 17},
     {"let's play",               1},
-    {"choose a game",            5},
+    {"timetrials menu - header", 12},
     {"pause - button #3",        2},
     {"mainmenuscreen - button #3", 2},
     {"credits",                  3},
     {"exit to desktop",          4},
-    {"tournament",               6},
-    {"time trials",              7},
-    {"choose a time trial",      12},
+    {"lp button #1",             6},
+    {"lp button #2",             7},
     {"return button",            13},
     {"timetrials(l",             8},
     {"mirrortourney(l",          8},
     {"mirrortourney",            9},
-    {"party games",              10},
+    {"partygames",               10},
     {"button #4 - return",       11},
     {"previous",                 11},
     {"pause - button #1",        14},
@@ -1461,9 +1462,9 @@ static void __thiscall init_impl(void* thisptr, void* modApi)
         for (int i = 0; i < 8; i++) hb[7 - i] = dig[(h >> (i * 4)) & 15];
         hb[8] = 0;
         mlog("CODEHASH %s %d", hb, 0);
-        // first bytes at the menu-draw hook sites
-        unsigned char* s1 = (unsigned char*)0x42646A;
-        unsigned char* s2 = (unsigned char*)0x426484;
+        // first bytes at the version feeder sites we patch (jb + mov)
+        unsigned char* s1 = (unsigned char*)0x426460;
+        unsigned char* s2 = (unsigned char*)0x426462;
         char b1[13], b2[13];
         for (int i = 0; i < 6; i++) {
             b1[i * 2] = dig[(s1[i] >> 4) & 15]; b1[i * 2 + 1] = dig[s1[i] & 15];
