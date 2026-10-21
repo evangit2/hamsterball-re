@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v01z — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02a — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -151,7 +151,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v01z self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02a self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -299,7 +299,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v01z: single small line with bottom-right shadow (version-text style).
+/* v02a: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -689,8 +689,20 @@ static void dev_action_fire(const char* name) {
                         tx[th++] = ' ';
                     }
                     tx[th] = 0;
-                    log_msg("DEVBIND WAIT-enter: race=%d tap=%p tapvt=%08X tapname=%s\n",
-                            st, (void*)g_tapBoard, tv, tx);
+                    {   /* foreground facts: who owns the fg window? */
+                    HWND fg = GetForegroundWindow();
+                    DWORD fp = 0;
+                    char ft[32] = {0};
+                    if (fg) {
+                        GetWindowThreadProcessId(fg, &fp);
+                        GetWindowTextA(fg, ft, (int)sizeof(ft) - 1);
+                    }
+                    log_msg("DEVBIND WAIT-enter: fgpid=%u me=%u fg=%.28s gate=%d\n",
+                            fp, GetCurrentProcessId(), ft,
+                            (fg && fp == GetCurrentProcessId()) ? 1 : 0);
+                }
+                log_msg("DEVBIND WAIT-enter: race=%d tap=%p tapvt=%08X tapname=%s\n",
+                        st, (void*)g_tapBoard, tv, tx);
                 }
             }
             log_msg("DEVBIND WAIT-enter: app=%p raw178=%s%p vtbl=%08X namehex=%s flag=%d\n",
@@ -913,22 +925,19 @@ static DWORD WINAPI poll_thread(LPVOID param) {
             static int prevL = 0, prevR = 0, prevE = 0, prevX = 0;
             int l = 0, r = 0, e = 0, x = 0;
             if (g_devmode && g_indState == IND_WAIT) {
-                if (g_kbHook) {
-                    l = InterlockedExchange(&g_hL, 0);
-                    r = InterlockedExchange(&g_hR, 0);
-                    e = InterlockedExchange(&g_hE, 0);
-                    x = InterlockedExchange(&g_hX, 0);
-                } else {
-                    l = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
-                    r = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
-                    e = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
-                    x = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
-                    l = l && !prevL; r = r && !prevR;
-                    e = e && !prevE; x = x && !prevX;
-                    prevL = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
-                    prevR = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
-                    prevE = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
-                    prevX = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+                /* Hook flags OR physical edges: LL eating only stops
+                 * message delivery, never GetAsyncKeyState, so the OR
+                 * keeps the selector alive even if a flag never lands. */
+                {
+                    int pl = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
+                    int pr = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
+                    int pe = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
+                    int px = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+                    l = InterlockedExchange(&g_hL, 0) || (pl && !prevL);
+                    r = InterlockedExchange(&g_hR, 0) || (pr && !prevR);
+                    e = InterlockedExchange(&g_hE, 0) || (pe && !prevE);
+                    x = InterlockedExchange(&g_hX, 0) || (px && !prevX);
+                    prevL = pl; prevR = pr; prevE = pe; prevX = px;
                 }
                 if (l || r) {
                     g_indSel += l ? -1 : 1;
@@ -1010,8 +1019,8 @@ static void draw_direct(void) {
     if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
 
     text = g_devmode ? "devmode: on" : "devmode: off";
-    /* v01z: exactly one status draw per frame. The 0x46C1F1 frame hook
-     * arms one draw per frame; this consumes it. (v01z's 33ms time gate
+    /* v02a: exactly one status draw per frame. The 0x46C1F1 frame hook
+     * arms one draw per frame; this consumes it. (v02a's 33ms time gate
      * skipped whole frames -> fast blink. Same-frame overdraw is
      * invisible; zero-draw frames blink — so arm-per-frame + consume.) */
     if (!g_drawArmed) return;
@@ -1182,7 +1191,7 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v01z: arms one draw per frame */
+    install_frame_hook();  /* v02a: arms one draw per frame */
     install_draw_hook();
     install_pause_tap();
     CreateThread(NULL, 0, hook_thread, NULL, 0, NULL);   /* DrawGlyph post-draw consumes the arm */
