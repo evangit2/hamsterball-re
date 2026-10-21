@@ -189,8 +189,11 @@ static void mlog(const char* fmt, const char* a, int b)
 // struct writes with loads from g_bg_pos, returns to 0x42D2F2.
 static float g_bg_pos[4] = {100.0f, 0.0f, 600.0f, 600.0f};
 
+static const int g_dry_run = 1; // isolate crash: parse+log only, zero patches
+
 static void install_bg_pos_cave(void)
 {
+    if (g_dry_run) { mlog("SKIP bgcave %s %d", "", 0); return; }
     unsigned char* cave = (unsigned char*)VirtualAlloc(NULL, 64,
         MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!cave) return;
@@ -238,6 +241,7 @@ static void ver_push32(DWORD pushAddr, DWORD val)
 
 static void install_ver_str_cave(void)
 {
+    if (g_dry_run) { mlog("SKIP verstr %s %d", "", 0); return; }
     // Pre-draw: EAX=string slot. Swap in our buffer AND stamp font->+0x428
     // scale (EDX/EAX volatile across thiscall, EDI kept for the orig mov).
     unsigned char* cave = (unsigned char*)VirtualAlloc(NULL, 64,
@@ -269,6 +273,7 @@ static void install_ver_str_cave(void)
 // EAX dead after the call (next use is pops), so clobbering it is safe.
 static void install_ver_post_cave(void)
 {
+    if (g_dry_run) { mlog("SKIP verpost %s %d", "", 0); return; }
     unsigned char* cave = (unsigned char*)VirtualAlloc(NULL, 32,
         MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!cave) return;
@@ -292,6 +297,7 @@ static void install_ver_post_cave(void)
 
 static void apply_version_draw(void)
 {
+    if (g_dry_run) { mlog("SKIP verdraw %s %d", "", 0); return; }
     // x/y are real position pushes. The old "size" pushes (0x426470/0x426472)
     // turned out to be shadow offsets, NOT size — real size is the font
     // scale stamped by the pre-draw cave from g_ver_scale_bits. Left alone.
@@ -660,6 +666,7 @@ static int json_key_matches(const char* key, int keyLen, const char* needle)
 
 static void apply_string(const StringSite* site, const char* text)
 {
+    if (g_dry_run) { mlog("SKIPSTR %s %d", "", 0); return; }
     DWORD old_protect;
     int copyLen = (int)nc_strlen(text) + 1;
     int cap = site->maxLength + 1;  // never spill into the neighboring string
@@ -674,6 +681,7 @@ static void apply_string(const StringSite* site, const char* text)
 
 static void apply_color_to_site(int site_idx, DWORD hex)
 {
+    if (g_dry_run) { mlog("SKIPCOL %s %d", "", 0); return; }
     int idx = g_sites[site_idx].colorIdx;
     float r, g, b, a;
     hex_to_floats(hex, &r, &g, &b, &a);
@@ -993,6 +1001,8 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                                 json_key_matches(elemName, elemNameLen, g_path_slots[i].jsonName)) {
                                 if (!path_file_exists(pathBuf)) {
                                     mlog("PATHMISS %s %d", pathBuf, 0);
+                                } else if (g_dry_run) {
+                                    mlog("SKIPPATH %s %d", pathBuf, 0);
                                 } else {
                                     apply_path_to_slot(i, pathBuf);
                                 }
@@ -1013,6 +1023,8 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                         json_key_matches(elemName, elemNameLen, g_path_slots[i].jsonName)) {
                         if (!path_file_exists(pathBuf)) {
                             mlog("PATHMISS %s %d", pathBuf, 0);
+                        } else if (g_dry_run) {
+                            mlog("SKIPPATH %s %d", pathBuf, 0);
                         } else {
                             apply_path_to_slot(i, pathBuf);
                         }
@@ -1287,6 +1299,7 @@ static void patch_site(const ColorSite* site, unsigned char* cave_addr)
 
 static void install_patches(void)
 {
+    if (g_dry_run) { mlog("SKIP patches %s %d", "", 0); return; }
     int max_cave_size = 0;
     for (int i = 0; i < (int)NUM_SITES; i++) {
         int size = 0;
