@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02m — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02n — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -188,7 +188,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02m self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02n self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -336,7 +336,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02m: single small line with bottom-right shadow (version-text style).
+/* v02n: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -1306,13 +1306,11 @@ static void install_draw_hook(void) {
     *p++ = 0x50;                                 /* push eax */
     *p++ = 0xFF; *p++ = 0x05;                    /* inc dword [g_hitCount] */
     *(DWORD*)p = (DWORD)&g_hitCount; p += 4;
-    *p++ = 0x51;                                 /* push ecx */
-    *p++ = 0x52;                                 /* push edx */
     *p++ = 0x64; *p++ = 0xA1; *p++ = 0x24; *p++ = 0x00; *p++ = 0x00; *p++ = 0x00;
                                                  /* mov eax,fs:[0x24] (tid) */
     *p++ = 0x3B; *p++ = 0x05;                    /* cmp eax,[g_drawTid] */
     *(DWORD*)p = (DWORD)&g_drawTid; p += 4;
-    *p++ = 0x74; *p++ = 0x45;                    /* je FWD (same thread) */
+    *p++ = 0x74; *p++ = 0x41;                    /* je FWD (same thread) */
     *p++ = 0xB8; *p++ = 0x01; *p++ = 0x00; *p++ = 0x00; *p++ = 0x00;
                                                  /* ACQ: mov eax,1 */
     *p++ = 0x87; *p++ = 0x05;                    /* xchg eax,[g_drawLock] */
@@ -1324,34 +1322,28 @@ static void install_draw_hook(void) {
     *p++ = 0xA3;                                 /* mov [g_drawTid],eax */
     *(DWORD*)p = (DWORD)&g_drawTid; p += 4;
                                                  /* SKIP: */
-    *p++ = 0x5A;                                 /* pop edx */
-    *p++ = 0x59;                                 /* pop ecx */
     *p++ = 0x89; *p++ = 0x0D;                    /* mov [g_drawFont],ecx */
     *(DWORD*)p = (DWORD)&g_drawFont; p += 4;
     *p++ = 0x83; *p++ = 0x3D;                    /* cmp byte ptr [g_inDraw],1 */
     *(DWORD*)p = (DWORD)&g_inDraw; p += 4;
     *p++ = 0x01;
-    *p++ = 0x74; *p++ = 0x1A;                    /* je FWD (reentrant draw) */
-    *p++ = 0x8B; *p++ = 0x44; *p++ = 0x24; *p++ = 0x10;
-                                                 /* mov eax,[esp+16] (retC) */
+    *p++ = 0x74; *p++ = 0x18;                    /* je FWD (reentrant draw) */
+    *p++ = 0x8B; *p++ = 0x44; *p++ = 0x24; *p++ = 0x08;
+                                                 /* mov eax,[esp+8] (retC) */
     *p++ = 0xA3;                                /* mov [slotRet],eax */
     *(DWORD*)p = (DWORD)&g_slotRet; p += 4;
     afterAddr = (DWORD)p;   /* AFTER starts here */
-    *p++ = 0xC7; *p++ = 0x44; *p++ = 0x24; *p++ = 0x10;
-                                                 /* mov dword [esp+16],AFTER */
+    *p++ = 0xC7; *p++ = 0x44; *p++ = 0x24; *p++ = 0x08;
+                                                 /* mov dword [esp+8],AFTER */
     *(DWORD*)p = afterAddr; p += 4;
-    *p++ = 0x5A;                                 /* pop edx */
-    *p++ = 0x59;                                 /* pop ecx */
     *p++ = 0x58;                                 /* pop eax (restore entry) */
     *p++ = 0x9D;                                 /* popfd (restore flags) */
     *p++ = 0xE9;                                /* jmp trampoline */
     *(DWORD*)p = (DWORD)tramp - ((DWORD)p + 4);
     p += 4;
     /* FWD: shared landing for same-thread skip + reentrant draw.
-     * Unwinds the four pushes, then runs orig only (AFTER skipped). */
+     * Unwinds the two pushes, then runs orig only (AFTER skipped). */
     fwdAddr = (DWORD)p;
-    *p++ = 0x5A;                                 /* pop edx */
-    *p++ = 0x59;                                 /* pop ecx */
     *p++ = 0x58;                                 /* pop eax */
     *p++ = 0x9D;                                 /* popfd */
     /* AFTER: orig did RET 0x20 -> stack holds caller frame.
@@ -1386,10 +1378,10 @@ static DWORD WINAPI init_thread(LPVOID param) {
     state_load();   /* restore last F8 toggle */
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
-    install_frame_hook();  /* patch before first use: loader draws early */
+    Sleep(2000);   /* let game init settle before patching .text */
+    install_frame_hook();
     install_draw_hook();
     install_pause_tap();
-    Sleep(2000);   /* let game init settle before threads poll */
     CreateThread(NULL, 0, hook_thread, NULL, 0, NULL);
     CreateThread(NULL, 0, poll_thread, NULL, 0, NULL);
     return 0;
