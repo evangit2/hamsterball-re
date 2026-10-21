@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02g — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02h — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -185,7 +185,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02g self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02h self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -333,7 +333,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02g: single small line with bottom-right shadow (version-text style).
+/* v02h: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -1266,6 +1266,7 @@ static void install_draw_hook(void) {
     unsigned char* cave;
     unsigned char* p;
     DWORD afterAddr, fwdAddr;
+    BYTE* jeRel = 0;
 
     /* verify-or-skip: expect 6A FF 68 50 CD 4C 00 */
     if (IsBadReadPtr((void*)HOOK2_ADDR, 7)) {
@@ -1294,7 +1295,7 @@ static void install_draw_hook(void) {
     *(DWORD*)p = (HOOK2_ADDR + 7) - ((DWORD)p + 4);
     p += 4;
 
-    /* cave layout (offsets fixed): AFTER=0x29, FORWARD=0x39, size=0x3E.
+    /* Cave offsets are position-relative (no hand counting): jeRel is
      * Entry: [retC][p1..p8], ECX=live Font*. First instructions capture
      * ECX (font) and p4 (xform) so the post-draw uses the exact font and
      * coordinate space the game is drawing with. */
@@ -1307,11 +1308,11 @@ static void install_draw_hook(void) {
     *p++ = 0x83; *p++ = 0x3D;                    /* cmp byte ptr [g_inDraw],1 */
     *(DWORD*)p = (DWORD)&g_inDraw; p += 4;
     *p++ = 0x01;
-    *p++ = 0x74; *p++ = 0x24;                    /* je FORWARD (0x33) */
+    *p++ = 0x74; jeRel = p; *p++ = 0x00;         /* je FORWARD (patched below) */
     *p++ = 0x8B; *p++ = 0x04; *p++ = 0x24;       /* mov eax,[esp] (retC) */
     *p++ = 0xA3;                                /* mov [slotRet],eax */
     *(DWORD*)p = (DWORD)&g_slotRet; p += 4;
-    afterAddr = (DWORD)cave + 0x29;
+    afterAddr = (DWORD)p;   /* AFTER starts here */
     *p++ = 0xC7; *p++ = 0x04; *p++ = 0x24;       /* mov dword [esp],AFTER */
     *(DWORD*)p = afterAddr; p += 4;
     *p++ = 0xE9;                                /* jmp trampoline */
@@ -1329,9 +1330,10 @@ static void install_draw_hook(void) {
     *p++ = 0xFF; *p++ = 0x35;                   /* push dword [slotRet] */
     *(DWORD*)p = (DWORD)&g_slotRet; p += 4;
     *p++ = 0xC3;                                /* ret -> retC */
-    /* FORWARD (0x2D): reentrant (our own draw) -> orig only */
+    /* FORWARD: reentrant (our own draw) -> orig only */
     *p++ = 0xE9;                                /* jmp trampoline */
     fwdAddr = (DWORD)p;
+    *jeRel = (BYTE)(fwdAddr - ((DWORD)jeRel + 1));   /* backpatch je */
     *(DWORD*)p = (DWORD)tramp - (fwdAddr + 4);
     p += 4;
 
@@ -1346,7 +1348,7 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v02g: arms one draw per frame */
+    install_frame_hook();  /* v02h: arms one draw per frame */
     install_draw_hook();
     install_pause_tap();
     CreateThread(NULL, 0, hook_thread, NULL, 0, NULL);   /* DrawGlyph post-draw consumes the arm */
