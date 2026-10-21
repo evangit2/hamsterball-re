@@ -162,7 +162,7 @@ static void log_open(void)
         }
     }
     if (g_log != INVALID_HANDLE_VALUE) {
-        const char* init = "INIT menus_plus fields1\r\n";
+        const char* init = "INIT menus_plus hidever\r\n";
         DWORD w = 0;
         WriteFile(g_log, init, (DWORD)nc_strlen(init), &w, NULL);
     }
@@ -332,6 +332,9 @@ static void apply_version_draw(void)
 {
     if (g_dry_run && !ENABLE_VERSION) { mlog("SKIP verdraw %s %d", "", 0); return; }
     // x/y are real position pushes (boot-proven). Size stays stock for now.
+    // TEST: hide original version text + shadow (alpha 0 both)
+    g_colors[9][3] = 0.0f;
+    g_colors[27][3] = 0.0f;
     install_ver_datapatch();
     ver_push32(0x426479, (DWORD)g_ver_x);
     ver_push32(0x426474, (DWORD)g_ver_y);
