@@ -224,6 +224,7 @@ static char g_ver_buf[64] = "V3.6";
 static int g_ver_x = 0x20D;
 static int g_ver_y = 0x109;
 static int g_ver_size = 3;
+static DWORD g_ver_scale_bits = 0x3F800000; // size/3.0f as float bits (1.0 = stock)
 
 static void ver_push32(DWORD pushAddr, DWORD val)
 {
@@ -236,14 +237,21 @@ static void ver_push32(DWORD pushAddr, DWORD val)
 
 static void install_ver_str_cave(void)
 {
-    unsigned char* cave = (unsigned char*)VirtualAlloc(NULL, 32,
+    // Pre-draw: EAX=string slot. Swap in our buffer AND stamp font->+0x428
+    // scale (EDX/EAX volatile across thiscall, EDI kept for the orig mov).
+    unsigned char* cave = (unsigned char*)VirtualAlloc(NULL, 64,
         MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!cave) return;
     int p = 0;
-    cave[p++] = 0xB8; // mov eax, g_ver_buf
-    *(DWORD*)(cave + p) = (DWORD)g_ver_buf; p += 4;
-    cave[p++] = 0x8B; cave[p++] = 0x8F; // mov ecx,[edi+0x320] (orig)
+    cave[p++] = 0x8B; cave[p++] = 0x97; // mov edx,[edi+0x320] (font)
     *(DWORD*)(cave + p) = 0x320; p += 4;
+    cave[p++] = 0xA1; // mov eax,[g_ver_scale_bits]
+    *(DWORD*)(cave + p) = (DWORD)&g_ver_scale_bits; p += 4;
+    cave[p++] = 0x89; cave[p++] = 0x82; // mov [edx+0x428],eax (font scale)
+    *(DWORD*)(cave + p) = 0x428; p += 4;
+    cave[p++] = 0x89; cave[p++] = 0xD1; // mov ecx,edx (font = this)
+    cave[p++] = 0xB8; // mov eax, imm32(g_ver_buf)
+    *(DWORD*)(cave + p) = (DWORD)g_ver_buf; p += 4;
     cave[p++] = 0xE9; // jmp 0x426470
     *(DWORD*)(cave + p) = (DWORD)0x426470 - ((DWORD)cave + p + 4); p += 4;
     DWORD op;
@@ -255,17 +263,39 @@ static void install_ver_str_cave(void)
     FlushInstructionCache(GetCurrentProcess(), (void*)0x42646A, 6);
 }
 
+// Post-draw: restore font scale to 1.0 so other texts sharing the font stay
+// stock. Site = 0x426484 (4B mov) + 0x426488 (1B pop edi) = 5B JMP.
+// EAX dead after the call (next use is pops), so clobbering it is safe.
+static void install_ver_post_cave(void)
+{
+    unsigned char* cave = (unsigned char*)VirtualAlloc(NULL, 32,
+        MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!cave) return;
+    int p = 0;
+    cave[p++] = 0x8B; cave[p++] = 0x4C; cave[p++] = 0x24; cave[p++] = 0x14; // mov ecx,[esp+0x14]
+    cave[p++] = 0x5F; // pop edi
+    cave[p++] = 0x8B; cave[p++] = 0x87; // mov eax,[edi+0x320]
+    *(DWORD*)(cave + p) = 0x320; p += 4;
+    cave[p++] = 0xC7; cave[p++] = 0x80; // mov d[eax+0x428],0x3F800000
+    *(DWORD*)(cave + p) = 0x428; p += 4;
+    *(DWORD*)(cave + p) = 0x3F800000; p += 4;
+    cave[p++] = 0xE9; // jmp 0x426489
+    *(DWORD*)(cave + p) = (DWORD)0x426489 - ((DWORD)cave + p + 4); p += 4;
+    DWORD op;
+    if (!VirtualProtect((void*)0x426484, 5, PAGE_EXECUTE_READWRITE, &op)) return;
+    *(unsigned char*)0x426484 = 0xE9;
+    *(DWORD*)(0x426484 + 1) = (DWORD)cave - (0x426484 + 5);
+    VirtualProtect((void*)0x426484, 5, op, &op);
+    FlushInstructionCache(GetCurrentProcess(), (void*)0x426484, 5);
+}
+
 static void apply_version_draw(void)
 {
+    // x/y are real position pushes. The old "size" pushes (0x426470/0x426472)
+    // turned out to be shadow offsets, NOT size — real size is the font
+    // scale stamped by the pre-draw cave from g_ver_scale_bits. Left alone.
     ver_push32(0x426479, (DWORD)g_ver_x);
     ver_push32(0x426474, (DWORD)g_ver_y);
-    DWORD op;
-    if (VirtualProtect((void*)0x426470, 4, PAGE_EXECUTE_READWRITE, &op)) {
-        *(unsigned char*)(0x426470 + 1) = (unsigned char)g_ver_size;
-        *(unsigned char*)(0x426472 + 1) = (unsigned char)g_ver_size;
-        VirtualProtect((void*)0x426470, 4, op, &op);
-        FlushInstructionCache(GetCurrentProcess(), (void*)0x426470, 4);
-    }
 }
 static unsigned char* g_cave_mem = NULL;
 static int g_reload_counter = 0;
@@ -917,13 +947,16 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
             }
         }
         else if (nc_stricmp(keyBuf, "size") == 0) {
-            // Version text size (experimental: the two constant pushes)
+            // Version text size: font->+0x428 float scale (1.0 = stock).
+            // Exposed as size 1..16 where 3 = stock (scale = size/3).
             if (tk.type == JTK_NUMBER &&
                 json_key_matches(elemName, elemNameLen, "mainmenuscreen - version")) {
                 int sz = (int)tk.num_val;
-                if (sz < 0) sz = 0;
+                if (sz < 1) sz = 1;
                 if (sz > 16) sz = 16;
                 g_ver_size = sz;
+                float sc = (float)sz / 3.0f;
+                nc_memcpy(&g_ver_scale_bits, &sc, 4);
             }
         }
         else if (nc_stricmp(keyBuf, "path") == 0) {
@@ -1306,6 +1339,7 @@ static void __thiscall init_impl(void* thisptr, void* modApi)
     install_patches();
     install_bg_pos_cave();
     install_ver_str_cave();
+    install_ver_post_cave();
 }
 
 static void __thiscall game_update_impl(void* thisptr)
