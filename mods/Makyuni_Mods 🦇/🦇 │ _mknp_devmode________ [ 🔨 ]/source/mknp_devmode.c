@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02n — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02o — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -154,6 +154,7 @@ static void* g_drawFont = 0;
           /* live Font* captured from the hook's ECX */
 static int g_drawCount = 0;           /* successful draw attempts (diagnostic) */
 static volatile int g_hitCount = 0;     /* DrawGlyph cave entries (diagnostic) */
+static int g_loaderGate = 1;              /* 1 = skip post-draw (loader screen) */
 static volatile int g_drawLock = 0;       /* cave spinlock: serializes threads */
 static DWORD g_drawTid = 0;               /* owning thread id (0 = free) */
 
@@ -188,7 +189,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02n self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02o self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -336,7 +337,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02n: single small line with bottom-right shadow (version-text style).
+/* v02o: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -1033,6 +1034,46 @@ static DWORD WINAPI poll_thread(LPVOID param) {
          * by LL hooks so the game can neither pause nor unpause; the
          * selector is fed from hook flags (GetAsyncKeyState fallback if
          * the hooks failed). The freeze is held by wait_freeze_tick. */
+        /* Loader gate: while CURRENTOBJECT is the loading screen, run
+         * orig DrawGlyph only (no post-draw). Updated at 2Hz. */
+        {
+            static DWORD lastGateTick = 0;
+            DWORD nowG = GetTickCount();
+            if ((int)(nowG - lastGateTick) > 500) {
+                lastGateTick = nowG;
+                {
+                    DWORD appG = 0, objG = 0;
+                    char nmG[12] = {0};
+                    int kG;
+                    if (!IsBadReadPtr((void*)APP_PTR, 4)) {
+                        appG = *(DWORD*)APP_PTR;
+                        if (appG > 0x10000 &&
+                            !IsBadReadPtr((void*)(appG + APP_BOARD), 4)) {
+                            objG = *(DWORD*)(appG + APP_BOARD);
+                            if (objG > 0x10000 &&
+                                !IsBadReadPtr((void*)(objG + BOARD_NAME), 12)) {
+                                for (kG = 0; kG < 11; kG++) {
+                                    char cG = *(char*)(objG + BOARD_NAME + (DWORD)kG);
+                                    nmG[kG] = (cG >= 32 && cG < 127) ? cG : 0;
+                                    if (!cG) break;
+                                }
+                                nmG[11] = 0;
+                                {
+                                    int isLoad = (nmG[0]=='L'&&nmG[1]=='o'&&nmG[2]=='a'&&
+                                                  nmG[3]=='d'&&nmG[4]=='i'&&nmG[5]=='n'&&
+                                                  nmG[6]=='g');
+                                    if (isLoad != g_loaderGate) {
+                                        g_loaderGate = isLoad;
+                                        log_msg("LOADERGATE %s (%.11s)\n",
+                                                isLoad ? "ON" : "off", nmG);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         wait_freeze_tick();   /* HOLD native pause while WAIT, restore after */
         {
             static int prevL = 0, prevR = 0, prevE = 0, prevX = 0;
@@ -1269,6 +1310,7 @@ static void install_draw_hook(void) {
     unsigned char* cave;
     unsigned char* p;
     DWORD afterAddr, fwdAddr;
+    BYTE* gateJeRel = 0;
 
     /* verify-or-skip: expect 6A FF 68 50 CD 4C 00 */
     if (IsBadReadPtr((void*)HOOK2_ADDR, 7)) {
@@ -1310,7 +1352,7 @@ static void install_draw_hook(void) {
                                                  /* mov eax,fs:[0x24] (tid) */
     *p++ = 0x3B; *p++ = 0x05;                    /* cmp eax,[g_drawTid] */
     *(DWORD*)p = (DWORD)&g_drawTid; p += 4;
-    *p++ = 0x74; *p++ = 0x41;                    /* je FWD (same thread) */
+    *p++ = 0x74; *p++ = 0x4A;                    /* je FWD (same thread) */
     *p++ = 0xB8; *p++ = 0x01; *p++ = 0x00; *p++ = 0x00; *p++ = 0x00;
                                                  /* ACQ: mov eax,1 */
     *p++ = 0x87; *p++ = 0x05;                    /* xchg eax,[g_drawLock] */
@@ -1322,6 +1364,10 @@ static void install_draw_hook(void) {
     *p++ = 0xA3;                                 /* mov [g_drawTid],eax */
     *(DWORD*)p = (DWORD)&g_drawTid; p += 4;
                                                  /* SKIP: */
+    *p++ = 0xA1;                                 /* mov eax,[g_loaderGate] */
+    *(DWORD*)p = (DWORD)&g_loaderGate; p += 4;
+    *p++ = 0x85; *p++ = 0xC0;                    /* test eax,eax */
+    *p++ = 0x75; gateJeRel = p; *p++ = 0x00;     /* jnz FWD (loader: orig only) */
     *p++ = 0x89; *p++ = 0x0D;                    /* mov [g_drawFont],ecx */
     *(DWORD*)p = (DWORD)&g_drawFont; p += 4;
     *p++ = 0x83; *p++ = 0x3D;                    /* cmp byte ptr [g_inDraw],1 */
@@ -1341,9 +1387,10 @@ static void install_draw_hook(void) {
     *p++ = 0xE9;                                /* jmp trampoline */
     *(DWORD*)p = (DWORD)tramp - ((DWORD)p + 4);
     p += 4;
-    /* FWD: shared landing for same-thread skip + reentrant draw.
-     * Unwinds the two pushes, then runs orig only (AFTER skipped). */
+    /* FWD: shared landing for same-thread skip + reentrant draw +
+     * loader gate. Unwinds the two pushes, runs orig only (AFTER skipped). */
     fwdAddr = (DWORD)p;
+    *gateJeRel = (BYTE)(fwdAddr - ((DWORD)gateJeRel + 1));
     *p++ = 0x58;                                 /* pop eax */
     *p++ = 0x9D;                                 /* popfd */
     /* AFTER: orig did RET 0x20 -> stack holds caller frame.
