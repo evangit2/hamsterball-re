@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02f — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02g — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -184,7 +184,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02f self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02g self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -332,7 +332,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02f: single small line with bottom-right shadow (version-text style).
+/* v02g: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -344,7 +344,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
 static void draw_status_ex(void* font, const char* text, int x, int y, DWORD scaleBits, const DWORD* rgb) {
     const unsigned int one = 0x3F800000u;   /* 1.0f */
     const unsigned int zero = 0x00000000u;  /* 0.0f */
-    const unsigned int xf = 0x004CF300u;    /* static identity transform */
+    DWORD xf = g_drawXf ? g_drawXf : 0x004CF300u;   /* live call xform, identity fallback */
     DWORD params[8];
     DWORD saved = 0;
     int poked = 0;
@@ -776,8 +776,8 @@ static void wait_enter_diag(void)
                     st, (void*)g_tapBoard, tv, tx);
             }
         }
-        log_msg("DEVBIND WAIT-enter: app=%p raw178=%s%p vtbl=%08X namehex=%s flag=%d\n",
-                (void*)app, r178 ? "" : "BAD+", (void*)raw, vt, hex, flg);
+        log_msg("DEVBIND WAIT-enter: xform=%p app=%p raw178=%s%p vtbl=%08X namehex=%s flag=%d\n",
+                (void*)g_drawXf, (void*)app, r178 ? "" : "BAD+", (void*)raw, vt, hex, flg);
     }
 
 static void dev_action_fire(const char* name) {
@@ -1148,6 +1148,7 @@ static int font_ready(void* font, const char* s) {
 }
 
 static int g_entryCount = 0;
+static DWORD g_drawXf = 0x004CF300u;   /* xform of the live DrawGlyph call */
 
 static void draw_direct(void) {
     DWORD app;
@@ -1293,10 +1294,14 @@ static void install_draw_hook(void) {
     *(DWORD*)p = (HOOK2_ADDR + 7) - ((DWORD)p + 4);
     p += 4;
 
-    /* cave layout (offsets fixed): AFTER=0x23, FORWARD=0x33, size=0x38.
-     * Entry: [retC][p1..p8], ECX=live Font*. First instruction captures
-     * ECX so the post-draw uses the exact font the game is drawing with. */
+    /* cave layout (offsets fixed): AFTER=0x29, FORWARD=0x39, size=0x3E.
+     * Entry: [retC][p1..p8], ECX=live Font*. First instructions capture
+     * ECX (font) and p4 (xform) so the post-draw uses the exact font and
+     * coordinate space the game is drawing with. */
     p = cave;
+    *p++ = 0x8B; *p++ = 0x44; *p++ = 0x24; *p++ = 0x10;   /* mov eax,[esp+16] (p4 xform) */
+    *p++ = 0xA3;                                         /* mov [g_drawXf],eax */
+    *(DWORD*)p = (DWORD)&g_drawXf; p += 4;
     *p++ = 0x89; *p++ = 0x0D;                    /* mov [g_drawFont],ecx */
     *(DWORD*)p = (DWORD)&g_drawFont; p += 4;
     *p++ = 0x83; *p++ = 0x3D;                    /* cmp byte ptr [g_inDraw],1 */
@@ -1306,7 +1311,7 @@ static void install_draw_hook(void) {
     *p++ = 0x8B; *p++ = 0x04; *p++ = 0x24;       /* mov eax,[esp] (retC) */
     *p++ = 0xA3;                                /* mov [slotRet],eax */
     *(DWORD*)p = (DWORD)&g_slotRet; p += 4;
-    afterAddr = (DWORD)cave + 0x23;
+    afterAddr = (DWORD)cave + 0x29;
     *p++ = 0xC7; *p++ = 0x04; *p++ = 0x24;       /* mov dword [esp],AFTER */
     *(DWORD*)p = afterAddr; p += 4;
     *p++ = 0xE9;                                /* jmp trampoline */
@@ -1341,7 +1346,7 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v02f: arms one draw per frame */
+    install_frame_hook();  /* v02g: arms one draw per frame */
     install_draw_hook();
     install_pause_tap();
     CreateThread(NULL, 0, hook_thread, NULL, 0, NULL);   /* DrawGlyph post-draw consumes the arm */
