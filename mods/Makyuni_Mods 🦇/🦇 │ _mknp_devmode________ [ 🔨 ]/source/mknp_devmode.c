@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02c — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02d — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -57,7 +57,7 @@
  * (red) -> auto-revert to REST after IND_MS. Only CTRL+key from REST
  * enters WAIT; devmode OFF forces REST. */
 
-typedef enum { IND_REST = 0, IND_WAIT = 1, IND_OK = 2, IND_FAIL = 3 } ind_state_t;
+typedef enum { IND_REST = 0, IND_WAIT = 1, IND_OK = 2, IND_FAIL = 3, IND_WAIT2 = 4 } ind_state_t;
 
 static char g_indicator[128] = "-";
 static ind_state_t g_indState = IND_REST;
@@ -65,12 +65,23 @@ static int g_indSel = -1;              /* -1 = ALL, 0..14 = LEVEL01..15 */
 static DWORD g_indUntil = 0;           /* OK/FAIL auto-revert expiry */
 
 /* face colors as float-bit DWORDs: white / yellow / green / red */
-static const DWORD IND_RGB[4][3] = {
+static const DWORD IND_RGB[5][3] = {
     { 0x3F800000u, 0x3F800000u, 0x3F800000u },
     { 0x3F800000u, 0x3F800000u, 0x00000000u },
     { 0x00000000u, 0x3F800000u, 0x00000000u },
     { 0x3F800000u, 0x00000000u, 0x00000000u },
+    { 0x3F800000u, 0x3F800000u, 0x00000000u },
 };
+/* WAIT2 = medals second question. in_wait() = true level-selector freeze.
+ * Legacy transient (unknown-action name flash) also uses IND_WAIT but with
+ * an expiry, so it stays out of in_wait: no freeze, no eating, no flags. */
+static int in_wait(void) {
+    return g_indState == IND_WAIT2 ||
+           (g_indState == IND_WAIT && !g_indUntil);
+}
+static int g_flow = 0;        /* 0 none, 1 reset-best-times, 2 set-medals */
+static int g_medSel = 0;      /* WAIT2 medal: 0 BRONZE .. 3 WEASEL */
+static const char* MEDAL_NAMES[4] = { "BRONZE", "SILVER", "GOLD", "WEASEL" };
 static const DWORD WHITE3[3] = { 0x3F800000u, 0x3F800000u, 0x3F800000u };
 
 static void ind_set_sel_text(char* dst) {
@@ -87,8 +98,23 @@ static void ind_set_sel_text(char* dst) {
 }
 
 static void ind_wait_text(void) {
-    strcpy(g_indicator, "RESET BEST TIME: ");
+    if (g_flow == 2) strcpy(g_indicator, "TT - SET MEDALS: ");
+    else strcpy(g_indicator, "RESET BEST TIME: ");
     ind_set_sel_text(g_indicator + strlen(g_indicator));
+}
+
+static void ind_medwait_text(void) {   /* WAIT2: level fixed, pick a medal */
+    strcpy(g_indicator, "TT - SET MEDALS - ");
+    ind_set_sel_text(g_indicator + strlen(g_indicator));
+    strcat(g_indicator, " - MEDAL: ");
+    strcat(g_indicator, MEDAL_NAMES[g_medSel]);
+}
+
+static void ind_meddone_text(const char* prefix) {   /* DONE/FAIL verbatim */
+    strcpy(g_indicator, prefix);
+    ind_set_sel_text(g_indicator + strlen(g_indicator));
+    strcat(g_indicator, " - MEDAL");
+    strcat(g_indicator, MEDAL_NAMES[g_medSel]);
 }
 
 static void ind_done_text(const char* prefix) {
@@ -100,7 +126,7 @@ static void ind_done_text(const char* prefix) {
 static DWORD g_eatUntil = 0;   /* GetTickCount horizon; keys eaten while future */
 
 static void ind_to_rest(void) {
-    if (g_indState == IND_WAIT)
+    if (in_wait())
         g_eatUntil = GetTickCount() + EAT_MS;   /* quarantine the exit key */
     g_indState = IND_REST;
     g_indUntil = 0;
@@ -157,7 +183,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02c self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02d self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -305,7 +331,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02c: single small line with bottom-right shadow (version-text style).
+/* v02d: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -558,6 +584,49 @@ static int reset_best_times_sel(int sel) {
     return 1;
 }
 
+/* Set earned-medal bytes. App+0x8BC slots mirror the best-time array
+ * (20 dword slots, races = 0..14): byte0 = BRONZE, byte1 = SILVER,
+ * byte2 = GOLD (proven: earn-sites compare vs the BRONZE/SILVER/GOLD
+ * threshold fields, AdvanceRace shows next-target per highest byte).
+ * Patterns are cumulative, as if the player earned exactly that tier.
+ * WEASEL has no persistent byte in this build, so it sets all three
+ * (max visible state). sel < 0 = ALL 15 races. Returns 1/0. */
+#define MEDAL_BASE 0x8BCu
+static const BYTE MEDAL_PAT[4][3] = {
+    { 1, 0, 0 }, { 1, 1, 0 }, { 1, 1, 1 }, { 1, 1, 1 }
+};
+
+static int set_medals_sel(int sel, int medal) {
+    DWORD app;
+    int i, lo, hi;
+    if (IsBadReadPtr((void*)APP_PTR, 4)) {
+        log_msg("DEVBIND set-medals: no App\n");
+        return 0;
+    }
+    app = *(DWORD*)APP_PTR;
+    if (!app || app < 0x10000 || IsBadReadPtr((void*)app, 0x900)) {
+        log_msg("DEVBIND set-medals: bad App %p\n", (void*)app);
+        return 0;
+    }
+    if (IsBadWritePtr((void*)(app + MEDAL_BASE), BESTTIME_COUNT * 4)) {
+        log_msg("DEVBIND set-medals: App+0x8bc not writable\n");
+        return 0;
+    }
+    if (medal < 0) medal = 0;
+    if (medal > 3) medal = 3;
+    lo = (sel < 0) ? 0 : sel;
+    hi = (sel < 0) ? BESTTIME_RACES - 1 : sel;
+    for (i = lo; i <= hi; i++) {
+        BYTE* slot = (BYTE*)(app + MEDAL_BASE + (DWORD)i * 4);
+        slot[0] = MEDAL_PAT[medal][0];
+        slot[1] = MEDAL_PAT[medal][1];
+        slot[2] = MEDAL_PAT[medal][2];
+    }
+    log_msg("DEVBIND set-medals: slots %d..%d at App+0x8bc = %s\n",
+            lo, hi, MEDAL_NAMES[medal]);
+    return 1;
+}
+
 /* ── Pause-reader tap (0x469D2D): capture the TRUE board ───────────── */
 /* App+0x178 can be a menu shell (vtable 0x4D911C) while the live race board
  * lives elsewhere. The game's own pause check (mov 0x874(%ecx),%al) always
@@ -635,87 +704,102 @@ static int wait_board_ok(DWORD *boardOut, char *nameOut) {
     return 1;
 }
 
+static void wait_enter_diag(void)
+{   /* one-shot resolution facts: why freeze will/won't engage */
+        DWORD app = 0, raw = 0, bb = 0;
+        char nm[16] = {0};
+        char hex[40];
+        int ok, flg = -1, vt = 0, r178 = 0, hi = 0, k;
+        ok = wait_board_ok(&bb, nm);
+        if (!IsBadReadPtr((void*)APP_PTR, 4)) {
+            app = *(DWORD*)APP_PTR;
+            if (app > 0x10000 &&
+                !IsBadReadPtr((void*)(app + APP_BOARD), 4)) {
+                raw = *(DWORD*)(app + APP_BOARD);
+                r178 = 1;
+                if (raw > 0x10000 &&
+                    !IsBadReadPtr((void*)raw, 4))
+                    vt = *(DWORD*)raw;
+                for (k = 0; k < 12 && hi < 36; k++) {
+                    BYTE c = 0;
+                    if (raw > 0x10000 &&
+                        !IsBadReadPtr((void*)(raw + BOARD_NAME + (DWORD)k), 1))
+                        c = *(BYTE*)(raw + BOARD_NAME + (DWORD)k);
+                    hex[hi++] = "0123456789ABCDEF"[(c >> 4) & 15];
+                    hex[hi++] = "0123456789ABCDEF"[c & 15];
+                    hex[hi++] = ' ';
+                }
+                hex[hi] = 0;
+                if (ok && !IsBadReadPtr((void*)bb, BOARD_PAUSE + 1))
+                    flg = *(BYTE*)(bb + BOARD_PAUSE);
+            }
+        }
+        if (!hi) { hex[0] = '-'; hex[1] = 0; }
+        {   /* App+0x23C: 1 means a race is actually running */
+            int st = -9;
+            if (!IsBadReadPtr((void*)APP_PTR, 4)) {
+                DWORD aa = *(DWORD*)APP_PTR;
+                if (aa > 0x10000 &&
+                    !IsBadReadPtr((void*)(aa + 0x23Cu), 4))
+                    st = *(int*)(aa + 0x23Cu);
+            }
+            {   /* tap facts: vtable + name bytes at tap+0x868 */
+                DWORD tv = 0;
+                char tx[40]; int th = 0, k;
+                if (g_tapBoard > 0x10000 &&
+                    !IsBadReadPtr((void*)g_tapBoard, 4))
+                    tv = *(DWORD*)g_tapBoard;
+                for (k = 0; k < 8 && th < 32; k++) {
+                    BYTE c = 0;
+                    if (g_tapBoard > 0x10000 &&
+                        !IsBadReadPtr((void*)(g_tapBoard + BOARD_NAME + (DWORD)k), 1))
+                        c = *(BYTE*)(g_tapBoard + BOARD_NAME + (DWORD)k);
+                    tx[th++] = "0123456789ABCDEF"[(c >> 4) & 15];
+                    tx[th++] = "0123456789ABCDEF"[c & 15];
+                    tx[th++] = ' ';
+                }
+                tx[th] = 0;
+                {   /* foreground facts: who owns the fg window? */
+                HWND fg = GetForegroundWindow();
+                DWORD fp = 0;
+                char ft[32] = {0};
+                if (fg) {
+                    GetWindowThreadProcessId(fg, &fp);
+                    GetWindowTextA(fg, ft, (int)sizeof(ft) - 1);
+                }
+                log_msg("DEVBIND WAIT-enter: fgpid=%u me=%u fg=%.28s gate=%d\n",
+                        fp, GetCurrentProcessId(), ft,
+                        (fg && fp == GetCurrentProcessId()) ? 1 : 0);
+            }
+            log_msg("DEVBIND WAIT-enter: race=%d tap=%p tapvt=%08X tapname=%s\n",
+                    st, (void*)g_tapBoard, tv, tx);
+            }
+        }
+        log_msg("DEVBIND WAIT-enter: app=%p raw178=%s%p vtbl=%08X namehex=%s flag=%d\n",
+                (void*)app, r178 ? "" : "BAD+", (void*)raw, vt, hex, flg);
+    }
+
 static void dev_action_fire(const char* name) {
     if (!strcmp(name, "Time Trials - Reset Best Times")) {
         if (g_indState != IND_REST) return;   /* only from resting state */
+        g_flow = 1;
         g_indSel = -1;                        /* selector starts at ALL */
         g_indUntil = 0;                       /* WAIT is sticky, no expiry */
         ind_wait_text();
         g_indState = IND_WAIT;
-        {   /* one-shot resolution facts: why freeze will/won't engage */
-            DWORD app = 0, raw = 0, bb = 0;
-            char nm[16] = {0};
-            char hex[40];
-            int ok, flg = -1, vt = 0, r178 = 0, hi = 0, k;
-            ok = wait_board_ok(&bb, nm);
-            if (!IsBadReadPtr((void*)APP_PTR, 4)) {
-                app = *(DWORD*)APP_PTR;
-                if (app > 0x10000 &&
-                    !IsBadReadPtr((void*)(app + APP_BOARD), 4)) {
-                    raw = *(DWORD*)(app + APP_BOARD);
-                    r178 = 1;
-                    if (raw > 0x10000 &&
-                        !IsBadReadPtr((void*)raw, 4))
-                        vt = *(DWORD*)raw;
-                    for (k = 0; k < 12 && hi < 36; k++) {
-                        BYTE c = 0;
-                        if (raw > 0x10000 &&
-                            !IsBadReadPtr((void*)(raw + BOARD_NAME + (DWORD)k), 1))
-                            c = *(BYTE*)(raw + BOARD_NAME + (DWORD)k);
-                        hex[hi++] = "0123456789ABCDEF"[(c >> 4) & 15];
-                        hex[hi++] = "0123456789ABCDEF"[c & 15];
-                        hex[hi++] = ' ';
-                    }
-                    hex[hi] = 0;
-                    if (ok && !IsBadReadPtr((void*)bb, BOARD_PAUSE + 1))
-                        flg = *(BYTE*)(bb + BOARD_PAUSE);
-                }
-            }
-            if (!hi) { hex[0] = '-'; hex[1] = 0; }
-            {   /* App+0x23C: 1 means a race is actually running */
-                int st = -9;
-                if (!IsBadReadPtr((void*)APP_PTR, 4)) {
-                    DWORD aa = *(DWORD*)APP_PTR;
-                    if (aa > 0x10000 &&
-                        !IsBadReadPtr((void*)(aa + 0x23Cu), 4))
-                        st = *(int*)(aa + 0x23Cu);
-                }
-                {   /* tap facts: vtable + name bytes at tap+0x868 */
-                    DWORD tv = 0;
-                    char tx[40]; int th = 0, k;
-                    if (g_tapBoard > 0x10000 &&
-                        !IsBadReadPtr((void*)g_tapBoard, 4))
-                        tv = *(DWORD*)g_tapBoard;
-                    for (k = 0; k < 8 && th < 32; k++) {
-                        BYTE c = 0;
-                        if (g_tapBoard > 0x10000 &&
-                            !IsBadReadPtr((void*)(g_tapBoard + BOARD_NAME + (DWORD)k), 1))
-                            c = *(BYTE*)(g_tapBoard + BOARD_NAME + (DWORD)k);
-                        tx[th++] = "0123456789ABCDEF"[(c >> 4) & 15];
-                        tx[th++] = "0123456789ABCDEF"[c & 15];
-                        tx[th++] = ' ';
-                    }
-                    tx[th] = 0;
-                    {   /* foreground facts: who owns the fg window? */
-                    HWND fg = GetForegroundWindow();
-                    DWORD fp = 0;
-                    char ft[32] = {0};
-                    if (fg) {
-                        GetWindowThreadProcessId(fg, &fp);
-                        GetWindowTextA(fg, ft, (int)sizeof(ft) - 1);
-                    }
-                    log_msg("DEVBIND WAIT-enter: fgpid=%u me=%u fg=%.28s gate=%d\n",
-                            fp, GetCurrentProcessId(), ft,
-                            (fg && fp == GetCurrentProcessId()) ? 1 : 0);
-                }
-                log_msg("DEVBIND WAIT-enter: race=%d tap=%p tapvt=%08X tapname=%s\n",
-                        st, (void*)g_tapBoard, tv, tx);
-                }
-            }
-            log_msg("DEVBIND WAIT-enter: app=%p raw178=%s%p vtbl=%08X namehex=%s flag=%d\n",
-                    (void*)app, r178 ? "" : "BAD+", (void*)raw, vt, hex, flg);
-        }
-        log_msg("DEVBIND reset-best-times: awaiting level (ALL)\n");
+        wait_enter_diag();
+                log_msg("DEVBIND reset-best-times: awaiting level (ALL)\n");
+        return;
+    }
+    if (!strcmp(name, "Time Trials - Set Medals")) {
+        if (g_indState != IND_REST) return;   /* only from resting state */
+        g_flow = 2;
+        g_indSel = -1;                        /* level selector starts at ALL */
+        g_indUntil = 0;                       /* WAIT1 is sticky, no expiry */
+        ind_wait_text();
+        g_indState = IND_WAIT;
+        wait_enter_diag();
+        log_msg("DEVBIND set-medals: awaiting level (ALL)\n");
         return;
     }
     log_msg("DEVBIND unhandled action: %s\n", name);
@@ -757,8 +841,8 @@ static LRESULT CALLBACK kb_proc(int code, WPARAM wp, LPARAM lp) {
     if (code == HC_ACTION && (wp == WM_KEYDOWN || wp == WM_SYSKEYDOWN)) {
         DWORD vk = ((KBDLLHOOKSTRUCT*)lp)->vkCode;
         int quarantined = (int)(GetTickCount() - g_eatUntil) < 0;
-        if (g_devmode && (g_indState == IND_WAIT || quarantined) && fg_is_game()) {
-            int wait = (g_indState == IND_WAIT);
+        if (g_devmode && (in_wait() || quarantined) && fg_is_game()) {
+            int wait = in_wait();
             if (vk == (DWORD)VK_LEFT) {
                 if (wait) InterlockedExchange(&g_hL, 1); return 1;
             }
@@ -784,7 +868,7 @@ static LRESULT CALLBACK ms_proc(int code, WPARAM wp, LPARAM lp) {
     (void)lp;
     if (code == HC_ACTION && (wp == WM_RBUTTONDOWN || wp == WM_RBUTTONUP)) {
         int quarantined = (int)(GetTickCount() - g_eatUntil) < 0;
-        if (g_devmode && (g_indState == IND_WAIT || quarantined) && fg_is_game()) return 1;
+        if (g_devmode && (in_wait() || quarantined) && fg_is_game()) return 1;
     }
     return CallNextHookEx(g_msHook, code, wp, lp);
 }
@@ -842,7 +926,7 @@ static int tap_board_ok(DWORD *boardOut, char *nameOut) {
 static void wait_freeze_tick(void) {
     DWORD board;
     char name[16];
-    if (!g_devmode || g_indState != IND_WAIT) {
+    if (!g_devmode || !in_wait()) {
         if (g_wePaused) {   /* WAIT exit: hold until the exit keys are up */
             int keysDown = ((GetAsyncKeyState(VK_RETURN) & 0x8000) != 0) ||
                            ((GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0) ||
@@ -906,7 +990,7 @@ static DWORD WINAPI poll_thread(LPVOID param) {
             state_save();
             log_msg("F8 devmode=%d (%s)\n", g_devmode, g_devmode ? "on" : "off");
             if (g_devmode && set_changed()) set_load();
-            if (!g_devmode && g_indState == IND_WAIT) {
+            if (!g_devmode && in_wait()) {
                 ind_to_rest();   /* leaving devmode cancels level select */
                 log_msg("DEVBIND reset-best-times: cancelled (devmode off)\n");
             }
@@ -948,7 +1032,7 @@ static DWORD WINAPI poll_thread(LPVOID param) {
         {
             static int prevL = 0, prevR = 0, prevE = 0, prevX = 0;
             int l = 0, r = 0, e = 0, x = 0;
-            if (g_devmode && g_indState == IND_WAIT) {
+            if (g_devmode && in_wait()) {
                 /* Hook flags OR physical edges: LL eating only stops
                  * message delivery, never GetAsyncKeyState, so the OR
                  * keeps the selector alive even if a flag never lands. */
@@ -963,14 +1047,49 @@ static DWORD WINAPI poll_thread(LPVOID param) {
                     x = InterlockedExchange(&g_hX, 0) || (px && !prevX);
                     prevL = pl; prevR = pr; prevE = pe; prevX = px;
                 }
+                if (g_indState == IND_WAIT2) {
+                    if (l || r) {
+                        g_medSel += l ? -1 : 1;
+                        if (g_medSel < 0) g_medSel = 3;
+                        if (g_medSel > 3) g_medSel = 0;
+                        ind_medwait_text();
+                        log_msg("DEVBIND set-medals: select %s\n", g_indicator);
+                    }
+                    if (e) {
+                        if (set_medals_sel(g_indSel, g_medSel)) {
+                            ind_meddone_text("DONE - TT SET MEDALS: ");
+                            g_indState = IND_OK;
+                        } else {
+                            ind_meddone_text("FAIL - TT SET MEDALS: ");
+                            g_indState = IND_FAIL;
+                        }
+                        g_indUntil = GetTickCount() + IND_MS;
+                        g_eatUntil = g_indUntil - IND_MS + EAT_MS;
+                        log_msg("DEVBIND set-medals: %s (%s)\n",
+                                g_indState == IND_OK ? "SUCCESS" : "FAILED", g_indicator);
+                    }
+                    if (x) {
+                        g_indState = IND_WAIT;   /* back to level question */
+                        ind_wait_text();
+                        log_msg("DEVBIND set-medals: back to level select\n");
+                    }
+                } else {
                 if (l || r) {
                     g_indSel += l ? -1 : 1;
                     if (g_indSel < -1) g_indSel = BESTTIME_RACES - 1;
                     if (g_indSel > BESTTIME_RACES - 1) g_indSel = -1;
                     ind_wait_text();
-                    log_msg("DEVBIND reset-best-times: select %s\n", g_indicator);
+                    log_msg("DEVBIND %s: select %s\n",
+                            g_flow == 2 ? "set-medals" : "reset-best-times",
+                            g_indicator);
                 }
                 if (e) {
+                    if (g_flow == 2) {   /* level locked: ask the medal */
+                        g_medSel = 0;
+                        ind_medwait_text();
+                        g_indState = IND_WAIT2;
+                        log_msg("DEVBIND set-medals: level locked, pick medal\n");
+                    } else
                     if (reset_best_times_sel(g_indSel)) {
                         ind_done_text("DONE - RESET BEST TIME: ");
                         g_indState = IND_OK;
@@ -985,7 +1104,9 @@ static DWORD WINAPI poll_thread(LPVOID param) {
                 }
                 if (x) {
                     ind_to_rest();
-                    log_msg("DEVBIND reset-best-times: cancelled (escape)\n");
+                    log_msg("DEVBIND %s: cancelled (escape)\n",
+                            g_flow == 2 ? "set-medals" : "reset-best-times");
+                }
                 }
             } else {
                 prevL = prevR = prevE = prevX = 0;
@@ -1044,8 +1165,8 @@ static void draw_direct(void) {
     if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
 
     text = g_devmode ? "devmode: on" : "devmode: off";
-    /* v02c: exactly one status draw per frame. The 0x46C1F1 frame hook
-     * arms one draw per frame; this consumes it. (v02c's 33ms time gate
+    /* v02d: exactly one status draw per frame. The 0x46C1F1 frame hook
+     * arms one draw per frame; this consumes it. (v02d's 33ms time gate
      * skipped whole frames -> fast blink. Same-frame overdraw is
      * invisible; zero-draw frames blink — so arm-per-frame + consume.) */
     if (!g_drawArmed) return;
@@ -1216,7 +1337,7 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v02c: arms one draw per frame */
+    install_frame_hook();  /* v02d: arms one draw per frame */
     install_draw_hook();
     install_pause_tap();
     CreateThread(NULL, 0, hook_thread, NULL, 0, NULL);   /* DrawGlyph post-draw consumes the arm */
