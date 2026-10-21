@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02w — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02x — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -191,7 +191,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02w self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02x self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -339,7 +339,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02w: single small line with bottom-right shadow (version-text style).
+/* v02x: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -386,6 +386,8 @@ static void draw_direct(void);
 static void draw_from_frame(void);
 static DWORD g_slotRet;
 static DWORD g_dummy;         /* branchless store sink */
+static DWORD g_routePtr = 0;      /* cave tail target: trampoline, then afterEntry */
+static DWORD g_afterEntry = 0;      /* published by install, flipped in by poll */
 
 /* ── .set file + dev keybindings ───────────────────────────────────── */
 /* mknp_devmode.set (jsonc, next to the DLL) maps action names to
@@ -1090,6 +1092,7 @@ static DWORD WINAPI poll_thread(LPVOID param) {
         }
         if (!g_bootPhase && !g_postBoot) {
             g_postBoot = 1;
+            g_routePtr = g_afterEntry;
             log_msg("POSTBOOT draw-after armed\n");
         }
         wait_freeze_tick();   /* HOLD native pause while WAIT, restore after */
@@ -1344,6 +1347,7 @@ static void install_draw_hook(void) {
     unsigned char* cave;
     unsigned char* p;
     DWORD afterAddr;
+    DWORD afterEntry = 0;
     BYTE* afterImm = 0;
 
     /* verify-or-skip: expect 6A FF 68 50 CD 4C 00 */
@@ -1373,33 +1377,38 @@ static void install_draw_hook(void) {
     *(DWORD*)p = (HOOK2_ADDR + 7) - ((DWORD)p + 4);
     p += 4;
 
-    /* Branchless dual-mode detour with reentry-safe slot: capture
-     * always, route orig's return via CMOV (no branches).
-     * route = postBoot && !inDraw. Boot mode and our-own-draw reentry
-     * write retC back over itself (no-op) and store to a dummy (the live
-     * slot untouched); post-boot mode stores retC and routes through
-     * afterCode (draw + return to caller). All entry registers and flags
-     * are restored, so orig+7 sees exactly the caller state. */
+    /* Two-phase detour, no branches anywhere. The entry cave is kept
+     * minimal forever (boot-safe): capture + indirect tail jump. It starts
+     * at the trampoline (orig only) and poll flips g_routePtr to
+     * afterEntry once post-boot (single atomic DWORD store: readers see
+     * old or new, never a tear). afterEntry does the reentry-safe slot
+     * dance (route = !inDraw via CMOV; our own draws recurse straight
+     * through, live slot untouched) and jumps to the trampoline; orig's
+     * RET lands in afterCode (draw + return to caller). All entry
+     * registers and flags are restored on every path. */
     p = cave;
     *p++ = 0x9C;                                 /* pushfd */
-    *p++ = 0x51;                                 /* push ecx */
-    *p++ = 0x50;                                 /* push eax */
     *p++ = 0xFF; *p++ = 0x05;                    /* inc dword [g_hitCount] */
     *(DWORD*)p = (DWORD)&g_hitCount; p += 4;
     *p++ = 0x89; *p++ = 0x0D;                    /* mov [g_drawFont],ecx */
     *(DWORD*)p = (DWORD)&g_drawFont; p += 4;
+    *p++ = 0x9D;                                 /* popfd */
+    *p++ = 0xFF; *p++ = 0x25;                    /* jmp [g_routePtr] */
+    *(DWORD*)p = (DWORD)&g_routePtr; p += 4;
+    /* afterEntry: entered with [retC] on stack top. route = !inDraw. */
+    afterEntry = (DWORD)p;
+    *p++ = 0x9C;                                 /* pushfd */
+    *p++ = 0x51;                                 /* push ecx */
+    *p++ = 0x50;                                 /* push eax */
     *p++ = 0x8B; *p++ = 0x44; *p++ = 0x24; *p++ = 0x0C;
                                                  /* mov eax,[esp+12] (retC) */
     *p++ = 0x8D; *p++ = 0x0D;                    /* lea ecx,[g_slotRet] */
     *(DWORD*)p = (DWORD)&g_slotRet; p += 4;
     *p++ = 0x8D; *p++ = 0x15;                    /* lea edx,[g_dummy] */
     *(DWORD*)p = (DWORD)&g_dummy; p += 4;
-    *p++ = 0xA0;                                /* mov al,[g_postBoot] */
-    *(DWORD*)p = (DWORD)&g_postBoot; p += 4;
     *p++ = 0x8A; *p++ = 0x0D;                    /* mov cl,[g_inDraw] */
     *(DWORD*)p = (DWORD)&g_inDraw; p += 4;
-    *p++ = 0x80; *p++ = 0xF1; *p++ = 0x01;       /* xor cl,1 */
-    *p++ = 0x20; *p++ = 0xC8;                    /* and al,cl (route? ZF) */
+    *p++ = 0x80; *p++ = 0xF1; *p++ = 0x01;       /* xor cl,1 (!inDraw; ZF) */
     *p++ = 0x0F; *p++ = 0x44; *p++ = 0xCA;       /* cmovz ecx,edx */
     *p++ = 0x89; *p++ = 0x01;                    /* mov [ecx],eax */
     *p++ = 0xBA;                                /* mov edx,afterAddr */
@@ -1426,6 +1435,8 @@ static void install_draw_hook(void) {
     *p++ = 0xFF; *p++ = 0x35;                   /* push dword [g_slotRet] */
     *(DWORD*)p = (DWORD)&g_slotRet; p += 4;
     *p++ = 0xC3;                                /* ret -> caller */
+    g_routePtr = (DWORD)tramp;                   /* boot: orig only */
+    g_afterEntry = afterEntry;
 
     install_jmp_hook_nop(HOOK2_ADDR, (DWORD)cave, 7);
     log_msg("DRAWHOOK installed at 0x457440 -> cave %p tramp %p\n", cave, tramp);
