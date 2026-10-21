@@ -215,6 +215,58 @@ static void install_bg_pos_cave(void)
     FlushInstructionCache(GetCurrentProcess(), (void*)0x42D2DE, 7);
     mlog("POSCAVE %s %d", "", 0x42D2DE);
 }
+
+// -- Main-menu version text: string + pos + size --------------------------------
+// Draw at 0x42646A computes the string pointer (inline vs heap std::string).
+// Cave swaps in our buffer; x/y/size are PUSH operands rewritten per config.
+// Stock: str="V3.6" x=525 y=265 size=3. Size semantics unverified (see log).
+static char g_ver_buf[64] = "V3.6";
+static int g_ver_x = 0x20D;
+static int g_ver_y = 0x109;
+static int g_ver_size = 3;
+
+static void ver_push32(DWORD pushAddr, DWORD val)
+{
+    DWORD op;
+    if (!VirtualProtect((void*)pushAddr, 5, PAGE_EXECUTE_READWRITE, &op)) return;
+    *(DWORD*)(pushAddr + 1) = val;
+    VirtualProtect((void*)pushAddr, 5, op, &op);
+    FlushInstructionCache(GetCurrentProcess(), (void*)pushAddr, 5);
+}
+
+static void install_ver_str_cave(void)
+{
+    unsigned char* cave = (unsigned char*)VirtualAlloc(NULL, 32,
+        MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!cave) return;
+    int p = 0;
+    cave[p++] = 0xB8; // mov eax, g_ver_buf
+    *(DWORD*)(cave + p) = (DWORD)g_ver_buf; p += 4;
+    cave[p++] = 0x8B; cave[p++] = 0x8F; // mov ecx,[edi+0x320] (orig)
+    *(DWORD*)(cave + p) = 0x320; p += 4;
+    cave[p++] = 0xE9; // jmp 0x426470
+    *(DWORD*)(cave + p) = (DWORD)0x426470 - ((DWORD)cave + p + 4); p += 4;
+    DWORD op;
+    if (!VirtualProtect((void*)0x42646A, 6, PAGE_EXECUTE_READWRITE, &op)) return;
+    *(unsigned char*)0x42646A = 0xE9;
+    *(DWORD*)(0x42646A + 1) = (DWORD)cave - (0x42646A + 5);
+    *(unsigned char*)(0x42646A + 5) = 0x90;
+    VirtualProtect((void*)0x42646A, 6, op, &op);
+    FlushInstructionCache(GetCurrentProcess(), (void*)0x42646A, 6);
+}
+
+static void apply_version_draw(void)
+{
+    ver_push32(0x426479, (DWORD)g_ver_x);
+    ver_push32(0x426474, (DWORD)g_ver_y);
+    DWORD op;
+    if (VirtualProtect((void*)0x426470, 4, PAGE_EXECUTE_READWRITE, &op)) {
+        *(unsigned char*)(0x426470 + 1) = (unsigned char)g_ver_size;
+        *(unsigned char*)(0x426472 + 1) = (unsigned char)g_ver_size;
+        VirtualProtect((void*)0x426470, 4, op, &op);
+        FlushInstructionCache(GetCurrentProcess(), (void*)0x426470, 4);
+    }
+}
 static unsigned char* g_cave_mem = NULL;
 static int g_reload_counter = 0;
 
@@ -837,6 +889,10 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                 char strBuf[256];
                 copy_json_string(tk.start, tk.length, strBuf, sizeof(strBuf));
                 apply_string(&g_string_sites[matched_string_idx], strBuf);
+                if (matched_string_idx == 17) { // main-menu version buffer
+                    nc_strncpy(g_ver_buf, strBuf, 63);
+                    g_ver_buf[63] = '\0';
+                }
             } else {
                 skip_value(p);
             }
@@ -852,6 +908,22 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                     ? ((keyBuf[3] == 'X' || keyBuf[3] == 'x') ? 0 : 1)
                     : ((keyBuf[5] == 'X' || keyBuf[5] == 'x') ? 2 : 3);
                 g_bg_pos[fi] = tk.num_val;
+            }
+            if (tk.type == JTK_NUMBER &&
+                json_key_matches(elemName, elemNameLen, "mainmenuscreen - version")) {
+                int fi = (keyBuf[3] == 'X' || keyBuf[3] == 'x') ? 0 : 1;
+                if (fi == 0) g_ver_x = (int)tk.num_val;
+                else g_ver_y = (int)tk.num_val;
+            }
+        }
+        else if (nc_stricmp(keyBuf, "size") == 0) {
+            // Version text size (experimental: the two constant pushes)
+            if (tk.type == JTK_NUMBER &&
+                json_key_matches(elemName, elemNameLen, "mainmenuscreen - version")) {
+                int sz = (int)tk.num_val;
+                if (sz < 0) sz = 0;
+                if (sz > 16) sz = 16;
+                g_ver_size = sz;
             }
         }
         else if (nc_stricmp(keyBuf, "path") == 0) {
@@ -972,7 +1044,7 @@ static const char* DEFAULT_CONFIG =
 ",\n"
 "    // ========================= MAIN MENU =========================\n"
 "    {\n"
-"        \"MainMenuScreen - Version\":                           { \"color\":  \"#FFFFFFFF\",               \"posX\":  336.0, \"posY\":  386.0, \"scaleX\":   1.0, \"scaleY\":   1.0, \"string\": \"V3.6.C\" },\n"
+"        \"MainMenuScreen - Version\":                           { \"color\":  \"#FFFFFFFF\",               \"posX\":  336.0, \"posY\":  386.0, \"scaleX\":   1.0, \"scaleY\":   1.0, \"size\": 3, \"string\": \"V3.6.C\" },\n"
 "    }\n"
 "]\n";
 
@@ -1067,6 +1139,8 @@ static void read_config(void)
             tk = next_token(&parser);
         }
     }
+
+    apply_version_draw();
 }
 
 // ===========================================================================
@@ -1231,6 +1305,7 @@ static void __thiscall init_impl(void* thisptr, void* modApi)
     read_config();
     install_patches();
     install_bg_pos_cave();
+    install_ver_str_cave();
 }
 
 static void __thiscall game_update_impl(void* thisptr)

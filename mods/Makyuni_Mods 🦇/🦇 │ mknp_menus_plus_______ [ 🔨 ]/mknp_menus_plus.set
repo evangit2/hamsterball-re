@@ -31,7 +31,7 @@
     },
     // ========================= MAIN MENU =========================
     {
-        "MainMenuScreen - Version":                           { "color":  "#FFFFFFFF",               "posX":  336.0, "posY":  386.0, "scaleX":   1.0, "scaleY":   1.0, "string": "V3.6.C"                                                                }
+        "MainMenuScreen - Version":                           { "color":  "#FFFFFFFF",               "posX":  336.0, "posY":  386.0, "scaleX":   1.0, "scaleY":   1.0, "size": 3, "string": "V3.6.C"                                                                }
     }
     // ==================================================================
   
