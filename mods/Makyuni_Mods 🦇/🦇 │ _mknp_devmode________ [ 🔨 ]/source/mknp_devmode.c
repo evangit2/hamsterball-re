@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v01r — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v01s — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -11,12 +11,10 @@
   * Both installs are verify-or-skip from the init thread, never DllMain.
   *  - Dev keybinds come from mknp_devmode.set (jsonc, next to the DLL):
   *    CTRL+<key> fires the action only while devmode is ON (1s cooldown).
-  *  - While devmode is ON and the indicator is in WAIT (level select), a
-  *    WH_KEYBOARD_LL hook eats game-bound keys (both the DirectInput and
-  *    the message paths) so Enter/Escape/arrows only drive the selector.
-  *    Selection keys are delivered via hook-recorded flags; F8/Ctrl pass
-  *    through so devmode can still be toggled off. Eating applies only
-  *    when the game window is foreground, so other apps are unaffected.
+  *  - While devmode is ON and the indicator is in WAIT (level select), the
+  *    poll loop force-holds the race board's pause flag at 0, so Enter/Escape
+  *    can never latch the pause menu. Dev keys are never eaten or hidden —
+  *    the selector uses plain GetAsyncKeyState edges.
   */
 
 #define WIN32_LEAN_AND_MEAN
@@ -153,7 +151,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v01r self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v01s self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -247,7 +245,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v01r: single small line with bottom-right shadow (version-text style).
+/* v01s: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -523,63 +521,61 @@ static void dev_action_fire(const char* name) {
  * when the App quit flag is set (polite shutdown, no hang). */
 
 /* ── WAIT-state input capture ─────────────────────────────────────── */
-/* While devmode is ON and the indicator is WAIT, eat game-bound keys via
- * WH_KEYBOARD_LL (blocks both DirectInput polling and message-loop keys)
- * so Enter/Escape/arrows only drive the level selector. The hook records
- * selection presses into flags the poll loop consumes with
- * InterlockedExchange (edge semantics). F8/Ctrl/Alt pass through so
- * devmode can still be toggled off and focus can leave the game; eating
- * applies only while the game window is foreground, so other apps and
- * any unfocused state are unaffected. If the hook fails to install, the
- * poll loop falls back to GetAsyncKeyState edges (game also sees keys). */
+/* While devmode is ON and the indicator is WAIT, the game must not pause:
+ * the poll loop force-holds board+0x874=0 on the live race board, so an
+ * Esc/Enter that opens the pause menu is undone within one 16ms tick
+ * (menu can never visibly latch). Dev keys are NOT touched — the selector
+ * keeps its proven GetAsyncKeyState edges. Identity guard: App+0x178 must
+ * name a *Board (menu shells are skipped, never written). */
 
-static HHOOK g_kbHook = NULL;
-static volatile LONG g_hookLeft = 0, g_hookRight = 0;
-static volatile LONG g_hookEnter = 0, g_hookEsc = 0;
+#define APP_BOARD     0x178u
+#define BOARD_PAUSE   0x874u
+#define BOARD_NAME    0x868u
 
-static int game_is_foreground(void) {
-    HWND fg = GetForegroundWindow();
-    char title[64];
-    if (!fg) return 0;
-    title[0] = 0;
-    GetWindowTextA(fg, title, (int)sizeof(title) - 1);
-    title[sizeof(title) - 1] = 0;
-    return strstr(title, "Hamsterball") != NULL;
-}
+static int g_wasPaused = 0;   /* transition latch for the suppress log */
 
-static LRESULT CALLBACK kb_hook_proc(int code, WPARAM wp, LPARAM lp) {
-    if (code == HC_ACTION && (wp == WM_KEYDOWN || wp == WM_SYSKEYDOWN)) {
-        DWORD vk = ((KBDLLHOOKSTRUCT*)lp)->vkCode;
-        if (g_devmode && g_indState == IND_WAIT && game_is_foreground()) {
-            if (vk == (DWORD)VK_LEFT) { g_hookLeft = 1; return 1; }
-            if (vk == (DWORD)VK_RIGHT) { g_hookRight = 1; return 1; }
-            if (vk == (DWORD)VK_RETURN) { g_hookEnter = 1; return 1; }
-            if (vk == (DWORD)VK_ESCAPE) { g_hookEsc = 1; return 1; }
-            /* F8/Ctrl/Alt stay live (devmode toggle, focus switch); eat rest */
-            if (vk != (DWORD)VK_F8 && vk != (DWORD)VK_CONTROL &&
-                vk != 0xA2u && vk != 0xA3u && vk != (DWORD)VK_MENU &&
-                vk != 0xA4u && vk != 0xA5u) return 1;
-        }
+static void suppress_pause_during_wait(void) {
+    DWORD app, board;
+    char name[16];
+    int i;
+    if (!g_devmode || g_indState != IND_WAIT) {   /* other states: game normal */
+        g_wasPaused = 0;
+        return;
     }
-    return CallNextHookEx(g_kbHook, code, wp, lp);
+    if (IsBadReadPtr((void*)APP_PTR, 4)) return;
+    app = *(DWORD*)APP_PTR;
+    if (!app || app < 0x10000 || IsBadReadPtr((void*)app, APP_BOARD + 4)) {
+        g_wasPaused = 0;
+        return;
+    }
+    board = *(DWORD*)(app + APP_BOARD);
+    if (!board || board < 0x10000 ||
+        IsBadReadPtr((void*)board, BOARD_PAUSE + 1) ||
+        IsBadReadPtr((void*)(board + BOARD_NAME), 12)) {
+        g_wasPaused = 0;
+        return;
+    }
+    for (i = 0; i < 11; i++) {
+        char c = *(char*)(board + BOARD_NAME + (DWORD)i);
+        name[i] = (c >= 32 && c < 127) ? c : 0;
+        if (!c) break;
+    }
+    name[11] = 0;
+    if (!strstr(name, "Board")) {   /* menu shell, not a race/arena board */
+        g_wasPaused = 0;
+        return;
+    }
+    if (*(BYTE*)(board + BOARD_PAUSE)) {
+        if (IsBadWritePtr((void*)(board + BOARD_PAUSE), 1)) return;
+        *(BYTE*)(board + BOARD_PAUSE) = 0;
+        if (!g_wasPaused)
+            log_msg("DEVBIND pause-suppressed during WAIT (%s)\n", name);
+        g_wasPaused = 1;
+    } else {
+        g_wasPaused = 0;
+    }
 }
 
-static DWORD WINAPI hook_thread(LPVOID param) {
-    HMODULE self = NULL;
-    MSG m;
-    (void)param;
-    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS
-                     | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                     (LPCSTR)kb_hook_proc, &self);
-    g_kbHook = SetWindowsHookExA(WH_KEYBOARD_LL, kb_hook_proc, self, 0);
-    log_msg("KBHOOK install %s\n", g_kbHook ? "ok" : "FAILED, GetAsyncKeyState fallback");
-    if (!g_kbHook) return 1;
-    while (GetMessageA(&m, NULL, 0, 0) > 0) {
-        TranslateMessage(&m);
-        DispatchMessageA(&m);
-    }
-    return 0;
-}
 static DWORD WINAPI poll_thread(LPVOID param) {
     (void)param;
     for (;;) {
@@ -634,30 +630,24 @@ static DWORD WINAPI poll_thread(LPVOID param) {
         }
         /* WAIT-state level select: arrows cycle ALL <-> LEVEL01..15
          * (wrap), enter confirms, escape cancels. Devmode ON only.
-         * Selection keys come from the LL hook flags (keys are eaten
-         * before the game sees them); without the hook, fall back to
-         * GetAsyncKeyState edges (game also sees the keys). */
+         * Dev keys use plain GetAsyncKeyState edges (nothing is eaten,
+         * nothing is hidden from the game). The pause menu is handled
+         * separately by suppress_pause_during_wait. */
+        suppress_pause_during_wait();
         {
             static int prevL = 0, prevR = 0, prevE = 0, prevX = 0;
             int l = 0, r = 0, e = 0, x = 0;
             if (g_devmode && g_indState == IND_WAIT) {
-                if (g_kbHook) {
-                    l = InterlockedExchange(&g_hookLeft, 0);
-                    r = InterlockedExchange(&g_hookRight, 0);
-                    e = InterlockedExchange(&g_hookEnter, 0);
-                    x = InterlockedExchange(&g_hookEsc, 0);
-                } else {
-                    l = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
-                    r = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
-                    e = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
-                    x = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
-                    l = l && !prevL; r = r && !prevR;
-                    e = e && !prevE; x = x && !prevX;
-                    prevL = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
-                    prevR = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
-                    prevE = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
-                    prevX = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
-                }
+                l = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
+                r = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
+                e = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
+                x = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
+                l = l && !prevL; r = r && !prevR;
+                e = e && !prevE; x = x && !prevX;
+                prevL = (GetAsyncKeyState(VK_LEFT) & 0x8000) != 0;
+                prevR = (GetAsyncKeyState(VK_RIGHT) & 0x8000) != 0;
+                prevE = (GetAsyncKeyState(VK_RETURN) & 0x8000) != 0;
+                prevX = (GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0;
                 if (l || r) {
                     g_indSel += l ? -1 : 1;
                     if (g_indSel < -1) g_indSel = BESTTIME_RACES - 1;
@@ -738,8 +728,8 @@ static void draw_direct(void) {
     if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
 
     text = g_devmode ? "devmode: on" : "devmode: off";
-    /* v01r: exactly one status draw per frame. The 0x46C1F1 frame hook
-     * arms one draw per frame; this consumes it. (v01r's 33ms time gate
+    /* v01s: exactly one status draw per frame. The 0x46C1F1 frame hook
+     * arms one draw per frame; this consumes it. (v01s's 33ms time gate
      * skipped whole frames -> fast blink. Same-frame overdraw is
      * invisible; zero-draw frames blink — so arm-per-frame + consume.) */
     if (!g_drawArmed) return;
@@ -909,10 +899,9 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v01r: arms one draw per frame */
+    install_frame_hook();  /* v01s: arms one draw per frame */
     install_draw_hook();   /* DrawGlyph post-draw consumes the arm */
     CreateThread(NULL, 0, poll_thread, NULL, 0, NULL);
-    CreateThread(NULL, 0, hook_thread, NULL, 0, NULL);   /* LL key capture */
     return 0;
 }
 
