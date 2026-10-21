@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02d — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02e — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -147,6 +147,7 @@ static const char* indicator_text(void) {
 static int g_devmode = 0;     /* the devmode variable: F8 toggles 0/1 */
 static int g_prevF8  = 0;     /* previous F8 down-state (edge detect) */
 static volatile int g_drawArmed = 0;  /* set each frame by C6F1; consumed by DrawGlyph hook */
+static DWORD g_lastDrawTick = 0;   /* fallback throttle when C6F1 never fires */
 static int g_frameHookOk = 0;     /* 1 once the 0x46C1F1 frame hook is live */
 static volatile int g_inDraw = 0;     /* reentrancy guard for our own draw */
 static void* g_drawFont = 0;          /* live Font* captured from the hook's ECX */
@@ -183,7 +184,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02d self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02e self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -331,7 +332,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02d: single small line with bottom-right shadow (version-text style).
+/* v02e: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -1165,12 +1166,18 @@ static void draw_direct(void) {
     if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
 
     text = g_devmode ? "devmode: on" : "devmode: off";
-    /* v02d: exactly one status draw per frame. The 0x46C1F1 frame hook
-     * arms one draw per frame; this consumes it. (v02d's 33ms time gate
-     * skipped whole frames -> fast blink. Same-frame overdraw is
-     * invisible; zero-draw frames blink — so arm-per-frame + consume.) */
-    if (!g_drawArmed) return;
-    g_drawArmed = 0;
+    /* Exactly one status draw per presented frame. The 0x46C1F1 frame hook
+     * arms one draw per frame; this consumes it. Screens whose loop never
+     * reaches 0x46C1F1 (loaders, some menus) get a 40ms time fallback, so
+     * the overlay stays up everywhere DrawGlyph runs. The arm is consumed
+     * only when a draw really happens — a not-ready font retries on the
+     * next entry instead of eating the frame. */
+    {
+        DWORD now = GetTickCount();
+        if (!g_drawArmed && (int)(now - g_lastDrawTick) < 40) return;
+        g_drawArmed = 0;
+        g_lastDrawTick = now;
+    }
     font = 0;
     if (!IsBadReadPtr((void*)app, 0x330)) {
         static const DWORD slots[] = { 0x320u, 0x318u, 0x324u };
@@ -1337,7 +1344,7 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v02d: arms one draw per frame */
+    install_frame_hook();  /* v02e: arms one draw per frame */
     install_draw_hook();
     install_pause_tap();
     CreateThread(NULL, 0, hook_thread, NULL, 0, NULL);   /* DrawGlyph post-draw consumes the arm */
