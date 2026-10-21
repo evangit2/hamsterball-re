@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02y — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02z — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -191,7 +191,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02y self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02z self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -339,7 +339,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02y: single small line with bottom-right shadow (version-text style).
+/* v02z: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -1090,10 +1090,15 @@ static DWORD WINAPI poll_thread(LPVOID param) {
             g_bootPhase = 0;
             log_msg("BOOTPHASE over\n");
         }
-        if (!g_bootPhase && !g_postBoot) {
-            g_postBoot = 1;
-            g_routePtr = g_afterEntry;
-            log_msg("POSTBOOT draw-after armed\n");
+
+        {
+            static DWORD lastBeat = 0;
+            DWORD nowB = GetTickCount();
+            if ((int)(nowB - lastBeat) > 10000) {
+                lastBeat = nowB;
+                log_msg("BEAT hits=%d draws=%d gate=%d\n",
+                        g_hitCount, g_drawCount, g_loaderGate);
+            }
         }
         wait_freeze_tick();   /* HOLD native pause while WAIT, restore after */
         {
@@ -1378,15 +1383,10 @@ static void install_draw_hook(void) {
     *(DWORD*)p = (HOOK2_ADDR + 7) - ((DWORD)p + 4);
     p += 4;
 
-    /* Two-phase detour, no branches anywhere. The entry cave is kept
-     * minimal forever (boot-safe): capture + indirect tail jump. It starts
-     * at the trampoline (orig only) and poll flips g_routePtr to
-     * afterEntry once post-boot (single atomic DWORD store: readers see
-     * old or new, never a tear). afterEntry does the reentry-safe slot
-     * dance (route = !inDraw via CMOV; our own draws recurse straight
-     * through, live slot untouched) and jumps to the trampoline; orig's
-     * RET lands in afterCode (draw + return to caller). All entry
-     * registers and flags are restored on every path. */
+    /* Minimal capture cave (boot-safe forever): count the hit, record
+     * the live font, jump to the trampoline. No stack use, no register
+     * use (flags saved and restored), no branches: orig+7 sees exactly
+     * the caller state. All drawing happens in the frame hook. */
     p = cave;
     *p++ = 0x9C;                                 /* pushfd */
     *p++ = 0xFF; *p++ = 0x05;                    /* inc dword [g_hitCount] */
@@ -1394,50 +1394,9 @@ static void install_draw_hook(void) {
     *p++ = 0x89; *p++ = 0x0D;                    /* mov [g_drawFont],ecx */
     *(DWORD*)p = (DWORD)&g_drawFont; p += 4;
     *p++ = 0x9D;                                 /* popfd */
-    *p++ = 0xFF; *p++ = 0x25;                    /* jmp [g_routePtr] */
-    *(DWORD*)p = (DWORD)&g_routePtr; p += 4;
-    /* afterEntry: entered with [retC] on stack top. route = !inDraw. */
-    afterEntry = (DWORD)p;
-    *p++ = 0x9C;                                 /* pushfd */
-    *p++ = 0x51;                                 /* push ecx */
-    *p++ = 0x50;                                 /* push eax */
-    *p++ = 0x8B; *p++ = 0x44; *p++ = 0x24; *p++ = 0x0C;
-                                                 /* mov eax,[esp+12] (retC) */
-    *p++ = 0x8D; *p++ = 0x0D;                    /* lea ecx,[g_slotRet] */
-    *(DWORD*)p = (DWORD)&g_slotRet; p += 4;
-    *p++ = 0x8D; *p++ = 0x15;                    /* lea edx,[g_dummy] */
-    *(DWORD*)p = (DWORD)&g_dummy; p += 4;
-    *p++ = 0x8A; *p++ = 0x0D;                    /* mov cl,[g_inDraw] */
-    *(DWORD*)p = (DWORD)&g_inDraw; p += 4;
-    *p++ = 0x80; *p++ = 0xF1; *p++ = 0x01;       /* xor cl,1 (!inDraw; ZF) */
-    *p++ = 0x0F; *p++ = 0x44; *p++ = 0xCA;       /* cmovz ecx,edx */
-    *p++ = 0x89; *p++ = 0x01;                    /* mov [ecx],eax */
-    *p++ = 0xBA;                                /* mov edx,afterAddr */
-    afterImm = p;
-    *(DWORD*)p = 0; p += 4;                      /* patched below */
-    *p++ = 0x0F; *p++ = 0x44; *p++ = 0xD0;       /* cmovz edx,eax */
-    *p++ = 0x89; *p++ = 0x54; *p++ = 0x24; *p++ = 0x0C;
-                                                 /* mov [esp+12],edx */
-    *p++ = 0x58;                                 /* pop eax */
-    *p++ = 0x59;                                 /* pop ecx */
-    *p++ = 0x9D;                                 /* popfd */
     *p++ = 0xE9;                                /* jmp trampoline */
     *(DWORD*)p = (DWORD)tramp - ((DWORD)p + 4);
     p += 4;
-    /* afterCode: entered with [retC] on stack top (orig RET 0x20 lands
-     * here in post-boot mode). Draw, then return to the caller. */
-    afterAddr = (DWORD)p;
-    *(DWORD*)afterImm = afterAddr;
-    *p++ = 0x60;                                /* pushad */
-    *p++ = 0xE8;                                /* call draw_direct */
-    *(DWORD*)p = (DWORD)draw_direct - ((DWORD)p + 4);
-    p += 4;
-    *p++ = 0x61;                                /* popad */
-    *p++ = 0xFF; *p++ = 0x35;                   /* push dword [g_slotRet] */
-    *(DWORD*)p = (DWORD)&g_slotRet; p += 4;
-    *p++ = 0xC3;                                /* ret -> caller */
-    g_routePtr = (DWORD)tramp;                   /* boot: orig only */
-    g_afterEntry = afterEntry;
 
     install_jmp_hook_nop(HOOK2_ADDR, (DWORD)cave, 7);
     log_msg("DRAWHOOK installed at 0x457440 -> cave %p tramp %p\n", cave, tramp);
@@ -1446,7 +1405,6 @@ static void install_draw_hook(void) {
 /* Frame-phase draw: stands down once the post-boot AFTER path is armed
  * (avoids double-draw). Plain C, no cave branches. */
 static void draw_from_frame(void) {
-    if (g_postBoot) return;
     draw_direct();
 }
 
