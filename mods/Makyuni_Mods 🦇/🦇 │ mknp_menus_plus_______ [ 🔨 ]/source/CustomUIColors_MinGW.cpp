@@ -92,7 +92,7 @@ static StringSite g_string_sites[] = {
     {"string - let's play",     0x004D3F10, 11},
     {"string - options",        0x004D3F00,  7},
     {"string - credits",        0x004D3EF4,  7},
-    {"string - exit to desktop",0x004D3EC3, 16},
+    {"string - exit to desktop",0x004D3EC4, 15},
     {"string - choose a game",  0x004D3FF0, 14},
     {"string - tournament",     0x004D3FE0, 10},
     {"string - time trials",    0x004D3FCC, 11},
