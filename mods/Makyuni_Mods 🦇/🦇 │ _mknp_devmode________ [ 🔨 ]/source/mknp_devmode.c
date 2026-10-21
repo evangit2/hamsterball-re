@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02a — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02b — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -95,7 +95,12 @@ static void ind_done_text(const char* prefix) {
     ind_set_sel_text(g_indicator + strlen(g_indicator));
 }
 
+#define EAT_MS 400u   /* pause-input quarantine after WAIT exit */
+static DWORD g_eatUntil = 0;   /* GetTickCount horizon; keys eaten while future */
+
 static void ind_to_rest(void) {
+    if (g_indState == IND_WAIT)
+        g_eatUntil = GetTickCount() + EAT_MS;   /* quarantine the exit key */
     g_indState = IND_REST;
     g_indUntil = 0;
     strcpy(g_indicator, "-");
@@ -151,7 +156,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02a self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02b self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -299,7 +304,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02a: single small line with bottom-right shadow (version-text style).
+/* v02b: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -749,21 +754,23 @@ static int fg_is_game(void) {
 static LRESULT CALLBACK kb_proc(int code, WPARAM wp, LPARAM lp) {
     if (code == HC_ACTION && (wp == WM_KEYDOWN || wp == WM_SYSKEYDOWN)) {
         DWORD vk = ((KBDLLHOOKSTRUCT*)lp)->vkCode;
-        if (g_devmode && g_indState == IND_WAIT && fg_is_game()) {
+        int quarantined = (int)(GetTickCount() - g_eatUntil) < 0;
+        if (g_devmode && (g_indState == IND_WAIT || quarantined) && fg_is_game()) {
+            int wait = (g_indState == IND_WAIT);
             if (vk == (DWORD)VK_LEFT) {
-                InterlockedExchange(&g_hL, 1); return 1;
+                if (wait) InterlockedExchange(&g_hL, 1); return 1;
             }
             if (vk == (DWORD)VK_RIGHT) {
-                InterlockedExchange(&g_hR, 1); return 1;
+                if (wait) InterlockedExchange(&g_hR, 1); return 1;
             }
             if (vk == (DWORD)VK_RETURN) {
-                InterlockedExchange(&g_hE, 1); return 1;
+                if (wait) InterlockedExchange(&g_hE, 1); return 1;
             }
             if (vk == (DWORD)VK_ESCAPE) {
-                InterlockedExchange(&g_hX, 1); return 1;
+                if (wait) InterlockedExchange(&g_hX, 1); return 1;
             }
-            /* F8/Ctrl/Alt stay live; eat the rest */
-            if (vk != (DWORD)VK_F8 && vk != (DWORD)VK_CONTROL &&
+            /* F8/Ctrl/Alt stay live; eat the rest (WAIT only) */
+            if (wait && vk != (DWORD)VK_F8 && vk != (DWORD)VK_CONTROL &&
                 vk != 0xA2u && vk != 0xA3u && vk != (DWORD)VK_MENU &&
                 vk != 0xA4u && vk != 0xA5u) return 1;
         }
@@ -774,7 +781,8 @@ static LRESULT CALLBACK kb_proc(int code, WPARAM wp, LPARAM lp) {
 static LRESULT CALLBACK ms_proc(int code, WPARAM wp, LPARAM lp) {
     (void)lp;
     if (code == HC_ACTION && (wp == WM_RBUTTONDOWN || wp == WM_RBUTTONUP)) {
-        if (g_devmode && g_indState == IND_WAIT && fg_is_game()) return 1;
+        int quarantined = (int)(GetTickCount() - g_eatUntil) < 0;
+        if (g_devmode && (g_indState == IND_WAIT || quarantined) && fg_is_game()) return 1;
     }
     return CallNextHookEx(g_msHook, code, wp, lp);
 }
@@ -955,6 +963,7 @@ static DWORD WINAPI poll_thread(LPVOID param) {
                         g_indState = IND_FAIL;
                     }
                     g_indUntil = GetTickCount() + IND_MS;
+                    g_eatUntil = g_indUntil - IND_MS + EAT_MS;   /* quarantine the Enter */
                     log_msg("DEVBIND reset-best-times: %s (%s)\n",
                             g_indState == IND_OK ? "SUCCESS" : "FAILED", g_indicator);
                 }
@@ -1019,8 +1028,8 @@ static void draw_direct(void) {
     if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
 
     text = g_devmode ? "devmode: on" : "devmode: off";
-    /* v02a: exactly one status draw per frame. The 0x46C1F1 frame hook
-     * arms one draw per frame; this consumes it. (v02a's 33ms time gate
+    /* v02b: exactly one status draw per frame. The 0x46C1F1 frame hook
+     * arms one draw per frame; this consumes it. (v02b's 33ms time gate
      * skipped whole frames -> fast blink. Same-frame overdraw is
      * invisible; zero-draw frames blink — so arm-per-frame + consume.) */
     if (!g_drawArmed) return;
@@ -1191,7 +1200,7 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v02a: arms one draw per frame */
+    install_frame_hook();  /* v02b: arms one draw per frame */
     install_draw_hook();
     install_pause_tap();
     CreateThread(NULL, 0, hook_thread, NULL, 0, NULL);   /* DrawGlyph post-draw consumes the arm */
