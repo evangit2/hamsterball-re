@@ -105,6 +105,7 @@ static StringSite g_string_sites[] = {
     {"string - pause - resume", 0x004D410C,  6},
     {"string - pause - restart",0x004D4198, 12},
     {"string - pause - quit",   0x004D4188, 14},
+    {"string - mainmenu version", 0x004D398C, 8},
 };
 
 #define NUM_STRING_SITES (sizeof(g_string_sites) / sizeof(g_string_sites[0]))
@@ -559,10 +560,13 @@ static int json_key_matches(const char* key, int keyLen, const char* needle)
 static void apply_string(const StringSite* site, const char* text)
 {
     DWORD old_protect;
+    int copyLen = (int)nc_strlen(text) + 1;
+    int cap = site->maxLength + 1;  // never spill into the neighboring string
+    if (copyLen > cap) copyLen = cap;
     if (!VirtualProtect((void*)site->address, site->maxLength + 1,
                         PAGE_READWRITE, &old_protect))
         return;
-    nc_memcpy((void*)site->address, text, nc_strlen(text) + 1);
+    nc_memcpy((void*)site->address, text, copyLen);
     VirtualProtect((void*)site->address, site->maxLength + 1, old_protect, &old_protect);
     FlushInstructionCache(GetCurrentProcess(), (void*)site->address, site->maxLength + 1);
 }
@@ -591,6 +595,7 @@ static ElementMap g_element_map[] = {
     {"loader with ball",         5, 1},
     {"rotating swirl",           6, 1},
     {"raptisoft logo",           8, 1},
+    {"mainmenuscreen - version", 9, 1},
 };
 
 #define NUM_ELEMENT_MAPS (sizeof(g_element_map) / sizeof(g_element_map[0]))
@@ -602,6 +607,7 @@ struct StringElementMap {
 
 static StringElementMap g_string_element_map[] = {
     {"click here",               0},
+    {"mainmenuscreen - version", 17},
 };
 
 #define NUM_STRING_ELEMENT_MAPS (sizeof(g_string_element_map) / sizeof(g_string_element_map[0]))
@@ -963,6 +969,11 @@ static const char* DEFAULT_CONFIG =
 "    \"LoadingScreen - Raptisoft Logo\":                   { \"color\":  \"#FFFFFFFF\",               \"posX\":    0.0, \"posY\":    0.0, \"scaleX\":   0.0, \"scaleY\":   0.0, \"path\":   \"Textures/RaptisoftLogo\", \"link\": \"https://www.raptisoft.com\"        },\n"
 "    \"LoadingScreen - Background\":                       { \"color\":  \"#FFFFFFFF\",               \"posX\":  100.0, \"posY\":    0.0, \"scaleX\": 600.0, \"scaleY\": 600.0, \"path\":   \"Textures/LoaderBkg\"                                                },\n"
 "  }\n"
+",\n"
+"    // ========================= MAIN MENU =========================\n"
+"    {\n"
+"        \"MainMenuScreen - Version\":                           { \"color\":  \"#FFFFFFFF\",               \"posX\":  336.0, \"posY\":  386.0, \"scaleX\":   1.0, \"scaleY\":   1.0, \"string\": \"V3.6.C\" },\n"
+"    }\n"
 "]\n";
 
 static void create_default_config(void)

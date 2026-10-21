@@ -28,6 +28,10 @@
         "LoadingScreen - Raptisoft Logo":                   { "color":  "#FFFFFFFF",               "posX":  672.0, "posY":  472.0, "scaleX":   1.0, "scaleY":   1.0, "path":   "Textures/RaptisoftLogo", "link": "https://www.raptisoft.com"        },
 		"LoadingScreen - Background":                  	{ "color":  "#FFFFFFFF",               "posX":  100.0, "posY":    0.0, "scaleX": 600.0, "scaleY": 600.0, "path":   "Textures/LoaderBkg"									}
    
+    },
+    // ========================= MAIN MENU =========================
+    {
+        "MainMenuScreen - Version":                           { "color":  "#FFFFFFFF",               "posX":  336.0, "posY":  386.0, "scaleX":   1.0, "scaleY":   1.0, "string": "V3.6.C"                                                                }
     }
     // ==================================================================
   
