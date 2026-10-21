@@ -437,8 +437,11 @@ static int SweepStaleExts(void) {
     for (i = 0; i < MAX_EXT_MAP; i++) {
         if (!g_extMap[i].board && !g_extMap[i].ext) continue;
         /* Only reap when the BOARD is dead. A live board with NULL ext is a
-         * feat-only entry (scan ran before Ensure) — keep its feat bits. */
-        int bok = g_extMap[i].board && HeapValidate(GetProcessHeap(), 0, g_extMap[i].board);
+         * feat-only entry (scan ran before Ensure) — keep its feat bits.
+         * Fix 2026-10-20: HeapValidate on the process heap cannot judge game
+         * boards (foreign heap, always FALSE) — use page-commit instead. */
+        MEMORY_BASIC_INFORMATION smbi;
+        int bok = g_extMap[i].board && VirtualQuery(g_extMap[i].board, &smbi, sizeof(smbi)) && smbi.State == MEM_COMMIT;
         if (!bok) {
             if (g_extMap[i].ext && HeapValidate(GetProcessHeap(), 0, g_extMap[i].ext))
                 HeapFree(GetProcessHeap(), 0, g_extMap[i].ext);

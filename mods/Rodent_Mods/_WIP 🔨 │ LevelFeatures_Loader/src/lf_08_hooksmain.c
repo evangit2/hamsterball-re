@@ -323,22 +323,32 @@ void __cdecl Hook_AdvanceRaceLogic(DWORD a1) { /* non-static + cdecl: referenced
         FreeBoardExt(curBoard);
     }
     if (g_origAdvanceRace) g_origAdvanceRace((void*)g_savedAdvanceECX, a1);
+    /* Re-read the CURRENT board after the transition: the fresh board's ext
+     * was just created by its ctor. The sweep below must never clear it. */
+    void *newBoard = NULL;
+    if (VirtualQuery((void*)appPtrAddr, &mbi, sizeof(mbi)) && mbi.State==MEM_COMMIT) {
+        DWORD app2 = *(DWORD*)appPtrAddr;
+        if (app2 && VirtualQuery((void*)app2, &mbi, sizeof(mbi)) && mbi.State==MEM_COMMIT) {
+            newBoard = *(void**)((char*)app2 + 0x178);
+        }
+    }
     int j;
     for (j=0;j<MAX_EXT_MAP;j++) if (g_extMap[j].ext) {
         void* b = g_extMap[j].board;
-        if (!b || !HeapValidate(GetProcessHeap(),0,b)) {
-            /* Board was freed without AdvanceRace (e.g. immediate restart).
-             * Use HeapValidate — IsBadReadPtr would pass on freed page. */
-            HeapFree(GetProcessHeap(),0,g_extMap[j].ext);
-            g_extMap[j].ext=NULL; g_extMap[j].extSize=0; g_extMap[j].feat=0; g_extMap[j].board=NULL;
-        } else {
-            /* Also sweep if board no longer points to a live Heap block that
-             * contains our offset — VirtualQuery check */
-            MEMORY_BASIC_INFORMATION mb2;
-            if (!VirtualQuery(b, &mb2, sizeof(mb2)) || mb2.State!=MEM_COMMIT) {
-                HeapFree(GetProcessHeap(),0,g_extMap[j].ext);
-                g_extMap[j].ext=NULL; g_extMap[j].extSize=0; g_extMap[j].feat=0; g_extMap[j].board=NULL;
-            }
+        if (b && b == newBoard) continue;
+        /* Fix 2026-10-20: the old HeapValidate(GetProcessHeap(),0,b) branch
+         * is systematically wrong — game boards are not allocated on the
+         * process default heap, so it returns FALSE for LIVE race boards
+         * (proven: SweepClear hv=0 on the just-constructed Beginner board,
+         * emptying the map on every load and killing all ext-gated dispatch
+         * incl. the bumper bounce). A board page that is still committed may
+         * be live, reused, or stale-freed; the ctor's FreeBoardExt+Ensure
+         * already handles address reuse, so only reclaim truly-dead pages. */
+        { MEMORY_BASIC_INFORMATION mb2;
+          if (!b || !VirtualQuery(b, &mb2, sizeof(mb2)) || mb2.State!=MEM_COMMIT) {
+              HeapFree(GetProcessHeap(),0,g_extMap[j].ext);
+              g_extMap[j].ext=NULL; g_extMap[j].extSize=0; g_extMap[j].feat=0; g_extMap[j].board=NULL;
+          }
         }
     }
 }
