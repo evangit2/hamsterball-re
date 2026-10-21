@@ -162,7 +162,7 @@ static void log_open(void)
         }
     }
     if (g_log != INVALID_HANDLE_VALUE) {
-        const char* init = "INIT menus_plus novercave\r\n";
+        const char* init = "INIT menus_plus fields1\r\n";
         DWORD w = 0;
         WriteFile(g_log, init, (DWORD)nc_strlen(init), &w, NULL);
     }
@@ -296,12 +296,43 @@ static void install_ver_post_cave(void)
     FlushInstructionCache(GetCurrentProcess(), (void*)0x426484, 5);
 }
 
+// Menu version string WITHOUT code hooks (the JMP caves crashed menu Draw).
+// The version text is a std::string in the menu object: short values live in
+// an inline buffer, so the draw picks pointer-vs-inline with jb at 0x426460.
+// We force the pointer path (jb -> NOPs) and point EAX straight at g_ver_buf.
+// 7 bytes, straight-line semantics, idempotent across config re-reads.
+static int g_verdat_logged = 0;
+static void install_ver_datapatch(void)
+{
+    DWORD op;
+    unsigned char* jb = (unsigned char*)0x426460;
+    if (jb[0] == 0x72 && jb[1] == 0x05) {
+        if (VirtualProtect((void*)0x426460, 2, PAGE_EXECUTE_READWRITE, &op)) {
+            jb[0] = 0x66; jb[1] = 0x90; // xchg ax,ax (2-byte NOP)
+            VirtualProtect((void*)0x426460, 2, op, &op);
+            FlushInstructionCache(GetCurrentProcess(), (void*)0x426460, 2);
+        }
+    }
+    unsigned char* fe = (unsigned char*)0x426462;
+    if (fe[0] == 0x8B && fe[1] == 0x47 && fe[2] == 0x28) {
+        if (VirtualProtect((void*)0x426462, 5, PAGE_EXECUTE_READWRITE, &op)) {
+            fe[0] = 0xB8; // mov eax, imm32(g_ver_buf)
+            *(DWORD*)(fe + 1) = (DWORD)g_ver_buf;
+            VirtualProtect((void*)0x426462, 5, op, &op);
+            FlushInstructionCache(GetCurrentProcess(), (void*)0x426462, 5);
+        }
+    }
+    if (!g_verdat_logged) {
+        g_verdat_logged = 1;
+        mlog("VERDAT %s %d", "", 0);
+    }
+}
+
 static void apply_version_draw(void)
 {
     if (g_dry_run && !ENABLE_VERSION) { mlog("SKIP verdraw %s %d", "", 0); return; }
-    // x/y are real position pushes. The old "size" pushes (0x426470/0x426472)
-    // turned out to be shadow offsets, NOT size — real size is the font
-    // scale stamped by the pre-draw cave from g_ver_scale_bits. Left alone.
+    // x/y are real position pushes (boot-proven). Size stays stock for now.
+    install_ver_datapatch();
     ver_push32(0x426479, (DWORD)g_ver_x);
     ver_push32(0x426474, (DWORD)g_ver_y);
 }
@@ -668,10 +699,11 @@ static int json_key_matches(const char* key, int keyLen, const char* needle)
 static void apply_string(const StringSite* site, const char* text)
 {
     if (g_dry_run) { mlog("SKIPSTR %s %d", "", 0); return; }
+    if (site->address < 0x4D0000 || site->address > 0x4E0000) return; // .rdata only
     DWORD old_protect;
     int copyLen = (int)nc_strlen(text) + 1;
     int cap = site->maxLength + 1;  // never spill into the neighboring string
-    if (copyLen > cap) copyLen = cap;
+    if (copyLen > cap) { copyLen = cap; mlog("TRUNC %s %d", "", site->maxLength); }
     if (!VirtualProtect((void*)site->address, site->maxLength + 1,
                         PAGE_READWRITE, &old_protect))
         return;
@@ -706,6 +738,24 @@ static ElementMap g_element_map[] = {
     {"rotating swirl",           6, 1},
     {"raptisoft logo",           8, 1},
     {"mainmenuscreen - version", 9, 1},
+    {"mainmenuscreen - button #1", 11, 1},
+    {"mainmenuscreen - button #2", 12, 1},
+    {"mainmenuscreen - button #3", 13, 1},
+    {"mainmenuscreen - button #4", 14, 1},
+    {"mainmenuscreen - button #5", 15, 1},
+    {"lp button #1",             16, 1},
+    {"timetrials(l",             18, 1},
+    {"lp button #2",             17, 1},
+    {"mirrortourney",            19, 1},
+    {"lp button #4",             20, 1},
+    {"lp button #5",             21, 1},
+    {"pause - button #1",        22, 1},
+    {"pause - button #2",        23, 1},
+    {"pause - button #3",        24, 1},
+    {"pause - button #4",        25, 1},
+    {"side strip l",             26, 1},
+    {"side strip r",             27, 1},
+    {"win strip",                28, 1},
 };
 
 #define NUM_ELEMENT_MAPS (sizeof(g_element_map) / sizeof(g_element_map[0]))
@@ -718,6 +768,25 @@ struct StringElementMap {
 static StringElementMap g_string_element_map[] = {
     {"click here",               0},
     {"mainmenuscreen - version", 17},
+    {"let's play",               1},
+    {"choose a game",            5},
+    {"pause - button #3",        2},
+    {"mainmenuscreen - button #3", 2},
+    {"credits",                  3},
+    {"exit to desktop",          4},
+    {"tournament",               6},
+    {"time trials",              7},
+    {"choose a time trial",      12},
+    {"return button",            13},
+    {"timetrials(l",             8},
+    {"mirrortourney(l",          8},
+    {"mirrortourney",            9},
+    {"party games",              10},
+    {"button #4 - return",       11},
+    {"previous",                 11},
+    {"pause - button #1",        14},
+    {"pause - button #2",        15},
+    {"pause - button #4",        16},
 };
 
 #define NUM_STRING_ELEMENT_MAPS (sizeof(g_string_element_map) / sizeof(g_string_element_map[0]))
@@ -946,10 +1015,12 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
             if (tk.type == JTK_STRING) {
                 char strBuf[256];
                 copy_json_string(tk.start, tk.length, strBuf, sizeof(strBuf));
-                apply_string(&g_string_sites[matched_string_idx], strBuf);
-                if (matched_string_idx == 17) { // main-menu version buffer
+                if (matched_string_idx == 17) { // menu version: draw buffer only,
+                    // never the static (credits screen keeps stock "V3.6")
                     nc_strncpy(g_ver_buf, strBuf, 63);
                     g_ver_buf[63] = '\0';
+                } else {
+                    apply_string(&g_string_sites[matched_string_idx], strBuf);
                 }
             } else {
                 skip_value(p);
