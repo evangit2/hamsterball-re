@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02p — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02q — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -189,7 +189,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02p self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02q self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -337,7 +337,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02p: single small line with bottom-right shadow (version-text style).
+/* v02q: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -1205,9 +1205,15 @@ static void draw_direct(void) {
     void* font;
 
     if (g_entryCount < 20) {
-        log_msg("ENTRY n=%d hookfont=%p\n", g_entryCount, g_drawFont);
+        DWORD hookvt = 0;
+        if (g_drawFont && !IsBadReadPtr(g_drawFont, 4) &&
+            !IsBadReadPtr(*(void**)g_drawFont, 4))
+            hookvt = *(DWORD*)g_drawFont;
+        log_msg("ENTRY n=%d hookfont=%p hookvt=%p gate=%d\n",
+                g_entryCount, g_drawFont, (void*)hookvt, g_loaderGate);
     }
     g_entryCount++;
+    if (!g_drawFont) return;   /* loader's poison call (NULL font): skip */
 
     if (IsBadReadPtr((void*)APP_PTR, 4)) return;
     app = *(DWORD*)APP_PTR;
