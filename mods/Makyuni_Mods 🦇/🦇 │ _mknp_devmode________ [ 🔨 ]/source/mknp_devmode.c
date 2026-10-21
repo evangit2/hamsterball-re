@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02q — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02r — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -39,7 +39,6 @@
 #define HOOK2_ADDR  0x00457440u   /* Font_DrawGlyph entry (SEH frame, replayed by trampoline) */
 #define VK_F8       0x77
 #define VK_CTRL     0x11   /* either CTRL key via GetAsyncKeyState */
-#define VK_RBUTTON 0x02u
 #define VK_LEFT     0x25
 #define VK_RIGHT    0x27
 #define VK_RETURN   0x0D
@@ -189,7 +188,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02q self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02r self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -337,7 +336,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02q: single small line with bottom-right shadow (version-text style).
+/* v02r: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -1214,6 +1213,7 @@ static void draw_direct(void) {
     }
     g_entryCount++;
     if (!g_drawFont) return;   /* loader's poison call (NULL font): skip */
+    if (g_loaderGate) return;  /* loading screen: orig text only, no overlay */
 
     if (IsBadReadPtr((void*)APP_PTR, 4)) return;
     app = *(DWORD*)APP_PTR;
@@ -1262,7 +1262,7 @@ probed:
     g_inDraw = 0;
 }
 
-/* ── Frame hook (0x46C1F1 epilogue): arms one status draw per frame ─── */
+/* ── Frame hook (0x46C1F1 epilogue): draws the overlay itself ───────── */
 /* Stolen bytes (5): 5E 83 C4 08 C3 (pop esi / add esp,8 / ret).
  * Cave sets g_drawArmed=1, replays the epilogue, returns to the caller.
  * Runs on the game thread once per frame. */
@@ -1286,9 +1286,13 @@ static void install_frame_hook(void) {
         return;
     }
     p = cave;
-    *p++ = 0xC6; *p++ = 0x05;                    /* mov byte [armed],1 */
-    *(DWORD*)p = (DWORD)&g_drawArmed; p += 4;
-    *p++ = 0x01;
+    *p++ = 0x60;                                /* pushad */
+    *p++ = 0x9C;                                /* pushfd */
+    *p++ = 0xE8;                                /* call draw_direct */
+    *(DWORD*)p = (DWORD)draw_direct - ((DWORD)p + 4);
+    p += 4;
+    *p++ = 0x9D;                                /* popfd */
+    *p++ = 0x61;                                /* popad */
     *p++ = 0x5E;                                /* pop esi */
     *p++ = 0x83; *p++ = 0xC4; *p++ = 0x08;      /* add esp,8 */
     *p++ = 0xC3;                                /* ret */
@@ -1299,7 +1303,7 @@ static void install_frame_hook(void) {
 
 /* ── Hook install (init thread only): DrawGlyph detour ──────────────── */
 
-/* Font_DrawGlyph (0x457440) entry detour with post-call draw.
+/* Font_DrawGlyph (0x457440) entry detour: capture only, fully transparent.
  *
  * Stolen bytes (7, two whole instructions, the SEH frame setup):
  *   6A FF             push -1
@@ -1313,15 +1317,12 @@ static void install_frame_hook(void) {
  *   RET 0x20 cleans p1..p8 and lands on AFTER with [retC] on stack,
  *   where draw_once_gated() runs (one status line per frame max).
  */
-static DWORD g_slotRet;
 
 static void install_draw_hook(void) {
     BYTE* a = (BYTE*)HOOK2_ADDR;
     unsigned char* tramp;
     unsigned char* cave;
     unsigned char* p;
-    DWORD afterAddr, fwdAddr;
-    BYTE* gateJeRel = 0;
 
     /* verify-or-skip: expect 6A FF 68 50 CD 4C 00 */
     if (IsBadReadPtr((void*)HOOK2_ADDR, 7)) {
@@ -1350,78 +1351,17 @@ static void install_draw_hook(void) {
     *(DWORD*)p = (HOOK2_ADDR + 7) - ((DWORD)p + 4);
     p += 4;
 
-    /* Full-preservation detour: entry saves flags+EAX, restores both
-     * before the trampoline, so orig+7 sees exactly what the caller set.
-     * Cross-thread guard: slotRet is process-global (spinlock + owner
-     * tid; same-thread reentry skips). ECX (font) preserved throughout. */
+    /* Transparent capture: count the hit, record the live font, jump
+     * to the trampoline. No stack use, no register use (flags saved and
+     * restored), no branches: orig+7 sees exactly the caller state.
+     * Drawing happens in the frame hook, never here. */
     p = cave;
     *p++ = 0x9C;                                 /* pushfd */
-    *p++ = 0x50;                                 /* push eax */
     *p++ = 0xFF; *p++ = 0x05;                    /* inc dword [g_hitCount] */
     *(DWORD*)p = (DWORD)&g_hitCount; p += 4;
-    *p++ = 0x64; *p++ = 0xA1; *p++ = 0x24; *p++ = 0x00; *p++ = 0x00; *p++ = 0x00;
-                                                 /* mov eax,fs:[0x24] (tid) */
-    *p++ = 0x3B; *p++ = 0x05;                    /* cmp eax,[g_drawTid] */
-    *(DWORD*)p = (DWORD)&g_drawTid; p += 4;
-    *p++ = 0x74; *p++ = 0x4A;                    /* je FWD (same thread) */
-    *p++ = 0xB8; *p++ = 0x01; *p++ = 0x00; *p++ = 0x00; *p++ = 0x00;
-                                                 /* ACQ: mov eax,1 */
-    *p++ = 0x87; *p++ = 0x05;                    /* xchg eax,[g_drawLock] */
-    *(DWORD*)p = (DWORD)&g_drawLock; p += 4;
-    *p++ = 0x85; *p++ = 0xC0;                    /* test eax,eax */
-    *p++ = 0x75; *p++ = 0xF1;                    /* jnz ACQ */
-    *p++ = 0x64; *p++ = 0xA1; *p++ = 0x24; *p++ = 0x00; *p++ = 0x00; *p++ = 0x00;
-                                                 /* mov eax,fs:[0x24] (tid) */
-    *p++ = 0xA3;                                 /* mov [g_drawTid],eax */
-    *(DWORD*)p = (DWORD)&g_drawTid; p += 4;
-                                                 /* SKIP: */
-    *p++ = 0xA1;                                 /* mov eax,[g_loaderGate] */
-    *(DWORD*)p = (DWORD)&g_loaderGate; p += 4;
-    *p++ = 0x85; *p++ = 0xC0;                    /* test eax,eax */
-    *p++ = 0x75; gateJeRel = p; *p++ = 0x00;     /* jnz FWD (loader: orig only) */
     *p++ = 0x89; *p++ = 0x0D;                    /* mov [g_drawFont],ecx */
     *(DWORD*)p = (DWORD)&g_drawFont; p += 4;
-    *p++ = 0x83; *p++ = 0x3D;                    /* cmp byte ptr [g_inDraw],1 */
-    *(DWORD*)p = (DWORD)&g_inDraw; p += 4;
-    *p++ = 0x01;
-    *p++ = 0x74; *p++ = 0x18;                    /* je FWD (reentrant draw) */
-    *p++ = 0x8B; *p++ = 0x44; *p++ = 0x24; *p++ = 0x08;
-                                                 /* mov eax,[esp+8] (retC) */
-    *p++ = 0xA3;                                /* mov [slotRet],eax */
-    *(DWORD*)p = (DWORD)&g_slotRet; p += 4;
-    afterAddr = (DWORD)p;   /* AFTER starts here */
-    *p++ = 0xC7; *p++ = 0x44; *p++ = 0x24; *p++ = 0x08;
-                                                 /* mov dword [esp+8],AFTER */
-    *(DWORD*)p = afterAddr; p += 4;
-    *p++ = 0x58;                                 /* pop eax (restore entry) */
-    *p++ = 0x9D;                                 /* popfd (restore flags) */
-    *p++ = 0xE9;                                /* jmp trampoline */
-    *(DWORD*)p = (DWORD)tramp - ((DWORD)p + 4);
-    p += 4;
-    /* FWD: shared landing for same-thread skip + reentrant draw +
-     * loader gate. Unwinds the two pushes, runs orig only (AFTER skipped). */
-    fwdAddr = (DWORD)p;
-    *gateJeRel = (BYTE)(fwdAddr - ((DWORD)gateJeRel + 1));
-    *p++ = 0x58;                                 /* pop eax */
     *p++ = 0x9D;                                 /* popfd */
-    /* AFTER: orig did RET 0x20 -> stack holds caller frame.
-     * Release the spinlock, draw, then push the saved retC and return. */
-    *p++ = 0xC7; *p++ = 0x05;                    /* mov dword [g_drawLock],0 */
-    *(DWORD*)p = (DWORD)&g_drawLock; p += 4;
-    *p++ = 0x00; *p++ = 0x00; *p++ = 0x00; *p++ = 0x00;
-    *p++ = 0xC7; *p++ = 0x05;                    /* mov dword [g_drawTid],0 */
-    *(DWORD*)p = (DWORD)&g_drawTid; p += 4;
-    *p++ = 0x00; *p++ = 0x00; *p++ = 0x00; *p++ = 0x00;
-    *p++ = 0x60;                                /* pushad */
-    *p++ = 0x9C;                                /* pushfd */
-    *p++ = 0xE8;                                /* call draw_direct */
-    *(DWORD*)p = (DWORD)draw_direct - ((DWORD)p + 4);
-    p += 4;
-    *p++ = 0x9D;                                /* popfd */
-    *p++ = 0x61;                                /* popad */
-    *p++ = 0xFF; *p++ = 0x35;                   /* push dword [slotRet] */
-    *(DWORD*)p = (DWORD)&g_slotRet; p += 4;
-    *p++ = 0xC3;                                /* ret -> retC */
     *p++ = 0xE9;                                /* jmp trampoline */
     *(DWORD*)p = (DWORD)tramp - ((DWORD)p + 4);
     p += 4;
