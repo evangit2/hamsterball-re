@@ -327,7 +327,9 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         *(float *)((char *)ext + UNI_WINDMILL_Y) = y;
         *(float *)((char *)ext + UNI_WINDMILL_Z) = z;
         if (g_RNG) *(float *)((char *)ext + UNI_WINDMILL_ANGLE) = (float)RNG_call((void*)0x4F7360, 0, 0x168, 0);
-        *(int*)out1 = mesh; *(int*)out2 = renderOut;
+        /* Fix 2026-10-21: return (NULL, render) — pos-only. Same poisoned-
+         * list bug as BRIDGE: a MeshWorld* as obj killed balls. */
+        *(int*)out1 = 0; *(int*)out2 = renderOut;
         return;
     }
 
@@ -543,13 +545,23 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             }
         }
         /* Intermediate/Master: position only — store pivot, no level check */
-        obj = *(void **)((char *)ext + UNI_BONK_STORE);
         *(float *)((char *)ext + BRD_BRIDGE_PIVOT_X) = x;
         *(float *)((char *)ext + BRD_BRIDGE_PIVOT_Y) = y;
         *(float *)((char *)ext + BRD_BRIDGE_PIVOT_Z) = z;
+        /* Fix 2026-10-21: arm N:BRIDGE here, at creation time. The S1-name
+         * table (BuildCollisionFlags, postscan) can never enable it:
+         * Intermediate's bridge S1 is named 'BRIDGE' (no N: prefix) while
+         * N:BRIDGE exists only as an S6 event — and postscan runs before
+         * this lazy creation anyway. Without the flag the rider mark
+         * (ball+0x778) never fires and the bridge tilts but carries nothing. */
+        if (brMesh) *(BYTE*)((char*)ext + COLL_FLAG_BRIDGE) = 1;
         if (!strstr(name, "(NOCOLLIDE)"))
             renderOut = *(int *)((char *)ext + UNI_SAW1_OBJ);
         OrBoardFeat(board, FEAT_BRIDGE_ANIM);
+        /* Fix 2026-10-21: return (NULL, render) — pos-only. Returning the
+         * MeshWorld* as obj poisoned the game's object list (wrong type in
+         * a game-object list) and killed both balls on Intermediate. */
+        obj = NULL;
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
     }
