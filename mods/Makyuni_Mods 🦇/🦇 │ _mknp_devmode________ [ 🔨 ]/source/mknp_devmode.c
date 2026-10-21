@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02t — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02u — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -155,6 +155,7 @@ static int g_drawCount = 0;           /* successful draw attempts (diagnostic) *
 static volatile int g_hitCount = 0;     /* DrawGlyph cave entries (diagnostic) */
 static int g_loaderGate = 1;              /* fail-closed: skip until proven menu/race */
 static int g_bootPhase = 1;               /* 1 = first 20s: blank/unreadable also closes */
+static int g_postBoot = 0;                /* 1 = DrawGlyph cave routes via afterCode */
 static DWORD g_bootTick = 0;              /* GetTickCount at init */
 static volatile int g_drawLock = 0;       /* cave spinlock: serializes threads */
 static DWORD g_drawTid = 0;               /* owning thread id (0 = free) */
@@ -190,7 +191,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02t self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02u self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -338,7 +339,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02t: single small line with bottom-right shadow (version-text style).
+/* v02u: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -382,6 +383,8 @@ static void draw_status(void* font, const char* text) {
 /* Font_DrawGlyph post-hook (g_drawArmed hands one draw per frame).     */
 
 static void draw_direct(void);
+static void draw_from_frame(void);
+static DWORD g_slotRet;
 
 /* ── .set file + dev keybindings ───────────────────────────────────── */
 /* mknp_devmode.set (jsonc, next to the DLL) maps action names to
@@ -1084,6 +1087,10 @@ static DWORD WINAPI poll_thread(LPVOID param) {
             g_bootPhase = 0;
             log_msg("BOOTPHASE over\n");
         }
+        if (!g_bootPhase && !g_postBoot) {
+            g_postBoot = 1;
+            log_msg("POSTBOOT draw-after armed\n");
+        }
         wait_freeze_tick();   /* HOLD native pause while WAIT, restore after */
         {
             static int prevL = 0, prevR = 0, prevE = 0, prevX = 0;
@@ -1300,8 +1307,8 @@ static void install_frame_hook(void) {
     p = cave;
     *p++ = 0x60;                                /* pushad */
     *p++ = 0x9C;                                /* pushfd */
-    *p++ = 0xE8;                                /* call draw_direct */
-    *(DWORD*)p = (DWORD)draw_direct - ((DWORD)p + 4);
+    *p++ = 0xE8;                                /* call draw_from_frame */
+    *(DWORD*)p = (DWORD)draw_from_frame - ((DWORD)p + 4);
     p += 4;
     *p++ = 0x9D;                                /* popfd */
     *p++ = 0x61;                                /* popad */
@@ -1335,6 +1342,8 @@ static void install_draw_hook(void) {
     unsigned char* tramp;
     unsigned char* cave;
     unsigned char* p;
+    DWORD afterAddr;
+    BYTE* afterImm = 0;
 
     /* verify-or-skip: expect 6A FF 68 50 CD 4C 00 */
     if (IsBadReadPtr((void*)HOOK2_ADDR, 7)) {
@@ -1367,19 +1376,57 @@ static void install_draw_hook(void) {
      * to the trampoline. No stack use, no register use (flags saved and
      * restored), no branches: orig+7 sees exactly the caller state.
      * Drawing happens in the frame hook, never here. */
+    /* Branchless dual-mode detour: capture always, route orig's return
+     * via CMOV (no branches). Boot mode (g_postBoot=0) writes retC back
+     * over itself (no-op) and jumps to the trampoline: orig returns
+     * straight to the caller, nothing else runs on this path. Post-boot
+     * mode routes through afterCode (draw + return to caller). orig+7
+     * always sees exact caller state (flags restored via popfd). */
     p = cave;
     *p++ = 0x9C;                                 /* pushfd */
     *p++ = 0xFF; *p++ = 0x05;                    /* inc dword [g_hitCount] */
     *(DWORD*)p = (DWORD)&g_hitCount; p += 4;
     *p++ = 0x89; *p++ = 0x0D;                    /* mov [g_drawFont],ecx */
     *(DWORD*)p = (DWORD)&g_drawFont; p += 4;
+    *p++ = 0x8B; *p++ = 0x44; *p++ = 0x24; *p++ = 0x04;
+                                                 /* mov eax,[esp+4] (retC) */
+    *p++ = 0xA3;                                /* mov [g_slotRet],eax */
+    *(DWORD*)p = (DWORD)&g_slotRet; p += 4;
+    *p++ = 0xBA;                                /* mov edx,afterAddr */
+    afterImm = p;
+    *(DWORD*)p = 0; p += 4;                      /* patched below */
+    *p++ = 0x80; *p++ = 0x3D;                    /* cmp byte [g_postBoot],1 */
+    *(DWORD*)p = (DWORD)&g_postBoot; p += 4;
+    *p++ = 0x01;
+    *p++ = 0x0F; *p++ = 0x45; *p++ = 0xD0;       /* cmovne edx,eax */
+    *p++ = 0x89; *p++ = 0x54; *p++ = 0x24; *p++ = 0x04;
+                                                 /* mov [esp+4],edx */
     *p++ = 0x9D;                                 /* popfd */
     *p++ = 0xE9;                                /* jmp trampoline */
     *(DWORD*)p = (DWORD)tramp - ((DWORD)p + 4);
     p += 4;
+    /* afterCode: entered with [retC] on stack top (orig RET 0x20 lands
+     * here in post-boot mode). Draw, then return to the caller. */
+    afterAddr = (DWORD)p;
+    *(DWORD*)afterImm = afterAddr;
+    *p++ = 0x60;                                /* pushad */
+    *p++ = 0xE8;                                /* call draw_direct */
+    *(DWORD*)p = (DWORD)draw_direct - ((DWORD)p + 4);
+    p += 4;
+    *p++ = 0x61;                                /* popad */
+    *p++ = 0xFF; *p++ = 0x35;                   /* push dword [g_slotRet] */
+    *(DWORD*)p = (DWORD)&g_slotRet; p += 4;
+    *p++ = 0xC3;                                /* ret -> caller */
 
     install_jmp_hook_nop(HOOK2_ADDR, (DWORD)cave, 7);
     log_msg("DRAWHOOK installed at 0x457440 -> cave %p tramp %p\n", cave, tramp);
+}
+
+/* Frame-phase draw: stands down once the post-boot AFTER path is armed
+ * (avoids double-draw). Plain C, no cave branches. */
+static void draw_from_frame(void) {
+    if (g_postBoot) return;
+    draw_direct();
 }
 
 static DWORD WINAPI init_thread(LPVOID param) {
