@@ -11,10 +11,10 @@
   * Both installs are verify-or-skip from the init thread, never DllMain.
   *  - Dev keybinds come from mknp_devmode.set (jsonc, next to the DLL):
   *    CTRL+<key> fires the action only while devmode is ON (1s cooldown).
-  *  - While devmode is ON and the indicator is in WAIT (level select), the
-  *    poll loop XX
-  *    can never latch the pause menu. Dev keys are never eaten or hidden —
-  *    the selector uses plain GetAsyncKeyState edges.
+ *  - While devmode is ON and the indicator is in WAIT (level select),
+ *    the game is frozen with its native pause (board+0x874 held at 1,
+ *    prior value restored on exit). Dev keys are never eaten or hidden -
+ *    the selector uses plain GetAsyncKeyState edges.
   */
 
 #define WIN32_LEAN_AND_MEAN
