@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02s — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02t — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -190,7 +190,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02s self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02t self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -338,7 +338,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02s: single small line with bottom-right shadow (version-text style).
+/* v02t: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -1218,6 +1218,12 @@ static void draw_direct(void) {
                 g_entryCount, g_drawFont, (void*)hookvt, g_loaderGate);
     }
     g_entryCount++;
+    /* Boot-phase expiry lives here (game thread, proven running) as well
+     * as in poll: whichever runs first ends the boot phase (~12s). */
+    if (g_bootPhase && (int)(GetTickCount() - g_bootTick) > 12000) {
+        g_bootPhase = 0;
+        log_msg("BOOTPHASE over\n");
+    }
     if (!g_drawFont) return;   /* loader's poison call (NULL font): skip */
     if (g_loaderGate) return;  /* loading screen: orig text only, no overlay */
 
