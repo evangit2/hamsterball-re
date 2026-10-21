@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02o — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02p — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -154,7 +154,7 @@ static void* g_drawFont = 0;
           /* live Font* captured from the hook's ECX */
 static int g_drawCount = 0;           /* successful draw attempts (diagnostic) */
 static volatile int g_hitCount = 0;     /* DrawGlyph cave entries (diagnostic) */
-static int g_loaderGate = 1;              /* 1 = skip post-draw (loader screen) */
+static int g_loaderGate = 1;              /* fail-closed: skip until proven menu/race */
 static volatile int g_drawLock = 0;       /* cave spinlock: serializes threads */
 static DWORD g_drawTid = 0;               /* owning thread id (0 = free) */
 
@@ -189,7 +189,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02o self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02p self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -337,7 +337,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02o: single small line with bottom-right shadow (version-text style).
+/* v02p: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -1059,13 +1059,18 @@ static DWORD WINAPI poll_thread(LPVOID param) {
                                 }
                                 nmG[11] = 0;
                                 {
-                                    int isLoad = (nmG[0]=='L'&&nmG[1]=='o'&&nmG[2]=='a'&&
-                                                  nmG[3]=='d'&&nmG[4]=='i'&&nmG[5]=='n'&&
-                                                  nmG[6]=='g');
-                                    if (isLoad != g_loaderGate) {
-                                        g_loaderGate = isLoad;
+                                    /* Fail-closed: only a readable non-empty
+                                     * non-Loading name clears the gate. The
+                                     * loader's object has a blank name. */
+                                    int clear = (nmG[0] != 0) &&
+                                        !(nmG[0]=='L'&&nmG[1]=='o'&&nmG[2]=='a'&&
+                                          nmG[3]=='d'&&nmG[4]=='i'&&nmG[5]=='n'&&
+                                          nmG[6]=='g');
+                                    int want = clear ? 0 : 1;
+                                    if (want != g_loaderGate) {
+                                        g_loaderGate = want;
                                         log_msg("LOADERGATE %s (%.11s)\n",
-                                                isLoad ? "ON" : "off", nmG);
+                                                want ? "ON" : "off", nmG);
                                     }
                                 }
                             }
