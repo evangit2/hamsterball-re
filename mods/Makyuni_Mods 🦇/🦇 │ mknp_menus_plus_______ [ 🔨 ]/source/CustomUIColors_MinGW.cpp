@@ -326,53 +326,14 @@ static void install_title_cave0(void)
     title_cave_jmp(0x4261FF, cave, 0x89);
 }
 
-// Hide-or-native tile cave builder (tiles 1-3). Hidden = parked fully
-// off-screen (0,2000,400,300): valid dims, zero pixels. (Zeroed rects
-// crashed real Windows at menu Draw; degenerate w/h suspected.)
-static void install_title_hide_cave(DWORD site, DWORD resume,
-                                    const unsigned char* native_ops, int native_len,
-                                    unsigned char expect)
-{
-    unsigned char* cave = (unsigned char*)VirtualAlloc(NULL, 96,
-        MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!cave) return;
-    int p = 0, jz;
-    cave[p++] = 0x80; cave[p++] = 0x3D;
-    *(DWORD*)(cave + p) = (DWORD)&g_title_active; p += 4;
-    cave[p++] = 0x00;
-    jz = p; cave[p++] = 0x74; cave[p++] = 0x00;
-    { // mod: park off-screen (0,2000,400,300)
-        static const DWORD off[4] = {0x00000000, 0x44FA0000, 0x43C80000, 0x43960000};
-        for (int i = 0; i < 4; i++) {
-            cave[p++] = 0xC7; cave[p++] = 0x40;
-            cave[p++] = (unsigned char)(0x04 + i * 4);
-            *(DWORD*)(cave + p) = off[i]; p += 4;
-        }
-    }
-    cave[p++] = 0xE9;
-    *(DWORD*)(cave + p) = (DWORD)resume - ((DWORD)cave + p + 4); p += 4;
-    cave[jz + 1] = (unsigned char)(p - (jz + 2));
-    for (int i = 0; i < native_len; i++) cave[p++] = native_ops[i];
-    cave[p++] = 0xE9;
-    *(DWORD*)(cave + p) = (DWORD)resume - ((DWORD)cave + p + 4); p += 4;
-    title_cave_jmp(site, cave, expect);
-}
+// Hide-or-native tile cave builder (tiles 1-3): retired 2026-10-21 —
+// zero/off-screen rects crashed real Windows at menu Draw. Tiles keep
+// stock quads; invisibility comes from alpha-0 tint (apply_title_color).
+// (Body removed; kept as a note so nobody re-adds rect hiding.)
 
 static void install_title_caves(void)
 {
-    static const unsigned char n1[] = {
-        0x89,0x58,0x04, 0xC7,0x40,0x08,0x00,0x00,0x00,0x00,
-        0x89,0x58,0x0C, 0x89,0x68,0x10 };
-    static const unsigned char n2[] = {
-        0xC7,0x40,0x04,0x00,0x00,0x00,0x00,
-        0x89,0x68,0x08, 0x89,0x58,0x0C, 0x89,0x68,0x10 };
-    static const unsigned char n3[] = {
-        0x89,0x58,0x04, 0x89,0x68,0x08,
-        0x89,0x58,0x0C, 0x89,0x68,0x10 };
     install_title_cave0();
-    install_title_hide_cave(0x42625D, 0x42626D, n1, sizeof(n1), 0x89);
-    install_title_hide_cave(0x4262AF, 0x4262BF, n2, sizeof(n2), 0xC7);
-    install_title_hide_cave(0x426301, 0x42630D, n3, sizeof(n3), 0x89);
 }
 
 // Post-draw: restore font scale to 1.0 so other texts sharing the font stay
@@ -419,8 +380,19 @@ static const DWORD TITLE_TINT_PUSHES[16] = {
 
 static void apply_title_color(void)
 {
+    // Tiles 1-3: alpha 0 (invisible, stock quads kept per MAKYUNI).
+    // Push order per block is [A,B,G,R]; tile0 uses the user color.
     for (int i = 0; i < 16; i++) {
-        DWORD bits = g_title_active ? g_title_colpush[i & 3] : 0x3F800000;
+        DWORD bits;
+        if (!g_title_active) {
+            bits = 0x3F800000;
+        } else if ((i >> 2) >= 1 && (i & 3) == 0) {
+            bits = 0x00000000; // alpha 0
+        } else if ((i >> 2) >= 1) {
+            bits = 0x3F800000;
+        } else {
+            bits = g_title_colpush[i & 3];
+        }
         ver_push32(TITLE_TINT_PUSHES[i], bits);
     }
 }
