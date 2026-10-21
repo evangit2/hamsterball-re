@@ -190,6 +190,7 @@ static void mlog(const char* fmt, const char* a, int b)
 static float g_bg_pos[4] = {100.0f, 0.0f, 600.0f, 600.0f};
 
 static const int g_dry_run = 1; // isolate crash: parse+log only, zero patches
+#define ENABLE_VERSION 1 // quarter-bisect: version geometry/string only
 
 static void install_bg_pos_cave(void)
 {
@@ -241,7 +242,7 @@ static void ver_push32(DWORD pushAddr, DWORD val)
 
 static void install_ver_str_cave(void)
 {
-    if (g_dry_run) { mlog("SKIP verstr %s %d", "", 0); return; }
+    if (g_dry_run && !ENABLE_VERSION) { mlog("SKIP verstr %s %d", "", 0); return; }
     // Pre-draw: EAX=string slot. Swap in our buffer AND stamp font->+0x428
     // scale (EDX/EAX volatile across thiscall, EDI kept for the orig mov).
     unsigned char* cave = (unsigned char*)VirtualAlloc(NULL, 64,
@@ -273,7 +274,7 @@ static void install_ver_str_cave(void)
 // EAX dead after the call (next use is pops), so clobbering it is safe.
 static void install_ver_post_cave(void)
 {
-    if (g_dry_run) { mlog("SKIP verpost %s %d", "", 0); return; }
+    if (g_dry_run && !ENABLE_VERSION) { mlog("SKIP verpost %s %d", "", 0); return; }
     unsigned char* cave = (unsigned char*)VirtualAlloc(NULL, 32,
         MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!cave) return;
@@ -297,7 +298,7 @@ static void install_ver_post_cave(void)
 
 static void apply_version_draw(void)
 {
-    if (g_dry_run) { mlog("SKIP verdraw %s %d", "", 0); return; }
+    if (g_dry_run && !ENABLE_VERSION) { mlog("SKIP verdraw %s %d", "", 0); return; }
     // x/y are real position pushes. The old "size" pushes (0x426470/0x426472)
     // turned out to be shadow offsets, NOT size — real size is the font
     // scale stamped by the pre-draw cave from g_ver_scale_bits. Left alone.
