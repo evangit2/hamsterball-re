@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02b — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02c — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -39,6 +39,7 @@
 #define HOOK2_ADDR  0x00457440u   /* Font_DrawGlyph entry (SEH frame, replayed by trampoline) */
 #define VK_F8       0x77
 #define VK_CTRL     0x11   /* either CTRL key via GetAsyncKeyState */
+#define VK_RBUTTON 0x02u
 #define VK_LEFT     0x25
 #define VK_RIGHT    0x27
 #define VK_RETURN   0x0D
@@ -156,7 +157,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02b self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02c self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -304,7 +305,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02b: single small line with bottom-right shadow (version-text style).
+/* v02c: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -605,7 +606,8 @@ static void install_pause_tap(void) {
 #define BOARD_PAUSE   0x874u
 #define BOARD_NAME    0x868u
 
-static int g_wePaused = 0;        /* 1 while WE hold the pause */
+static int g_wePaused = 0;
+static DWORD g_exitTick = 0;   /* WAIT-exit stamp for release-hold cap */        /* 1 while WE hold the pause */
 static BYTE g_pauseSaved = 0;     /* flag value before we took over */
 static DWORD g_pauseBoard = 0;    /* board we paused (0 = none) */
 
@@ -841,7 +843,19 @@ static void wait_freeze_tick(void) {
     DWORD board;
     char name[16];
     if (!g_devmode || g_indState != IND_WAIT) {
-        if (g_wePaused) {   /* any WAIT exit: give the pause flag back */
+        if (g_wePaused) {   /* WAIT exit: hold until the exit keys are up */
+            int keysDown = ((GetAsyncKeyState(VK_RETURN) & 0x8000) != 0) ||
+                           ((GetAsyncKeyState(VK_ESCAPE) & 0x8000) != 0) ||
+                           ((GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0);
+            if (!g_exitTick) g_exitTick = GetTickCount();
+            /* Cap: never hold more than 1.5s past exit (stuck key safety). */
+            if (keysDown && (int)(GetTickCount() - g_exitTick - 1500) < 0) {
+                if (g_pauseBoard &&
+                    !IsBadReadPtr((void*)g_pauseBoard, BOARD_PAUSE + 1) &&
+                    !IsBadWritePtr((void*)(g_pauseBoard + BOARD_PAUSE), 1))
+                    *(BYTE*)(g_pauseBoard + BOARD_PAUSE) = 1;
+                return;   /* still holding; restore comes after release */
+            }
             if (g_pauseBoard && !IsBadReadPtr((void*)g_pauseBoard, BOARD_PAUSE + 1) &&
                 !IsBadWritePtr((void*)(g_pauseBoard + BOARD_PAUSE), 1)) {
                 *(BYTE*)(g_pauseBoard + BOARD_PAUSE) = g_pauseSaved;
@@ -849,9 +863,11 @@ static void wait_freeze_tick(void) {
             }
             g_wePaused = 0;
             g_pauseBoard = 0;
+            g_exitTick = 0;
         }
         return;
     }
+    g_exitTick = 0;   /* in WAIT: exit stamp stays clear */
     if (!tap_board_ok(&board, name) &&
         !wait_board_ok(&board, name)) return;   /* menus: nothing to freeze */
     if (!g_wePaused || g_pauseBoard != board) {
@@ -1028,8 +1044,8 @@ static void draw_direct(void) {
     if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
 
     text = g_devmode ? "devmode: on" : "devmode: off";
-    /* v02b: exactly one status draw per frame. The 0x46C1F1 frame hook
-     * arms one draw per frame; this consumes it. (v02b's 33ms time gate
+    /* v02c: exactly one status draw per frame. The 0x46C1F1 frame hook
+     * arms one draw per frame; this consumes it. (v02c's 33ms time gate
      * skipped whole frames -> fast blink. Same-frame overdraw is
      * invisible; zero-draw frames blink — so arm-per-frame + consume.) */
     if (!g_drawArmed) return;
@@ -1200,7 +1216,7 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v02b: arms one draw per frame */
+    install_frame_hook();  /* v02c: arms one draw per frame */
     install_draw_hook();
     install_pause_tap();
     CreateThread(NULL, 0, hook_thread, NULL, 0, NULL);   /* DrawGlyph post-draw consumes the arm */
