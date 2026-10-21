@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02x — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02y — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -191,7 +191,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02x self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02y self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -339,7 +339,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02x: single small line with bottom-right shadow (version-text style).
+/* v02y: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -1254,8 +1254,13 @@ static void draw_direct(void) {
         if ((int)(now - g_lastDrawTick) < 12) return;
         g_lastDrawTick = now;
     }
+    /* Live font first: ECX is the font the game is drawing with right
+     * now, so it is provably mapped. App slot fonts can go stale across
+     * level loads (freed heap still readable -> probes pass -> crash in
+     * draw); they are fallback only. */
     font = 0;
-    if (!IsBadReadPtr((void*)app, 0x330)) {
+    if (g_drawFont && font_ready(g_drawFont, text)) font = g_drawFont;
+    if (!font && !IsBadReadPtr((void*)app, 0x330)) {
         static const DWORD slots[] = { 0x320u, 0x318u, 0x324u };
         int i;
         for (i = 0; i < 3 && !font; i++) {
@@ -1264,10 +1269,6 @@ static void draw_direct(void) {
             f = *(void**)(app + slots[i]);
             if (f && font_ready(f, text)) font = f;
         }
-    }
-    if (!font) {
-        font = g_drawFont;
-        if (font && !font_ready(font, text)) font = 0;
     }
     if (!font) {
         if (g_entryCount <= 20) log_msg("ENTRY n=%d NOFONT\n", g_entryCount - 1);
