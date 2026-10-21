@@ -298,6 +298,24 @@ static void apply_version_draw(void)
     ver_push32(0x426479, (DWORD)g_ver_x);
     ver_push32(0x426474, (DWORD)g_ver_y);
 }
+// True if a redirected image resolves to a real file (game-root relative).
+// The menu draws a NULL texture as a null-call Draw crash, so never
+// redirect a push to a file that is not there. Skipped slots keep stock.
+static int path_file_exists(const char* raw)
+{
+    char cand[160];
+    const char* exts[4] = { "", ".png", ".bmp", ".tga" };
+    for (int e = 0; e < 4; e++) {
+        nc_snprintf(cand, sizeof(cand), "%s%s", raw, exts[e]);
+        if (GetFileAttributesA(cand) != (DWORD)-1) return 1;
+        nc_snprintf(cand, sizeof(cand), "Textures\\%s%s", raw, exts[e]);
+        if (GetFileAttributesA(cand) != (DWORD)-1) return 1;
+        nc_snprintf(cand, sizeof(cand), "textures\\%s%s", raw, exts[e]);
+        if (GetFileAttributesA(cand) != (DWORD)-1) return 1;
+    }
+    return 0;
+}
+
 static unsigned char* g_cave_mem = NULL;
 static int g_reload_counter = 0;
 
@@ -973,7 +991,11 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                         for (int i = 0; i < (int)NUM_PATH_SLOTS; i++) {
                             if (g_path_slots[i].arrayIndex == arr_idx &&
                                 json_key_matches(elemName, elemNameLen, g_path_slots[i].jsonName)) {
-                                apply_path_to_slot(i, pathBuf);
+                                if (!path_file_exists(pathBuf)) {
+                                    mlog("PATHMISS %s %d", pathBuf, 0);
+                                } else {
+                                    apply_path_to_slot(i, pathBuf);
+                                }
                                 break;
                             }
                         }
@@ -989,7 +1011,11 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                 for (int i = 0; i < (int)NUM_PATH_SLOTS; i++) {
                     if (g_path_slots[i].arrayIndex == 0 &&
                         json_key_matches(elemName, elemNameLen, g_path_slots[i].jsonName)) {
-                        apply_path_to_slot(i, pathBuf);
+                        if (!path_file_exists(pathBuf)) {
+                            mlog("PATHMISS %s %d", pathBuf, 0);
+                        } else {
+                            apply_path_to_slot(i, pathBuf);
+                        }
                         break;
                     }
                 }
