@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02i — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v02j — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -185,7 +185,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02i self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v02j self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -333,7 +333,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02i: single small line with bottom-right shadow (version-text style).
+/* v02j: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -1345,8 +1345,9 @@ static DWORD WINAPI init_thread(LPVOID param) {
     AddVectoredExceptionHandler(1, crash_spy);
     set_load();   /* initial .set read (logs binds or missing file) */
     Sleep(2000);   /* let game init settle before patching .text */
-    install_frame_hook();  /* v02i: arms one draw per frame */
-    install_draw_hook();
+    install_frame_hook();  /* v02j: arms one draw per frame */
+    log_msg("DRAWHOOK skipped (bisect v02j)\n");
+    /* install_draw_hook(); */
     install_pause_tap();
     CreateThread(NULL, 0, hook_thread, NULL, 0, NULL);   /* DrawGlyph post-draw consumes the arm */
     CreateThread(NULL, 0, poll_thread, NULL, 0, NULL);
