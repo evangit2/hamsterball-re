@@ -226,7 +226,12 @@ static int g_ver_y = 0x109;
 static int g_ver_size = 3;
 static DWORD g_ver_scale_bits = 0x3F800000; // size/3.0f as float bits (1.0 = stock)
 
-// -- Main-menu title backdrop (2x2 mosaic -> single image) --------------------
+// Title backdrop master switch. 2026-10-21: every build that applied ANY
+// title change (rect cave, tint floats, path redirect — singly or combined)
+// crashed real Windows at menu Draw (5 consecutive crashes, two different
+// EIPs). Root cause unknown; my Linux rig cannot reach the menu to repro.
+// Parked at 0 until the cause is found offline. 1 = full feature.
+#define TITLE_ENABLE 0
 // Push order in each tile's tint block is [A,B,G,R]; rect layout (x,y,w,h).
 static int g_title_active = 0;
 static DWORD g_title_rect[4] = {0x00000000, 0x00000000, 0x43C80000, 0x43960000};
@@ -333,7 +338,11 @@ static void install_title_cave0(void)
 
 static void install_title_caves(void)
 {
+#if TITLE_ENABLE
     install_title_cave0();
+#else
+    mlog("TITLENONE %d", 0);
+#endif
 }
 
 // Post-draw: restore font scale to 1.0 so other texts sharing the font stay
@@ -380,6 +389,7 @@ static const DWORD TITLE_TINT_PUSHES[16] = {
 
 static void apply_title_color(void)
 {
+#if TITLE_ENABLE
     // Tiles 1-3: stock floats for now. (Alpha-0 experiment reverted
     // 2026-10-21: every build carrying a zeroed first float crashed real
     // Windows at menu Draw. If stock floats boot, the zero was guilty.)
@@ -395,6 +405,7 @@ static void apply_title_color(void)
         }
         ver_push32(TITLE_TINT_PUSHES[i], bits);
     }
+#endif
 }
 
 // True if the title image resolves to a real file (game-root relative).
@@ -1133,7 +1144,14 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                         for (int i = 0; i < (int)NUM_PATH_SLOTS; i++) {
                             if (g_path_slots[i].arrayIndex == arr_idx &&
                                 json_key_matches(elemName, elemNameLen, g_path_slots[i].jsonName)) {
+#if TITLE_ENABLE
                                 apply_path_to_slot(i, pathBuf);
+#else
+                                if (!json_key_matches(g_path_slots[i].jsonName,
+                                                      (int)nc_strlen(g_path_slots[i].jsonName),
+                                                      "mainmenuscreen - background"))
+                                    apply_path_to_slot(i, pathBuf);
+#endif
                                 break;
                             }
                         }
@@ -1158,6 +1176,7 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                         if (json_key_matches(g_path_slots[i].jsonName,
                                              (int)nc_strlen(g_path_slots[i].jsonName),
                                              "mainmenuscreen - background")) {
+#if TITLE_ENABLE
                             if (title_done) continue;
                             title_done = 1;
                             if (!title_file_exists(pathBuf)) {
@@ -1165,6 +1184,9 @@ static void parse_element_values(JsonParser* p, const char* elemName, int elemNa
                                 continue;
                             }
                             mlog("TITLEPATH %s %d", pathBuf, 0);
+#else
+                            continue; // parked: keep stock title loads
+#endif
                         }
                         apply_path_to_slot(i, pathBuf);
                     }
