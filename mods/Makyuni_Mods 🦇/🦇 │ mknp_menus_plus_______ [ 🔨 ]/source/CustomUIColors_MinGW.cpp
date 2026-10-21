@@ -162,7 +162,7 @@ static void log_open(void)
         }
     }
     if (g_log != INVALID_HANDLE_VALUE) {
-        const char* init = "INIT menus_plus verbuf\r\n";
+        const char* init = "INIT menus_plus verbuf2\r\n";
         DWORD w = 0;
         WriteFile(g_log, init, (DWORD)nc_strlen(init), &w, NULL);
     }
@@ -224,7 +224,7 @@ static void install_bg_pos_cave(void)
 // Draw at 0x42646A computes the string pointer (inline vs heap std::string).
 // Cave swaps in our buffer; x/y/size are PUSH operands rewritten per config.
 // Stock: str="V3.6" x=525 y=265 size=3. Size semantics unverified (see log).
-static char g_ver_buf[64] = "V3.6";
+static char g_ver_buf[64] = "V3.6.C"; // stock default; .set string overrides
 static int g_ver_x = 0x20D;
 static int g_ver_y = 0x109;
 static int g_ver_size = 3;
@@ -1228,6 +1228,14 @@ static void read_config(void)
     if (bytesRead == 0) return;
 
     g_json_buffer[bytesRead] = '\0';
+
+    // Version "absent = native": reset before parse, .set keys override.
+    // Native version = green (0,1,0,1), shadow black, pos (525,265), size 3.
+    nc_strcpy(g_ver_buf, "V3.6.C");
+    g_ver_x = 0x20D; g_ver_y = 0x109;
+    g_ver_size = 3; g_ver_scale_bits = 0x3F800000;
+    g_colors[9][0] = 0.0f; g_colors[9][1] = 1.0f;
+    g_colors[9][2] = 0.0f; g_colors[9][3] = 1.0f;
 
     strip_jsonc_comments(g_json_buffer, g_clean_json, (int)bytesRead);
 
