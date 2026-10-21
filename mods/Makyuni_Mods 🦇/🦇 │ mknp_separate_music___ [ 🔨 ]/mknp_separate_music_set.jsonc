@@ -1,0 +1,58 @@
+
+// SEPARATE MUSIC MOD - SETTINGS //
+//
+// Separate Music v01b (HB+) - one file per song
+// Usage: Track Name = file  (empty = play original Music.mo3)
+// Files live in the game's Music/ folder.
+// Missing file = original plays (safe).
+//
+
+[
+
+// ------------------------------- RACES -------------------------------
+
+"level1",               { "name": "Hamster Nation",              "file": "level1.mo3",      "hex": "00" }, // Warm-up Race      -- Hamster Nation
+"level1_no_intro",      { "name": "Hamster Nation - No Intro",   "file": "level1.mo3",      "hex": "00" }, //
+"level2",               { "name": "Cascade Race",                "file": "level2.mo3",      "hex": "00" }, // Beginner Race     -- Cascade Carnival
+"level2_no_intro",      { "name": "Cascade Race - No Intro",     "file": "level2.mo3",      "hex": "02" }, //
+"level3",               { "name": "Gerbil Groove",               "file": "level3.mo3",      "hex": "00" }, // Intermediate Race -- Gerbil Groove
+"level3_no_intro",      { "name": "Gerbil Groove - No Intro",    "file": "level3.mo3",      "hex": "02" }, //
+"level4",               { "name": "Dizzy!",                      "file": "level4.mo3",      "hex": "00" }, // Dizzy Race        -- Dizzy!
+"level4_no_intro",      { "name": "Dizzy! - No Intro",           "file": "level4.mo3",      "hex": "00" }, //
+"level5",               { "name": "Happy Rush",                  "file": "level5.mo3",      "hex": "00" }, // Tower Race        -- Happy Rush
+"level5_no_intro",      { "name": "Happy Rush - No Intro",       "file": "level5.mo3",      "hex": "00" }, //
+"level6",               { "name": "Up Race",                     "file": "level6.mo3",      "hex": "00" }, // Up Race           -- Bad Pellet Trip
+"level6_no_intro",      { "name": "Up Race - No Intro",          "file": "level6.mo3",      "hex": "00" }, //
+"level7",               { "name": "Neon Theme",                  "file": "level7.mo3",      "hex": "00" }, // Neon Race         -- Neon Rodent City
+"level7_no_intro",      { "name": "Neon Theme - No Intro",       "file": "level7.mo3",      "hex": "00" }, //
+"level8",               { "name": "Fight!",                      "file": "level8.mo3",      "hex": "00" }, // Expert Race       -- Fight for it
+"level8_no_intro",      { "name": "Fight! - No Intro",           "file": "level8.mo3",      "hex": "01" }, //
+"level9",               { "name": "Ninja Hamster",               "file": "level9.mo3",      "hex": "00" }, // Odd Race          -- Ninja Hamster
+"level9_no_intro",      { "name": "Ninja Hamster - No Intro",    "file": "level9.mo3",      "hex": "02" }, //
+"level10",              { "name": "Rodenthood",                  "file": "level10.mo3",     "hex": "00" }, // Toob Race         -- Rodenthood
+"level10_no_intro",     { "name": "Rodenthood - No Intro",       "file": "level10.mo3",     "hex": "01" }, //
+"level11",              { "name": "Hamster Chase",               "file": "level11.mo3",     "hex": "00" }, // Wobbly Race       -- Hamster Chase
+"level11_no_intro",     { "name": "Hamster Chase - No Intro",    "file": "level11.mo3",     "hex": "02" }, //
+"level12",              { "name": "Glass Theme",                 "file": "level12.mo3",     "hex": "00" }, // Glass Race        -- Cages of Glass
+"level12_no_intro",     { "name": "Glass Theme - No Intro",      "file": "level12.mo3",     "hex": "00" }, //
+"level13",              { "name": "Bucky Break",                 "file": "level13.mo3",     "hex": "00" }, // Sky Race          -- Bucky Break
+"level13_no_intro",     { "name": "Bucky Break - No Intro",      "file": "level13.mo3",     "hex": "00" }, //
+"level14",              { "name": "Master Theme",                "file": "level14.mo3",     "hex": "00" }, // Master Race       -- Master of Hamsters
+"level14_no_intro",     { "name": "Master Theme - No Intro",     "file": "level14.mo3",     "hex": "00" }, //
+"level15",              { "name": "Impossible Theme",            "file": "level15.mo3",     "hex": "00" }, // Impossible Race   -- Impossibru!
+"level15_no_intro",     { "name": "Impossible Theme - No Intro", "file": "level15.mo3",     "hex": "00" }, //
+
+
+// ------------------------------- MENUS -------------------------------
+
+"loader",               { "name": "Loading",                     "file": "loading.mo3",     "hex": "00" }, // Loading Theme     -- Salt Lick-a-delic
+"main_menu",            { "name": "Main Theme",                  "file": "main_menu.mo3",   "hex": "00" }, // Main Menu         -- Hamsterball Theme
+"main_menu_no_intro",   { "name": "Main Theme - No Intro",       "file": "main_menu.mo3",   "hex": "01" }, //
+
+"goal",                 { "name": "Goal!",                       "file": "goal.mo3",        "hex": "00" }, // Goal Tune         -- Goal!
+"game_over",            { "name": "Game Over",                   "file": "game_over.mo3",   "hex": "00" }, // Game Over         -- Game Over + Aftermath
+
+"high_scores",          { "name": "High Scores ",                "file": "high_scores.mo3", "hex": "00" }, // High Scores Theme --
+"tournament_overview",  { "name": "Tournament",                  "file": "tournament.mo3",  "hex": "00" }, // Tourney Overview  --
+
+]

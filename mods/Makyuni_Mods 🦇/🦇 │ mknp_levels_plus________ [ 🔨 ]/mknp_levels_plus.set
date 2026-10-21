@@ -1,0 +1,67 @@
+
+
+// LEVELS PLUS MOD - SETTINGS //
+//
+// * Note: This mod overrides RaceData.xml and Jukebox.xml and thus makes them obsolete, so make sure that all the real values are written in this .set file instead.
+//          - anything not written here will fall back to its default values and remain unmodified.
+//
+    //
+    //  "name"              --->        Text string of the Name of the Race -------- displayed in-game and in menus.
+    //  "name_color"        --->        RGBA Color of the  Name of the Race -------- displayed in Time Trials / 2-player / 4-player menu.
+    //  "lockname"          --->        Text string of the Name of the Race (Locked) displayed in-game and in menus.
+    //  "lockname_color"    --->        RGBA Color of the  Name of the Race (Locked) displayed in Time Trials / 2-player / 4-player menu.
+    //  "mesh"              --->        Name of the .MESHWORLD file (model) for the race. Loaded from /Levels.
+    //  "description"       --->        Text string of the "description" of the race in Tournament menu.
+    //  "timeblot_color"    --->        RGBA Color of the TimeBlot texture behind the level Timer.
+    //  "strip_color"       --->        RGBA Color of the Strip behind the Race Name at the start of the level. Tints the other Strips in the level too. (Yellow by default)
+    //
+    //
+    //  "time"              --->        Tournament Time of the Race. Sets initial time for Level_01 and Level_02. It's obsolete for the rest of levels.
+    //  "time_par"          --->        Tournament Target / Par time of the Race. If you get this time on the level, you'll get Par score boost. The fastest you are, the highest the score.
+    //
+    //  "time_bronze"       --->        Time Trials: Time Target required to get a Bronze Medal.
+    //  "time_silver"       --->        Time Trials: Time Target required to get a Silver Medal.
+    //  "time_gold"         --->        Time Trials: Time Target required to get a Gold Medal.
+    //  "time_weasel"       --->        Time Trials: Time Target required to get a Weasel Medal.
+    //
+    //  "song"              --->        Background Song that loops ------------------------ in the level. Loaded from /Music. Can be in ( .mo3 / .mp3 /.ogg / .wav ) format.
+    //  "song_hex"          --->        If "song" is in .mo3 format, this specifies the starting hex of the song. ( otherwise, play from the beginning )
+    //  "song_intro"        --->        If specified, it plays once before the "song" loops in the level. Loaded from /Music. Can be in ( .mp3 /.ogg / .wav ) format.
+    //                                  -- if song is in .mo3 format, this value can be set to HEX, and it will set a starting hex value from "song" file and start from there once, like an intro.
+    //
+    //  "camlocus_start"    --->        Offset of the starting CameraLocus point of the Camera. -1 = Random point. 0 = Initial point. 1 = End point.
+    //
+    //
+//
+
+
+[
+
+// ########################## │    TOURNEY / TIME TRIAL LEVELS    │ ############################
+
+    "Level_01", {   "name":             "Test Race",
+                    "name_color":       "28ff00FF",
+                    "lockname":         "-Locked-",
+                    "lockname_color":   "55577dFF",
+                    "mesh":             "level1",
+                    "description":      "sampletext",
+                    "strip_color":      "28ff00FF",
+                    "timeblot_color":   "28ff00FF",
+                    //
+                    "song":             "Music.mo3",
+                    "song_hex":           50,
+                    "song_intro":         50,
+                    //
+                    "time":               60.0,
+                    "time_par":           47.0,
+                    "time_bronze":        15.0,
+                    "time_silver":        10.3,
+                    "time_gold":           7.6,
+                    "time_weasel":         6.6,
+                    "camlocus_start":      2.57
+                }
+
+
+// #############################################################################################
+
+]
