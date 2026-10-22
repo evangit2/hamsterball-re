@@ -15,6 +15,41 @@
  *   9. Set unlock flags (per-level)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* UniversalTowerInit — BISECT 2026-10-22: minimal (base ctor + Tower
+ * vtable only) to isolate blank-world cause. Full field replica below. */
+#if 0
+static void UniversalTowerInit_full(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D0A08; /* Tower board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Tower)";
+    *(char **)((char *)mem + 0x29B4) = "TOWER RACE";
+    *(char **)((char *)mem + 0x4344) = "Happy Rush";
+    { DWORD b14 = *(DWORD *)((char *)mem + 0x14);
+      if (b14 && !IsBadReadPtr((void *)(b14 + 0x1DC), 4))
+          *(DWORD *)((char *)mem + 0x870) = *(DWORD *)(b14 + 0x1DC); }
+    *(float *)((char *)mem + 0x1508) = 1.0f;
+    *(float *)((char *)mem + 0x150C) = 0.75f;
+    *(float *)((char *)mem + 0x1510) = 0.0f;
+    *(float *)((char *)mem + 0x1514) = 1.0f;
+    *(DWORD *)((char *)mem + 0x43A4) = 0;
+    *(DWORD *)((char *)mem + 0x43A0) = 0;
+    *(DWORD *)((char *)mem + 0x43A8) = 0;
+    { int diff = *(int *)(app + 0x23C);
+      DWORD prof = *(DWORD *)(app + 0x220);
+      if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&
+          *(char *)(prof + 0x10) == 0)
+          *(BYTE *)(app + 0x852) = 1; }
+    g_LoadRaceData(mem, "TOWERRACE");
+    DebugLog("UniversalTowerInit done (no native ctor)");
+}
+#endif
+
+static void UniversalTowerInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D0A08; /* Tower board vtable */
+    DebugLog("UniversalTowerInit MINIMAL done");
+}
+
 void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     int raceIndex = g_pendingRaceIndex;
     g_lastAppParam = app;
@@ -47,15 +82,16 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         } else g_loadingContentId = 0;
     }
 
-    /* Step 1: Board_ctor(mem, app) — base setup.
-     * Tower (level 5): delegate to the NATIVE Tower ctor instead. It inits
-     * the 4 lists (with 0/1/2/3 variants) + loads mace/windmill/chomper/
-     * turret renders natively — our base-ctor + mirrors leave those slots
-     * wrong and the native Tower render wild-calls through them. */
+    /* Step 1: base setup. Tower content (any slot): UniversalTowerInit —
+     * content-driven replica of the native Tower ctor (no native code runs).
+     * Mesh slots are filled later by S1-driven create (native-prefer). */
     if (g_loadingContentId == 5 && g_TowerBoardCtor) {
-        DebugLog("Calling native Tower ctor...");
+        DebugLog("Calling native Tower ctor (BLANK-WORLD bisect)...");
         g_TowerBoardCtor(mem, app);
         DebugLog("Native Tower ctor done");
+    } else if (g_loadingContentId == 5) {
+        DebugLog("Calling UniversalTowerInit...");
+        UniversalTowerInit(mem, app);
     } else {
         DebugLog("Calling Board_ctor...");
         g_BoardCtor(mem, app);
@@ -120,17 +156,20 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         DebugLog(dbg2);
     }
 
-    /* Step 2: Set vtable */
-    if (!(g_loadingContentId == 5 && g_TowerBoardCtor))
+    /* Step 2: Set vtable. Tower content keeps the vtable UniversalTowerInit
+     * set (native Tower class); all other content gets its slot vtable. */
+    if (g_loadingContentId != 5)
         *(DWORD *)mem = g_levelVtables[raceIndex];
     DebugLog("Vtable set");
 
-    /* Step 3: Set board name and race title */
+    /* Step 3: Set board name and race title (slot table — skipped for Tower
+     * content, whose content names UniversalTowerInit already set). */
+    /* BISECT: minimal init sets no names — always write slot names. */
     *(char **)((char *)mem + UNI_BOARD_NAME) = ld->boardName;
     *(char **)((char *)mem + UNI_RACE_TITLE) = ld->raceTitle;
     DebugLog("Names set");
 
-    /* Step 4: Set +0x870 from app+0x1DC */
+    /* Step 4: Set +0x870 from app+0x1DC (BISECT: always, like before). */
     *(DWORD *)((char *)mem + UNI_BOARD_APPVAL) = *(DWORD *)(app + 0x1DC);
     DebugLog("+0x870 set");
 
@@ -238,7 +277,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
      * 0x5000 (mace). Base Board_ctor never inits them (verified live:
      * they hold small-int garbage, not list heads); appends corrupted the
      * heap on every Tower open (fix 2026-10-21). */
-    if (g_loadingContentId == 5 && !g_TowerBoardCtor && g_AthenaListInit) {
+    if (g_loadingContentId == 5 && g_AthenaListInit) {
         g_AthenaListInit((void *)((char *)mem + 0x43B8), 0);
         g_AthenaListInit((void *)((char *)mem + 0x47D0), 0);
         g_AthenaListInit((void *)((char *)mem + 0x4BE8), 0);

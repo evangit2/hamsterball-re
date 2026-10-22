@@ -8,10 +8,33 @@
   * level can be used on any other level, driven by the loaded file's S1 refs.
   * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* Board app pointer with fallback: native per-level ctors leave board+0x878
+ * as 0 at runtime, so create-time loaders use the app captured in Logic. */
+static DWORD GetBoardApp(void *board) {
+    extern int g_lastAppParam;
+    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+    if (!app) app = (DWORD)g_lastAppParam;
+    return app;
+}
+
+/* Board object-slot validation. IsBadReadPtr alone is unreliable: malloc
+ * garbage that happens to be mapped passes it (Tower +0x4378 = 0x03000000
+ * hung Stands_ctor in a 4-billion-iteration clone loop, 2026-10-22).
+ * Real game objects have a vtable in the exe image; garbage does not.
+ * Tower content (no native ctor) never trusts board slots — ext owns them. */
+static int BoardMeshOrZero(void *board, DWORD slotOff) {
+    int v = *(int *)((char *)board + slotOff);
+    if (ContentFileId(GetBoardExt(board)) == 5) return 0;
+    if (!v || IsBadReadPtr((void *)v, 4)) return 0;
+    { int vt = *(int *)v;
+      if (vt < 0x400000 || vt >= 0x500000) return 0; }
+    return v;
+}
+
 static void* S1EnsureMeshWorld(void* board, void* ext, DWORD offset, const char* path) {
     void* cur = *(void**)((char*)ext + offset);
     if (cur) return cur;
-    DWORD app = *(DWORD*)((char*)board + BOARD_APP_PTR);
+    DWORD app = GetBoardApp(board);
     if (!app || IsBadReadPtr((void*)app, 0x200)) return NULL;
     void* gfx = *(void**)((char*)app + 0x174);
     if (!gfx || !g_operatorNew || !g_LevelMeshWorldCtor) return NULL;
@@ -35,7 +58,7 @@ static void* S1EnsureRender(void* board, void* ext, DWORD renderOff, DWORD meshO
 static void* S1EnsureMeshNode(void* board, void* ext, DWORD offset, const char* path) {
     void* cur = *(void**)((char*)ext + offset);
     if (cur) return cur;
-    DWORD app = *(DWORD*)((char*)board + BOARD_APP_PTR);
+    DWORD app = GetBoardApp(board);
     if (!app || IsBadReadPtr((void*)app, 0x200)) return NULL;
     void* gfx = *(void**)((char*)app + 0x174);
     if (!gfx || !g_operatorNew || !g_MeshNodeCtor) return NULL;
@@ -48,7 +71,7 @@ static void* S1EnsureMeshNode(void* board, void* ext, DWORD offset, const char* 
 static void* S1EnsureSprite(void* board, void* ext, DWORD offset, const char* path) {
     void* cur = *(void**)((char*)ext + offset);
     if (cur) return cur;
-    DWORD app = *(DWORD*)((char*)board + BOARD_APP_PTR);
+    DWORD app = GetBoardApp(board);
     if (!app || IsBadReadPtr((void*)app, 0x200)) return NULL;
     void* gfx = *(void**)((char*)app + 0x174);
     if (!gfx || !g_operatorNew || !g_SpriteCtor) return NULL;
@@ -72,7 +95,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         DebugLog(dbg);
     }
 
-    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+    DWORD app = GetBoardApp(board);
     int difficulty = (app && !IsBadReadPtr((void*)app, 0x500)) ? *(int *)(app + APP_DIFFICULTY) : 0;
     int meshWorld = *(int *)((char *)board + BOARD_MESHWORLD);
 
@@ -283,20 +306,35 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "MACE", 4) == 0 && difficulty != 0) {
         /* Tower native ctor fills board+0x4378 itself - use it when valid,
          * else fall back to ext load+mirror (other levels / no delegation). */
-        int meshVal = *(int *)((char *)board + 0x4378);
-        if (!meshVal || IsBadReadPtr((void *)meshVal, 4)) {
+        int meshVal = BoardMeshOrZero(board, 0x4378);
+        if (!meshVal) {
             S1EnsureMeshWorld(board, ext, UNI_MACE_MESH, "Levels\\Level4-Mace");
             meshVal = *(int*)((char*)ext + UNI_MACE_MESH);
             /* Always mirror into native slot (preload never runs under mod). */
             *(int *)((char *)board + 0x4378) = meshVal;
         }
         if (!meshVal) { DebugLog("MACE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        DebugLog("MACE: mesh ok");
+        /* YellowLink chain mesh (native Tower ctor +0x4374, MeshNode 0x18).
+         * Tower content only; shared Meshes asset so safe for any slot.
+         * Cleared: the 0001:000570A4 hang was garbage-mesh trust (board
+         * +0x4378 = 0x03000000 passed IsBadReadPtr), now fixed by
+         * BoardMeshOrZero — YellowLink was never the culprit. */
+        if (ContentFileId(GetBoardExt(board)) == 5 && BoardHasOffset(board, 0x4374, 4)) {
+            int yExt = *(int *)((char *)ext + UNI_YELLOWLINK_MESH);
+            if (!yExt || IsBadReadPtr((void *)yExt, 4)) {
+                S1EnsureMeshNode(board, ext, UNI_YELLOWLINK_MESH, "Meshes\\YellowLink");
+                yExt = *(int *)((char *)ext + UNI_YELLOWLINK_MESH);
+            }
+            if (yExt) *(int *)((char *)board + 0x4374) = yExt;
+        }
         void *mem = g_operatorNew(0x110C);
         if (mem) {
             /* Tower MACE S1s build via 0x438750 (own class); other
              * levels via 0x437CB0. Verified in native Tower create. */
             if (ContentFileId(GetBoardExt(board)) == 5 && g_MaceTowerCtor) obj = g_MaceTowerCtor(mem, (int)board, meshVal);
             else obj = g_MaceCtor(mem, (int)board, meshVal);
+            DebugLog("MACE: ctor done");
             DWORD *o = (DWORD *)obj;
             memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
@@ -321,8 +359,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
          * in Tower wild-EIP crashes (per-call side effects?). Our own Glass
          * ctor path instead (native-parity per comments below). */
         /* Tower native ctor fills board+0x4370 itself - use when valid. */
-        int dExt = *(int *)((char *)board + 0x4370);
-        if (!dExt || IsBadReadPtr((void *)dExt, 4)) {
+        int dExt = BoardMeshOrZero(board, 0x4370);
+        if (!dExt) {
             S1EnsureMeshWorld(board, ext, UNI_DRAWBRIDGE_MESH, "Levels\\Level4-Drawbridge");
             dExt = *(int*)((char*)ext + UNI_DRAWBRIDGE_MESH);
             *(int *)((char *)board + 0x4370) = dExt;
@@ -355,8 +393,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         /* Native Tower ctor owns +0x437C (render) — use it when valid.
          * Never overwrite with our mesh (native update/render vtbl-calls it). */
         {
-            int natR = *(int *)((char *)board + 0x437C);
-            if (natR && !IsBadReadPtr((void *)natR, 4)) {
+            int natR = BoardMeshOrZero(board, 0x437C);
+            if (natR) {
                 *(int*)out1 = 0; *(int*)out2 = natR; return;
             }
         }
@@ -424,6 +462,13 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         S1EnsureMeshNode(board, ext, UNI_CHOMPER_MESH, "Meshes\\Chomper");
         void *chomperMesh = *(void **)((char *)ext + UNI_CHOMPER_MESH);
         if (chomperMesh) *(DWORD *)((char *)ext + REND_TOWER_CHOMPER) = (DWORD)chomperMesh;
+        /* Mirror the MeshNode into the native render slot — the clean-room
+         * Tower render draws board+0x4390 via vtbl[7] (native 0x40DFA0). */
+        if (chomperMesh && BoardHasOffset(board, 0x4390, 4)) {
+            int natC = *(int *)((char *)board + 0x4390);
+            if (!natC || IsBadReadPtr((void *)natC, 4))
+                *(DWORD *)((char *)board + 0x4390) = (DWORD)chomperMesh;
+        }
         /* Native writes board+0x4394/98/9c (game reads these); ext mirrors for our driver. */
         *(float *)((char *)board + 0x4394) = x;
         *(float *)((char *)board + 0x4398) = y;
@@ -483,7 +528,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
                 renderOut = (int)render;
                 *(DWORD *)((char *)ext + REND_TOWER_TURRET) = (DWORD)render;
             }
-            g_TimerCleanup(timerBuf, timerBuf);
+            g_TimerCleanup(timerBuf);
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;

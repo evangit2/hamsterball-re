@@ -309,7 +309,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             dx += *(float *)((char *)ext + UNI_WHEELEMBED_X);
             dy += *(float *)((char *)ext + UNI_WHEELEMBED_Y);
             dz += *(float *)((char *)ext + UNI_WHEELEMBED_Z);
-            g_TimerCleanup(timerBuf, timerBuf);
+            g_TimerCleanup(timerBuf);
             }
         }
         *(BYTE *)((char *)ball + 0xC3C) = 1;

@@ -528,7 +528,7 @@ typedef void (__thiscall *Matrix4_Identity_t)(void *out); /* native 0x457FD0: EC
 typedef void (__thiscall *Gfx_ScaleFn_t)(void *gfx, float val);
 typedef void (__thiscall *Gfx_SetPosition_t)(void *gfx, float x, float y, float z);
 typedef void (__fastcall *Timer_Init_t)(void *out);
-typedef void (__thiscall *Timer_Cleanup_t)(void *timer, void *arg); /* native 0x457A50: ret $0x4, reads struct from stack */
+typedef void (__fastcall *Timer_Cleanup_t)(void *timer); /* native 0x457A40: ECX-only, re-stamps vtable */
 typedef void (__stdcall *Matrix_TransformVec3_t)(float *out, float *in);
 typedef void (__fastcall *Matrix44_Zero_t)(int *out);
 typedef void (__thiscall *Scene_ForEachBall_SetVelocity_t)(void *board, float x, float y, float z);
@@ -624,8 +624,8 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define RVA_Gfx_ScaleY                0x00057C90
 #define RVA_Gfx_ScaleX                0x00057C60
 #define RVA_Gfx_SetPosition           0x00057B50
-#define RVA_Timer_Init                0x00057A40
-#define RVA_Timer_Cleanup             0x00057A50
+#define RVA_Timer_Init                0x00057AD0
+#define RVA_Timer_Cleanup             0x00057A40
 #define RVA_Matrix_TransformVec3      0x0000A0B0
 #define RVA_Matrix44_Zero             0x00057B10
 #define RVA_Scene_ForEachBall_SetVel  0x00019B70
@@ -920,6 +920,7 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_POPCYL_MESH_BASE 0xB940  /* PopCylinder meshes (2*4) */
 #define UNI_BBRIDGE1_MESH    0xB948  /* BBridge1 mesh (Master) */
 #define UNI_BBRIDGE2_MESH    0xB94C  /* BBridge2 mesh (Master) */
+#define UNI_YELLOWLINK_MESH  0xB950  /* YellowLink chain MeshNode (Tower +0x4374) */
 
 /* ── Clobber-fix: dedicated slots in free tail 0xB990+ (were sharing 0x85E8/85F0/8638/863C/8640) ──
  * FALLOUT1 was storing at BRIDGE_COUNTER (0x863C), Toob Saw2 at BRIDGE_STATE (0x8638),

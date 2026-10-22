@@ -146,7 +146,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
                         *(float *)((char *)cb + 0x164) = cd[0] + *pivotX;
                         *(float *)((char *)cb + 0x168) = cd[1] + *pivotY;
                         *(float *)((char *)cb + 0x16C) = cd[2] + *pivotZ;
-                        g_TimerCleanup(ctimer, ctimer);
+                        g_TimerCleanup(ctimer);
                     }
                 }
             }
@@ -164,7 +164,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
                     if (fn58) fn58((DWORD)renderObj);
                     if (fn54) fn54((DWORD)renderObj, timerBuf);
                 }
-                g_TimerCleanup(timerBuf, timerBuf);
+                g_TimerCleanup(timerBuf);
                 }
             }
         } break;
@@ -433,7 +433,7 @@ static void Feature_SwirlZones(void *board, int level) {
         }
         if (swirlDbg < 3) DebugLog("  [swirl] step3a done");
 
-        g_TimerCleanup(timerBuf, timerBuf);
+        g_TimerCleanup(timerBuf);
         }
         DebugLog("  [swirl] step3a done (full)");
     }
@@ -473,7 +473,7 @@ static void Feature_SwirlZones(void *board, int level) {
         }
         if (swirlDbg < 3) DebugLog("  [swirl] step3b done");
 
-        g_TimerCleanup(timerBuf, timerBuf);
+        g_TimerCleanup(timerBuf);
         }
         if (swirlDbg < 3) DebugLog("  [swirl] step3b done");
     }
@@ -581,7 +581,7 @@ static void Feature_Windmill(void *board, int level) {
                 if (fn54) fn54((DWORD)renderObj, timerBuf);
             }
         }
-        g_TimerCleanup(timerBuf, timerBuf);
+        g_TimerCleanup(timerBuf);
         }
     }
     int wmState = *statePtr;

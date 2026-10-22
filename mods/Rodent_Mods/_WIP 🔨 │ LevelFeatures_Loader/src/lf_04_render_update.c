@@ -18,14 +18,15 @@
 void UniversalRenderImpl(void *board, int unk) {
     if (!board || !g_RenderDynamicObjects) return;
 
-    /* Tower content (any slot): delegate to the NATIVE Tower render. Our clean-room
-     * Tower block mis-rendered the chomper (meshWorld-vtbl[7] vs native
-     * timer-vtbl[2]/render-vtbl[7]) and wild-jumped at race frame ~3.
-     * Native render includes base internally; needs native ctor slots. */
+    /* Tower content (any slot): clean-room render below (faithful to native
+     * 0x40DFA0 as re-derived 2026-10-23: method-this is the timer object,
+     * chomper via board+0x4390 vtbl[7]). Native delegation removed. */
+#if 0
     if (ContentFileId(GetBoardExt(board)) == 5 && g_TowerRender) {
         g_TowerRender(board, unk);
         return;
     }
+#endif
 
     /* Call shared base render (Level_RenderDynamicObjects) — forward gfx ctx (native ret $0x4) */
     g_RenderDynamicObjects(board, unk);
@@ -123,83 +124,66 @@ void UniversalRenderImpl(void *board, int unk) {
      * Inner per-pointer checks stay, outer is OR of all three so a level with
      * only CHOMPER still renders it. */
     if (features & (REND_WINDMILL | REND_CHOMPER | REND_TURRET)) {
-        DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
-        if (!app || IsBadReadPtr((void *)app, 0x200)) goto glass_render;
-        void *gfx = *(void **)((char *)app + 0x174);
-        if (!gfx) goto glass_render;
+        /* Faithful Tower render (native 0x40DFA0). Method-this is the 68B
+         * timer object T — NOT gfx. Gfx fns take this=T. Chomper is the
+         * board+0x4390 MeshNode, drawn via its vtbl[7](obj, T, 0).
+         * State floats come from ext mirrors (animated by update features);
+         * object pointers/positions from native board slots. */
 
         char timerBuf[68];
-        if (g_TimerInit && g_TimerCleanup) {
+        char zeroScratch[64];
+        if (g_TimerInit && g_TimerCleanup && g_GfxScaleZ && g_GfxScaleX &&
+            g_GfxSetPosition && g_WaveSin && g_Matrix44Zero) {
             g_TimerInit(timerBuf);
-
-            /* Scale matrix (1.15, 1.15, 1.15) */
             DWORD *timerVtbl = *(DWORD **)timerBuf;
+            void (__thiscall *scaleFn)(void *, float, float, float) = NULL;
+            void (__thiscall *posFn)(void *, float, float, float) = NULL;
             if (timerVtbl) {
-                void (__thiscall *scaleFn)(DWORD, float, float, float) =
-                    (void (__thiscall *)(DWORD, float, float, float))timerVtbl[6];
-                if (scaleFn) scaleFn((DWORD)timerBuf, 1.15f, 1.15f, 1.15f); /* was int 0x3f933333 = 1.06e9f, not 1.15f */
+                scaleFn = (void (__thiscall *)(void *, float, float, float))timerVtbl[6];
+                posFn = (void (__thiscall *)(void *, float, float, float))timerVtbl[2];
             }
-
-            /* Gfx_ScaleZ(-board[0x43A0]) — chomper-state float, NOT windmill angle (0x40DFA0) */
             float chompState = *(float *)((char *)ext + UNI_WINDMILL_SPEED);
-            if (g_GfxScaleZ) g_GfxScaleZ(gfx, -chompState);
+            float chompTimer = *(float *)((char *)ext + UNI_CHOMP_TIMER);
+            float px = *(float *)((char *)board + 0x4394);
+            float py = *(float *)((char *)board + 0x4398);
+            float pz = *(float *)((char *)board + 0x439C);
+            float liftY = *(float *)((char *)board + 0x43B0);
+            DWORD chomperObj = *(DWORD *)((char *)board + 0x4390);
 
-            /* Render windmill render obj via vtable[0x08] */
-            DWORD windmillRender = *(DWORD *)((char *)ext + REND_TOWER_WINDMILL);
-            if (windmillRender && !IsBadReadPtr((void *)windmillRender, 4)) {
-                DWORD *vtbl = *(DWORD **)windmillRender;
-                if (vtbl) {
-                    void (__thiscall *fn8)(DWORD) = (void (__thiscall *)(DWORD))vtbl[2];
-                    if (fn8) fn8(windmillRender);
+            /* Pass 1 */
+            if (scaleFn) scaleFn(timerBuf, 1.15f, 1.15f, 1.15f);
+            if (g_GfxScaleZ) g_GfxScaleZ(timerBuf, -chompState);
+            if (posFn) posFn(timerBuf, px, py, pz);
+            if (g_GfxSetPosition) g_GfxSetPosition(timerBuf, 0.0f, liftY, 0.0f);
+            if (g_GfxSetPosition && g_WaveSin)
+                g_GfxSetPosition(timerBuf, 0.0f, g_WaveSin((void *)0x4F7188, chompTimer) * 10.0f, 0.0f);
+            if (chomperObj && !IsBadReadPtr((void *)chomperObj, 4)) {
+                DWORD *cvtbl = *(DWORD **)chomperObj;
+                if (cvtbl && !IsBadReadPtr(cvtbl, 32) && cvtbl[7]) {
+                    void (__thiscall *chompRender)(void *, void *, int) =
+                        (void (__thiscall *)(void *, void *, int))cvtbl[7];
+                    chompRender((void *)chomperObj, timerBuf, 0);
                 }
             }
-
-            /* Gfx_SetPosition(0, board[0x43B0], 0) then (0, Wave_Sin(0x4F7188, 0x43A4)*10.0, 0) (0x40DFA0) */
-            if (g_GfxSetPosition) g_GfxSetPosition(gfx, 0.0f, *(float *)((char *)ext + UNI_WINDMILL_DECAY), 0.0f);
-            if (g_GfxSetPosition && g_WaveSin) g_GfxSetPosition(gfx, 0.0f, g_WaveSin((void *)0x4F7188, *(float *)((char *)ext + UNI_CHOMP_TIMER)) * 10.0f, 0.0f);
-
-            /* Render Chomper mesh via meshWorld->vtable[0x1C] */
-            DWORD chomperMesh = *(DWORD *)((char *)ext + REND_TOWER_CHOMPER);
-            if (meshWorld && !IsBadReadPtr((void *)meshWorld, 0x1C) && chomperMesh) {
-                DWORD *vtbl = *(DWORD **)meshWorld;
-                if (vtbl) {
-                    void (__thiscall *fn1C)(DWORD) = (void (__thiscall *)(DWORD))vtbl[7];
-                    if (fn1C) fn1C(chomperMesh);
+            /* Pass 2: reset matrix, ScaleX(180), offset jaw, same draws */
+            g_Matrix44Zero((int *)zeroScratch);
+            if (scaleFn) scaleFn(timerBuf, 1.15f, 1.15f, 1.15f);
+            if (g_GfxScaleZ) g_GfxScaleZ(timerBuf, -chompState);
+            if (g_GfxScaleX) g_GfxScaleX(timerBuf, 180.0f);
+            if (g_GfxSetPosition) g_GfxSetPosition(timerBuf, -35.0f, 0.0f, 0.0f);
+            if (posFn) posFn(timerBuf, px, py, pz);
+            if (g_GfxSetPosition) g_GfxSetPosition(timerBuf, 0.0f, liftY, 0.0f);
+            if (g_GfxSetPosition && g_WaveSin)
+                g_GfxSetPosition(timerBuf, 0.0f, g_WaveSin((void *)0x4F7188, chompTimer) * 10.0f, 0.0f);
+            if (chomperObj && !IsBadReadPtr((void *)chomperObj, 4)) {
+                DWORD *cvtbl = *(DWORD **)chomperObj;
+                if (cvtbl && !IsBadReadPtr(cvtbl, 32) && cvtbl[7]) {
+                    void (__thiscall *chompRender)(void *, void *, int) =
+                        (void (__thiscall *)(void *, void *, int))cvtbl[7];
+                    chompRender((void *)chomperObj, timerBuf, 0);
                 }
             }
-
-            /* Reset: scale matrix again + Gfx_ScaleZ(-rotation) + Gfx_ScaleX(180) */
-            if (timerVtbl) {
-                void (__thiscall *scaleFn)(DWORD, float, float, float) =
-                    (void (__thiscall *)(DWORD, float, float, float))timerVtbl[6];
-                if (scaleFn) scaleFn((DWORD)timerBuf, 1.15f, 1.15f, 1.15f); /* was int 0x3f933333 = 1.06e9f, not 1.15f */
-            }
-            if (g_GfxScaleZ) g_GfxScaleZ(gfx, -chompState);
-            if (g_GfxScaleX) g_GfxScaleX(gfx, 180.0f);
-            if (g_GfxSetPosition) g_GfxSetPosition(gfx, -35.0f, 0.0f, 0.0f); /* 0xC20C0000 (0x40DFA0) */
-
-            /* Render turret render obj from dedicated offset */
-            DWORD turretRender = *(DWORD *)((char *)ext + REND_TOWER_TURRET);
-            if (turretRender && !IsBadReadPtr((void *)turretRender, 4)) {
-                DWORD *vtbl = *(DWORD **)turretRender;
-                if (vtbl) {
-                    void (__thiscall *fn8)(DWORD) = (void (__thiscall *)(DWORD))vtbl[2];
-                    if (fn8) fn8(turretRender);
-                }
-            }
-
-            /* Reset position + Wave_Sin bob + render Chomper again (0x40DFA0) */
-            if (g_GfxSetPosition) g_GfxSetPosition(gfx, 0.0f, *(float *)((char *)ext + UNI_WINDMILL_DECAY), 0.0f);
-            if (g_GfxSetPosition && g_WaveSin) g_GfxSetPosition(gfx, 0.0f, g_WaveSin((void *)0x4F7188, *(float *)((char *)ext + UNI_CHOMP_TIMER)) * 10.0f, 0.0f);
-            if (meshWorld && !IsBadReadPtr((void *)meshWorld, 0x1C) && chomperMesh) {
-                DWORD *vtbl = *(DWORD **)meshWorld;
-                if (vtbl) {
-                    void (__thiscall *fn1C)(DWORD) = (void (__thiscall *)(DWORD))vtbl[7];
-                    if (fn1C) fn1C(chomperMesh);
-                }
-            }
-
-            g_TimerCleanup(timerBuf, timerBuf);
+            g_TimerCleanup(timerBuf);
         }
     }
 
@@ -281,8 +265,8 @@ void UniversalRenderImpl(void *board, int unk) {
                 }
             }
 
-            g_TimerCleanup(timerBuf2, timerBuf2);
-            g_TimerCleanup(timerBuf, timerBuf);
+            g_TimerCleanup(timerBuf2);
+            g_TimerCleanup(timerBuf);
         }
     }
 
@@ -391,7 +375,7 @@ void UniversalRenderImpl(void *board, int unk) {
                         if (fn1C) fn1C(mesh, 0);
                     }
                 }
-                if (g_TimerCleanup) g_TimerCleanup(timerBuf, timerBuf);
+                if (g_TimerCleanup) g_TimerCleanup(timerBuf);
 
                 int next = *(int *)((char *)ext + REND_SKY_LIST + 8 + iter * 4);
                 if (count <= next) break;
