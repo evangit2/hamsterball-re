@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v02z — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v03a — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -36,6 +36,8 @@
 #define FN_DRAWTEXT 0x00409B90u   /* UI_DrawTextShadow_Wrapper __thiscall, RET 0x3C */
 #define FN_DRAWGLYPH 0x00457440u  /* Font_DrawGlyph __thiscall, RET 0x20: (text,x,y,xform,r,g,b,a) */
 #define HOOK_ADDR   0x0046C1F1u   /* frame epilogue: 5E 83 C4 08 C3 */
+#define PRESENT_ADDR 0x00455B48u  /* pre-Present (else path) */
+#define PRESENT2_ADDR 0x00455AA6u /* pre-Present (al==1 path): 4x6A00+50+FF51 3C */
 #define HOOK2_ADDR  0x00457440u   /* Font_DrawGlyph entry (SEH frame, replayed by trampoline) */
 #define VK_F8       0x77
 #define VK_CTRL     0x11   /* either CTRL key via GetAsyncKeyState */
@@ -147,12 +149,70 @@ static int g_devmode = 0;     /* the devmode variable: F8 toggles 0/1 */
 static int g_prevF8  = 0;     /* previous F8 down-state (edge detect) */
 static volatile int g_drawArmed = 0;  /* set each frame by C6F1; consumed by DrawGlyph hook */
 static DWORD g_lastDrawTick = 0;   /* fallback throttle when C6F1 never fires */
+/* ── Raw-D3D visibility probe (magenta box, no textures) ───────────── */
+/* Draws a screen-space quad with transformed+lit vertices straight
+ * through the captured device. If this paints but DrawGlyph text does
+ * not, the text system lacks caller state (atlas bind); if neither
+ * paints, the phase/device is wrong. Saves and restores everything. */
+static DWORD g_device = 0;                /* captured from Present ECX */
+
+static DWORD d3d_call(DWORD dev, DWORD off, DWORD a1, DWORD a2, DWORD a3, DWORD a4) {
+    DWORD fn, rc = 0;
+    DWORD vt = *(DWORD*)dev;
+    DWORD blk[6];
+    fn = *(DWORD*)(vt + off);
+    blk[0] = dev; blk[1] = a1; blk[2] = a2; blk[3] = a3; blk[4] = a4; blk[5] = 0;
+    __asm__ __volatile__(
+        "pushl 20(%1)\n\t"
+        "pushl 16(%1)\n\t"
+        "pushl 12(%1)\n\t"
+        "pushl 8(%1)\n\t"
+        "pushl 4(%1)\n\t"
+        "pushl (%1)\n\t"
+        "call *%2\n\t"
+        "movl %%eax, %0\n\t"
+        "addl $24, %%esp"
+        : "=r"(rc)
+        : "r"(blk), "r"(fn)
+        : "eax", "edx", "ecx", "memory");
+    return rc;
+}
+
+static void draw_test_quad(void) {
+    /* 32-byte stride (16-alignment for Wine SSE vertex paths). */
+    static const struct __attribute__((aligned(16))) { float x, y, z, rhw; DWORD color; DWORD pad[3]; } q[4] = {
+        { 20.0f, 20.0f, 0.5f, 1.0f, 0xFFFF00FFu, {0,0,0} },
+        { 220.0f, 20.0f, 0.5f, 1.0f, 0xFFFF00FFu, {0,0,0} },
+        { 20.0f, 70.0f, 0.5f, 1.0f, 0xFFFF00FFu, {0,0,0} },
+        { 220.0f, 70.0f, 0.5f, 1.0f, 0xFFFF00FFu, {0,0,0} },
+    };
+    DWORD dev, tok = 0, hr;
+    int began = 0;
+    if (!g_device || IsBadReadPtr((void*)g_device, 4)) return;
+    dev = g_device;
+    if (IsBadReadPtr(*(void**)dev, 0x140)) return;
+    /* Capture everything first: single atomic restore at the end. */
+    d3d_call(dev, 0xE4, 1, (DWORD)&tok, 0, 0);     /* CreateStateBlock(ALL) */
+    d3d_call(dev, 0x130, 1, 0x44, 0, 0);            /* SetVertexShader(XYZRHW|DIFFUSE) */
+    d3d_call(dev, 0xF4, 2, 0, 0, 0);                /* SetTexture(0,NULL) */
+    d3d_call(dev, 0xC8, 2, 22, 1, 0);              /* CULLMODE=NONE */
+    hr = d3d_call(dev, 0x88, 0, 0, 0, 0);           /* BeginScene */
+    if ((int)hr >= 0) began = 1;
+    d3d_call(dev, 0x120, 5, 2, (DWORD)q, 32);      /* DrawPrimitiveUP(STRIP,2) */
+    if (began) d3d_call(dev, 0x8C, 0, 0, 0, 0);     /* EndScene */
+    if (tok) {
+        d3d_call(dev, 0xD8, 1, tok, 0, 0);       /* ApplyStateBlock(tok) */
+        d3d_call(dev, 0xE0, 1, tok, 0, 0);       /* DeleteStateBlock(tok) */
+    }
+}
+
 static int g_frameHookOk = 0;     /* 1 once the 0x46C1F1 frame hook is live */
 static volatile int g_inDraw = 0;     /* reentrancy guard for our own draw */
 static void* g_drawFont = 0;
           /* live Font* captured from the hook's ECX */
 static int g_drawCount = 0;           /* successful draw attempts (diagnostic) */
 static volatile int g_hitCount = 0;     /* DrawGlyph cave entries (diagnostic) */
+static volatile int g_presentCount = 0; /* pre-Present cave entries */
 static int g_loaderGate = 1;              /* fail-closed: skip until proven menu/race */
 static int g_bootPhase = 1;               /* 1 = first 20s: blank/unreadable also closes */
 static int g_postBoot = 0;                /* 1 = DrawGlyph cave routes via afterCode */
@@ -191,7 +251,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v02z self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v03a self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -339,7 +399,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v02z: single small line with bottom-right shadow (version-text style).
+/* v03a: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -1096,8 +1156,8 @@ static DWORD WINAPI poll_thread(LPVOID param) {
             DWORD nowB = GetTickCount();
             if ((int)(nowB - lastBeat) > 10000) {
                 lastBeat = nowB;
-                log_msg("BEAT hits=%d draws=%d gate=%d\n",
-                        g_hitCount, g_drawCount, g_loaderGate);
+                log_msg("BEAT hits=%d draws=%d gate=%d pres=%d\n",
+                        g_hitCount, g_drawCount, g_loaderGate, g_presentCount);
             }
         }
         wait_freeze_tick();   /* HOLD native pause while WAIT, restore after */
@@ -1219,6 +1279,7 @@ static int font_ready(void* font, const char* s) {
 }
 
 static int g_entryCount = 0;
+static int g_dtrace = 0;      /* verbose draw-path trace, first 40 */
 
 static void draw_direct(void) {
     DWORD app;
@@ -1240,14 +1301,14 @@ static void draw_direct(void) {
         g_bootPhase = 0;
         log_msg("BOOTPHASE over\n");
     }
-    if (!g_drawFont) return;   /* loader's poison call (NULL font): skip */
-    if (g_loaderGate) return;  /* loading screen: orig text only, no overlay */
+    if (!g_drawFont) { if (g_dtrace < 40) log_msg("DTRACE %d NULLFONT hook=%p\n", g_dtrace++, g_drawFont); return; }
+    if (g_loaderGate) { if (g_dtrace < 40) log_msg("DTRACE %d GATED hook=%p\n", g_dtrace++, g_drawFont); return; }
 
-    if (IsBadReadPtr((void*)APP_PTR, 4)) return;
+    if (IsBadReadPtr((void*)APP_PTR, 4)) { if (g_dtrace < 40) log_msg("DTRACE %d NOAPP\n", g_dtrace++); return; }
     app = *(DWORD*)APP_PTR;
     if (!app || app < 0x10000) return;
     if (IsBadReadPtr((void*)app, 0x320)) return;
-    if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
+    if (*(BYTE*)(app + APP_QUIT)) { if (g_dtrace < 40) log_msg("DTRACE %d QUIT\n", g_dtrace++); return; }
 
     text = g_devmode ? "devmode: on" : "devmode: off";
     /* One draw per presented frame, purely time-based. The 0x46C1F1 frame
@@ -1256,13 +1317,11 @@ static void draw_direct(void) {
      * call of each 60fps frame instead, everywhere DrawGlyph runs. */
     {
         DWORD now = GetTickCount();
-        if ((int)(now - g_lastDrawTick) < 12) return;
+        if ((int)(now - g_lastDrawTick) < 12) { if (g_dtrace < 40) log_msg("DTRACE %d THROTTLE\n", g_dtrace++); return; }
         g_lastDrawTick = now;
     }
     /* Live font first: ECX is the font the game is drawing with right
-     * now, so it is provably mapped. App slot fonts can go stale across
-     * level loads (freed heap still readable -> probes pass -> crash in
-     * draw); they are fallback only. */
+     * now. Slots are fallback only (they can go stale across loads). */
     font = 0;
     if (g_drawFont && font_ready(g_drawFont, text)) font = g_drawFont;
     if (!font && !IsBadReadPtr((void*)app, 0x330)) {
@@ -1275,12 +1334,13 @@ static void draw_direct(void) {
             if (f && font_ready(f, text)) font = f;
         }
     }
+    if (g_dtrace < 40 && font) log_msg("DTRACE %d PICK font=%p hook=%p\n", g_dtrace++, font, g_drawFont);
     if (!font) {
-        if (g_entryCount <= 20) log_msg("ENTRY n=%d NOFONT\n", g_entryCount - 1);
+        if (g_dtrace < 40) log_msg("DTRACE %d NOFONT hook=%p\n", g_dtrace++, g_drawFont);
         return;
     }
 probed:
-    if (!font_ready(font, text)) return;   /* font not ready yet; try next text draw */
+    if (!font_ready(font, text)) { if (g_dtrace < 40) log_msg("DTRACE %d NOTREADY font=%p\n", g_dtrace++, font); return; }
 
     g_inDraw = 1;
     if (g_drawCount < 6) log_msg("DRAW n=%d font=%p textptr=%p text=%s\n", g_drawCount, font, text, text);
@@ -1328,6 +1388,109 @@ static void install_frame_hook(void) {
     install_jmp_hook_nop(HOOK_ADDR, (DWORD)cave, 5);
     g_frameHookOk = 1;
     log_msg("FRAMEHOOK installed at 0x46C1F1 -> cave %p\n", cave);
+}
+
+/* ── Present hook (0x455B48): draw right before Present ───────────── */
+/* Stolen bytes (9, three whole instructions):
+ *   50                push eax
+ *   FF 51 3C          call dword ptr [ecx+0x3C] (Present, ECX = device)
+ *   3D 68 08 76 88    cmp eax,0x88760868 (DEVICELOST)
+ * Cave calls draw_direct first (pre-Present = end of the visible frame),
+ * then replays the stolen bytes verbatim and returns to 0x455B51.
+ * ECX (device) and the arg pushes are preserved across the draw via
+ * pushad/popad, so the replayed Present sees exactly the caller state.
+ * Straight line, no branches. */
+static int g_presentHookOk = 0;   /* 1 once the pre-Present hook is live */
+
+static void install_present_hook(void) {
+    BYTE* a = (BYTE*)PRESENT_ADDR;
+    unsigned char* cave;
+    unsigned char* p;
+    static const BYTE want[9] = {0x50,0xFF,0x51,0x3C,0x3D,0x68,0x08,0x76,0x88};
+    int i;
+    if (IsBadReadPtr((void*)PRESENT_ADDR, 9)) {
+        log_msg("PRESENTHOOK skip: 0x455B48 unreadable\n");
+        return;
+    }
+    for (i = 0; i < 9; i++) if (a[i] != want[i]) {
+        log_msg("PRESENTHOOK skip: bytes mismatch\n");
+        return;
+    }
+    cave = (unsigned char*)alloc_executable(64);
+    if (!cave) {
+        log_msg("PRESENTHOOK skip: VirtualAlloc failed\n");
+        return;
+    }
+    p = cave;
+    *p++ = 0xA3;                                /* mov [g_device],ecx (D3D device) */
+    *(DWORD*)p = (DWORD)&g_device; p += 4;
+    *p++ = 0xFF; *p++ = 0x05;                    /* inc dword [g_presentCount] */
+    *(DWORD*)p = (DWORD)&g_presentCount; p += 4;
+    *p++ = 0x60;                                /* pushad */
+    *p++ = 0x9C;                                /* pushfd */
+    *p++ = 0xE8;                                /* call draw_direct */
+    *(DWORD*)p = (DWORD)draw_direct - ((DWORD)p + 4);
+    p += 4;
+    *p++ = 0x9D;                                /* popfd */
+    *p++ = 0x61;                                /* popad */
+    *p++ = 0x50;                                /* replay: push eax */
+    *p++ = 0xFF; *p++ = 0x51; *p++ = 0x3C;      /* replay: call [ecx+0x3C] */
+    *p++ = 0x3D; *p++ = 0x68; *p++ = 0x08; *p++ = 0x76; *p++ = 0x88;
+                                                /* replay: cmp eax,DEVICELOST */
+    *p++ = 0xE9;                                /* jmp back to 0x455B51 */
+    *(DWORD*)p = (PRESENT_ADDR + 9) - ((DWORD)p + 4);
+    p += 4;
+    install_jmp_hook_nop(PRESENT_ADDR, (DWORD)cave, 9);
+    g_presentHookOk = 1;
+    log_msg("PRESENTHOOK installed at 0x455B48 -> cave %p\n", cave);
+}
+
+/* Second pre-Present site (0x455AA6, al==1 path): steals 4x push 0 +
+ * push eax + call [ecx+0x3C] (12 bytes), replays them, returns to the
+ * cmp at 0x455AB2. Same straight-line shape as the first site. */
+static void install_present2_hook(void) {
+    BYTE* a = (BYTE*)PRESENT2_ADDR;
+    unsigned char* cave;
+    unsigned char* p;
+    static const BYTE want[12] = {0x6A,0x00,0x6A,0x00,0x6A,0x00,0x6A,0x00,
+                                  0x50,0xFF,0x51,0x3C};
+    int i;
+    if (IsBadReadPtr((void*)PRESENT2_ADDR, 12)) {
+        log_msg("PRESENT2HOOK skip: 0x455AA6 unreadable\n");
+        return;
+    }
+    for (i = 0; i < 12; i++) if (a[i] != want[i]) {
+        log_msg("PRESENT2HOOK skip: bytes mismatch\n");
+        return;
+    }
+    cave = (unsigned char*)alloc_executable(64);
+    if (!cave) {
+        log_msg("PRESENT2HOOK skip: VirtualAlloc failed\n");
+        return;
+    }
+    p = cave;
+    *p++ = 0xA3;                                /* mov [g_device],ecx (D3D device) */
+    *(DWORD*)p = (DWORD)&g_device; p += 4;
+    *p++ = 0xFF; *p++ = 0x05;                    /* inc dword [g_presentCount] */
+    *(DWORD*)p = (DWORD)&g_presentCount; p += 4;
+    *p++ = 0x60;                                /* pushad */
+    *p++ = 0x9C;                                /* pushfd */
+    *p++ = 0xE8;                                /* call draw_direct */
+    *(DWORD*)p = (DWORD)draw_direct - ((DWORD)p + 4);
+    p += 4;
+    *p++ = 0x9D;                                /* popfd */
+    *p++ = 0x61;                                /* popad */
+    *p++ = 0x6A; *p++ = 0x00;                   /* replay: 4x push 0 */
+    *p++ = 0x6A; *p++ = 0x00;
+    *p++ = 0x6A; *p++ = 0x00;
+    *p++ = 0x6A; *p++ = 0x00;
+    *p++ = 0x50;                                /* replay: push eax */
+    *p++ = 0xFF; *p++ = 0x51; *p++ = 0x3C;      /* replay: call [ecx+0x3C] */
+    *p++ = 0xE9;                                /* jmp back to 0x455AB2 */
+    *(DWORD*)p = (PRESENT2_ADDR + 12) - ((DWORD)p + 4);
+    p += 4;
+    install_jmp_hook_nop(PRESENT2_ADDR, (DWORD)cave, 12);
+    log_msg("PRESENT2HOOK installed at 0x455AA6 -> cave %p\n", cave);
 }
 
 /* ── Hook install (init thread only): DrawGlyph detour ──────────────── */
@@ -1418,6 +1581,8 @@ static DWORD WINAPI init_thread(LPVOID param) {
     Sleep(2000);   /* let game init settle before patching .text */
     install_frame_hook();
     install_draw_hook();
+    install_present_hook();
+    install_present2_hook();
     install_pause_tap();
     CreateThread(NULL, 0, hook_thread, NULL, 0, NULL);
     CreateThread(NULL, 0, poll_thread, NULL, 0, NULL);
