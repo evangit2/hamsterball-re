@@ -53,3 +53,5 @@ Rename `_mknp_devmode.dll` to `bass.dll`, keep the stock DLL as `bass_real.dll`.
 - v03f: medals back to cumulative tiers (BRONZE/SILVER/GOLD/WEASEL=all), per-level vs ALL scope kept, realtime arrows kept.
 
 - v03g: 1-based race slots (LEVELxx -> slot xx, ALL -> 1..15, slot 0 untouched), NONE tier clears all three bytes.
+
+- v03h-diag: medal-guard probe (MEDALREAD eip= lines show which game code reads medal bytes) — diagnostic, same behavior as v03g.
