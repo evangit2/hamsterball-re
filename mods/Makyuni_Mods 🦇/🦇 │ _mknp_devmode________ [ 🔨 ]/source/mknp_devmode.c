@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v03a — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v03b — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -39,6 +39,7 @@
 #define PRESENT_ADDR 0x00455B48u  /* pre-Present (else path) */
 #define PRESENT2_ADDR 0x00455AA6u /* pre-Present (al==1 path): 4x6A00+50+FF51 3C */
 #define HOOK2_ADDR  0x00457440u   /* Font_DrawGlyph entry (SEH frame, replayed by trampoline) */
+#define SPRITE_ADDR 0x00418870u   /* sprite-rect draw (SEH frame, replayed by trampoline) */
 #define VK_F8       0x77
 #define VK_CTRL     0x11   /* either CTRL key via GetAsyncKeyState */
 #define VK_LEFT     0x25
@@ -213,6 +214,7 @@ static void* g_drawFont = 0;
 static int g_drawCount = 0;           /* successful draw attempts (diagnostic) */
 static volatile int g_hitCount = 0;     /* DrawGlyph cave entries (diagnostic) */
 static volatile int g_presentCount = 0; /* pre-Present cave entries */
+static volatile int g_spriteHits = 0;   /* sprite-hook cave entries */
 static int g_loaderGate = 1;              /* fail-closed: skip until proven menu/race */
 static int g_bootPhase = 1;               /* 1 = first 20s: blank/unreadable also closes */
 static int g_postBoot = 0;                /* 1 = DrawGlyph cave routes via afterCode */
@@ -251,7 +253,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v03a self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v03b self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -399,7 +401,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v03a: single small line with bottom-right shadow (version-text style).
+/* v03b: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -1156,8 +1158,8 @@ static DWORD WINAPI poll_thread(LPVOID param) {
             DWORD nowB = GetTickCount();
             if ((int)(nowB - lastBeat) > 10000) {
                 lastBeat = nowB;
-                log_msg("BEAT hits=%d draws=%d gate=%d pres=%d\n",
-                        g_hitCount, g_drawCount, g_loaderGate, g_presentCount);
+                log_msg("BEAT hits=%d draws=%d gate=%d pres=%d spr=%d\n",
+                        g_hitCount, g_drawCount, g_loaderGate, g_presentCount, g_spriteHits);
             }
         }
         wait_freeze_tick();   /* HOLD native pause while WAIT, restore after */
@@ -1342,6 +1344,7 @@ static void draw_direct(void) {
 probed:
     if (!font_ready(font, text)) { if (g_dtrace < 40) log_msg("DTRACE %d NOTREADY font=%p\n", g_dtrace++, font); return; }
 
+    if (g_inDraw) return;   /* nested via our own DrawGlyph -> sprite hook: skip */
     g_inDraw = 1;
     if (g_drawCount < 6) log_msg("DRAW n=%d font=%p textptr=%p text=%s\n", g_drawCount, font, text, text);
     g_drawCount++;
@@ -1565,6 +1568,58 @@ static void install_draw_hook(void) {
     log_msg("DRAWHOOK installed at 0x457440 -> cave %p tramp %p\n", cave, tramp);
 }
 
+/* ── Sprite hook (0x418870): piggyback the menu/HUD atlas ──────────── */
+/* The menus and HUD draw their text as sprites through here with the
+ * font atlas already bound. A pre-call cave runs draw_direct BEFORE
+ * orig: our DrawGlyph call then samples the live atlas and paints.
+ * Same straight-line shape as the frame/present caves (pushad-guarded
+ * C call, replay via trampoline). 12ms throttle allows ~1 draw pass
+ * per frame no matter how many sprites a screen draws. Reentrancy
+ * (our own DrawGlyph draws glyph sprites through here) is stopped by
+ * the throttle and the g_inDraw guard. */
+static void install_sprite_hook(void) {
+    BYTE* a = (BYTE*)SPRITE_ADDR;
+    unsigned char* tramp;
+    unsigned char* cave;
+    unsigned char* p;
+    if (IsBadReadPtr((void*)SPRITE_ADDR, 7)) {
+        log_msg("SPRITEHOOK skip: 0x418870 unreadable\n");
+        return;
+    }
+    if (!(a[0] == 0x6A && a[1] == 0xFF && a[2] == 0x68 && a[3] == 0xE0 &&
+          a[4] == 0x94 && a[5] == 0x4C && a[6] == 0x00)) {
+        log_msg("SPRITEHOOK skip: bytes mismatch\n");
+        return;
+    }
+    tramp = (unsigned char*)alloc_executable(32);
+    cave = (unsigned char*)alloc_executable(64);
+    if (!tramp || !cave) {
+        log_msg("SPRITEHOOK skip: VirtualAlloc failed\n");
+        return;
+    }
+    p = tramp;
+    *p++ = 0x6A; *p++ = 0xFF;
+    *p++ = 0x68; *p++ = 0xE0; *p++ = 0x94; *p++ = 0x4C; *p++ = 0x00;
+    *p++ = 0xE9;
+    *(DWORD*)p = (SPRITE_ADDR + 7) - ((DWORD)p + 4);
+    p += 4;
+    p = cave;
+    *p++ = 0xFF; *p++ = 0x05;                    /* inc dword [g_spriteHits] */
+    *(DWORD*)p = (DWORD)&g_spriteHits; p += 4;
+    *p++ = 0x60;                                /* pushad */
+    *p++ = 0x9C;                                /* pushfd */
+    *p++ = 0xE8;                                /* call draw_direct */
+    *(DWORD*)p = (DWORD)draw_direct - ((DWORD)p + 4);
+    p += 4;
+    *p++ = 0x9D;                                /* popfd */
+    *p++ = 0x61;                                /* popad */
+    *p++ = 0xE9;                                /* jmp trampoline */
+    *(DWORD*)p = (DWORD)tramp - ((DWORD)p + 4);
+    p += 4;
+    install_jmp_hook_nop(SPRITE_ADDR, (DWORD)cave, 7);
+    log_msg("SPRITEHOOK installed at 0x418870 -> cave %p tramp %p\n", cave, tramp);
+}
+
 /* Frame-phase draw: stands down once the post-boot AFTER path is armed
  * (avoids double-draw). Plain C, no cave branches. */
 static void draw_from_frame(void) {
@@ -1581,6 +1636,7 @@ static DWORD WINAPI init_thread(LPVOID param) {
     Sleep(2000);   /* let game init settle before patching .text */
     install_frame_hook();
     install_draw_hook();
+    install_sprite_hook();
     install_present_hook();
     install_present2_hook();
     install_pause_tap();

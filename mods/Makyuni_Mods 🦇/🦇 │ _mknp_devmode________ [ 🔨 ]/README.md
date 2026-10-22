@@ -41,3 +41,5 @@ Rename `_mknp_devmode.dll` to `bass.dll`, keep the stock DLL as `bass_real.dll`.
 - `source/build.sh` — cross-compile script
 
 - v03a-diag: same behavior as v02z plus a 40-line draw-path trace (`DTRACE NULLFONT/GATED/THROTTLE/NOFONT/PICK`) and a 10s `BEAT hits/draws/gate/pres` heartbeat so a Windows log shows exactly what the menu/race text path does.
+
+- v03b: sprite-hook piggyback — draws right before each menu/HUD sprite with the game's own font atlas already bound (the cold-call DrawGlyph never paints because no atlas is bound in our hook phases). Same stable shape, no aftercode.
