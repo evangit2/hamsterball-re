@@ -1638,19 +1638,20 @@ static void install_sprite_hook(void) {
     *(DWORD*)p = (DWORD)&g_callerDepth; p += 4;
     *p++ = 0xFF; *p++ = 0x24; *p++ = 0x8D;       /* jmp [g_callerStack+ecx*4] */
     *(DWORD*)p = (DWORD)g_callerStack; p += 4;
-    /* origbody at cave+64: pop postdraw-ret, swap [esp] with it, push
-     * caller-ret onto the LIFO (nesting: our DrawGlyph draws glyph
-     * sprites through this same hook), replay SEH, jmp orig+7. */
+    /* origbody at cave+64: pop postdraw-ret, swap [esp] with it, stash
+     * caller-ret on the LIFO, replay SEH, jmp orig+7. ECX is the live
+     * thiscall texture pointer: only EAX/EDX (caller-saved, dead) are
+     * touched here (a mov ecx here killed the texture -> 0x40AF93). */
     {
         unsigned char* q = cave + 64;
-        *q++ = 0x58;                                            /* pop eax (=postdraw) */
-        *q++ = 0x87; *q++ = 0x04; *q++ = 0x24;                  /* xchg eax,[esp] */
-        *q++ = 0x8B; *q++ = 0x0D;                               /* mov ecx,[g_callerDepth] */
+        *q++ = 0x5A;                                            /* pop edx (=postdraw) */
+        *q++ = 0x87; *q++ = 0x14; *q++ = 0x24;                  /* xchg edx,[esp] */
+        *q++ = 0xA1;                                            /* mov eax,[g_callerDepth] */
         *(DWORD*)q = (DWORD)&g_callerDepth; q += 4;
-        *q++ = 0x89; *q++ = 0x04; *q++ = 0x8D;                  /* mov [stack+ecx*4],eax */
+        *q++ = 0x89; *q++ = 0x14; *q++ = 0x85;                  /* mov [stack+eax*4],edx */
         *(DWORD*)q = (DWORD)g_callerStack; q += 4;
-        *q++ = 0x41;                                            /* inc ecx */
-        *q++ = 0x89; *q++ = 0x0D;                               /* mov [g_callerDepth],ecx */
+        *q++ = 0x40;                                            /* inc eax */
+        *q++ = 0xA3;                                            /* mov [g_callerDepth],eax */
         *(DWORD*)q = (DWORD)&g_callerDepth; q += 4;
         *q++ = 0x6A; *q++ = 0xFF;                               /* push -1 */
         *q++ = 0x68; *q++ = 0xE0; *q++ = 0x94; *q++ = 0x4C; *q++ = 0x00;
