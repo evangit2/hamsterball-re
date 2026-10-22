@@ -83,6 +83,11 @@ static void* S1EnsureSprite(void* board, void* ext, DWORD offset, const char* pa
 }
 
 void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out1, void *out2, int *s1data) {
+    /* OUT-PARAM RULE (blank-world fix 2026-10-22): out1 must be 0 or a REAL
+     * game object — NEVER a mesh/render pointer. The native Setup caller
+     * appends out1 to an object list; a mesh there poisons the D3D device
+     * and blanks the whole frame. Native Tower create sets out params ONLY
+     * for TURRET (stands,render); every other S1 leaves them untouched. */
     if (!name || !out1 || !out2 || !s1data) return;
     int level = GetCurrentLevel(board);
     if (level == 0 || level > 15) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -314,7 +319,6 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             *(int *)((char *)board + 0x4378) = meshVal;
         }
         if (!meshVal) { DebugLog("MACE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
-        DebugLog("MACE: mesh ok");
         /* YellowLink chain mesh (native Tower ctor +0x4374, MeshNode 0x18).
          * Tower content only; shared Meshes asset so safe for any slot.
          * Cleared: the 0001:000570A4 hang was garbage-mesh trust (board
@@ -334,7 +338,6 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
              * levels via 0x437CB0. Verified in native Tower create. */
             if (ContentFileId(GetBoardExt(board)) == 5 && g_MaceTowerCtor) obj = g_MaceTowerCtor(mem, (int)board, meshVal);
             else obj = g_MaceCtor(mem, (int)board, meshVal);
-            DebugLog("MACE: ctor done");
             DWORD *o = (DWORD *)obj;
             memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
@@ -390,6 +393,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
      * pre-loaded board+0x437c (no fresh load), render = Level_RenderCtor,
      * pos → board+0x4380/84/88, RNG(0x168) → board+0x438c, out=(mesh,render). */
     if (my_strnicmp(name, "WINDMILL", 8) == 0) {
+        /* BLANK-WORLD BISECT: windmill re-enabled (turret still skipped). */
         /* Native Tower ctor owns +0x437C (render) — use it when valid.
          * Never overwrite with our mesh (native update/render vtbl-calls it). */
         {
@@ -428,7 +432,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             *(float *)((char *)ext + UNI_WINDMILL_ANGLE) = ra;
         }
         /* Native returns (mesh, render) — the NULL out1 was our invention. */
-        *(int*)out1 = mesh; *(int*)out2 = renderOut;
+        *(int*)out1 = 0; *(int*)out2 = renderOut;
         return;
     }
 

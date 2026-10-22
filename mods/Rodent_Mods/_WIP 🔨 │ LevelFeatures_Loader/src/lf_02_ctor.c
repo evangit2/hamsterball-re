@@ -15,22 +15,19 @@
  *   9. Set unlock flags (per-level)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-/* UniversalTowerInit — BISECT 2026-10-22: minimal (base ctor + Tower
- * vtable only) to isolate blank-world cause. Full field replica below. */
-#if 0
-static void UniversalTowerInit_full(void *mem, int app) {
+/* UniversalTowerInit — content-driven Tower board setup, no native ctor.
+ * Replicates Tower native ctor (0x41E340, Ghidra-verified) field-by-field:
+ * base Board_ctor, Tower vtable, name strings, difficulty flag,
+ * LoadRaceData("TOWERRACE"). +0x870 comes from Step 4 (proven app-source),
+ * +0x1508 from Step 5 (slot colors, proven), lists from Step 9a-extra3.
+ * Mesh slots (+0x436C..+0x43B4) stay empty — S1-driven create loads and
+ * mirrors them (BoardMeshOrZero: Tower content never trusts board slots). */
+static void UniversalTowerInit(void *mem, int app) {
     g_BoardCtor(mem, app);
     *(DWORD *)mem = 0x4D0A08; /* Tower board vtable */
     *(char **)((char *)mem + 0x868) = "Board (Tower)";
     *(char **)((char *)mem + 0x29B4) = "TOWER RACE";
     *(char **)((char *)mem + 0x4344) = "Happy Rush";
-    { DWORD b14 = *(DWORD *)((char *)mem + 0x14);
-      if (b14 && !IsBadReadPtr((void *)(b14 + 0x1DC), 4))
-          *(DWORD *)((char *)mem + 0x870) = *(DWORD *)(b14 + 0x1DC); }
-    *(float *)((char *)mem + 0x1508) = 1.0f;
-    *(float *)((char *)mem + 0x150C) = 0.75f;
-    *(float *)((char *)mem + 0x1510) = 0.0f;
-    *(float *)((char *)mem + 0x1514) = 1.0f;
     *(DWORD *)((char *)mem + 0x43A4) = 0;
     *(DWORD *)((char *)mem + 0x43A0) = 0;
     *(DWORD *)((char *)mem + 0x43A8) = 0;
@@ -41,13 +38,6 @@ static void UniversalTowerInit_full(void *mem, int app) {
           *(BYTE *)(app + 0x852) = 1; }
     g_LoadRaceData(mem, "TOWERRACE");
     DebugLog("UniversalTowerInit done (no native ctor)");
-}
-#endif
-
-static void UniversalTowerInit(void *mem, int app) {
-    g_BoardCtor(mem, app);
-    *(DWORD *)mem = 0x4D0A08; /* Tower board vtable */
-    DebugLog("UniversalTowerInit MINIMAL done");
 }
 
 void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
@@ -85,11 +75,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     /* Step 1: base setup. Tower content (any slot): UniversalTowerInit —
      * content-driven replica of the native Tower ctor (no native code runs).
      * Mesh slots are filled later by S1-driven create (native-prefer). */
-    if (g_loadingContentId == 5 && g_TowerBoardCtor) {
-        DebugLog("Calling native Tower ctor (BLANK-WORLD bisect)...");
-        g_TowerBoardCtor(mem, app);
-        DebugLog("Native Tower ctor done");
-    } else if (g_loadingContentId == 5) {
+    if (g_loadingContentId == 5) {
         DebugLog("Calling UniversalTowerInit...");
         UniversalTowerInit(mem, app);
     } else {
@@ -164,12 +150,13 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
 
     /* Step 3: Set board name and race title (slot table — skipped for Tower
      * content, whose content names UniversalTowerInit already set). */
-    /* BISECT: minimal init sets no names — always write slot names. */
-    *(char **)((char *)mem + UNI_BOARD_NAME) = ld->boardName;
-    *(char **)((char *)mem + UNI_RACE_TITLE) = ld->raceTitle;
+    if (g_loadingContentId != 5) {
+        *(char **)((char *)mem + UNI_BOARD_NAME) = ld->boardName;
+        *(char **)((char *)mem + UNI_RACE_TITLE) = ld->raceTitle;
+    }
     DebugLog("Names set");
 
-    /* Step 4: Set +0x870 from app+0x1DC (BISECT: always, like before). */
+    /* Step 4: Set +0x870 from app+0x1DC (proven source; all working runs). */
     *(DWORD *)((char *)mem + UNI_BOARD_APPVAL) = *(DWORD *)(app + 0x1DC);
     DebugLog("+0x870 set");
 
@@ -445,8 +432,45 @@ static void *g_thunkPtrs[16] = {
     Thunk_Level13, Thunk_Level14, Thunk_Level15,
 };
 
+/* Universal board size: every level board allocates 0x7000 bytes (>= the
+ * largest native board, Master 0x6498, plus margin). Any content in any slot
+ * gets a board big enough for the largest per-level layout (Tower lists at
+ * 0x5000, Dizzy fields, etc.) — no OOB writes on file/slot swaps.
+ * Runs inside InstallBoardCtorHooks: for each of the 15 ctor CALL sites,
+ * scan back for the operator_new CALL and rewrite its preceding push $SIZE.
+ * Verification is strict: CALL target must be operator_new exactly, and the
+ * 5 bytes before it must be a push imm32 (0x68). */
+#define UNI_BOARD_SIZE 0x7000
+
+static void InstallUniversalBoardSize(void) {
+    DWORD newAddr = g_moduleBase + RVA_operator_new;
+    int i;
+    for (i = 0; i < 15; i++) {
+        unsigned char *call = (unsigned char *)(g_moduleBase + g_ctorCallRVAs[i]);
+        int back;
+        if (IsBadReadPtr(call, 5)) continue;
+        if (call[0] != 0xE8) continue;
+        for (back = 6; back <= 48; back++) {
+            unsigned char *c = call - back;
+            if (IsBadReadPtr(c, 5)) break;
+            if (c[0] != 0xE8) continue;
+            if ((DWORD)(c + 5 + *(int *)(c + 1)) != newAddr) continue;
+            /* c = CALL operator_new; preceding 5 bytes must be push imm32 */
+            if (c[-5] != 0x68) continue;
+            { DWORD oldProtect;
+              VirtualProtect(c - 5, 5, PAGE_EXECUTE_READWRITE, &oldProtect);
+              *(DWORD *)(c - 4) = UNI_BOARD_SIZE;
+              VirtualProtect(c - 5, 5, oldProtect, &oldProtect);
+              FlushInstructionCache(GetCurrentProcess(), c - 5, 5); }
+            break;
+        }
+    }
+    DebugLog("Universal board size installed (0x7000 x15)");
+}
+
 static void InstallBoardCtorHooks(void) {
     int i;
+    InstallUniversalBoardSize();
     for (i = 0; i < 15; i++) {
         unsigned char *site = (unsigned char *)(g_moduleBase + g_ctorCallRVAs[i]);
         if (IsBadReadPtr(site, 5)) continue;
