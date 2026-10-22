@@ -49,3 +49,5 @@ Rename `_mknp_devmode.dll` to `bass.dll`, keep the stock DLL as `bass_real.dll`.
 - v03d: self-contained pixel-text overlay (raw D3D8, 3x5 font, stateblock save/restore) — no game fonts needed; verified live on title screen.
 
 - v03e: double-size pixel text (line1 x4/line2 x2, per-pass flush), WAIT1/WAIT2 never auto-revert, medals exclusive tiers + realtime apply on every arrow.
+
+- v03f: medals back to cumulative tiers (BRONZE/SILVER/GOLD/WEASEL=all), per-level vs ALL scope kept, realtime arrows kept.

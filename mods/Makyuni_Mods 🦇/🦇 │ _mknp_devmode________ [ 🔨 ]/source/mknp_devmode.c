@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v03e — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v03f — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -350,7 +350,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v03e self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v03f self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -498,7 +498,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v03e: single small line with bottom-right shadow (version-text style).
+/* v03f: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -760,12 +760,14 @@ static int reset_best_times_sel(int sel) {
  * (20 dword slots, races = 0..14): byte0 = BRONZE, byte1 = SILVER,
  * byte2 = GOLD (proven: earn-sites compare vs the BRONZE/SILVER/GOLD
  * threshold fields, AdvanceRace shows next-target per highest byte).
- * Patterns are exclusive: the selected tier alone is lit, the other two
- * are cleared. WEASEL has no persistent byte in this build, so it sets
- * all three (max visible state). sel < 0 = ALL 15 races. Returns 1/0. */
+ * Patterns are cumulative, as if the player earned exactly that tier:
+ * BRONZE lights bronze only, SILVER bronze+silver, GOLD all three.
+ * WEASEL has no persistent byte in this build, so it sets all three
+ * (max visible state). sel < 0 = ALL 15 races, else that level only.
+ * Returns 1/0. */
 #define MEDAL_BASE 0x8BCu
 static const BYTE MEDAL_PAT[4][3] = {
-    { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 }, { 1, 1, 1 }
+    { 1, 0, 0 }, { 1, 1, 0 }, { 1, 1, 1 }, { 1, 1, 1 }
 };
 
 static int set_medals_sel(int sel, int medal) {
