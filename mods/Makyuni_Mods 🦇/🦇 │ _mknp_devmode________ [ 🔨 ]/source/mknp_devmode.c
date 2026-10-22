@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v03f — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v03g — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -82,8 +82,8 @@ static int in_wait(void) {
            (g_indState == IND_WAIT && !g_indUntil);
 }
 static int g_flow = 0;        /* 0 none, 1 reset-best-times, 2 set-medals */
-static int g_medSel = 0;      /* WAIT2 medal: 0 BRONZE .. 3 WEASEL */
-static const char* MEDAL_NAMES[4] = { "BRONZE", "SILVER", "GOLD", "WEASEL" };
+static int g_medSel = 0;      /* WAIT2 medal: 0 NONE .. 4 WEASEL */
+static const char* MEDAL_NAMES[5] = { "NONE", "BRONZE", "SILVER", "GOLD", "WEASEL" };
 static const DWORD WHITE3[3] = { 0x3F800000u, 0x3F800000u, 0x3F800000u };
 
 static void ind_set_sel_text(char* dst) {
@@ -350,7 +350,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v03f self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v03g self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -498,7 +498,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v03f: single small line with bottom-right shadow (version-text style).
+/* v03g: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -726,11 +726,11 @@ static void set_load(void) {
 #define APP_BESTTIME    0x86cu
 #define BESTTIME_NATIVE 0x05F5E09Cu
 #define BESTTIME_COUNT  20
-#define BESTTIME_RACES  15   /* slots 0..14 = LEVEL01..15; 15..19 are arenas */
+#define BESTTIME_RACES  15   /* LEVEL01..15 = slots 1..15 (race number); slot 0 unused */
 
-/* Reset BestTime slots. sel < 0 = ALL 15 races, else single slot sel.
- * LEVEL01..15 map to slots 0..14 (the loader fills the 80-byte blob in
- * race order; per-race best updates index by the board's level index).
+/* Reset BestTime slots. sel < 0 = ALL 15 races (slots 1..15), else the
+ * single slot sel+1. The game indexes both arrays by race number (Warm-Up
+ * reads slot 1, Impossible slot 15; slot 0 is unused).
  * Returns 1 on success, 0 when game memory is not writable (FAIL state). */
 static int reset_best_times_sel(int sel) {
     DWORD app;
@@ -748,8 +748,8 @@ static int reset_best_times_sel(int sel) {
         log_msg("DEVBIND reset-best-times: App+0x86c not writable\n");
         return 0;
     }
-    lo = (sel < 0) ? 0 : sel;
-    hi = (sel < 0) ? BESTTIME_RACES - 1 : sel;
+    lo = (sel < 0) ? 1 : sel + 1;
+    hi = (sel < 0) ? BESTTIME_RACES : sel + 1;
     for (i = lo; i <= hi; i++)
         *(DWORD*)(app + APP_BESTTIME + (DWORD)i * 4) = BESTTIME_NATIVE;
     log_msg("DEVBIND reset-best-times: slots %d..%d at App+0x86c = 0x05F5E09C\n", lo, hi);
@@ -763,11 +763,12 @@ static int reset_best_times_sel(int sel) {
  * Patterns are cumulative, as if the player earned exactly that tier:
  * BRONZE lights bronze only, SILVER bronze+silver, GOLD all three.
  * WEASEL has no persistent byte in this build, so it sets all three
- * (max visible state). sel < 0 = ALL 15 races, else that level only.
+ * (max visible state). NONE clears all three (uncollected).
+ * sel < 0 = ALL 15 races (slots 1..15), else that level only.
  * Returns 1/0. */
 #define MEDAL_BASE 0x8BCu
-static const BYTE MEDAL_PAT[4][3] = {
-    { 1, 0, 0 }, { 1, 1, 0 }, { 1, 1, 1 }, { 1, 1, 1 }
+static const BYTE MEDAL_PAT[5][3] = {
+    { 0, 0, 0 }, { 1, 0, 0 }, { 1, 1, 0 }, { 1, 1, 1 }, { 1, 1, 1 }
 };
 
 static int set_medals_sel(int sel, int medal) {
@@ -787,9 +788,9 @@ static int set_medals_sel(int sel, int medal) {
         return 0;
     }
     if (medal < 0) medal = 0;
-    if (medal > 3) medal = 3;
-    lo = (sel < 0) ? 0 : sel;
-    hi = (sel < 0) ? BESTTIME_RACES - 1 : sel;
+    if (medal > 4) medal = 4;
+    lo = (sel < 0) ? 1 : sel + 1;
+    hi = (sel < 0) ? BESTTIME_RACES : sel + 1;
     for (i = lo; i <= hi; i++) {
         BYTE* slot = (BYTE*)(app + MEDAL_BASE + (DWORD)i * 4);
         slot[0] = MEDAL_PAT[medal][0];
@@ -1283,8 +1284,8 @@ static DWORD WINAPI poll_thread(LPVOID param) {
                 if (g_indState == IND_WAIT2) {
                     if (l || r) {
                         g_medSel += l ? -1 : 1;
-                        if (g_medSel < 0) g_medSel = 3;
-                        if (g_medSel > 3) g_medSel = 0;
+                        if (g_medSel < 0) g_medSel = 4;
+                        if (g_medSel > 4) g_medSel = 0;
                         ind_medwait_text();
                         /* realtime: write on every step so the menu
                          * medal icons change as you arrow through tiers */
