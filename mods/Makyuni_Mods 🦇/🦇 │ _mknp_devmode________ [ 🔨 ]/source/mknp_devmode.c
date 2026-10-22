@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v03c — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v03d — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -150,61 +150,167 @@ static int g_devmode = 0;     /* the devmode variable: F8 toggles 0/1 */
 static int g_prevF8  = 0;     /* previous F8 down-state (edge detect) */
 static volatile int g_drawArmed = 0;  /* set each frame by C6F1; consumed by DrawGlyph hook */
 static DWORD g_lastDrawTick = 0;   /* fallback throttle when C6F1 never fires */
-/* ── Raw-D3D visibility probe (magenta box, no textures) ───────────── */
-/* Draws a screen-space quad with transformed+lit vertices straight
- * through the captured device. If this paints but DrawGlyph text does
- * not, the text system lacks caller state (atlas bind); if neither
- * paints, the phase/device is wrong. Saves and restores everything. */
+/* ── Self-contained pixel-text overlay (raw D3D8, no game fonts) ────── */
+/* The menus/HUD draw text through private sprite paths, so cold DrawGlyph
+ * cold DrawGlyph calls stay invisible (no atlas bound in our phases). This overlay draws
+ * its own 3x5 pixels straight through the captured device: FVF XYZRHW |
+ * DIFFUSE, no texture, cull none, Z off, wrapped in a stateblock save /
+ * restore (nothing else on screen is touched). */
+static void log_msg(const char* fmt, ...);   /* defined later near log_open */
 static DWORD g_device = 0;                /* captured from Present ECX */
 
-static DWORD d3d_call(DWORD dev, DWORD off, DWORD a1, DWORD a2, DWORD a3, DWORD a4) {
+/* d3d_call_n: device call with exactly n args (0..4). Pushes exactly n+1
+ * dwords (this + args): no stack leak, unlike fixed-width pushers. */
+static DWORD d3d_call_n(DWORD dev, DWORD off, DWORD n, DWORD a1, DWORD a2, DWORD a3, DWORD a4) {
     DWORD fn, rc = 0;
     DWORD vt = *(DWORD*)dev;
-    DWORD blk[6];
+    DWORD blk[5];
     fn = *(DWORD*)(vt + off);
-    blk[0] = dev; blk[1] = a1; blk[2] = a2; blk[3] = a3; blk[4] = a4; blk[5] = 0;
-    __asm__ __volatile__(
-        "pushl 20(%1)\n\t"
-        "pushl 16(%1)\n\t"
-        "pushl 12(%1)\n\t"
-        "pushl 8(%1)\n\t"
-        "pushl 4(%1)\n\t"
-        "pushl (%1)\n\t"
-        "call *%2\n\t"
-        "movl %%eax, %0\n\t"
-        "addl $24, %%esp"
-        : "=r"(rc)
-        : "r"(blk), "r"(fn)
-        : "eax", "edx", "ecx", "memory");
+    blk[0] = dev; blk[1] = a1; blk[2] = a2; blk[3] = a3; blk[4] = a4;
+    switch (n) {
+    case 0:
+        __asm__ __volatile__(
+            "pushl (%1)\n\tcall *%2\n\tmovl %%eax, %0\n"
+            : "=r"(rc) : "r"(blk), "r"(fn) : "eax", "edx", "ecx", "memory");
+        break;
+    case 1:
+        __asm__ __volatile__(
+            "pushl 4(%1)\n\tpushl (%1)\n\tcall *%2\n\tmovl %%eax, %0\n"
+            : "=r"(rc) : "r"(blk), "r"(fn) : "eax", "edx", "ecx", "memory");
+        break;
+    case 2:
+        __asm__ __volatile__(
+            "pushl 8(%1)\n\tpushl 4(%1)\n\tpushl (%1)\n\tcall *%2\n\tmovl %%eax, %0\n"
+            : "=r"(rc) : "r"(blk), "r"(fn) : "eax", "edx", "ecx", "memory");
+        break;
+    case 3:
+        __asm__ __volatile__(
+            "pushl 12(%1)\n\tpushl 8(%1)\n\tpushl 4(%1)\n\tpushl (%1)\n\tcall *%2\n\tmovl %%eax, %0\n"
+            : "=r"(rc) : "r"(blk), "r"(fn) : "eax", "edx", "ecx", "memory");
+        break;
+    default:
+        __asm__ __volatile__(
+            "pushl 16(%1)\n\tpushl 12(%1)\n\tpushl 8(%1)\n\tpushl 4(%1)\n\tpushl (%1)\n\tcall *%2\n\tmovl %%eax, %0\n"
+            : "=r"(rc) : "r"(blk), "r"(fn) : "eax", "edx", "ecx", "memory");
+        break;
+    }
     return rc;
 }
 
-static void draw_test_quad(void) {
-    /* 32-byte stride (16-alignment for Wine SSE vertex paths). */
-    static const struct __attribute__((aligned(16))) { float x, y, z, rhw; DWORD color; DWORD pad[3]; } q[4] = {
-        { 20.0f, 20.0f, 0.5f, 1.0f, 0xFFFF00FFu, {0,0,0} },
-        { 220.0f, 20.0f, 0.5f, 1.0f, 0xFFFF00FFu, {0,0,0} },
-        { 20.0f, 70.0f, 0.5f, 1.0f, 0xFFFF00FFu, {0,0,0} },
-        { 220.0f, 70.0f, 0.5f, 1.0f, 0xFFFF00FFu, {0,0,0} },
-    };
+/* 3x5 pixel font. Rows top to bottom, bit2 = left pixel. Order matches
+ * px_idx below: space - . / 0-9 : A-Z ( ) + */
+static const unsigned char px_font[][5] = {
+    {0,0,0,0,0}, {0,0,7,0,0}, {0,0,0,0,1}, {1,1,2,4,4},
+    {2,5,5,5,2}, {2,6,2,2,7}, {7,1,7,4,7}, {7,1,7,1,7},
+    {5,5,7,1,1}, {7,4,7,1,7}, {7,4,7,5,7}, {7,1,2,2,2},
+    {7,5,7,5,7}, {7,5,7,1,7}, {0,2,0,2,0},
+    {2,5,7,5,5}, {6,5,6,5,6}, {3,4,4,4,3}, {6,5,5,5,6},
+    {7,4,6,4,7}, {7,4,6,4,4}, {3,4,5,5,3}, {5,5,7,5,5},
+    {7,2,2,2,7}, {1,1,1,5,2}, {5,5,6,5,5}, {4,4,4,4,7},
+    {5,7,7,5,5}, {6,5,5,5,5}, {2,5,5,5,2}, {6,5,6,4,4},
+    {2,5,5,2,1}, {6,5,6,5,5}, {3,4,2,1,6}, {7,2,2,2,2},
+    {5,5,5,5,7}, {5,5,5,5,2}, {5,5,7,5,5}, {5,5,2,5,5},
+    {5,5,2,2,2}, {7,1,2,4,7}, {1,2,2,2,1}, {4,2,2,2,4},
+    {0,2,7,2,0},
+};
+
+static int px_idx(char c) {
+    if (c == ' ') return 0;
+    if (c == '-') return 1;
+    if (c == '.') return 2;
+    if (c == '/') return 3;
+    if (c >= '0' && c <= '9') return 4 + (c - '0');
+    if (c == ':') return 14;
+    if (c >= 'A' && c <= 'Z') return 15 + (c - 'A');
+    if (c == '(') return 41;
+    if (c == ')') return 42;
+    if (c == '+') return 43;
+    return 0;
+}
+
+typedef struct { float x, y, z, rhw; DWORD color; DWORD pad[3]; } pxv_t;
+static pxv_t px_buf[4096] __attribute__((aligned(16)));
+static int px_nv = 0;   /* verts in px_buf */
+
+static void px_quad(int x, int y, int w, int h, DWORD color) {
+    pxv_t* v;
+    float fx = (float)x, fy = (float)y, fw = (float)(x + w), fh = (float)(y + h);
+    if (px_nv + 6 > 4096) return;
+    v = &px_buf[px_nv];
+    v[0].x = fx;  v[0].y = fy;  v[0].z = 0.5f; v[0].rhw = 1.0f; v[0].color = color;
+    v[1].x = fw;  v[1].y = fy;  v[1].z = 0.5f; v[1].rhw = 1.0f; v[1].color = color;
+    v[2].x = fx;  v[2].y = fh;  v[2].z = 0.5f; v[2].rhw = 1.0f; v[2].color = color;
+    v[3].x = fw;  v[3].y = fy;  v[3].z = 0.5f; v[3].rhw = 1.0f; v[3].color = color;
+    v[4].x = fw;  v[4].y = fh;  v[4].z = 0.5f; v[4].rhw = 1.0f; v[4].color = color;
+    v[5].x = fx;  v[5].y = fh;  v[5].z = 0.5f; v[5].rhw = 1.0f; v[5].color = color;
+    px_nv += 6;
+}
+
+static void px_line(const char* s, int x, int y, int sc, DWORD color) {
+    int cx = x;
+    for (; *s; s++, cx += 4 * sc) {
+        const unsigned char* g = px_font[px_idx(*s)];
+        int r, b;
+        for (r = 0; r < 5; r++)
+            for (b = 0; b < 3; b++)
+                if (g[r] & (4 >> b))
+                    px_quad(cx + b * sc, y + r * sc, sc, sc, color);
+    }
+}
+
+/* ARGB from an IND_RGB float triple (bits: 0x3F800000 = 1.0). */
+static DWORD px_argb(const DWORD* rgb) {
+    DWORD r = (rgb[0] & 0x7FFFFFFFu) >= 0x3F000000u ? 0xFFu : 0x00u;
+    DWORD g = (rgb[1] & 0x7FFFFFFFu) >= 0x3F000000u ? 0xFFu : 0x00u;
+    DWORD b = (rgb[2] & 0x7FFFFFFFu) >= 0x3F000000u ? 0xFFu : 0x00u;
+    return 0xFF000000u | (r << 16) | (g << 8) | b;
+}
+
+static int g_pxDraws = 0;   /* pixel-overlay draws (diagnostic) */
+
+static void draw_pixel_overlay(void) {
     DWORD dev, tok = 0, hr;
     int began = 0;
+    DWORD ntris;
+    const char* l1 = g_devmode ? "DEVMODE: ON" : "DEVMODE: OFF";
+    const char* l2 = indicator_text();
+    DWORD face = px_argb(IND_RGB[g_indState]);
     if (!g_device || IsBadReadPtr((void*)g_device, 4)) return;
     dev = g_device;
     if (IsBadReadPtr(*(void**)dev, 0x140)) return;
-    /* Capture everything first: single atomic restore at the end. */
-    d3d_call(dev, 0xE4, 1, (DWORD)&tok, 0, 0);     /* CreateStateBlock(ALL) */
-    d3d_call(dev, 0x130, 1, 0x44, 0, 0);            /* SetVertexShader(XYZRHW|DIFFUSE) */
-    d3d_call(dev, 0xF4, 2, 0, 0, 0);                /* SetTexture(0,NULL) */
-    d3d_call(dev, 0xC8, 2, 22, 1, 0);              /* CULLMODE=NONE */
-    hr = d3d_call(dev, 0x88, 0, 0, 0, 0);           /* BeginScene */
-    if ((int)hr >= 0) began = 1;
-    d3d_call(dev, 0x120, 5, 2, (DWORD)q, 32);      /* DrawPrimitiveUP(STRIP,2) */
-    if (began) d3d_call(dev, 0x8C, 0, 0, 0, 0);     /* EndScene */
+    /* Pass 1: line 1 shadow + face. */
+    px_nv = 0;
+    px_line(l1, 20 + 2, 20 + 2, 2, 0xFF000000u);
+    px_line(l1, 20, 20, 2, 0xFFFFFFFFu);
+    /* Pass 2: line 2 shadow + face. */
+    px_line(l2, 20 + 1, 36 + 1, 1, 0xFF000000u);
+    px_line(l2, 20, 36, 1, face);
+    if (!px_nv) return;
+    ntris = (DWORD)(px_nv / 3);
+    d3d_call_n(dev, 0xE4, 2, 1, (DWORD)&tok, 0, 0);   /* CreateStateBlock(ALL) */
+    if (g_pxDraws < 12) log_msg("PXD-CS tok=%p\n", (void*)tok);
+    d3d_call_n(dev, 0x130, 1, 0x44, 0, 0, 0);          /* FVF XYZRHW|DIFFUSE */
+    if (g_pxDraws < 12) log_msg("PXD-VS ok\n");
+    d3d_call_n(dev, 0xF4, 2, 0, 0, 0, 0);              /* texture0 NULL */
+    if (g_pxDraws < 12) log_msg("PXD-TX ok\n");
+    d3d_call_n(dev, 0xC8, 2, 7, 0, 0, 0);             /* ZENABLE off */
+    if (g_pxDraws < 12) log_msg("PXD-Z ok\n");
+    d3d_call_n(dev, 0xC8, 2, 22, 1, 0, 0);            /* CULLMODE none */
+    if (g_pxDraws < 12) log_msg("PXD-CULL ok\n");
+    /* No Begin/End: the game already has a scene open at pre-Present
+     * (its own sprites draw here without bracketing). We set our states,
+     * draw, and stateblock-restore. BeginScene crashes WineD3D here and
+     * would nest on Windows; UP inside the ambient scene is the safe path. */
+    if (g_pxDraws < 12) log_msg("PXD-UP nv=%d\n", px_nv);
+    d3d_call_n(dev, 0x120, 4, 4, ntris, (DWORD)px_buf, 32);  /* UP(LIST) */
+    if (g_pxDraws < 12) log_msg("PXD-DONE ok\n");
     if (tok) {
-        d3d_call(dev, 0xD8, 1, tok, 0, 0);       /* ApplyStateBlock(tok) */
-        d3d_call(dev, 0xE0, 1, tok, 0, 0);       /* DeleteStateBlock(tok) */
+        d3d_call_n(dev, 0xD8, 1, tok, 0, 0, 0);      /* ApplyStateBlock */
+        d3d_call_n(dev, 0xE0, 1, tok, 0, 0, 0);      /* DeleteStateBlock */
     }
+    if (g_pxDraws < 12)
+        log_msg("PXD n=%d nv=%d l1=%s l2=%s\n", g_pxDraws, px_nv, l1, l2);
+    g_pxDraws++;
 }
 
 static int g_frameHookOk = 0;     /* 1 once the 0x46C1F1 frame hook is live */
@@ -257,7 +363,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v03c self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v03d self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -405,7 +511,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v03c: single small line with bottom-right shadow (version-text style).
+/* v03d: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -1289,8 +1395,6 @@ static int g_dtrace = 0;      /* verbose draw-path trace, first 40 */
 
 static void draw_direct(void) {
     DWORD app;
-    const char* text;
-    void* font;
 
     if (g_entryCount < 20) {
         DWORD hookvt = 0;
@@ -1301,61 +1405,25 @@ static void draw_direct(void) {
                 g_entryCount, g_drawFont, (void*)hookvt, g_loaderGate);
     }
     g_entryCount++;
-    /* Boot-phase expiry lives here (game thread, proven running) as well
-     * as in poll: whichever runs first ends the boot phase (~12s). */
     if (g_bootPhase && (int)(GetTickCount() - g_bootTick) > 12000) {
         g_bootPhase = 0;
         log_msg("BOOTPHASE over\n");
     }
-    if (!g_drawFont) { if (g_dtrace < 40) log_msg("DTRACE %d NULLFONT hook=%p\n", g_dtrace++, g_drawFont); return; }
-    if (g_loaderGate) { if (g_dtrace < 40) log_msg("DTRACE %d GATED hook=%p\n", g_dtrace++, g_drawFont); return; }
-
-    if (IsBadReadPtr((void*)APP_PTR, 4)) { if (g_dtrace < 40) log_msg("DTRACE %d NOAPP\n", g_dtrace++); return; }
+    if (g_loaderGate) return;   /* loading screen: orig text only */
+    if (IsBadReadPtr((void*)APP_PTR, 4)) return;
     app = *(DWORD*)APP_PTR;
     if (!app || app < 0x10000) return;
     if (IsBadReadPtr((void*)app, 0x320)) return;
-    if (*(BYTE*)(app + APP_QUIT)) { if (g_dtrace < 40) log_msg("DTRACE %d QUIT\n", g_dtrace++); return; }
-
-    text = g_devmode ? "devmode: on" : "devmode: off";
-    /* One draw per presented frame, purely time-based. The 0x46C1F1 frame
-     * hook does not run inside every screen loop (menus), so arming from
-     * it starves those screens; a 12ms throttle draws on the first text
-     * call of each 60fps frame instead, everywhere DrawGlyph runs. */
+    if (*(BYTE*)(app + APP_QUIT)) return;   /* quitting: skip */
     {
         DWORD now = GetTickCount();
-        if ((int)(now - g_lastDrawTick) < 12) { if (g_dtrace < 40) log_msg("DTRACE %d THROTTLE\n", g_dtrace++); return; }
+        if ((int)(now - g_lastDrawTick) < 12) return;
         g_lastDrawTick = now;
     }
-    /* Live font first: ECX is the font the game is drawing with right
-     * now. Slots are fallback only (they can go stale across loads). */
-    font = 0;
-    if (g_drawFont && font_ready(g_drawFont, text)) font = g_drawFont;
-    if (!font && !IsBadReadPtr((void*)app, 0x330)) {
-        static const DWORD slots[] = { 0x320u, 0x318u, 0x324u };
-        int i;
-        for (i = 0; i < 3 && !font; i++) {
-            void* f;
-            if (IsBadReadPtr((void*)(app + slots[i]), 4)) continue;
-            f = *(void**)(app + slots[i]);
-            if (f && font_ready(f, text)) font = f;
-        }
-    }
-    if (g_dtrace < 40 && font) log_msg("DTRACE %d PICK font=%p hook=%p\n", g_dtrace++, font, g_drawFont);
-    if (!font) {
-        if (g_dtrace < 40) log_msg("DTRACE %d NOFONT hook=%p\n", g_dtrace++, g_drawFont);
-        return;
-    }
-probed:
-    if (!font_ready(font, text)) { if (g_dtrace < 40) log_msg("DTRACE %d NOTREADY font=%p\n", g_dtrace++, font); return; }
-
-    if (g_inDraw) return;   /* nested via our own DrawGlyph -> sprite hook: skip */
-    g_inDraw = 1;
-    if (g_drawCount < 12) log_msg("DRAW n=%d font=%p sprtex=%p spret=%p text=%s\n", g_drawCount, font, (void*)g_spriteTex, (void*)g_spriteRet, text);
+    if (g_drawCount < 12)
+        log_msg("DRAW n=%d devmode=%d ind=%s\n", g_drawCount, g_devmode, indicator_text());
     g_drawCount++;
-    draw_status(font, text);
-    if (font_ready(font, indicator_text()))
-        draw_status_ex(font, indicator_text(), IND_X, IND_Y, IND_SCALE, IND_RGB[g_indState]);
-    g_inDraw = 0;
+    draw_pixel_overlay();
 }
 
 /* ── Frame hook (0x46C1F1 epilogue): draws the overlay itself ───────── */
@@ -1382,13 +1450,6 @@ static void install_frame_hook(void) {
         return;
     }
     p = cave;
-    *p++ = 0x60;                                /* pushad */
-    *p++ = 0x9C;                                /* pushfd */
-    *p++ = 0xE8;                                /* call draw_from_frame */
-    *(DWORD*)p = (DWORD)draw_from_frame - ((DWORD)p + 4);
-    p += 4;
-    *p++ = 0x9D;                                /* popfd */
-    *p++ = 0x61;                                /* popad */
     *p++ = 0x5E;                                /* pop esi */
     *p++ = 0x83; *p++ = 0xC4; *p++ = 0x08;      /* add esp,8 */
     *p++ = 0xC3;                                /* ret */
@@ -1679,7 +1740,6 @@ static DWORD WINAPI init_thread(LPVOID param) {
     Sleep(2000);   /* let game init settle before patching .text */
     install_frame_hook();
     install_draw_hook();
-    install_sprite_hook();
     install_present_hook();
     install_present2_hook();
     install_pause_tap();

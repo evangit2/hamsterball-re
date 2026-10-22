@@ -45,3 +45,5 @@ Rename `_mknp_devmode.dll` to `bass.dll`, keep the stock DLL as `bass_real.dll`.
 - v03b: sprite-hook piggyback — draws right before each menu/HUD sprite with the game's own font atlas already bound (the cold-call DrawGlyph never paints because no atlas is bound in our hook phases). Same stable shape, no aftercode.
 
 - v03c-fix: sprite post-call cave preserves ECX (live texture) via EAX/EDX only; LIFO stash fixes nested returns (was EIP=-1, then EIP=0).
+
+- v03d: self-contained pixel-text overlay (raw D3D8, 3x5 font, stateblock save/restore) — no game fonts needed; verified live on title screen.
