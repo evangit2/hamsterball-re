@@ -627,7 +627,10 @@ static void InstallVtablePatches(void) {
         }
 
         /* Slot 29 (offset +0x74): DispatchCollision → UniversalDispatchCollision
-         * No need to save original — UniversalDispatchCollision calls g_OriginalDispatch directly */
+         * No need to save original — UniversalDispatchCollision calls g_OriginalDispatch directly
+         * DIAG 2026-10-22 Tower bisect: leave native slot 29 on level 5.
+         * If Tower survives, our dispatcher mishandles a Tower collision. Throwaway. */
+        if (i == 5) goto skip_slot29;
         {
             DWORD *slot = (DWORD *)(vtableAddr + 0x74);
             VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
@@ -635,6 +638,7 @@ static void InstallVtablePatches(void) {
             VirtualProtect(slot, 4, oldProtect, &oldProtect);
             FlushInstructionCache(GetCurrentProcess(), slot, 4);
         }
+        skip_slot29:;
 
         /* Slot 33 (offset +0x84): CreateDynamicObjects → UniversalCreateDynamicObjects
          * No delegation — universal handler recognizes all object names */
@@ -701,6 +705,9 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     g_GluebieCtor = (Ctor3_t)(g_moduleBase + RVA_Gluebie_ctor);
     g_CatapultCtor = (Ctor3_t)(g_moduleBase + RVA_Catapult_ctor);
     g_MaceCtor = (Ctor3_t)(g_moduleBase + RVA_Mace_ctor);
+    g_MaceTowerCtor = (Ctor3_t)(g_moduleBase + 0x00038750);
+    g_TowerBoardCtor = (void *__thiscall (*)(void *, int))(g_moduleBase + 0x0001E340);
+    g_TowerRender = (void *__thiscall (*)(void *, int))(g_moduleBase + 0x0000DFA0);
     g_GlassLevelCtor = (Ctor3_t)(g_moduleBase + RVA_Glass_Level_ctor);
     g_TrapdoorCtor = (Ctor2_t)(g_moduleBase + RVA_Trapdoor_ctor);
     g_StandsCtor = (Stands_ctor_t)(g_moduleBase + RVA_Stands_ctor);

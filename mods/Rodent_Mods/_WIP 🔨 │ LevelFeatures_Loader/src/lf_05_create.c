@@ -281,14 +281,22 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
      * Native: Mace_ctor(new(0x110C), board, board+0x4378 mesh). Mirror
      * our mesh into the native slot (preload gap, same as WINDMILL). */
     if (my_strnicmp(name, "MACE", 4) == 0 && difficulty != 0) {
-        S1EnsureMeshWorld(board, ext, UNI_MACE_MESH, "Levels\\Level4-Mace");
-        int meshVal = *(int*)((char*)ext + UNI_MACE_MESH);
-        /* Always mirror into native slot (preload never runs under mod). */
-        *(int *)((char *)board + 0x4378) = meshVal;
+        /* Tower native ctor fills board+0x4378 itself - use it when valid,
+         * else fall back to ext load+mirror (other levels / no delegation). */
+        int meshVal = *(int *)((char *)board + 0x4378);
+        if (!meshVal || IsBadReadPtr((void *)meshVal, 4)) {
+            S1EnsureMeshWorld(board, ext, UNI_MACE_MESH, "Levels\\Level4-Mace");
+            meshVal = *(int*)((char*)ext + UNI_MACE_MESH);
+            /* Always mirror into native slot (preload never runs under mod). */
+            *(int *)((char *)board + 0x4378) = meshVal;
+        }
         if (!meshVal) { DebugLog("MACE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x110C);
         if (mem) {
-            obj = g_MaceCtor(mem, (int)board, meshVal);
+            /* Tower MACE S1s build via 0x438750 (own class); other
+             * levels via 0x437CB0. Verified in native Tower create. */
+            if (GetCurrentLevel(board) == 5 && g_MaceTowerCtor) obj = g_MaceTowerCtor(mem, (int)board, meshVal);
+            else obj = g_MaceCtor(mem, (int)board, meshVal);
             DWORD *o = (DWORD *)obj;
             memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
@@ -309,18 +317,17 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
      * The board+0x4370 slot holds preload garbage under the mod — mirror our
      * mesh into it (same fix as WINDMILL/TURRET). */
     if (my_strnicmp(name, "DRAWBRIDGE", 10) == 0) {
-        /* Delegation test (2026-10-21): mirror mesh, then let NATIVE Tower
-         * handler build the object byte-identical to vanilla. Throwaway. */
-        S1EnsureMeshWorld(board, ext, UNI_DRAWBRIDGE_MESH, "Levels\\Level4-Drawbridge");
-        int dExt = *(int*)((char*)ext + UNI_DRAWBRIDGE_MESH);
-        *(int *)((char *)board + 0x4370) = dExt;
-        {
-            typedef void (__thiscall *TowerCreate_t)(void *b, char *n, void *o1, void *o2, int *s);
-            TowerCreate_t ntc = (TowerCreate_t)(g_moduleBase + 0xD7C0);
-            ntc(board, name, out1, out2, s1data);
+        /* Delegation test DISABLED 2026-10-22: native 0x40D7C0 call suspected
+         * in Tower wild-EIP crashes (per-call side effects?). Our own Glass
+         * ctor path instead (native-parity per comments below). */
+        /* Tower native ctor fills board+0x4370 itself - use when valid. */
+        int dExt = *(int *)((char *)board + 0x4370);
+        if (!dExt || IsBadReadPtr((void *)dExt, 4)) {
+            S1EnsureMeshWorld(board, ext, UNI_DRAWBRIDGE_MESH, "Levels\\Level4-Drawbridge");
+            dExt = *(int*)((char*)ext + UNI_DRAWBRIDGE_MESH);
+            *(int *)((char *)board + 0x4370) = dExt;
         }
-        return;
-#if 0
+#if 1 /* delegation off 2026-10-22, own Glass path */
         int meshVal = dExt;
         if (!meshVal) { DebugLog("DRAWBRIDGE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x113C);
@@ -345,6 +352,14 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
      * pre-loaded board+0x437c (no fresh load), render = Level_RenderCtor,
      * pos → board+0x4380/84/88, RNG(0x168) → board+0x438c, out=(mesh,render). */
     if (my_strnicmp(name, "WINDMILL", 8) == 0) {
+        /* Native Tower ctor owns +0x437C (render) — use it when valid.
+         * Never overwrite with our mesh (native update/render vtbl-calls it). */
+        if (GetCurrentLevel(board) == 5) {
+            int natR = *(int *)((char *)board + 0x437C);
+            if (natR && !IsBadReadPtr((void *)natR, 4)) {
+                *(int*)out1 = 0; *(int*)out2 = natR; return;
+            }
+        }
         /* Native board+0x437C is filled by the static preload our Step 8
          * replaced — under the mod it holds garbage (0xFE...). Mirror our
          * loaded mesh into the native slot so game code sees a valid mesh. */

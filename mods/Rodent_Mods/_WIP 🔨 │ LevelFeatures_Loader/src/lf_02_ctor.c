@@ -31,10 +31,20 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
 
     LevelData *ld = &g_levelData[raceIndex];
 
-    /* Step 1: Board_ctor(mem, app) — base setup */
-    DebugLog("Calling Board_ctor...");
-    g_BoardCtor(mem, app);
-    DebugLog("Board_ctor done");
+    /* Step 1: Board_ctor(mem, app) — base setup.
+     * Tower (level 5): delegate to the NATIVE Tower ctor instead. It inits
+     * the 4 lists (with 0/1/2/3 variants) + loads mace/windmill/chomper/
+     * turret renders natively — our base-ctor + mirrors leave those slots
+     * wrong and the native Tower render wild-calls through them. */
+    if (raceIndex == 5 && g_TowerBoardCtor) {
+        DebugLog("Calling native Tower ctor...");
+        g_TowerBoardCtor(mem, app);
+        DebugLog("Native Tower ctor done");
+    } else {
+        DebugLog("Calling Board_ctor...");
+        g_BoardCtor(mem, app);
+        DebugLog("Board_ctor done");
+    }
 
     /* Ext heap: fresh lifecycle per construction. Drop any stale entry for
      * this address first (heap reuse after quit-to-menu/restart paths that
@@ -195,7 +205,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
      * 0x5000 (mace). Base Board_ctor never inits them (verified live:
      * they hold small-int garbage, not list heads); appends corrupted the
      * heap on every Tower open (fix 2026-10-21). */
-    if (raceIndex == 5 && g_AthenaListInit) {
+    if (raceIndex == 5 && !g_TowerBoardCtor && g_AthenaListInit) {
         g_AthenaListInit((void *)((char *)mem + 0x43B8), 0);
         g_AthenaListInit((void *)((char *)mem + 0x47D0), 0);
         g_AthenaListInit((void *)((char *)mem + 0x4BE8), 0);

@@ -18,6 +18,15 @@
 void UniversalRenderImpl(void *board, int unk) {
     if (!board || !g_RenderDynamicObjects) return;
 
+    /* Tower (level 5): delegate to the NATIVE Tower render. Our clean-room
+     * Tower block mis-rendered the chomper (meshWorld-vtbl[7] vs native
+     * timer-vtbl[2]/render-vtbl[7]) and wild-jumped at race frame ~3.
+     * Native render includes base internally; needs native ctor slots. */
+    if (GetCurrentLevel(board) == 5 && g_TowerRender) {
+        g_TowerRender(board, unk);
+        return;
+    }
+
     /* Call shared base render (Level_RenderDynamicObjects) — forward gfx ctx (native ret $0x4) */
     g_RenderDynamicObjects(board, unk);
 
@@ -445,7 +454,6 @@ void __fastcall UniversalBoardUpdate(void *board) {
     /* Get level and dispatch features */
     int level = GetCurrentLevel(board);
     if (level == 0) return;
-
     // Pause already handled per-feature, but gate here too
     if (*(BYTE*)((char*)board+0x874)) return;
     DWORD extFeat = GetBoardFeat(board);

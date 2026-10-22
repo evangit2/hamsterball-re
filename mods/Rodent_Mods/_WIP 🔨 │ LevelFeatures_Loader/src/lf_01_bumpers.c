@@ -78,6 +78,11 @@ static TipperVisual_ctor_t g_TipperVisualCtor = NULL;
 static Ctor3_t g_GluebieCtor = NULL;
 static Ctor3_t g_CatapultCtor = NULL;
 static Ctor3_t g_MaceCtor = NULL;
+static Ctor3_t g_MaceTowerCtor = NULL; /* Tower MACE S1 -> 0x438750, not 0x437CB0 (own class) */
+/* Tower native ctor (0x41E340: lists+meshes+renders) + native render (0x40DFA0).
+ * Called for level 5 only; replaces base ctor + our Tower mirrors. */
+static void *__thiscall (*g_TowerBoardCtor)(void *mem, int app) = NULL;
+static void *__thiscall (*g_TowerRender)(void *board, int unk) = NULL;
 static Ctor3_t g_GlassLevelCtor = NULL;
 static Ctor2_t g_TrapdoorCtor = NULL;
 static Stands_ctor_t g_StandsCtor = NULL;
