@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v03b — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v03c — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -215,6 +215,10 @@ static int g_drawCount = 0;           /* successful draw attempts (diagnostic) *
 static volatile int g_hitCount = 0;     /* DrawGlyph cave entries (diagnostic) */
 static volatile int g_presentCount = 0; /* pre-Present cave entries */
 static volatile int g_spriteHits = 0;   /* sprite-hook cave entries */
+static DWORD g_spriteTex = 0;         /* ECX (texture object) of latest sprite */
+static DWORD g_spriteRet = 0;         /* return address of latest sprite call */
+static DWORD g_callerStack[16];         /* LIFO of stashed caller-rets */
+static DWORD g_callerDepth = 0;         /* (our DrawGlyph nests glyph sprites) */
 static int g_loaderGate = 1;              /* fail-closed: skip until proven menu/race */
 static int g_bootPhase = 1;               /* 1 = first 20s: blank/unreadable also closes */
 static int g_postBoot = 0;                /* 1 = DrawGlyph cave routes via afterCode */
@@ -253,7 +257,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v03b self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v03c self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -401,7 +405,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v03b: single small line with bottom-right shadow (version-text style).
+/* v03c: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -1346,7 +1350,7 @@ probed:
 
     if (g_inDraw) return;   /* nested via our own DrawGlyph -> sprite hook: skip */
     g_inDraw = 1;
-    if (g_drawCount < 6) log_msg("DRAW n=%d font=%p textptr=%p text=%s\n", g_drawCount, font, text, text);
+    if (g_drawCount < 12) log_msg("DRAW n=%d font=%p sprtex=%p spret=%p text=%s\n", g_drawCount, font, (void*)g_spriteTex, (void*)g_spriteRet, text);
     g_drawCount++;
     draw_status(font, text);
     if (font_ready(font, indicator_text()))
@@ -1570,13 +1574,12 @@ static void install_draw_hook(void) {
 
 /* ── Sprite hook (0x418870): piggyback the menu/HUD atlas ──────────── */
 /* The menus and HUD draw their text as sprites through here with the
- * font atlas already bound. A pre-call cave runs draw_direct BEFORE
+ * font atlas already bound. A post-call cave runs draw_direct AFTER
  * orig: our DrawGlyph call then samples the live atlas and paints.
- * Same straight-line shape as the frame/present caves (pushad-guarded
- * C call, replay via trampoline). 12ms throttle allows ~1 draw pass
- * per frame no matter how many sprites a screen draws. Reentrancy
- * (our own DrawGlyph draws glyph sprites through here) is stopped by
- * the throttle and the g_inDraw guard. */
+ * Caller-ret is swapped (same stack depth: ESP-relative args and the
+ * SEH record stay exactly native) and stashed on a LIFO (our own
+ * DrawGlyph draws glyph sprites through this same hook: nesting).
+ * 12ms throttle allows ~1 draw pass per frame. */
 static void install_sprite_hook(void) {
     BYTE* a = (BYTE*)SPRITE_ADDR;
     unsigned char* tramp;
@@ -1592,7 +1595,7 @@ static void install_sprite_hook(void) {
         return;
     }
     tramp = (unsigned char*)alloc_executable(32);
-    cave = (unsigned char*)alloc_executable(64);
+    cave = (unsigned char*)alloc_executable(128);
     if (!tramp || !cave) {
         log_msg("SPRITEHOOK skip: VirtualAlloc failed\n");
         return;
@@ -1603,9 +1606,24 @@ static void install_sprite_hook(void) {
     *p++ = 0xE9;
     *(DWORD*)p = (SPRITE_ADDR + 7) - ((DWORD)p + 4);
     p += 4;
+    /* Post-call shape: capture ECX/retaddr, swap the caller-ret slot with
+     * our postdraw address (same stack depth: ESP-relative args and the
+     * SEH record stay exactly native), stash the caller-ret, replay SEH,
+     * JMP orig+7. Orig's epilogue RETs into postdraw; postdraw draws,
+     * then jmps to the stashed caller-ret. (A nested CALL-retaddr or an
+     * extra push would shift the SEH record and corrupt unwinding.) */
     p = cave;
     *p++ = 0xFF; *p++ = 0x05;                    /* inc dword [g_spriteHits] */
     *(DWORD*)p = (DWORD)&g_spriteHits; p += 4;
+    *p++ = 0x89; *p++ = 0x0D;                    /* mov [g_spriteTex],ecx */
+    *(DWORD*)p = (DWORD)&g_spriteTex; p += 4;
+    *p++ = 0x8B; *p++ = 0x04; *p++ = 0x24;       /* mov eax,[esp] (retaddr) */
+    *p++ = 0xA3;                                /* mov [g_spriteRet],eax */
+    *(DWORD*)p = (DWORD)&g_spriteRet; p += 4;
+    *p++ = 0xE8;                                /* call origbody (cave+64) */
+    *(DWORD*)p = (DWORD)(cave + 64) - ((DWORD)p + 4);
+    p += 4;
+    /* POSTDRAW (cave+25): pushad-guarded draw, then jmp to caller. */
     *p++ = 0x60;                                /* pushad */
     *p++ = 0x9C;                                /* pushfd */
     *p++ = 0xE8;                                /* call draw_direct */
@@ -1613,9 +1631,33 @@ static void install_sprite_hook(void) {
     p += 4;
     *p++ = 0x9D;                                /* popfd */
     *p++ = 0x61;                                /* popad */
-    *p++ = 0xE9;                                /* jmp trampoline */
-    *(DWORD*)p = (DWORD)tramp - ((DWORD)p + 4);
-    p += 4;
+    *p++ = 0x8B; *p++ = 0x0D;                   /* mov ecx,[g_callerDepth] */
+    *(DWORD*)p = (DWORD)&g_callerDepth; p += 4;
+    *p++ = 0x49;                                /* dec ecx */
+    *p++ = 0x89; *p++ = 0x0D;                   /* mov [g_callerDepth],ecx */
+    *(DWORD*)p = (DWORD)&g_callerDepth; p += 4;
+    *p++ = 0xFF; *p++ = 0x24; *p++ = 0x8D;       /* jmp [g_callerStack+ecx*4] */
+    *(DWORD*)p = (DWORD)g_callerStack; p += 4;
+    /* origbody at cave+64: pop postdraw-ret, swap [esp] with it, push
+     * caller-ret onto the LIFO (nesting: our DrawGlyph draws glyph
+     * sprites through this same hook), replay SEH, jmp orig+7. */
+    {
+        unsigned char* q = cave + 64;
+        *q++ = 0x58;                                            /* pop eax (=postdraw) */
+        *q++ = 0x87; *q++ = 0x04; *q++ = 0x24;                  /* xchg eax,[esp] */
+        *q++ = 0x8B; *q++ = 0x0D;                               /* mov ecx,[g_callerDepth] */
+        *(DWORD*)q = (DWORD)&g_callerDepth; q += 4;
+        *q++ = 0x89; *q++ = 0x04; *q++ = 0x8D;                  /* mov [stack+ecx*4],eax */
+        *(DWORD*)q = (DWORD)g_callerStack; q += 4;
+        *q++ = 0x41;                                            /* inc ecx */
+        *q++ = 0x89; *q++ = 0x0D;                               /* mov [g_callerDepth],ecx */
+        *(DWORD*)q = (DWORD)&g_callerDepth; q += 4;
+        *q++ = 0x6A; *q++ = 0xFF;                               /* push -1 */
+        *q++ = 0x68; *q++ = 0xE0; *q++ = 0x94; *q++ = 0x4C; *q++ = 0x00;
+        *q++ = 0xE9;                                            /* jmp orig+7 */
+        *(DWORD*)q = (SPRITE_ADDR + 7) - ((DWORD)q + 4);
+        q += 4;
+    }
     install_jmp_hook_nop(SPRITE_ADDR, (DWORD)cave, 7);
     log_msg("SPRITEHOOK installed at 0x418870 -> cave %p tramp %p\n", cave, tramp);
 }
