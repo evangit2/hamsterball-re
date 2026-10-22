@@ -490,6 +490,47 @@ static void Feature_SwirlZones(void *board, int level) {
 static void Feature_Windmill(void *board, int level) {
     // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
     if (*(BYTE*)((char*)board+0x874)) return;
+    /* Tower (level 5): drive the NATIVE board slots (native Tower update never
+     * runs under the mod). Replicates Tower slot-1 windmill sequence 1:1 —
+     * angle on +0x438C, sound at 45 mod 90 via app+0x4A4, matrix compose +
+     * vtbl[0x16]/[0x15] on the native +0x437C render. Native Tower render
+     * reads these slots, so the windmill visibly spins. */
+    if (level == 5) {
+        DWORD app5 = *(DWORD *)((char *)board + BOARD_APP_PTR);
+        if (!app5 || IsBadReadPtr((void *)app5, 0x500)) return;
+        float *bAng = (float *)((char *)board + 0x438C);
+        float rate = (*(int *)(app5 + APP_DIFFICULTY) == 0) ? 0.25f : 1.0f;
+        *bAng = *bAng + rate;
+        {
+            int ai = (int)*bAng;
+            if (ai % 0x5A == 0x2D && g_SoundPlay3D) {
+                DWORD snd = *(DWORD *)(app5 + 0x4A4);
+                if (snd) g_SoundPlay3D((void *)snd,
+                    *(float *)((char *)board + 0x4380),
+                    *(float *)((char *)board + 0x4384),
+                    *(float *)((char *)board + 0x4388), 1.0f);
+            }
+        }
+        DWORD wmr = *(DWORD *)((char *)board + 0x437C);
+        if (wmr && !IsBadReadPtr((void *)wmr, 4) &&
+            g_Matrix4Identity && g_GfxScaleY && g_GfxSetPosition) {
+            char tA[68], tB[68], tC[68];
+            g_Matrix4Identity(tA);
+            g_GfxScaleY(tB, *bAng);
+            g_GfxSetPosition(tC,
+                *(float *)((char *)board + 0x4380),
+                *(float *)((char *)board + 0x4384),
+                *(float *)((char *)board + 0x4388));
+            DWORD *vt = *(DWORD **)wmr;
+            if (vt) {
+                void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))vt[0x16];
+                void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))vt[0x15];
+                if (fn58) fn58(wmr);
+                if (fn54) fn54(wmr, tA);
+            }
+        }
+        return;
+    }
     void* ext = GetBoardExt(board);
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (!app || IsBadReadPtr((void *)app, 0x500)) return;

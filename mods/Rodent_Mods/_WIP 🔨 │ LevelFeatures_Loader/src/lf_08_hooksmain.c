@@ -627,10 +627,7 @@ static void InstallVtablePatches(void) {
         }
 
         /* Slot 29 (offset +0x74): DispatchCollision → UniversalDispatchCollision
-         * No need to save original — UniversalDispatchCollision calls g_OriginalDispatch directly
-         * DIAG 2026-10-22 Tower bisect: leave native slot 29 on level 5.
-         * If Tower survives, our dispatcher mishandles a Tower collision. Throwaway. */
-        if (i == 5) goto skip_slot29;
+         * No need to save original — UniversalDispatchCollision calls g_OriginalDispatch directly */
         {
             DWORD *slot = (DWORD *)(vtableAddr + 0x74);
             VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
@@ -638,7 +635,6 @@ static void InstallVtablePatches(void) {
             VirtualProtect(slot, 4, oldProtect, &oldProtect);
             FlushInstructionCache(GetCurrentProcess(), slot, 4);
         }
-        skip_slot29:;
 
         /* Slot 33 (offset +0x84): CreateDynamicObjects → UniversalCreateDynamicObjects
          * No delegation — universal handler recognizes all object names */
