@@ -229,7 +229,7 @@ static void UniversalPostSetup(void *board) {
      * so the vanilla timer-spawner never fires. Replicated dormant-faithful
      * here (flag=0); starting it (flag=1 at load, or wiring a custom E:
      * trigger to set it) is a gameplay call, not a fix. */
-    if (level == 9) {
+    if (level == 9 || ContentFileId(GetBoardExt(board)) == 9) {
         DWORD oddMW = *(DWORD *)((char *)board + BOARD_MESHWORLD);
         if (oddMW && !IsBadReadPtr((void *)oddMW, 0x430)) {
             const char *bbSlots[3] = { "LAUNCH01", "LAUNCH02", "LAUNCH03" };

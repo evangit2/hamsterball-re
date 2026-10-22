@@ -824,6 +824,14 @@ static void Feature_BadBallSpawner(void *board, int level) {
     void *badball = g_BadBallCtor(mem, (int)board);
     if (!badball) return;
 
+    /* Native calls vtable[1] on the fresh badball (state init) before
+     * aiming it. */
+    { DWORD *bbv = *(DWORD **)badball;
+      if (bbv && !IsBadReadPtr(bbv, 8)) {
+          void (__thiscall *bbInit)(DWORD) = (void (__thiscall *)(DWORD))bbv[1];
+          if (bbInit) bbInit((DWORD)badball);
+      } }
+
     /* Set trajectory */
     g_BallSetTrajectory(badball, 0x41EF8A, spawnX, spawnY, spawnZ, 0.0f);
 

@@ -584,7 +584,10 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     if ((*(BYTE*)((char*)ext + COLL_FLAG_CALLHAMMER)) && my_stricmp(name, "E:CALLHAMMER") == 0) {
         if (difficulty != 0 && g_CreateBonkPopup) {
             void *be = GetBoardExt(board); if (!be) be = ext;
-            int bonkObj = be ? *(int*)((char*)be + UNI_BONK_MESH) : *(int*)((char*)ext + UNI_BONK_MESH);
+            /* Native reads the bonk obj from board+0x436C (mirrored at
+             * BONK create). Prefer it; ext slots are fallback. */
+            int bonkObj = BoardHasOffset(board, 0x436C, 4) ? *(int*)((char*)board + 0x436C) : 0;
+            if (!bonkObj) bonkObj = be ? *(int*)((char*)be + UNI_BONK_MESH) : *(int*)((char*)ext + UNI_BONK_MESH);
             if (!bonkObj) bonkObj = be ? *(int*)((char*)be + UNI_BONK_STORE) : *(int*)((char*)ext + UNI_BONK_STORE);
             g_CreateBonkPopup(bonkObj);
         }
@@ -594,7 +597,8 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     if ((*(BYTE*)((char*)ext + COLL_FLAG_HAMMERCHASE)) && my_stricmp(name, "E:HAMMERCHASE") == 0) {
         if (difficulty != 0 && g_HammerChaseStart) {
             void *be2 = GetBoardExt(board); if (!be2) be2 = ext;
-            int bonkObj2 = be2 ? *(int*)((char*)be2 + UNI_BONK_MESH) : *(int*)((char*)ext + UNI_BONK_MESH);
+            int bonkObj2 = BoardHasOffset(board, 0x436C, 4) ? *(int*)((char*)board + 0x436C) : 0;
+            if (!bonkObj2) bonkObj2 = be2 ? *(int*)((char*)be2 + UNI_BONK_MESH) : *(int*)((char*)ext + UNI_BONK_MESH);
             if (!bonkObj2) bonkObj2 = be2 ? *(int*)((char*)be2 + UNI_BONK_STORE) : *(int*)((char*)ext + UNI_BONK_STORE);
             g_HammerChaseStart(bonkObj2);
         }
@@ -816,10 +820,18 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
          * and board+0x4370 IS the Odd BadBall spawn flag (dword-idx 0x10DC
          * in the decomp = byte 0x4370). Same write lands on SAW1's slot in
          * other levels (offset reuse) — hence both slots are written here. */
-        if (difficulty != 0 && level == 9)
+        if (difficulty != 0 && level == 9) {
             *(char *)((char *)ext + BRD_BB_FLAG) = 1;
+            /* Native also sets board+0x4370 (the spawner enable the Odd
+             * update reads). Mirror it (preload-gap pattern). */
+            if (BoardHasOffset(board, 0x4370, 1)) *(BYTE *)((char *)board + 0x4370) = 1;
+        }
         /* Random pipe selection */
         if (g_CPUIDRNG && g_AthenaHashTableLookup) {
+            /* Native inits a stack list, feeds it to the hash lookup, and
+             * frees it after (leak-free). Replicate the lifecycle. */
+            char listBuf[0x410];
+            if (g_AthenaListInit) g_AthenaListInit(listBuf, 0);
             void *ht = *(void **)((char *)board + BOARD_MESHWORLD);
             int rng = RNG_call((void *)0x4F7360, 0, 2, 0);
             float pos[3] = {0,0,0};
@@ -848,6 +860,8 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                 DWORD snd = *(DWORD *)(app + 0x468);
                 if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)ball + 0x164), *(float *)((char *)ball + 0x168), *(float *)((char *)ball + 0x16C), 1.0f);
             }
+            /* Free the lookup list (native Vec3List_Free — ECX-only). */
+            if (g_Vec3ListFree) ((void (__thiscall *)(void *))g_Vec3ListFree)((void *)listBuf);
         }
     }
 

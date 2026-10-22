@@ -522,7 +522,7 @@ void __fastcall UniversalRaceState(void *board) {
     if (level == 2) {
         /* skip orig 0x420240 (decays dead board+0x642C) — base + ext decay instead */
         g_BoardUpdateRaceState(board);
-    } else if (level == 7) {
+    } else if (level == 7 || ContentFileId(GetBoardExt(board)) == 7) {
         /* Neon RaceState (0x424790) positions board+0x436C/0x4370 followers.
          * Only valid when Neon_PostSetup built them (S3-gap gate passed);
          * otherwise the slots are NULL/garbage or foreign (never touch). */

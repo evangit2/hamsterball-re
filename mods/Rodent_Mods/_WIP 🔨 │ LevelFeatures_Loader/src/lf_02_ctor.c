@@ -103,6 +103,99 @@ static void UniversalDizzyInit(void *mem, int app) {
     DebugLog("UniversalDizzyInit done (no native ctor)");
 }
 
+/* UniversalNeonInit — content-driven Neon board setup, no native code.
+ * Replicates Neon native ctor (0x424440, Ghidra-verified): base Board_ctor,
+ * Neon vtable (0x4D1DF0 — owns slot 18 scene 0x416270, slot 19 RaceState
+ * 0x424790, slot 29 collision 0x416CA0, slot 33 create 0x416910), name
+ * strings, LoadRaceData("NEONRACE"). +0x870 from Step 4 (proven app-source),
+ * +0x1508 from Step 5 (table color {1,1,0} matches native Vec3), zero slots
+ * +0x436C/70/90 (native ctor zeroes; glow followers built later by
+ * Neon_PostSetup under the S3-gap rule). Mesh slots stay empty — S1-driven
+ * create loads and mirrors them. */
+static void UniversalNeonInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D1DF0; /* Neon board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Dark)";
+    *(char **)((char *)mem + 0x29B4) = "NEON RACE";
+    *(char **)((char *)mem + 0x4344) = "Neon Theme";
+    if (BoardHasOffset(mem, 0x436C, 4)) *(DWORD *)((char *)mem + 0x436C) = 0;
+    if (BoardHasOffset(mem, 0x4370, 4)) *(DWORD *)((char *)mem + 0x4370) = 0;
+    if (BoardHasOffset(mem, 0x4390, 4)) *(DWORD *)((char *)mem + 0x4390) = 0;
+    g_LoadRaceData(mem, "NEONRACE");
+    DebugLog("UniversalNeonInit done (no native ctor)");
+}
+
+/* UniversalExpertInit — content-driven Expert board setup, no native code.
+ * Replicates Expert native ctor (0x41EA40, Ghidra-verified): base Board_ctor,
+ * Expert vtable (0x4D0B00 — slot 1 is shared Scene_Update, custom scene
+ * 0x40E190, custom collision 0x40E6A0, custom create 0x40E250), AthenaLists
+ * 0x4380/0x4798 (BRIDGE spinner lists) + 0x4BBC (JUDGE list), name strings,
+ * difficulty flag, LoadRaceData("EXPERTRACE"), bridge mesh+render
+ * (+0x4378/+0x437C, Levels\Level5-Bridge), THREE hammyjudge MeshNodes
+ * (0x18 each, meshes\hammyjudge) at +0x4BB0/4/8. */
+static void UniversalExpertInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D0B00; /* Expert board vtable */
+    if (g_AthenaListInit) {
+        g_AthenaListInit((void *)((char *)mem + 0x4380), 0);
+        g_AthenaListInit((void *)((char *)mem + 0x4798), 0);
+        g_AthenaListInit((void *)((char *)mem + 0x4BBC), 0);
+    }
+    *(char **)((char *)mem + 0x868) = "Board (Expert)";
+    *(char **)((char *)mem + 0x29B4) = "EXPERT RACE";
+    *(char **)((char *)mem + 0x4344) = "Fight!";
+    { int diff = *(int *)(app + 0x23C);
+      DWORD prof = *(DWORD *)(app + 0x220);
+      if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&
+          *(char *)(prof + 0x10) == 0)
+          *(BYTE *)(app + 0x854) = 1; }
+    g_LoadRaceData(mem, "EXPERTRACE");
+    /* Bridge mesh+render (native ctor loads; create mirrors refresh them). */
+    if (g_operatorNew && g_LevelMeshWorldCtor) {
+        void *bm = g_operatorNew(0x10D0);
+        if (bm) {
+            void *bmesh = g_LevelMeshWorldCtor(bm, *(void **)(app + 0x174), "Levels\\Level5-Bridge");
+            *(void **)((char *)mem + 0x4378) = bmesh;
+            if (bmesh && g_operatorNew && g_LevelRenderCtor) {
+                void *br = g_operatorNew(0x10D0);
+                if (br) *(void **)((char *)mem + 0x437C) = g_LevelRenderCtor(br, (int)bmesh);
+            }
+        }
+    }
+    /* Three hammyjudge MeshNodes (native ctor; drawn by native scene). */
+    if (g_operatorNew && g_MeshNodeCtor) {
+        int ji;
+        for (ji = 0; ji < 3; ji++) {
+            void *jm = g_operatorNew(0x18);
+            if (jm) *(void **)((char *)mem + 0x4BB0 + ji * 4) =
+                g_MeshNodeCtor(jm, *(void **)(app + 0x174), "meshes\\hammyjudge");
+        }
+    }
+    DebugLog("UniversalExpertInit done (no native ctor)");
+}
+
+/* UniversalOddInit — content-driven Odd board setup, no native code.
+ * Replicates Odd native ctor (0x41ED80, Ghidra-verified): base Board_ctor,
+ * Odd vtable (0x4D0BC0 — owns custom slot-1 update 0x41EE80 spawner, custom
+ * scene, custom collision 0x40ED30, custom create 0x40EC40), name strings,
+ * difficulty flag, LoadRaceData("ODDRACE"). +0x870 from Step 4, +0x1508
+ * from Step 5 (table color {1,0.5,0} matches native Vec3). No lists, no
+ * meshes — spawner state lives in ext, filled by postscan. */
+static void UniversalOddInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D0BC0; /* Odd board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Odd)";
+    *(char **)((char *)mem + 0x29B4) = "ODD RACE";
+    *(char **)((char *)mem + 0x4344) = "Ninja Hamster";
+    { int diff = *(int *)(app + 0x23C);
+      DWORD prof = *(DWORD *)(app + 0x220);
+      if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&
+          *(char *)(prof + 0x10) == 0)
+          *(BYTE *)(app + 0x855) = 1; }
+    g_LoadRaceData(mem, "ODDRACE");
+    DebugLog("UniversalOddInit done (no native ctor)");
+}
+
 void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     int raceIndex = g_pendingRaceIndex;
     g_lastAppParam = app;
@@ -147,6 +240,15 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     } else if (g_loadingContentId == 4) {
         DebugLog("Calling UniversalDizzyInit...");
         UniversalDizzyInit(mem, app);
+    } else if (g_loadingContentId == 7) {
+        DebugLog("Calling UniversalNeonInit...");
+        UniversalNeonInit(mem, app);
+    } else if (g_loadingContentId == 8) {
+        DebugLog("Calling UniversalExpertInit...");
+        UniversalExpertInit(mem, app);
+    } else if (g_loadingContentId == 9) {
+        DebugLog("Calling UniversalOddInit...");
+        UniversalOddInit(mem, app);
     } else {
         DebugLog("Calling Board_ctor...");
         g_BoardCtor(mem, app);
@@ -211,16 +313,19 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         DebugLog(dbg2);
     }
 
-    /* Step 2: Set vtable. Tower/Up/Dizzy content keeps the vtable its
-     * Universal*Init set (native class for content); other content gets
-     * its slot vtable. */
-    if (g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4)
+    /* Step 2: Set vtable. Tower/Up/Dizzy/Neon/Expert/Odd content keeps the
+     * vtable its Universal*Init set (native class for content); other
+     * content gets its slot vtable. */
+    if (g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4 &&
+        g_loadingContentId != 7 && g_loadingContentId != 8 && g_loadingContentId != 9)
         *(DWORD *)mem = g_levelVtables[raceIndex];
     DebugLog("Vtable set");
 
     /* Step 3: Set board name and race title (slot table — skipped for Tower,
-     * Up and Dizzy content, whose content names the Universal*Init set). */
-    if (g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4) {
+     * Up, Dizzy, Neon, Expert and Odd content, whose content names the
+     * Universal*Init set). */
+    if (g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4 &&
+        g_loadingContentId != 7 && g_loadingContentId != 8 && g_loadingContentId != 9) {
         *(char **)((char *)mem + UNI_BOARD_NAME) = ld->boardName;
         *(char **)((char *)mem + UNI_RACE_TITLE) = ld->raceTitle;
     }

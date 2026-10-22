@@ -571,6 +571,9 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_BonkCtor(mem, (int)board, x, y, z);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            /* Native stores the bonk obj at board+0x436C (read by
+             * E:CALLHAMMER/E:HAMMERCHASE). Mirror it. */
+            if (BoardHasOffset(board, 0x436C, 4)) *(void **)((char *)board + 0x436C) = obj;
             DWORD *o = (DWORD *)obj;
             renderOut = o[0x43E];
             int storeOff = UNI_BONK_MESH;
@@ -591,7 +594,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             if (strstr(name, "SUPER")) *(char*)((char*)obj + 0x10ED) = 1;
             if (strstr(name, "UP") && g_SoundInitChannels) g_SoundInitChannels(obj, 1);
         }
-        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        /* Native FAN out2 = 0 (local_14 untouched by the FAN branch). */
+        *(int*)out1 = (int)obj; *(int*)out2 = 0;
         return;
     }
 
@@ -606,7 +610,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             if (strstr(name, "1")) { g_SawBladeSetVariant(obj, 1); *(void **)((char *)ext + UNI_SAWBLADE1_OBJ) = obj; *(void **)((char *)board + 0x4370) = obj; }
             if (strstr(name, "2")) { g_SawBladeSetVariant(obj, 2); *(void **)((char *)ext + UNI_SAWBLADE2_OBJ) = obj; *(void **)((char *)board + 0x4374) = obj; }
         }
-        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        /* Native SAWBLADE out2 = 0 (local_14 untouched by the SAW branch). */
+        *(int*)out1 = (int)obj; *(int*)out2 = 0;
         return;
     }
 
@@ -744,6 +749,18 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_GearLevelCtor(mem, (int)board, x, y, z);
             g_AthenaListAppend((void*)((char*)ext + UNI_JUDGE_LIST), (int)obj);
+            /* Native appends judges to board+0x4BBC (the live judge list,
+             * walked by native scene code). Mirror it — ext-only judges
+             * are never driven. */
+            if (BoardHasOffset(board, 0x4BBC, 4) && g_AthenaListAppend) {
+                if (!(GetBoardFeat(board) & FEAT_EXPERT_LISTS) && g_AthenaListInit) {
+                    g_AthenaListInit((void*)((char*)board + 0x4380), 0);
+                    g_AthenaListInit((void*)((char*)board + 0x4798), 0);
+                    g_AthenaListInit((void*)((char*)board + 0x4BBC), 0);
+                    OrBoardFeat(board, FEAT_EXPERT_LISTS);
+                }
+                g_AthenaListAppend((void*)((char*)board + 0x4BBC), (int)obj);
+            }
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
@@ -755,6 +772,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_BellCtor(mem, (int)board, x, y, z);
             *(void **)((char *)ext + UNI_BELL_OBJ) = obj;
+            /* Native stores the bell at board+0x4FD4. Mirror it. */
+            if (BoardHasOffset(board, 0x4FD4, 4)) *(void **)((char *)board + 0x4FD4) = obj;
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
@@ -768,6 +787,9 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_OddLifterCtor(mem, (int)board, x, y, z);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            /* Native Odd create stores the lifter at board+0x436C (read by
+             * E:DROPLIFT 0x435170). Mirror it (preload-gap pattern). */
+            if (BoardHasOffset(board, 0x436C, 4)) *(void **)((char *)board + 0x436C) = obj;
             *(void **)((char *)ext + UNI_BONK_STORE) = obj;
             renderOut = ((DWORD*)obj)[0x435];
         }
@@ -775,12 +797,13 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         return;
     }
 
-    /* ── LIFTER (Odd vanilla alias) ── — vanilla Odd S1 is bare LIFTER -> Odd_Lifter_ctor when level==9 */
+    /* ── LIFTER (Odd vanilla alias) ── — vanilla Odd S1 is bare LIFTER -> Odd_Lifter_ctor when level==9 ── */
     if (my_strnicmp(name, "LIFTER", 6) == 0 && GetCurrentLevel(board) == 9 && my_strnicmp(name, "DROPPER", 7) != 0) {
         void *mem = g_operatorNew(0x10FC);
         if (mem) {
             obj = g_OddLifterCtor(mem, (int)board, x, y, z);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            if (BoardHasOffset(board, 0x436C, 4)) *(void **)((char *)board + 0x436C) = obj;
             *(void **)((char *)ext + UNI_BONK_STORE) = obj;
             renderOut = ((DWORD*)obj)[0x435];
         }
@@ -952,6 +975,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         S1EnsureMeshWorld(board, ext, UNI_SAW2_OBJ, "Levels\\LevelDark-NeonPlatform");
         int meshVal = *(int*)((char*)ext + UNI_SAW2_OBJ);
         if (!meshVal) { DebugLog("NEONPLATFORM: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        /* Native ctor slot board+0x4374 feeds NeonPlatform_ctor. Mirror it. */
+        if (BoardHasOffset(board, 0x4374, 4)) *(void **)((char *)board + 0x4374) = (void *)meshVal;
         void *mem = g_operatorNew(0x10EC);
         if (mem) {
             obj = g_NeonPlatformCtor(mem, (int)board, x, y, z, meshVal);
@@ -975,8 +1000,15 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             obj = g_ArenaStandsCtor(mem, (int)board, x, y, z, meshVal);
             DWORD *o = (DWORD *)obj;
             renderOut = o[0x43A];
+            /* Native ctor slots +0x4378/7C/80/84 feed the DFLOOR ctors.
+             * Mirror them (preload-gap pattern). */
+            if (BoardHasOffset(board, 0x4378 + (dNum-1) * 4, 4))
+                *(void **)((char *)board + 0x4378 + (dNum-1) * 4) = (void *)meshVal;
             if (dNum == 4) {
                 *(void **)((char *)ext + UNI_NEON_DARK_COUNT) = obj;
+                /* Native stores DFLOOR4 obj at board+0x438C (re-appended by
+                 * E:LIGHTSOFF when the dark counter cycles). Mirror it. */
+                if (BoardHasOffset(board, 0x438C, 4)) *(void **)((char *)board + 0x438C) = obj;
                 o[0x437] = 2;
                 if (obj) {
                     *(DWORD *)((char *)obj + 0x10E0) = 0;
@@ -994,6 +1026,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         S1EnsureMeshWorld(board, ext, UNI_BRIDGE_COUNTER, "Levels\\LevelDark-Trode");
         int meshVal = *(int*)((char*)ext + UNI_BRIDGE_COUNTER);
         if (!meshVal) { DebugLog("TRODE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        /* Native ctor slot board+0x4388 feeds the Trode ctor. Mirror it. */
+        if (BoardHasOffset(board, 0x4388, 4)) *(void **)((char *)board + 0x4388) = (void *)meshVal;
         void *mem = g_operatorNew(0x1104);
         if (mem) {
             obj = g_ArenaStandsCtor(mem, (int)board, x, y, z, meshVal);
