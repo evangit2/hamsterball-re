@@ -552,9 +552,15 @@ void __fastcall UniversalRaceState(void *board) {
             g_BoardUpdateRaceState(board);
         }
     } else if (level >= 1 && level <= 15 && g_origRaceState[level]) {
-        g_origRaceState[level](board);
+        /* DIAG 2026-10-21 Tower: skip orig RaceState once (base instead) to
+         * test whether native Tower RaceState vs our objects is the update
+         * killer. Throwaway. */
+        if (level == 5) g_BoardUpdateRaceState(board);
+        else g_origRaceState[level](board);
+        if (s_rsCount <= 4) DebugLog("  [raceState] orig/base call returned");
     } else {
         g_BoardUpdateRaceState(board);
+        if (s_rsCount <= 4) DebugLog("  [raceState] fallback call returned");
     }
 
     DWORD extFeat = GetBoardFeat(board);

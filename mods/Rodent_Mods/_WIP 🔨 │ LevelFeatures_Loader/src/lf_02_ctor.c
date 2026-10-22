@@ -190,6 +190,27 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         DebugLog("Step 9a-extra2: gluebie list at board+0x4378 for Dizzy");
     }
 
+    /* 9a-extra3: Tower race (level 5) needs native object lists at
+     * board+0x43B8 (catapult), 0x47D0 (trapdoor), 0x4BE8 (drawbridge),
+     * 0x5000 (mace). Base Board_ctor never inits them (verified live:
+     * they hold small-int garbage, not list heads); appends corrupted the
+     * heap on every Tower open (fix 2026-10-21). */
+    if (raceIndex == 5 && g_AthenaListInit) {
+        g_AthenaListInit((void *)((char *)mem + 0x43B8), 0);
+        g_AthenaListInit((void *)((char *)mem + 0x47D0), 0);
+        g_AthenaListInit((void *)((char *)mem + 0x4BE8), 0);
+        g_AthenaListInit((void *)((char *)mem + 0x5000), 0);
+        DebugLog("Step 9a-extra3: Tower native lists 43B8/47D0/4BE8/5000");
+    }
+    /* Expert (level 8) spinner lists: board+0x4380 ("1") / +0x4798 ("2").
+     * Base Board_ctor never inits them; native slot33 appended directly.
+     * Init here or the spinner append corrupts the heap at load. */
+    if (raceIndex == 8 && g_AthenaListInit) {
+        g_AthenaListInit((void *)((char *)mem + 0x4380), 0);
+        g_AthenaListInit((void *)((char *)mem + 0x4798), 0);
+        DebugLog("Step 9a-extra4: Expert native lists 4380/4798");
+    }
+
     /* 9b: eh_vector — lives in ext if offset >=0x6500 */
     if (g_ehVectorCtor && g_ehVectorCtorFn && g_Vec3ListFree &&
         ld->ehVectorOffset && ld->ehVectorCount > 0) {
