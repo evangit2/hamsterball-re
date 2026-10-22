@@ -280,7 +280,7 @@ static void Neon_PostSetup(void *board, void *ext, int raceIndex, const char *me
         /* Native lights win. On the Neon slot only, NULL the follower slots
          * so no reader derefs stale garbage (other slots: Dizzy tipper at
          * 0x436C / Up lifter list — never touch those). */
-        if (raceIndex == 7 && BoardHasOffset(board, 0x436C, 8)) {
+        if (GetCurrentLevel(board) == 7 && BoardHasOffset(board, 0x436C, 8)) {
             *(DWORD *)((char *)board + 0x436C) = 0;
             *(DWORD *)((char *)board + 0x4370) = 0;
         }

@@ -182,6 +182,8 @@ static void Magnifier_Build(void *board, void *ext) {
 static void UniversalPostSetup(void *board) {
     void* ext = EnsureBoardExt(board);
     if (!ext) return;
+    /* Re-stamp content id: ext may have been reallocated after the ctor stamp. */
+    *(int *)((char *)ext + UNI_CONTENT_FILE) = g_loadingContentId;
     int level = GetCurrentLevel(board);
     if (level == 0) return;
 

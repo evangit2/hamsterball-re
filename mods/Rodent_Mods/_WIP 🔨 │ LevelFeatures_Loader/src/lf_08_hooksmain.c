@@ -32,6 +32,9 @@ static void UniversalConstructor(void *board, int raceIndex) {
         char dbg2[600]; wsprintfA(dbg2, "UniversalConstructor meshPath race=%d raw='%s' resolved='%s'", raceIndex, rawPath, meshPath);
         DebugLog(dbg2);
     }
+    /* Content identity (file, never slot): powers all per-file decisions. */
+    g_loadingContentId = ContentIdFromPath(resolved);
+    if (ext) *(int *)((char *)ext + UNI_CONTENT_FILE) = g_loadingContentId;
 
     /* Extract level dir for texture/sound/sub-mesh fallback.
      * e.g. "levels\\MyLevel\\MyLevel" -> "levels\\MyLevel\\"
@@ -131,7 +134,7 @@ static void UniversalConstructor(void *board, int raceIndex) {
      * FIX: If no TarBubbles are found, create a dummy object with a valid
      * name pointer and zero position so FUN_0044fa90 reads harmless data
      * instead of crashing. */
-    if (raceIndex == 4) {
+    if (ContentFileId(ext) == 4) {
         int tarBubbleCount = 0;
         DWORD meshWorldPtr = *(DWORD *)((char *)board + BOARD_MESHWORLD);
         if (meshWorldPtr && !IsBadReadPtr((void *)meshWorldPtr, 0x500) &&

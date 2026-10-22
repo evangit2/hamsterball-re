@@ -619,7 +619,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Toob: E:ALERTSAW2 vanilla + E:ALERTSAW3 renamed ── — vanilla Toob files use ALERTSAW2 */
-    if ((((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW3)) && my_stricmp(name, "E:ALERTSAW3") == 0)) || (GetCurrentLevel(board) == 10 && my_stricmp(name, "E:ALERTSAW2") == 0)) {
+    if ((((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW3)) && my_stricmp(name, "E:ALERTSAW3") == 0)) || (ContentFileId(ext) == 10 && my_stricmp(name, "E:ALERTSAW2") == 0)) {
         if (difficulty != 0) {
             int saw2Obj = *(int *)((char *)ext + UNI_SAW2_TOOB_OBJ);
             if (saw2Obj) *(BYTE *)(saw2Obj + 0x110C) = 1;

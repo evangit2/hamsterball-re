@@ -17,6 +17,7 @@
 
 void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     int raceIndex = g_pendingRaceIndex;
+    g_lastAppParam = app;
     char buf[256];
     wsprintfA(buf, "UniversalBoardCtorLogic called: mem=%p app=0x%X raceIndex=%d", mem, app, raceIndex);
     DebugLog(buf);
@@ -31,12 +32,27 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
 
     LevelData *ld = &g_levelData[raceIndex];
 
+    /* Step 0: Content identity (file, never slot). MUST precede Step 1 —
+     * the ctor delegation below reads g_loadingContentId. */
+    {
+        const char *rp0 = NULL;
+        char rsl0[MAX_PATH]; rsl0[0] = '\0';
+        LoadRaceFiles();
+        if (raceIndex>=1 && raceIndex<=15 && g_raceFiles[raceIndex][0]) rp0 = g_raceFiles[raceIndex];
+        if (!rp0 || !*rp0) rp0 = g_levelData[raceIndex].meshPath;
+        if (!rp0 || !*rp0) rp0 = g_meshPaths[raceIndex];
+        if (rp0 && *rp0) {
+            ResolveRacePath(rsl0, rp0);
+            g_loadingContentId = ContentIdFromPath(rsl0);
+        } else g_loadingContentId = 0;
+    }
+
     /* Step 1: Board_ctor(mem, app) — base setup.
      * Tower (level 5): delegate to the NATIVE Tower ctor instead. It inits
      * the 4 lists (with 0/1/2/3 variants) + loads mace/windmill/chomper/
      * turret renders natively — our base-ctor + mirrors leave those slots
      * wrong and the native Tower render wild-calls through them. */
-    if (raceIndex == 5 && g_TowerBoardCtor) {
+    if (g_loadingContentId == 5 && g_TowerBoardCtor) {
         DebugLog("Calling native Tower ctor...");
         g_TowerBoardCtor(mem, app);
         DebugLog("Native Tower ctor done");
@@ -55,6 +71,22 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     if (!ext) {
         DebugLog("UniversalBoardCtorLogic: EnsureBoardExt failed");
         return;
+    }
+
+    /* Step 0 (cont.): stamp per-board content id (ext exists from here). */
+    {
+        const char *rp = NULL;
+        char rsl[MAX_PATH]; rsl[0] = '\0';
+        LoadRaceFiles();
+        if (raceIndex>=1 && raceIndex<=15 && g_raceFiles[raceIndex][0]) rp = g_raceFiles[raceIndex];
+        if (!rp || !*rp) rp = g_levelData[raceIndex].meshPath;
+        if (!rp || !*rp) rp = g_meshPaths[raceIndex];
+        if (rp && *rp) {
+            ResolveRacePath(rsl, rp);
+            g_loadingContentId = ContentIdFromPath(rsl);
+        } else g_loadingContentId = 0;
+        *(int *)((char *)ext + UNI_CONTENT_FILE) = g_loadingContentId;
+        { char cd[160]; wsprintfA(cd, "ContentId=%d path='%s' mem=0x%08X slot=%d", g_loadingContentId, rsl, (DWORD)mem, raceIndex); DebugLog(cd); }
     }
 
     /* Step 1b: Zero-fill old per-level data offsets (0x436C-0x6500).
@@ -89,7 +121,8 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     }
 
     /* Step 2: Set vtable */
-    *(DWORD *)mem = g_levelVtables[raceIndex];
+    if (!(g_loadingContentId == 5 && g_TowerBoardCtor))
+        *(DWORD *)mem = g_levelVtables[raceIndex];
     DebugLog("Vtable set");
 
     /* Step 3: Set board name and race title */
@@ -129,7 +162,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
      * Guard: vanilla Dizzy board is ~0x6000, but file-swapped Dizzy-in-WarmUp
      * board is ~0x4400 → 0x4BA8 is OOB. Use BoardHasOffset (VirtualQuery+HeapSize),
      * NOT IsBadWritePtr (which only checks page writability). */
-    if (raceIndex == 4) {
+    if (g_loadingContentId == 4) {
         if (BoardHasOffset(mem, 0x4BC8, 4) && BoardHasOffset(mem, 0x4BD8, 4) && ExtHasOffset(ext, UNI_TIPPER_MESH, 4)) {
             /* Tipper mesh+render — load from ext dedicated slots */
             *(DWORD *)((char *)mem + 0x436C) = *(DWORD *)((char *)ext + UNI_TIPPER_MESH);
@@ -185,7 +218,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
      * The original Up RaceState (0x00420660) iterates this list and calls
      * each Lifter's Update() every frame.  Without it, vacuum tubes never
      * animate and E:HELPINERTIA/E:VACPOPOUT events never fire. */
-    if (raceIndex == 6 && g_AthenaListInit) {
+    if (g_loadingContentId == 6 && g_AthenaListInit) {
         g_AthenaListInit((void *)((char *)mem + 0x436C), 0);
         DebugLog("Step 9a-extra: legacy AthenaList at board+0x436C for Up");
     }
@@ -195,7 +228,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
      * verified by disasm: it inits 0x8B8/0xCD4/0x10EC/0x2578/... but never
      * 0x436C/0x4378). Without this, GLUEBIE appends to garbage → heap
      * corruption on every Dizzy race open (fix 2026-09-18). */
-    if (raceIndex == 4 && g_AthenaListInit) {
+    if (g_loadingContentId == 4 && g_AthenaListInit) {
         g_AthenaListInit((void *)((char *)mem + 0x4378), 0);
         DebugLog("Step 9a-extra2: gluebie list at board+0x4378 for Dizzy");
     }
@@ -205,7 +238,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
      * 0x5000 (mace). Base Board_ctor never inits them (verified live:
      * they hold small-int garbage, not list heads); appends corrupted the
      * heap on every Tower open (fix 2026-10-21). */
-    if (raceIndex == 5 && !g_TowerBoardCtor && g_AthenaListInit) {
+    if (g_loadingContentId == 5 && !g_TowerBoardCtor && g_AthenaListInit) {
         g_AthenaListInit((void *)((char *)mem + 0x43B8), 0);
         g_AthenaListInit((void *)((char *)mem + 0x47D0), 0);
         g_AthenaListInit((void *)((char *)mem + 0x4BE8), 0);
@@ -215,7 +248,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     /* Expert (level 8) spinner lists: board+0x4380 ("1") / +0x4798 ("2").
      * Base Board_ctor never inits them; native slot33 appended directly.
      * Init here or the spinner append corrupts the heap at load. */
-    if (raceIndex == 8 && g_AthenaListInit) {
+    if (g_loadingContentId == 8 && g_AthenaListInit) {
         g_AthenaListInit((void *)((char *)mem + 0x4380), 0);
         g_AthenaListInit((void *)((char *)mem + 0x4798), 0);
         DebugLog("Step 9a-extra4: Expert native lists 4380/4798");

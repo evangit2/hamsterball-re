@@ -18,11 +18,11 @@
 void UniversalRenderImpl(void *board, int unk) {
     if (!board || !g_RenderDynamicObjects) return;
 
-    /* Tower (level 5): delegate to the NATIVE Tower render. Our clean-room
+    /* Tower content (any slot): delegate to the NATIVE Tower render. Our clean-room
      * Tower block mis-rendered the chomper (meshWorld-vtbl[7] vs native
      * timer-vtbl[2]/render-vtbl[7]) and wild-jumped at race frame ~3.
      * Native render includes base internally; needs native ctor slots. */
-    if (GetCurrentLevel(board) == 5 && g_TowerRender) {
+    if (ContentFileId(GetBoardExt(board)) == 5 && g_TowerRender) {
         g_TowerRender(board, unk);
         return;
     }
@@ -560,10 +560,9 @@ void __fastcall UniversalRaceState(void *board) {
             g_BoardUpdateRaceState(board);
         }
     } else if (level >= 1 && level <= 15 && g_origRaceState[level]) {
-        /* DIAG 2026-10-21 Tower: skip orig RaceState once (base instead) to
-         * test whether native Tower RaceState vs our objects is the update
-         * killer. Throwaway. */
-        if (level == 5) g_BoardUpdateRaceState(board);
+        /* Tower content: orig Tower RaceState is the shared base handler;
+         * call base directly (verified identical, avoids double-drive). */
+        if (ContentFileId(GetBoardExt(board)) == 5) g_BoardUpdateRaceState(board);
         else g_origRaceState[level](board);
         if (s_rsCount <= 4) DebugLog("  [raceState] orig/base call returned");
     } else {

@@ -490,13 +490,17 @@ static void Feature_SwirlZones(void *board, int level) {
 static void Feature_Windmill(void *board, int level) {
     // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
     if (*(BYTE*)((char*)board+0x874)) return;
-    /* Tower (level 5): drive the NATIVE board slots (native Tower update never
-     * runs under the mod). Replicates Tower slot-1 windmill sequence 1:1 —
-     * angle on +0x438C, sound at 45 mod 90 via app+0x4A4, matrix compose +
-     * vtbl[0x16]/[0x15] on the native +0x437C render. Native Tower render
-     * reads these slots, so the windmill visibly spins. */
-    if (level == 5) {
+    /* Tower content (any slot): drive the NATIVE board slots (native Tower
+     * update never runs under the mod). Replicates Tower slot-1 windmill
+     * sequence 1:1 — angle on +0x438C, sound at 45 mod 90 via app+0x4A4,
+     * matrix compose + vtbl[0x16]/[0x15] on the native +0x437C render.
+     * Native Tower render reads these slots, so the windmill visibly spins. */
+    if (ContentFileId(GetBoardExt(board)) == 5) {
+        /* NOTE: native Tower ctor leaves board+0x878 (app) as 0 — fall back
+         * to the app captured at Logic time, else every app read fails. */
+        extern int g_lastAppParam;
         DWORD app5 = *(DWORD *)((char *)board + BOARD_APP_PTR);
+        if (!app5) app5 = (DWORD)g_lastAppParam;
         if (!app5 || IsBadReadPtr((void *)app5, 0x500)) return;
         float *bAng = (float *)((char *)board + 0x438C);
         float rate = (*(int *)(app5 + APP_DIFFICULTY) == 0) ? 0.25f : 1.0f;

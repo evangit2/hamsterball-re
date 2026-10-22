@@ -295,7 +295,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             /* Tower MACE S1s build via 0x438750 (own class); other
              * levels via 0x437CB0. Verified in native Tower create. */
-            if (GetCurrentLevel(board) == 5 && g_MaceTowerCtor) obj = g_MaceTowerCtor(mem, (int)board, meshVal);
+            if (ContentFileId(GetBoardExt(board)) == 5 && g_MaceTowerCtor) obj = g_MaceTowerCtor(mem, (int)board, meshVal);
             else obj = g_MaceCtor(mem, (int)board, meshVal);
             DWORD *o = (DWORD *)obj;
             memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
@@ -354,7 +354,7 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     if (my_strnicmp(name, "WINDMILL", 8) == 0) {
         /* Native Tower ctor owns +0x437C (render) — use it when valid.
          * Never overwrite with our mesh (native update/render vtbl-calls it). */
-        if (GetCurrentLevel(board) == 5) {
+        {
             int natR = *(int *)((char *)board + 0x437C);
             if (natR && !IsBadReadPtr((void *)natR, 4)) {
                 *(int*)out1 = 0; *(int*)out2 = natR; return;

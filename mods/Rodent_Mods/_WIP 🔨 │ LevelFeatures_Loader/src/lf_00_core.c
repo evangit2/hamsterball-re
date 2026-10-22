@@ -947,6 +947,7 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_NEON_GLOW_ACTIVE 0xBA00  /* byte: 1 = lf_10 built follower lights (S3-gap gate passed) */
 #define UNI_NEON_HAS_NATIVE  0xBA04  /* byte: cached S3 scan — 1 = file has its own light(s) */
 /* Next free: 0xBA08, tail to 0xC000 remaining */
+#define UNI_CONTENT_FILE  0xBA08  /* dword: stock-file content id 1..15 (0=custom/unknown), from level filename — NEVER slot */
 /* Next free: 0xBA00, tail to 0xC000 = 0x600 bytes remaining */
 
 /* Sky popcyl array (16 × 4 = 64 bytes) */
@@ -1238,6 +1239,43 @@ static int GetCurrentLevel(void *board) {
             return i;
     }
     return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Content identity — which stock level FILE is loaded, NEVER which slot.
+ * A file-swapped level (Tower in Warm-Up's slot, custom in any slot) carries
+ * its own identity. Board CLASS (GetCurrentLevel, vtable) answers memory
+ * layout; this answers file content. Stored per-board at UNI_CONTENT_FILE
+ * (set here from the resolved path) + global for ctor-time (pre-ext) use.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+int g_loadingContentId = 0; /* set per load in UniversalConstructor */
+int g_lastAppParam = 0; /* app captured in UniversalBoardCtorLogic (board+0x878 is 0 on native-ctor boards) */
+
+static int ContentIdFromPath(const char *path) {
+    /* basename, lowercase, no extension → stock race number */
+    static const char *names[16] = { "", "level1", "levelcascade", "level2",
+        "level3", "level4", "levelup", "leveldark", "level5", "level6",
+        "level8", "level7", "levelglass", "level9", "level10", "levelimpossible" };
+    char base[64];
+    int n = 0, i;
+    const char *p;
+    if (!path || !*path) return 0;
+    p = path;
+    { const char *s = path; while (*s) { if (*s == '\\' || *s == '/') p = s + 1; s++; } }
+    while (*p && *p != '.' && n < 63) {
+        char c = *p++;
+        if (c >= 'A' && c <= 'Z') c += 32;
+        base[n++] = c;
+    }
+    base[n] = '\0';
+    for (i = 1; i <= 15; i++)
+        if (my_stricmp(base, names[i]) == 0) return i;
+    return 0;
+}
+
+static int ContentFileId(void *ext) {
+    if (!ext) return 0;
+    return *(int *)((char *)ext + UNI_CONTENT_FILE);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
