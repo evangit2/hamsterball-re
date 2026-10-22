@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v03d — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v03e — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -269,41 +269,28 @@ static DWORD px_argb(const DWORD* rgb) {
 static int g_pxDraws = 0;   /* pixel-overlay draws (diagnostic) */
 
 static void draw_pixel_overlay(void) {
-    DWORD dev, tok = 0, hr;
-    int began = 0;
-    DWORD ntris;
+    DWORD dev, tok = 0;
     const char* l1 = g_devmode ? "DEVMODE: ON" : "DEVMODE: OFF";
     const char* l2 = indicator_text();
     DWORD face = px_argb(IND_RGB[g_indState]);
     if (!g_device || IsBadReadPtr((void*)g_device, 4)) return;
     dev = g_device;
     if (IsBadReadPtr(*(void**)dev, 0x140)) return;
-    /* Pass 1: line 1 shadow + face. */
-    px_nv = 0;
-    px_line(l1, 20 + 2, 20 + 2, 2, 0xFF000000u);
-    px_line(l1, 20, 20, 2, 0xFFFFFFFFu);
-    /* Pass 2: line 2 shadow + face. */
-    px_line(l2, 20 + 1, 36 + 1, 1, 0xFF000000u);
-    px_line(l2, 20, 36, 1, face);
-    if (!px_nv) return;
-    ntris = (DWORD)(px_nv / 3);
     d3d_call_n(dev, 0xE4, 2, 1, (DWORD)&tok, 0, 0);   /* CreateStateBlock(ALL) */
-    if (g_pxDraws < 12) log_msg("PXD-CS tok=%p\n", (void*)tok);
     d3d_call_n(dev, 0x130, 1, 0x44, 0, 0, 0);          /* FVF XYZRHW|DIFFUSE */
-    if (g_pxDraws < 12) log_msg("PXD-VS ok\n");
     d3d_call_n(dev, 0xF4, 2, 0, 0, 0, 0);              /* texture0 NULL */
-    if (g_pxDraws < 12) log_msg("PXD-TX ok\n");
     d3d_call_n(dev, 0xC8, 2, 7, 0, 0, 0);             /* ZENABLE off */
-    if (g_pxDraws < 12) log_msg("PXD-Z ok\n");
     d3d_call_n(dev, 0xC8, 2, 22, 1, 0, 0);            /* CULLMODE none */
-    if (g_pxDraws < 12) log_msg("PXD-CULL ok\n");
     /* No Begin/End: the game already has a scene open at pre-Present
-     * (its own sprites draw here without bracketing). We set our states,
-     * draw, and stateblock-restore. BeginScene crashes WineD3D here and
-     * would nest on Windows; UP inside the ambient scene is the safe path. */
-    if (g_pxDraws < 12) log_msg("PXD-UP nv=%d\n", px_nv);
-    d3d_call_n(dev, 0x120, 4, 4, ntris, (DWORD)px_buf, 32);  /* UP(LIST) */
-    if (g_pxDraws < 12) log_msg("PXD-DONE ok\n");
+     * (its own sprites draw here without bracketing). One UP per pass
+     * (shadow/face, line 1/2) so the static buffer never overflows. */
+#define PX_PASS(str, px, py, psc, pcol) \
+    do { px_nv = 0; px_line(str, px, py, psc, pcol); \
+         if (px_nv) d3d_call_n(dev, 0x120, 4, 4, (DWORD)(px_nv / 3), (DWORD)px_buf, 32); } while (0)
+    PX_PASS(l1, 20 + 4, 20 + 4, 4, 0xFF000000u);
+    PX_PASS(l1, 20, 20, 4, 0xFFFFFFFFu);
+    PX_PASS(l2, 20 + 2, 52 + 2, 2, 0xFF000000u);
+    PX_PASS(l2, 20, 52, 2, face);
     if (tok) {
         d3d_call_n(dev, 0xD8, 1, tok, 0, 0, 0);      /* ApplyStateBlock */
         d3d_call_n(dev, 0xE0, 1, tok, 0, 0, 0);      /* DeleteStateBlock */
@@ -363,7 +350,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v03d self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v03e self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -511,7 +498,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v03d: single small line with bottom-right shadow (version-text style).
+/* v03e: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -773,12 +760,12 @@ static int reset_best_times_sel(int sel) {
  * (20 dword slots, races = 0..14): byte0 = BRONZE, byte1 = SILVER,
  * byte2 = GOLD (proven: earn-sites compare vs the BRONZE/SILVER/GOLD
  * threshold fields, AdvanceRace shows next-target per highest byte).
- * Patterns are cumulative, as if the player earned exactly that tier.
- * WEASEL has no persistent byte in this build, so it sets all three
- * (max visible state). sel < 0 = ALL 15 races. Returns 1/0. */
+ * Patterns are exclusive: the selected tier alone is lit, the other two
+ * are cleared. WEASEL has no persistent byte in this build, so it sets
+ * all three (max visible state). sel < 0 = ALL 15 races. Returns 1/0. */
 #define MEDAL_BASE 0x8BCu
 static const BYTE MEDAL_PAT[4][3] = {
-    { 1, 0, 0 }, { 1, 1, 0 }, { 1, 1, 1 }, { 1, 1, 1 }
+    { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 }, { 1, 1, 1 }
 };
 
 static int set_medals_sel(int sel, int medal) {
@@ -1297,6 +1284,9 @@ static DWORD WINAPI poll_thread(LPVOID param) {
                         if (g_medSel < 0) g_medSel = 3;
                         if (g_medSel > 3) g_medSel = 0;
                         ind_medwait_text();
+                        /* realtime: write on every step so the menu
+                         * medal icons change as you arrow through tiers */
+                        set_medals_sel(g_indSel, g_medSel);
                         log_msg("DEVBIND set-medals: select %s\n", g_indicator);
                     }
                     if (e) {
@@ -1332,19 +1322,21 @@ static DWORD WINAPI poll_thread(LPVOID param) {
                         g_medSel = 0;
                         ind_medwait_text();
                         g_indState = IND_WAIT2;
+                        /* sticky: no indUntil — WAIT2 never auto-reverts */
                         log_msg("DEVBIND set-medals: level locked, pick medal\n");
-                    } else
-                    if (reset_best_times_sel(g_indSel)) {
-                        ind_done_text("DONE - RESET BEST TIME: ");
-                        g_indState = IND_OK;
                     } else {
-                        ind_done_text("FAIL - RESET BEST TIME: ");
-                        g_indState = IND_FAIL;
+                        if (reset_best_times_sel(g_indSel)) {
+                            ind_done_text("DONE - RESET BEST TIME: ");
+                            g_indState = IND_OK;
+                        } else {
+                            ind_done_text("FAIL - RESET BEST TIME: ");
+                            g_indState = IND_FAIL;
+                        }
+                        g_indUntil = GetTickCount() + IND_MS;
+                        g_eatUntil = g_indUntil - IND_MS + EAT_MS;   /* quarantine the Enter */
+                        log_msg("DEVBIND reset-best-times: %s (%s)\n",
+                                g_indState == IND_OK ? "SUCCESS" : "FAILED", g_indicator);
                     }
-                    g_indUntil = GetTickCount() + IND_MS;
-                    g_eatUntil = g_indUntil - IND_MS + EAT_MS;   /* quarantine the Enter */
-                    log_msg("DEVBIND reset-best-times: %s (%s)\n",
-                            g_indState == IND_OK ? "SUCCESS" : "FAILED", g_indicator);
                 }
                 if (x) {
                     ind_to_rest();
