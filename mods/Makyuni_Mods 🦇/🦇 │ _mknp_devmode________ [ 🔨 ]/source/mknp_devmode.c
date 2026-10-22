@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v03h-diag — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v03i — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -308,6 +308,10 @@ static int g_drawCount = 0;           /* successful draw attempts (diagnostic) *
 static volatile int g_hitCount = 0;     /* DrawGlyph cave entries (diagnostic) */
 static volatile int g_presentCount = 0; /* pre-Present cave entries */
 static volatile int g_spriteHits = 0;   /* sprite-hook cave entries */
+static DWORD g_devVtbl = 0;           /* *(DWORD*)g_device at hook time */
+static DWORD g_origPresent = 0;       /* orig IDirect3DDevice8::Present (slot 17) */
+static int g_devHookOk = 0;           /* 1 once the device Present hook is live */
+static DWORD g_devCave_ = 0;          /* our Present cave (self-heal compare) */
 static DWORD g_spriteTex = 0;         /* ECX (texture object) of latest sprite */
 static DWORD g_spriteRet = 0;         /* return address of latest sprite call */
 static DWORD g_callerStack[16];         /* LIFO of stashed caller-rets */
@@ -350,7 +354,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v03h-diag self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v03i self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -567,7 +571,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v03h-diag: single small line with bottom-right shadow (version-text style).
+/* v03i: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -611,6 +615,7 @@ static void draw_status(void* font, const char* text) {
 /* Font_DrawGlyph post-hook (g_drawArmed hands one draw per frame).     */
 
 static void draw_direct(void);
+static void install_dev_hook(void);
 static void draw_from_frame(void);
 static DWORD g_slotRet;
 static DWORD g_dummy;         /* branchless store sink */
@@ -1332,10 +1337,25 @@ static DWORD WINAPI poll_thread(LPVOID param) {
         }
         wait_freeze_tick();   /* HOLD native pause while WAIT, restore after */
         /* Medal-guard probe: arm while picking medals, disarm otherwise. */
-        if (g_flow == 2 && (g_indState == IND_WAIT || g_indState == IND_WAIT2))
-            medal_guard_on();
-        else if (g_guardOn)
+        if (g_flow == 2 && (g_indState == IND_WAIT || g_indState == IND_WAIT2)) {
+            if (!g_guardOn) {
+                medal_guard_on();
+                if (g_guardOn)
+                    log_msg("GUARD armed (medal page %p)\n", (void*)g_guardPage);
+            }
+        } else if (g_guardOn) {
             medal_guard_off();
+            log_msg("GUARD off\n");
+        }
+        /* Device Present hook: install once g_device is captured, heal if lost. */
+        {
+            static DWORD lastDevTick = 0;
+            DWORD nowD = GetTickCount();
+            if ((int)(nowD - lastDevTick) > 1000) {
+                lastDevTick = nowD;
+                install_dev_hook();
+            }
+        }
         {
             static int prevL = 0, prevR = 0, prevE = 0, prevX = 0;
             int l = 0, r = 0, e = 0, x = 0;
@@ -1473,11 +1493,9 @@ static void draw_direct(void) {
                 g_entryCount, g_drawFont, (void*)hookvt, g_loaderGate);
     }
     g_entryCount++;
-    if (g_bootPhase && (int)(GetTickCount() - g_bootTick) > 12000) {
-        g_bootPhase = 0;
-        log_msg("BOOTPHASE over\n");
-    }
-    if (g_loaderGate) return;   /* loading screen: orig text only */
+    /* No loader/boot gate: the pixel overlay draws at real Present on every
+     * screen (menu/loading/race). The gate guarded the retired DrawGlyph
+     * path; pixel-UP inside the game's own Present is the safe point. */
     if (IsBadReadPtr((void*)APP_PTR, 4)) return;
     app = *(DWORD*)APP_PTR;
     if (!app || app < 0x10000) return;
@@ -1492,6 +1510,58 @@ static void draw_direct(void) {
         log_msg("DRAW n=%d devmode=%d ind=%s\n", g_drawCount, g_devmode, indicator_text());
     g_drawCount++;
     draw_pixel_overlay();
+}
+
+/* ── Device Present hook: draw the overlay inside EVERY Present ───────── */
+/* The menu presents through game code my 0x455B48/0x455AA6 hooks never see,
+ * so the overlay only appeared in-race. IDirect3DDevice8::Present (vtable
+ * slot 17) is the one funnel every screen flows through. Installed (and
+ * self-healed if the device is recreated) from the poll thread.
+ * Cave (__stdcall, 5 stack args untouched): pushad/pushfd, call
+ * draw_direct, popfd/popad, jmp [g_origPresent]. */
+static void install_dev_hook(void) {
+    DWORD dev, vtbl, page, old = 0;
+    BYTE* cave;
+    BYTE* p;
+    if (g_devHookOk) {
+        /* self-heal: re-hook if the device was recreated */
+        if (!g_device || IsBadReadPtr((void*)g_device, 4)) return;
+        dev = g_device;
+        vtbl = *(DWORD*)dev;
+        if (vtbl == g_devVtbl && *(DWORD*)(vtbl + 68) == (DWORD)g_devCave_)
+            return;
+        g_devHookOk = 0;
+        log_msg("DEVHOOK lost (device recreated?) — re-hooking\n");
+    }
+    if (!g_device || IsBadReadPtr((void*)g_device, 4)) return;
+    dev = g_device;
+    if (IsBadReadPtr(*(void**)dev, 0x140)) return;
+    vtbl = *(DWORD*)dev;
+    if (IsBadReadPtr((void*)(vtbl + 68), 4)) return;
+    g_devVtbl = vtbl;
+    g_origPresent = *(DWORD*)(vtbl + 68);
+    cave = (BYTE*)alloc_executable(16);
+    if (!cave) return;
+    p = cave;
+    *p++ = 0x60;                                            /* pushad */
+    *p++ = 0x9C;                                            /* pushfd */
+    *p++ = 0xE8;                                            /* call draw_direct */
+    *(DWORD*)p = (DWORD)draw_direct - ((DWORD)p + 4); p += 4;
+    *p++ = 0x9D;                                            /* popfd */
+    *p++ = 0x61;                                            /* popad */
+    *p++ = 0xFF; *p++ = 0x25;                               /* jmp [g_origPresent] */
+    *(DWORD*)p = (DWORD)&g_origPresent; p += 4;
+    page = vtbl & ~0xFFFu;
+    if (!VirtualProtect((void*)page, 4096, PAGE_READWRITE, &old)) {
+        log_msg("DEVHOOK VirtualProtect failed\n");
+        return;
+    }
+    *(DWORD*)(vtbl + 68) = (DWORD)cave;
+    VirtualProtect((void*)page, 4096, old, &old);
+    g_devCave_ = (DWORD)cave;
+    g_devHookOk = 1;
+    log_msg("DEVHOOK ok (Present slot 17 -> %p, orig %p)\n",
+            cave, (void*)g_origPresent);
 }
 
 /* ── Frame hook (0x46C1F1 epilogue): draws the overlay itself ───────── */
