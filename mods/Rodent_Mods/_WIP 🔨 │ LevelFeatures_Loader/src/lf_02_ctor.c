@@ -40,6 +40,31 @@ static void UniversalTowerInit(void *mem, int app) {
     DebugLog("UniversalTowerInit done (no native ctor)");
 }
 
+/* UniversalUpInit — content-driven Up board setup, no native ctor.
+ * Replicates Up native ctor (0x420390, Ghidra-verified) field-by-field:
+ * base Board_ctor, Up vtable (0x4D11A0 — owns slot 18 vacuum scene setup
+ * 0x411540, slot 19 lifter RaceState 0x420660, slot 29 Up collision
+ * 0x4119B0), name strings, difficulty flag, LoadRaceData("UPRACE").
+ * +0x870 comes from Step 4 (proven app-source), +0x1508 from Step 5 (table
+ * color {1,0,1} matches native Vec3), +0x4344 from Step 7 (table music
+ * "Up Race" matches native), 0x436C list from Step 9a-extra (content-6
+ * gated). Mesh slots (+0x4784/88/8C) stay empty — S1-driven create loads
+ * and mirrors them (same pattern as Tower). */
+static void UniversalUpInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D11A0; /* Up board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Up)";
+    *(char **)((char *)mem + 0x29B4) = "UP RACE";
+    *(char **)((char *)mem + 0x4344) = "Up Race";
+    { int diff = *(int *)(app + 0x23C);
+      DWORD prof = *(DWORD *)(app + 0x220);
+      if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&
+          *(char *)(prof + 0x10) == 0)
+          *(BYTE *)(app + 0x853) = 1; }
+    g_LoadRaceData(mem, "UPRACE");
+    DebugLog("UniversalUpInit done (no native ctor)");
+}
+
 void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     int raceIndex = g_pendingRaceIndex;
     g_lastAppParam = app;
@@ -78,6 +103,9 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     if (g_loadingContentId == 5) {
         DebugLog("Calling UniversalTowerInit...");
         UniversalTowerInit(mem, app);
+    } else if (g_loadingContentId == 6) {
+        DebugLog("Calling UniversalUpInit...");
+        UniversalUpInit(mem, app);
     } else {
         DebugLog("Calling Board_ctor...");
         g_BoardCtor(mem, app);
@@ -142,15 +170,16 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         DebugLog(dbg2);
     }
 
-    /* Step 2: Set vtable. Tower content keeps the vtable UniversalTowerInit
-     * set (native Tower class); all other content gets its slot vtable. */
-    if (g_loadingContentId != 5)
+    /* Step 2: Set vtable. Tower/Up content keeps the vtable its
+     * Universal*Init set (native class for content); other content gets
+     * its slot vtable. */
+    if (g_loadingContentId != 5 && g_loadingContentId != 6)
         *(DWORD *)mem = g_levelVtables[raceIndex];
     DebugLog("Vtable set");
 
     /* Step 3: Set board name and race title (slot table — skipped for Tower
-     * content, whose content names UniversalTowerInit already set). */
-    if (g_loadingContentId != 5) {
+     * and Up content, whose content names the Universal*Init already set). */
+    if (g_loadingContentId != 5 && g_loadingContentId != 6) {
         *(char **)((char *)mem + UNI_BOARD_NAME) = ld->boardName;
         *(char **)((char *)mem + UNI_RACE_TITLE) = ld->raceTitle;
     }

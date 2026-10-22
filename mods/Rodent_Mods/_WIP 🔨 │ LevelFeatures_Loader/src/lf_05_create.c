@@ -768,17 +768,23 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         long num = atol(name + 6);
         int meshVal = *(int*)((char*)ext + UNI_LIFTER_MESH);
         if (!meshVal) { DebugLog("LIFTER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        /* Mirror into the native mesh slot (native Up ctor +0x4784). Native
+         * Up create reads this slot as the Lifter_ctor mesh arg. */
+        if (BoardHasOffset(board, 0x4784, 4)) {
+            int natM = *(int *)((char *)board + 0x4784);
+            if (!natM || IsBadReadPtr((void *)natM, 4))
+                *(int *)((char *)board + 0x4784) = meshVal;
+        }
         void *mem = g_operatorNew(0x10F4);
         if (mem) {
             obj = g_LifterCtor(mem, (int)board, x, y, z, meshVal, num);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            /* Dual-append to legacy board+0x436C ONLY for Up identity.
-             * 0x436C is Up's lifter list (inited in 9a-extra); on other slots
-             * it holds per-level data (e.g. Dizzy tipper mesh from step 8b) —
-             * appending there corrupts it, and only Up's RaceState iterates
-             * the list (fix 2026-09-18). */
-            if (GetCurrentLevel(board) == 6)
-                g_AthenaListAppend((void*)((char*)board + 0x436C), (int)obj);
+            /* NO dual-append to board+0x436C: native Up create appends
+             * lifters ONLY to 0x2578 — the 0x436C list stays empty natively.
+             * Up RaceState (0x420660) calls vtable[0] (deleting dtor
+             * 0x43D400!) on each 0x436C member with a garbage flag, so
+             * appending live lifters there deletes them and crashes.
+             * Lifters are driven via the shared 0x2578 walk (vtable[11]). */
             renderOut = ((DWORD*)obj)[0x438];
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
@@ -1020,10 +1026,19 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         S1EnsureMeshWorld(board, ext, UNI_SPEEDCYLINDER_MESH, "Levels\\LevelUp-SpeedCylinder");
         int meshVal = *(int*)((char*)ext + UNI_SPEEDCYLINDER_MESH);
         if (!meshVal) { DebugLog("SPEEDCYLINDER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        /* Mirror into the native mesh slot (native Up ctor +0x4788). */
+        if (BoardHasOffset(board, 0x4788, 4)) {
+            int natM = *(int *)((char *)board + 0x4788);
+            if (!natM || IsBadReadPtr((void *)natM, 4))
+                *(int *)((char *)board + 0x4788) = meshVal;
+        }
         void *mem = g_operatorNew(0x150C);
         if (mem) {
-            /* numArg from __ftol2 — use 0 as fallback */
-            obj = g_SpeedCylinderCtor(mem, (int)board, x, y, z, 0, meshVal);
+            /* numArg is (int)(360.0 - s1_y2): native does FLD [0x4CF44C]
+             * (=360.0) / FSUB [s1data+0x14] / __ftol2 (Up create 0x41189B).
+             * fparam here is the same s1data+0x14 float. */
+            int numArg = (int)(360.0f - fparam);
+            obj = g_SpeedCylinderCtor(mem, (int)board, x, y, z, numArg, meshVal);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             renderOut = ((DWORD*)obj)[0x438];
         }
@@ -1036,6 +1051,12 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         S1EnsureMeshWorld(board, ext, UNI_TIMEBUTTON_MESH, "Levels\\LevelUp-Button");
         int meshVal = *(int*)((char*)ext + UNI_TIMEBUTTON_MESH);
         if (!meshVal) { DebugLog("TIMEBUTTON: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        /* Mirror into the native mesh slot (native Up ctor +0x478C). */
+        if (BoardHasOffset(board, 0x478C, 4)) {
+            int natM = *(int *)((char *)board + 0x478C);
+            if (!natM || IsBadReadPtr((void *)natM, 4))
+                *(int *)((char *)board + 0x478C) = meshVal;
+        }
         void *mem = g_operatorNew(0x10E8);
         if (mem) {
             obj = g_TimeButtonCtor(mem, (int)board, x, y, z, meshVal);
