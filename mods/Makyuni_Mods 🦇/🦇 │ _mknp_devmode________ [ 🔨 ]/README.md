@@ -57,3 +57,5 @@ Rename `_mknp_devmode.dll` to `bass.dll`, keep the stock DLL as `bass_real.dll`.
 - v03h-diag: medal-guard probe (MEDALREAD eip= lines show which game code reads medal bytes) — diagnostic, same behavior as v03g.
 
 - v03i: device-Present hook (slot 17) draws the overlay inside every Present — visible on menu/loading/race; gate retired; medal-guard arm/disarm logged.
+
+- v03j-diag: per-slot medal/time logging (weasel diagnosis) + menu-idle guard arming (catch TT enter-readers) + page-based guard handler (disarm-race fix).

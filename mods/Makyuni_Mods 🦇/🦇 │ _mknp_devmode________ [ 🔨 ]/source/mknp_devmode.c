@@ -1,5 +1,5 @@
 /*
- /* _mknp_devmode v03i — F8 toggles a devmode flag with on-screen status text.
+ /* _mknp_devmode v03j-diag — F8 toggles a devmode flag with on-screen status text.
   *
   * Architecture (all state-independent):
   *  - F8 poll runs on a private background thread (Sleep 16ms): works in
@@ -354,7 +354,7 @@ static void log_open(void) {
         }
     }
     if (!g_log) return;
-    fprintf(g_log, "INIT _mknp_devmode v03i self=%p\n", hSelf);
+    fprintf(g_log, "INIT _mknp_devmode v03j-diag self=%p\n", hSelf);
     fflush(g_log);
 }
 
@@ -430,6 +430,7 @@ static DWORD g_guardPage = 0;       /* guarded page base */
 static DWORD g_medalBase = 0;       /* app+0x8BC at arm time */
 static DWORD g_medalReads = 0;      /* unique medal-range readers logged */
 static DWORD g_guardFaults = 0;     /* total guard faults (storm cap) */
+static DWORD g_guardCoolUntil = 0;  /* re-arm gate after storm-cap disarm */
 static DWORD g_readerEip[32];       /* unique reader EIPs */
 
 static void medal_guard_off(void) {
@@ -454,46 +455,51 @@ static void medal_guard_on(void) {
 }
 
 static LONG CALLBACK crash_spy(PEXCEPTION_POINTERS ep) {
-    /* Medal-guard probe: log who reads the medal bytes, re-arm, continue. */
+    /* Medal-guard probe: log who reads the medal bytes, re-arm, continue.
+     * Page-based (NOT g_guardOn-based): the poll thread may disarm between
+     * the fault and this handler, and then the fault looks "real". Any
+     * fault inside our page is ours: re-guard and continue. */
     {
         DWORD code = ep->ExceptionRecord->ExceptionCode;
-        if (code == 0xC0000005u || code == 0x80000001u) {
+        if ((code == 0xC0000005u || code == 0x80000001u) && g_guardPage) {
             DWORD w = ep->ExceptionRecord->ExceptionInformation[0];
             DWORD addr = ep->ExceptionRecord->ExceptionInformation[1];
-            DWORD eip;
+            DWORD eip, old = 0;
             (void)w;
-            if (g_guardOn && addr >= g_medalBase && addr < g_medalBase + 80) {
+            if (addr < g_guardPage || addr >= g_guardPage + 4096)
+                goto not_ours;
+            /* Re-guard FIRST so our own writes below don't storm. A failed
+             * re-guard means the page is really gone: fall through. */
+            g_guardFaults++;
+            if (!VirtualProtect((void*)g_guardPage, 4096,
+                                PAGE_READWRITE | PAGE_GUARD, &old))
+                goto not_ours;
+            g_guardOn = 1;
+            if (g_guardFaults >= 5000) {
+                medal_guard_off();
+                g_guardCoolUntil = GetTickCount() + 10000;
+                log_msg("GUARD storm-cap, cooling 10s\n");
+                return EXCEPTION_CONTINUE_EXECUTION;
+            }
+            if (addr >= g_medalBase && addr < g_medalBase + 80) {
                 int i, seen = 0;
                 eip = (DWORD)ep->ExceptionRecord->ExceptionAddress;
-                g_guardFaults++;
-                {
-                    DWORD old = 0;
-                    VirtualProtect((void*)g_guardPage, 4096,
-                                   PAGE_READWRITE | PAGE_GUARD, &old);
-                }
-                if (g_guardFaults >= 5000) medal_guard_off();
-                if (eip >= 0x50000000u) return EXCEPTION_CONTINUE_EXECUTION;
-                for (i = 0; i < 32; i++)
-                    if (g_readerEip[i] == eip) { seen = 1; break; }
-                if (!seen && g_medalReads < 30) {
+                if (eip < 0x50000000u) {
                     for (i = 0; i < 32; i++)
-                        if (!g_readerEip[i]) { g_readerEip[i] = eip; break; }
-                    log_msg("MEDALREAD eip=%p\n", (void*)eip);
-                    g_medalReads++;
+                        if (g_readerEip[i] == eip) { seen = 1; break; }
+                    if (!seen && g_medalReads < 30) {
+                        for (i = 0; i < 32; i++)
+                            if (!g_readerEip[i]) { g_readerEip[i] = eip; break; }
+                        log_msg("MEDALREAD eip=%p\n", (void*)eip);
+                        g_medalReads++;
+                    }
                 }
-                return EXCEPTION_CONTINUE_EXECUTION;
             }
-            if (g_guardOn && addr >= g_guardPage && addr < g_guardPage + 4096) {
-                /* same-page noise (best-times etc.): re-arm silently */
-                DWORD old = 0;
-                VirtualProtect((void*)g_guardPage, 4096,
-                               PAGE_READWRITE | PAGE_GUARD, &old);
-                g_guardFaults++;
-                if (g_guardFaults >= 5000) medal_guard_off();
-                return EXCEPTION_CONTINUE_EXECUTION;
-            }
+            /* same-page noise (timers etc.): already re-guarded above */
+            return EXCEPTION_CONTINUE_EXECUTION;
         }
     }
+not_ours:
     if (InterlockedExchange(&g_vehDone, 1)) return EXCEPTION_CONTINUE_SEARCH;
     {
         DWORD eip = (DWORD)ep->ExceptionRecord->ExceptionAddress;
@@ -571,7 +577,7 @@ static void call_thiscall_n(DWORD fn, DWORD thi, DWORD* params, int n) {
     ((void(*)())g_callbuf)();
 }
 
-/* v03i: single small line with bottom-right shadow (version-text style).
+/* v03j-diag: single small line with bottom-right shadow (version-text style).
  * Two DrawGlyph passes: black at +1,+1, then white at x,y. (v01i's
  * 0.75-scale colored path rendered nothing — the scaled
  * Scene_CreateObject4f path needs setup our post-draw context lacks.
@@ -866,6 +872,11 @@ static int set_medals_sel(int sel, int medal) {
     hi = (sel < 0) ? BESTTIME_RACES : sel + 1;
     for (i = lo; i <= hi; i++) {
         BYTE* slot = (BYTE*)(app + MEDAL_BASE + (DWORD)i * 4);
+        DWORD was = *(DWORD*)slot;
+        DWORD tm = 0;
+        if (!IsBadReadPtr((void*)(app + APP_BESTTIME + (DWORD)i * 4), 4))
+            tm = *(DWORD*)(app + APP_BESTTIME + (DWORD)i * 4);
+        log_msg("DEVBIND set-medals: s%d medal was %08X time %08X\n", i, was, tm);
         slot[0] = MEDAL_PAT[medal][0];
         slot[1] = MEDAL_PAT[medal][1];
         slot[2] = MEDAL_PAT[medal][2];
@@ -1336,16 +1347,32 @@ static DWORD WINAPI poll_thread(LPVOID param) {
             }
         }
         wait_freeze_tick();   /* HOLD native pause while WAIT, restore after */
-        /* Medal-guard probe: arm while picking medals, disarm otherwise. */
-        if (g_flow == 2 && (g_indState == IND_WAIT || g_indState == IND_WAIT2)) {
-            if (!g_guardOn) {
+        /* Medal-guard probe: arm while picking medals AND while idling in a
+         * menu (catches the TT screen-enter readers), disarm otherwise. */
+        {
+            int wantGuard = 0;
+            if (g_flow == 2 && (g_indState == IND_WAIT || g_indState == IND_WAIT2))
+                wantGuard = 1;
+            else if (!in_wait()) {
+                DWORD appI = 0;
+                if (!IsBadReadPtr((void*)APP_PTR, 4)) {
+                    appI = *(DWORD*)APP_PTR;
+                    if (appI > 0x10000 &&
+                        !IsBadReadPtr((void*)(appI + 0x23C), 4) &&
+                        *(int*)(appI + 0x23C) == 0)
+                        wantGuard = 1;   /* menu idle: race==0 */
+                }
+            }
+            if (wantGuard && !g_guardOn &&
+                (int)(GetTickCount() - g_guardCoolUntil) > 0) {
+                g_guardFaults = 0;   /* fresh budget per arming */
                 medal_guard_on();
                 if (g_guardOn)
                     log_msg("GUARD armed (medal page %p)\n", (void*)g_guardPage);
+            } else if (!wantGuard && g_guardOn) {
+                medal_guard_off();
+                log_msg("GUARD off\n");
             }
-        } else if (g_guardOn) {
-            medal_guard_off();
-            log_msg("GUARD off\n");
         }
         /* Device Present hook: install once g_device is captured, heal if lost. */
         {
