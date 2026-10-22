@@ -1115,7 +1115,7 @@ static LevelData g_levelData[16] = {
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,UNI_BRIDGE_ANGLE},
     /* 4=Dizzy */
     {"Dizzy",0x004D0890,"Board (Dizzy)","DIZZY RACE","DIZZYRACE","Dizzy!",{0.0f,1.0f,0.0f},"levels\\level3",{"0x85E0:Levels\\Level3-WaterWheel","0x85E4:RENDER","0x85F8:Levels\\Level3-Swirl","0x860C:RENDER","0x86C0:Levels\\Level3-Tipper","0x86C4:RENDER","0x86D4:Levels\\Level3-Gluebie"},7,0x851,
-     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0,0,0},{0},0,0},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0,0,0},{0},0x4BDC,0},
     /* 5=Tower */
     {"Tower",0x004D0A08,"Board (Tower)","TOWER RACE","TOWERRACE","Happy Rush",{1.0f,0.75f,0.0f},"levels\\level4",{"0x8620:Levels\\Level4-Catapult","0x8628:Levels\\Level4-Drawbridge","0x85F4:MESH:Meshes\\YellowLink","0x85EC:Levels\\Level4-Mace","0x85F0:Levels\\Level4-Windmill","0x8600:MESH:Meshes\\Chomper","0x861C:Levels\\Level4-Turret"},7,0x852,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{UNI_BITE_SPEED,UNI_BITE_STATE,0},{0},0,0},

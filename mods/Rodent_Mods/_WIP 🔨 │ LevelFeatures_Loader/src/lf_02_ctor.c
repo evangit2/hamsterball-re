@@ -65,6 +65,44 @@ static void UniversalUpInit(void *mem, int app) {
     DebugLog("UniversalUpInit done (no native ctor)");
 }
 
+/* UniversalDizzyInit — content-driven Dizzy board setup, no native ctor.
+ * Replicates Dizzy native ctor (0x41D060, Ghidra-verified) field-by-field:
+ * base Board_ctor, Dizzy vtable (0x4D0890 — owns slot 1 update 0x41D510,
+ * slot 18 scene 0x40D390, slot 29 collision 0x40D500), name strings,
+ * difficulty flag, LoadRaceData("DIZZYRACE"). +0x870 comes from Step 4
+ * (proven app-source), +0x1508 from Step 5 (table color {0,1,0} matches
+ * native Vec3), lists 0x4378/0x4790 from Step 9a-extra2/2b (content-4
+ * gated). Mesh slots (+0x436C/+0x4370/+0x4374/+0x4BA8/+0x4BAC/+0x4BC4/
+ * +0x4BC8) stay empty — S1-driven create loads and mirrors them. */
+static void UniversalDizzyInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D0890; /* Dizzy board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Dizzy)";
+    *(char **)((char *)mem + 0x29B4) = "DIZZY RACE";
+    *(char **)((char *)mem + 0x4344) = "Dizzy!";
+    { int diff = *(int *)(app + 0x23C);
+      DWORD prof = *(DWORD *)(app + 0x220);
+      if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&
+          *(char *)(prof + 0x10) == 0)
+          *(BYTE *)(app + 0x851) = 1; }
+    g_LoadRaceData(mem, "DIZZYRACE");
+    /* Wheel sound channel (native ctor: GetNextChannel(app+0x490) -> +0x4BDC,
+     * RenderIfVisible; read per-frame by the update for creak playback). */
+    if (g_SoundGetNextChannel) {
+        DWORD appVal = *(DWORD *)((char *)mem + BOARD_APP_PTR);
+        if (appVal && !IsBadReadPtr((void *)appVal, 0x500)) {
+            DWORD soundDevice = *(DWORD *)(appVal + 0x490);
+            if (soundDevice) {
+                int channel = g_SoundGetNextChannel((void *)soundDevice);
+                *(int *)((char *)mem + 0x4BDC) = channel;
+                if (channel && g_SceneRenderIfVisible)
+                    g_SceneRenderIfVisible(channel, 0.0f);
+            }
+        }
+    }
+    DebugLog("UniversalDizzyInit done (no native ctor)");
+}
+
 void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     int raceIndex = g_pendingRaceIndex;
     g_lastAppParam = app;
@@ -106,6 +144,9 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     } else if (g_loadingContentId == 6) {
         DebugLog("Calling UniversalUpInit...");
         UniversalUpInit(mem, app);
+    } else if (g_loadingContentId == 4) {
+        DebugLog("Calling UniversalDizzyInit...");
+        UniversalDizzyInit(mem, app);
     } else {
         DebugLog("Calling Board_ctor...");
         g_BoardCtor(mem, app);
@@ -170,16 +211,16 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         DebugLog(dbg2);
     }
 
-    /* Step 2: Set vtable. Tower/Up content keeps the vtable its
+    /* Step 2: Set vtable. Tower/Up/Dizzy content keeps the vtable its
      * Universal*Init set (native class for content); other content gets
      * its slot vtable. */
-    if (g_loadingContentId != 5 && g_loadingContentId != 6)
+    if (g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4)
         *(DWORD *)mem = g_levelVtables[raceIndex];
     DebugLog("Vtable set");
 
-    /* Step 3: Set board name and race title (slot table — skipped for Tower
-     * and Up content, whose content names the Universal*Init already set). */
-    if (g_loadingContentId != 5 && g_loadingContentId != 6) {
+    /* Step 3: Set board name and race title (slot table — skipped for Tower,
+     * Up and Dizzy content, whose content names the Universal*Init set). */
+    if (g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4) {
         *(char **)((char *)mem + UNI_BOARD_NAME) = ld->boardName;
         *(char **)((char *)mem + UNI_RACE_TITLE) = ld->raceTitle;
     }
@@ -225,9 +266,9 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
             /* WaterWheel mesh+render */
             *(DWORD *)((char *)mem + 0x4BA8) = *(DWORD *)((char *)ext + UNI_MESH_0);
             *(DWORD *)((char *)mem + 0x4BAC) = *(DWORD *)((char *)ext + UNI_MESH_1);
-            /* Swirl mesh+render */
+            /* Swirl mesh+render (slots match S1-driven create: MESH_6/MESH_7) */
             *(DWORD *)((char *)mem + 0x4BC4) = *(DWORD *)((char *)ext + UNI_MESH_6);
-            *(DWORD *)((char *)mem + 0x4BC8) = *(DWORD *)((char *)ext + UNI_MESH_11);
+            *(DWORD *)((char *)mem + 0x4BC8) = *(DWORD *)((char *)ext + UNI_MESH_7);
             /* Gluebie mesh */
             *(DWORD *)((char *)mem + 0x4374) = *(DWORD *)((char *)ext + UNI_GLUEBIE_MESH);
             /* Init angle/scale fields (original offsets) */
@@ -288,6 +329,15 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         DebugLog("Step 9a-extra2: gluebie list at board+0x4378 for Dizzy");
     }
 
+    /* 9a-extra2b: Dizzy race also needs the tarbubble/vector list at
+     * board+0x4790. Native Dizzy ctor inits it; base Board_ctor does not.
+     * Native update appends ambient tarbubbles and splash particles here —
+     * without init those appends corrupt the heap (same class as 9a-extra2). */
+    if (g_loadingContentId == 4 && g_AthenaListInit) {
+        g_AthenaListInit((void *)((char *)mem + 0x4790), 0);
+        DebugLog("Step 9a-extra2b: tarbubble list at board+0x4790 for Dizzy");
+    }
+
     /* 9a-extra3: Tower race (level 5) needs native object lists at
      * board+0x43B8 (catapult), 0x47D0 (trapdoor), 0x4BE8 (drawbridge),
      * 0x5000 (mace). Base Board_ctor never inits them (verified live:
@@ -343,8 +393,10 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     }
     DebugLog("Step 9d (textures) done");
 
-    /* 9e: Sound channel — unified offset goes to ext */
-    if (ld->soundChannelOffset && g_SoundGetNextChannel) {
+    /* 9e: Sound channel — unified offset goes to ext.
+     * Skipped for Dizzy content: UniversalDizzyInit already grabbed the
+     * channel into board+0x4BDC (exact-once; a second grab would leak). */
+    if (ld->soundChannelOffset && g_SoundGetNextChannel && g_loadingContentId != 4) {
         DWORD appVal = *(DWORD *)((char *)mem + BOARD_APP_PTR);
         if (appVal && !IsBadReadPtr((void *)appVal, 0x500)) {
             DWORD soundDevice = *(DWORD *)(appVal + 0x490);

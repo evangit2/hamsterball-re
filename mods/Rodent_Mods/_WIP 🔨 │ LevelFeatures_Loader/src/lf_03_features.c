@@ -194,6 +194,23 @@ static void Feature_SwirlZones(void *board, int level) {
     int tarListOfs = (level == 14) ? BRD_TARBUBBLE_LIST_M : BRD_TARBUBBLE_LIST;
     // swirlListOfs/tarListOfs are UNI offsets >=0x6500 — use ext
 
+    /* Dizzy-class boards use NATIVE slots/list walks (native Dizzy update
+     * parity); other levels keep the ext-unified path. Content-keyed so a
+     * Dizzy file in any slot behaves identically. */
+    int isDizzy = (level == 4) || (ContentFileId(ext) == 4);
+
+    /* Native ambient-tarbubble gate (Dizzy update head): spawn only when
+     * size(board+0x362C) != 1 or the player ball's +0x14C flag is clear.
+     * Board_ctor inits the list the same under the mod, so the gate reads
+     * identically. Non-Dizzy keeps the legacy always-try behavior. */
+    int ambientGate = 1;
+    if (isDizzy && g_AthenaListGetSize) {
+        int sz362C = g_AthenaListGetSize((void *)((char *)board + 0x362C));
+        int p1ball = *(int *)(app + 0x5DC);
+        char b14c = (p1ball && !IsBadReadPtr((void *)p1ball, 0x150)) ? *(char *)(p1ball + 0x14C) : 0;
+        ambientGate = (sz362C != 1) || (b14c == 0);
+    }
+
 
     /* TarBubble particle creation — replicates original DizzyBoard_Update.
      * RNG returns 10 (1 in 20 chance per frame) → create a tarbubble particle.
@@ -202,7 +219,7 @@ static void Feature_SwirlZones(void *board, int level) {
      * The particle is appended to UNI_PARTICLE_LIST for rendering. */
     static int swirlDbg = 0;
     if (swirlDbg < 3) DebugLog("  [swirl] step1: tarbubble check");
-    if (g_CreateTarBubble && g_AthenaListAppend && g_operatorNew && g_RNG) {
+    if (ambientGate && g_CreateTarBubble && g_AthenaListAppend && g_operatorNew && g_RNG) {
         DWORD *tarList = (DWORD *)((char *)ext + tarListOfs);
         int tarCount = 0;
         if (!IsBadReadPtr(tarList, 0x410)) {
@@ -257,20 +274,29 @@ static void Feature_SwirlZones(void *board, int level) {
         if (swirlDbg < 3) DebugLog("  [swirl] step2c done");
     }
 
+    /* Zone source: native board+0x4378 gluebie list on Dizzy-class boards
+     * (native behavior — gluebies ARE the proximity zones, with per-gluebie
+     * radius at +0x1100); ext unified zones on other levels. */
+    void *zoneBase = isDizzy ? board : ext;
+    DWORD zoneOff = isDizzy ? 0x4378 : (DWORD)swirlListOfs;
+
     while (ballIdx) {
         /* Skip balls in tar (ball+0x2CC != 0) — they get sinking logic */
         char inTar = *(char *)(ballIdx + BALL_IN_TAR_OFS);
         if (!inTar) {
+            /* Per-ball hit flag (native ball+0x2BC: set when any zone hits
+             * this frame, cleared otherwise — gates the contact sound). */
+            int anyHit = 0;
             /* Check proximity to each swirl zone */
-            int zoneIter = g_AthenaListGetIterator((void *)((char *)ext + swirlListOfs));
-            *(int *)((char *)ext + swirlListOfs + 8 + zoneIter * 4) = 0;
-            int zoneCount = *(int *)((char *)ext + swirlListOfs + 4);
+            int zoneIter = g_AthenaListGetIterator((void *)((char *)zoneBase + zoneOff));
+            *(int *)((char *)zoneBase + zoneOff + 8 + zoneIter * 4) = 0;
+            int zoneCount = *(int *)((char *)zoneBase + zoneOff + 4);
             int zoneIdx = 0;
             if (zoneCount > 0) {
-                DWORD zoneArrayPtr = *(DWORD *)((char *)ext + swirlListOfs + 0x40C);
+                DWORD zoneArrayPtr = *(DWORD *)((char *)zoneBase + zoneOff + 0x40C);
                 if (zoneArrayPtr && !IsBadReadPtr((void *)zoneArrayPtr, 4)) {
                     zoneIdx = *(int *)zoneArrayPtr;
-                    *(int *)((char *)ext + swirlListOfs + 8 + zoneIter * 4) = 1;
+                    *(int *)((char *)zoneBase + zoneOff + 8 + zoneIter * 4) = 1;
                 }
             }
 
@@ -290,6 +316,10 @@ static void Feature_SwirlZones(void *board, int level) {
                     float distSq = dx*dx + dy*dy + dz*dz;
 
                     if (distSq < radius * radius) {
+                        /* Zone hit — mark ball +0x2BC and zone +0x1104
+                         * (native: contact sound + particles fire once). */
+                        anyHit = 1;
+                        *(BYTE *)((char *)zoneIdx + 0x1104) = 1;
                         /* Scale ball velocity */
                         DWORD phys = *(DWORD *)(ballIdx + BALL_PHYS_PTR_OFS);
                         if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
@@ -318,6 +348,10 @@ static void Feature_SwirlZones(void *board, int level) {
                                 for (p = 0; p < 3 && g_operatorNew && g_AthenaListAppend; p++) {
                                     float *part = (float *)g_operatorNew(0x14);
                                     if (part) {
+                                        /* Native particle init: dword[3]=1 (bits
+                                         * 0x00000001), byte+16=0. */
+                                        ((int *)part)[3] = 1;
+                                        *(char *)((char *)part + 16) = 0;
                                         /* Random direction (normalized) */
                                         if (g_RNG) {
                                             part[0] = (float)RNG_call((void *)0x4F7360, 0, 100, 1);
@@ -342,13 +376,15 @@ static void Feature_SwirlZones(void *board, int level) {
                         }
                     }
                 }
-                int next = *(int *)((char *)ext + swirlListOfs + 8 + zoneIter * 4);
-                if (*(int *)((char *)ext + swirlListOfs + 4) <= next) break;
-                DWORD zoneArr = *(DWORD *)((char *)ext + swirlListOfs + 0x40C);
+                int next = *(int *)((char *)zoneBase + zoneOff + 8 + zoneIter * 4);
+                if (*(int *)((char *)zoneBase + zoneOff + 4) <= next) break;
+                DWORD zoneArr = *(DWORD *)((char *)zoneBase + zoneOff + 0x40C);
                 if (!zoneArr || IsBadReadPtr((void *)zoneArr, (next + 1) * 4)) break;
                 zoneIdx = *(int *)(zoneArr + next * 4);
-                *(int *)((char *)ext + swirlListOfs + 8 + zoneIter * 4) = next + 1;
+                *(int *)((char *)zoneBase + zoneOff + 8 + zoneIter * 4) = next + 1;
             }
+            /* Native ball+0x2BC write: 1 when any zone hit this frame, else 0. */
+            *(BYTE *)((char *)ballIdx + BALL_TAR_SOUND_FLAG) = (BYTE)anyHit;
         } else {
             /* Ball is in tar — sink and potentially remove */
             *(float *)(ballIdx + BALL_POS_Y_OFS) -= 0.25f;
@@ -400,8 +436,12 @@ static void Feature_SwirlZones(void *board, int level) {
 
         /* Primary swirl mesh rotation (Gfx_ScaleY) */
         if (swirlDbg < 3) DebugLog("  [swirl] step3a: primary mesh rotation");
-        float angle1 = *(float*)((char*)ext + OFF_SWIRL_ANGLE1) - 0.5f;
-        *(float*)((char*)ext + OFF_SWIRL_SPEED)=0.5f; *(float*)((char*)ext + OFF_SWIRL_ANGLE1)=angle1;
+        /* Native angle lives at board+0x4BBC on Dizzy-class boards (zeroed
+         * per WATERWHEEL S1 at create, decremented here); ext mirror else. */
+        float *pAngW = isDizzy ? (float *)((char *)board + 0x4BBC)
+                               : (float *)((char *)ext + OFF_SWIRL_ANGLE1);
+        float angle1 = *pAngW - 0.5f;
+        *(float*)((char*)ext + OFF_SWIRL_SPEED)=0.5f; *pAngW=angle1;
         if (swirlDbg < 3) DebugLog("  [swirl] step3a: calling Matrix44Zero");
         g_Matrix44Zero((int *)timerBuf);
         if (swirlDbg < 3) DebugLog("  [swirl] step3a: calling GfxScaleY");
@@ -420,7 +460,22 @@ static void Feature_SwirlZones(void *board, int level) {
         if (swirlDbg < 3) DebugLog("  [swirl] step3a: Gfx calls done, calling render");
         // Re-enabled after ext-heap fix — heap overflow was corrupting spatial tree at +0x18
         {
-            DWORD waterRender = *(DWORD*)((char*)ext + UNI_MESH_1);
+            /* Dizzy-class: draw the NATIVE mesh (board+0x4BA8, vtbl 0x58/0x54
+             * — exactly the native update's draw calls); else ext render. */
+            DWORD drawObj = isDizzy ? *(DWORD *)((char *)board + 0x4BA8)
+                                    : *(DWORD*)((char*)ext + UNI_MESH_1);
+            /* Native wheel center for sound below. */
+            float wcx = isDizzy ? *(float *)((char *)board + 0x4BB0) : *(float*)((char*)ext + OFF_WHEEL_EMBED_X);
+            float wcy = isDizzy ? *(float *)((char *)board + 0x4BB4) : *(float*)((char*)ext + OFF_WHEEL_EMBED_Y);
+            float wcz = isDizzy ? *(float *)((char *)board + 0x4BB8) : *(float*)((char*)ext + OFF_WHEEL_EMBED_Z);
+            /* Wheel creak (native block 3 tail): distance attenuation at the
+             * wheel center, played through the ctor-grabbed channel +0x4BDC. */
+            if (isDizzy && g_SoundCalcDistAtten && g_SoundPlay3DAtPos) {
+                float atten = g_SoundCalcDistAtten(*(int *)(app + 0x178), wcx, wcy, wcz);
+                int wch = BoardHasOffset(board, 0x4BDC, 4) ? *(int *)((char *)board + 0x4BDC) : 0;
+                if (wch) g_SoundPlay3DAtPos(wch, atten);
+            }
+            DWORD waterRender = drawObj;
             if (waterRender && !IsBadReadPtr((void*)waterRender, 4)) {
                 DWORD *vtbl = *(DWORD**)waterRender;
                 if (vtbl && !IsBadReadPtr(vtbl, 0x60)) {
@@ -448,19 +503,25 @@ static void Feature_SwirlZones(void *board, int level) {
         g_TimerInit(timerBuf);
 
         float swirlSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 0.5f;
-        *(float*)((char*)ext + OFF_SWIRL_ANGLE2) = *(float*)((char*)ext + OFF_SWIRL_ANGLE2) + swirlSpeed;
+        /* Native angle lives at board+0x4BD8 on Dizzy-class boards; ext else. */
+        float *pAngS = isDizzy ? (float *)((char *)board + 0x4BD8)
+                               : (float *)((char *)ext + OFF_SWIRL_ANGLE2);
+        *pAngS = *pAngS + swirlSpeed;
         if (swirlDbg < 3) DebugLog("  [swirl] step3b: calling Matrix44Zero");
         g_Matrix44Zero((int *)timerBuf);
         if (swirlDbg < 3) DebugLog("  [swirl] step3b: calling GfxScaleX");
-        g_GfxScaleX(gfx, *(float *)((char *)ext + OFF_SWIRL_ANGLE2));
+        g_GfxScaleX(gfx, *pAngS);
         if (swirlDbg < 3) DebugLog("  [swirl] step3b: calling GfxSetPosition");
         g_GfxSetPosition(gfx,
-            *(float *)((char *)ext + OFF_SWIRL_POS_X),
-            *(float *)((char *)ext + OFF_SWIRL_POS_Y),
-            *(float *)((char *)ext + OFF_SWIRL_POS_Z));
+            isDizzy ? *(float *)((char *)board + 0x4BCC) : *(float *)((char *)ext + OFF_SWIRL_POS_X),
+            isDizzy ? *(float *)((char *)board + 0x4BD0) : *(float *)((char *)ext + OFF_SWIRL_POS_Y),
+            isDizzy ? *(float *)((char *)board + 0x4BD4) : *(float *)((char *)ext + OFF_SWIRL_POS_Z));
         if (swirlDbg < 3) DebugLog("  [swirl] step3b: Gfx calls done, calling render");
         {
-            DWORD swirlRender = *(DWORD*)((char*)ext + UNI_MESH_7);
+            /* Dizzy-class: draw the NATIVE mesh (board+0x4BC4); else ext render. */
+            DWORD drawS = isDizzy ? *(DWORD *)((char *)board + 0x4BC4)
+                                  : *(DWORD*)((char*)ext + UNI_MESH_7);
+            DWORD swirlRender = drawS;
             if (swirlRender && !IsBadReadPtr((void*)swirlRender, 4)) {
                 DWORD *vtbl = *(DWORD**)swirlRender;
                 if (vtbl && !IsBadReadPtr(vtbl, 0x60)) {
@@ -476,6 +537,120 @@ static void Feature_SwirlZones(void *board, int level) {
         g_TimerCleanup(timerBuf);
         }
         if (swirlDbg < 3) DebugLog("  [swirl] step3b done");
+    }
+    /* Dizzy riders: wheel (ball+0x778) and swirl (ball+0x779) carry.
+     * Native blocks 4/5: the ball's center-relative offset is rotated
+     * through the live Gfx matrix and the ball repositioned (kinematic
+     * carry); the swirl also steers velocity with a release countdown at
+     * ball+0x78C and a capture cap at ball+0x788. */
+    if (isDizzy && g_TimerInit && g_TimerCleanup && g_GfxScaleY && g_GfxScaleX &&
+        g_MatrixTransformVec3 && app) {
+        void *gfxR = *(void **)(app + 0x174);
+        if (gfxR && !IsBadReadPtr(gfxR, 4)) {
+        float wcx2 = *(float *)((char *)board + 0x4BB0);
+        float wcy2 = *(float *)((char *)board + 0x4BB4);
+        float wcz2 = *(float *)((char *)board + 0x4BB8);
+        float scx = *(float *)((char *)board + 0x4BCC);
+        float scy = *(float *)((char *)board + 0x4BD0);
+        float scz = *(float *)((char *)board + 0x4BD4);
+        float sdelta = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 0.5f;
+        int ri = g_AthenaListGetIterator((void *)((char *)board + UNI_BALL_LIST));
+        *(int *)((char *)board + UNI_BALL_ITER + ri * 4) = 0;
+        int rcount = *(int *)((char *)board + UNI_BALL_COUNT);
+        int rb = 0;
+        if (rcount > 0) {
+            DWORD rarr = *(DWORD *)((char *)board + UNI_BALL_ARRAY);
+            if (rarr && !IsBadReadPtr((void *)rarr, 4)) {
+                rb = *(int *)rarr;
+                *(int *)((char *)board + UNI_BALL_ITER + ri * 4) = 1;
+            }
+        }
+        while (rb) {
+            /* Wheel carry (native block 4: ScaleY(-0.5) + transform). */
+            if (*(char *)(rb + 0x778)) {
+                float rel[3];
+                float out[16];
+                char tB[68];
+                rel[0] = *(float *)(rb + BALL_POS_X_OFS) - wcx2;
+                rel[1] = *(float *)(rb + BALL_POS_Y_OFS) - wcy2;
+                rel[2] = *(float *)(rb + BALL_POS_Z_OFS) - wcz2;
+                g_TimerInit(tB);
+                g_GfxScaleY(gfxR, -0.5f);
+                g_MatrixTransformVec3(out, rel);
+                *(float *)(rb + BALL_POS_X_OFS) = wcx2 + out[0];
+                *(float *)(rb + BALL_POS_Y_OFS) = wcy2 + out[1];
+                *(float *)(rb + BALL_POS_Z_OFS) = wcz2 + out[2];
+                g_TimerCleanup(tB);
+            }
+            /* Swirl capture / carry (native block 5). */
+            if (*(char *)(rb + 0x779) == 0) {
+                int cd = *(int *)(rb + 0x78C);
+                if (cd != 0) {
+                    cd--;
+                    *(int *)(rb + 0x78C) = cd;
+                    if (cd == 0) {
+                        float cap = (float)(*(int *)(rb + 0x788)) * 0.0001f;
+                        DWORD phys = *(DWORD *)(rb + BALL_PHYS_PTR_OFS);
+                        if (phys && !IsBadReadPtr((void *)phys, 0xCB0) && cap > 0.0f) {
+                            float vx = *(float *)(phys + BALL_PHYS_VEL_X);
+                            float vy = *(float *)(phys + BALL_PHYS_VEL_Y);
+                            float vz = *(float *)(phys + BALL_PHYS_VEL_Z);
+                            float sp = sqrtf(vx*vx + vy*vy + vz*vz);
+                            if (sp > cap && sp > 0.0f) {
+                                float s = cap / sp;
+                                *(float *)(phys + BALL_PHYS_VEL_X) = vx * s;
+                                *(float *)(phys + BALL_PHYS_VEL_Y) = vy * s;
+                                *(float *)(phys + BALL_PHYS_VEL_Z) = vz * s;
+                            }
+                        }
+                    }
+                }
+            } else {
+                *(int *)(rb + 0x78C) = 5;
+                {
+                float rel[3];
+                float out[16];
+                char tB[68];
+                float ox = *(float *)(rb + BALL_POS_X_OFS);
+                float oy = *(float *)(rb + BALL_POS_Y_OFS);
+                float oz = *(float *)(rb + BALL_POS_Z_OFS);
+                rel[0] = ox - scx; rel[1] = oy - scy; rel[2] = oz - scz;
+                g_TimerInit(tB);
+                g_GfxScaleX(gfxR, sdelta);
+                g_MatrixTransformVec3(out, rel);
+                g_TimerCleanup(tB);
+                *(float *)(rb + BALL_POS_X_OFS) = scx + out[0];
+                *(float *)(rb + BALL_POS_Y_OFS) = scy + out[1];
+                *(float *)(rb + BALL_POS_Z_OFS) = scz + out[2];
+                DWORD phys = *(DWORD *)(rb + BALL_PHYS_PTR_OFS);
+                if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
+                    float vx = *(float *)(phys + BALL_PHYS_VEL_X);
+                    float vy = *(float *)(phys + BALL_PHYS_VEL_Y);
+                    float vz = *(float *)(phys + BALL_PHYS_VEL_Z);
+                    float osp = sqrtf(vx*vx + vy*vy + vz*vz);
+                    *(int *)(rb + 0x788) = (int)(osp * 10000.0f);
+                    float nvx = vx + (out[0] - rel[0]) * 0.1f;
+                    float nvy = vy + (out[1] - rel[1]) * 0.1f;
+                    float nvz = vz + (out[2] - rel[2]) * 0.1f;
+                    float nsp = sqrtf(nvx*nvx + nvy*nvy + nvz*nvz);
+                    if (nsp > osp && osp > 0.0f && nsp > 0.0f) {
+                        float s = osp / nsp;
+                        nvx *= s; nvy *= s; nvz *= s;
+                    }
+                    *(float *)(phys + BALL_PHYS_VEL_X) = nvx;
+                    *(float *)(phys + BALL_PHYS_VEL_Y) = nvy;
+                    *(float *)(phys + BALL_PHYS_VEL_Z) = nvz;
+                }
+                }
+            }
+            int rn = *(int *)((char *)board + UNI_BALL_ITER + ri * 4);
+            if (*(int *)((char *)board + UNI_BALL_COUNT) <= rn) break;
+            { DWORD rarr2 = *(DWORD *)((char *)board + UNI_BALL_ARRAY);
+            if (!rarr2 || IsBadReadPtr((void *)rarr2, (rn + 1) * 4)) break;
+            rb = *(int *)(rarr2 + rn * 4);
+            *(int *)((char *)board + UNI_BALL_ITER + ri * 4) = rn + 1; }
+        }
+        }
     }
     if (swirlDbg < 3) DebugLog("  [swirl] Feature_SwirlZones complete");
     swirlDbg++;
