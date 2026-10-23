@@ -576,6 +576,16 @@ static Board_UpdateRaceState_t    g_BoardUpdateRaceState = NULL;
  * once (orig IS base on shared levels; customs self-delegate). */
 typedef void (__fastcall *RaceState_t)(void *board);
 static RaceState_t g_origRaceState[16] = { NULL }; /* index 1-15 */
+/* Saved original vtable[33] (CreateDynamicObjects) per level — used by the
+ * native-ctor fast path (UNI_NATIVE_CTOR): native-built boards get native
+ * objects via the orig create instead of our replicating handler. */
+typedef void (__thiscall *CreateDynamic_t)(void *board, char *name, void *out1, void *out2, int *s1data);
+static CreateDynamic_t g_origCreate[16] = { NULL }; /* index 1-15 */
+/* Saved original vtable[24] (render) for patched levels {2,5,10,12,13,14}.
+ * Native-ctor fast path calls these (native custom scenes) instead of the
+ * shared base render. __thiscall(board, gfx), callee-cleans 4 (RET 4). */
+typedef void (__thiscall *Render_t)(void *board, int gfx);
+static Render_t g_origRender[16] = { NULL }; /* index 1-15 */
 static Level_RenderDynamicObjects_t g_RenderDynamicObjects = NULL;
 static Graphics_SetProjection_t  g_GraphicsSetProjection = NULL;
 static Graphics_SetCullMode2_t    g_GraphicsSetCullMode2 = NULL;
@@ -673,6 +683,7 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define RVA_Pendulum_PlayCollisionSound 0x00036B70
 #define RVA_Pendulum_AddIndex         0x00036390
 #define RVA_ScoreObject_ctor          0x0004BE80
+#define RVA_ToobClampZoom             0x00041F7E0
 #define RVA_Timer_Decrement           0x0004BEF0
 #define RVA_ArenaScoreParticle_ctor   0x0004AD50
 #define RVA_AthenaHashTable_Lookup    0x000605E0
@@ -949,6 +960,7 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_NEON_HAS_NATIVE  0xBA04  /* byte: cached S3 scan — 1 = file has its own light(s) */
 /* Next free: 0xBA08, tail to 0xC000 remaining */
 #define UNI_CONTENT_FILE  0xBA08  /* dword: stock-file content id 1..15 (0=custom/unknown), from level filename — NEVER slot */
+#define UNI_NATIVE_CTOR   0xBA0C  /* dword: 1 = board built by NATIVE level ctor (fast path); our create/collide/racestate delegate to native orig */
 /* Next free: 0xBA00, tail to 0xC000 = 0x600 bytes remaining */
 
 /* Sky popcyl array (16 × 4 = 64 bytes) */

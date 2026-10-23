@@ -196,6 +196,108 @@ static void UniversalOddInit(void *mem, int app) {
     DebugLog("UniversalOddInit done (no native ctor)");
 }
 
+/* UniversalToobInit — content-driven Toob board setup, no native code.
+ * Replicates Toob native ctor (0x41F4B0, Ghidra-verified): base Board_ctor,
+ * Toob vtable (0x4D0E78 — custom RaceState 0x41F7E0 zoom-clamp, custom
+ * scene 0x40FA20, custom collision 0x410020, custom create 0x40FB30), name
+ * strings, difficulty flag, LoadRaceData("TOOBRACE"), 5 meshes
+ * (+0x436C Spinny, +0x4370 Saw, +0x4374 Fallout, +0x4378 Blockdawg1,
+ * +0x437C Blockdawg2), zeroed saw slots +0x4380/84/88. The 8x0x418
+ * Vec3List at +0x438C is zeroed (no reader in our paths; native dtor's
+ * free is never invoked since boards are never destroyed mid-race). */
+static void UniversalToobInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D0E78; /* Toob board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Toob)";
+    *(char **)((char *)mem + 0x29B4) = "TOOB RACE";
+    *(char **)((char *)mem + 0x4344) = "Rodenthood";
+    { int diff = *(int *)(app + 0x23C);
+      DWORD prof = *(DWORD *)(app + 0x220);
+      if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&
+          *(char *)(prof + 0x10) == 0)
+          *(BYTE *)(app + 0x856) = 1; }
+    g_LoadRaceData(mem, "TOOBRACE");
+    /* Five meshes (native ctor loads; create mirrors refresh them). */
+    if (g_operatorNew && g_LevelMeshWorldCtor) {
+        static const char *paths[5] = {
+            "Levels\\Level8-Spinny", "Levels\\Level8-Saw",
+            "Levels\\Level8-Fallout", "Levels\\Level8-Blockdawg1",
+            "Levels\\Level8-Blockdawg2" };
+        int i;
+        for (i = 0; i < 5; i++) {
+            void *bm = g_operatorNew(0x10D0);
+            if (bm) *(void **)((char *)mem + 0x436C + i * 4) =
+                g_LevelMeshWorldCtor(bm, *(void **)(app + 0x174), (char *)paths[i]);
+        }
+    }
+    if (BoardHasOffset(mem, 0x4380, 12)) {
+        *(DWORD *)((char *)mem + 0x4380) = 0;
+        *(DWORD *)((char *)mem + 0x4384) = 0;
+        *(DWORD *)((char *)mem + 0x4388) = 0;
+    }
+    if (BoardHasOffset(mem, 0x438C, 8 * 0x418))
+        memset((char *)mem + 0x438C, 0, 8 * 0x418);
+    DebugLog("UniversalToobInit done (no native ctor)");
+}
+
+/* UniversalWobblyInit — content-driven Wobbly board setup, no native code.
+ * Replicates Wobbly native ctor (0x41F110, Ghidra-verified): base
+ * Board_ctor, Wobbly vtable (0x4D0D38 — shared scene-update/racestate,
+ * custom scene 0x40F360, custom collision 0x40F9A0 rider lists, custom
+ * create 0x40F420), name strings, difficulty flag,
+ * LoadRaceData("WOBBLYRACE"), 7 meshes +0x436C..+0x4384
+ * (Level7-Wobbly1..7). No lists — rider state is per-object. */
+static void UniversalWobblyInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D0D38; /* Wobbly board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Wobbly)";
+    *(char **)((char *)mem + 0x29B4) = "WOBBLY RACE";
+    *(char **)((char *)mem + 0x4344) = "Hamster Chase";
+    { int diff = *(int *)(app + 0x23C);
+      DWORD prof = *(DWORD *)(app + 0x220);
+      if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&
+          *(char *)(prof + 0x10) == 0)
+          *(BYTE *)(app + 0x857) = 1; }
+    g_LoadRaceData(mem, "WOBBLYRACE");
+    /* Seven meshes (native ctor loads; create mirrors refresh them). */
+    if (g_operatorNew && g_LevelMeshWorldCtor) {
+        static const char *paths[7] = {
+            "Levels\\Level7-Wobbly1", "Levels\\Level7-Wobbly2",
+            "Levels\\Level7-Wobbly3", "Levels\\Level7-Wobbly4",
+            "Levels\\Level7-Wobbly5", "Levels\\Level7-Wobbly6",
+            "Levels\\Level7-Wobbly7" };
+        int i;
+        for (i = 0; i < 7; i++) {
+            void *bm = g_operatorNew(0x10D0);
+            if (bm) *(void **)((char *)mem + 0x436C + i * 4) =
+                g_LevelMeshWorldCtor(bm, *(void **)(app + 0x174), (char *)paths[i]);
+        }
+    }
+    DebugLog("UniversalWobblyInit done (no native ctor)");
+}
+
+/* UniversalGlassInit — content-driven Glass board setup, no native code.
+ * Replicates Glass native ctor (0x424A90, Ghidra-verified): base
+ * Board_ctor, Glass vtable (0x4D1F90 — shared scene-update/racestate,
+ * custom scene 0x417640, custom collision 0x417760 smashers, custom
+ * create 0x40AD80), name strings, LoadRaceData("GLASSRACE"). NO
+ * difficulty flag (native ctor has none — first board without one).
+ * Pre-zeroes smasher/timer slots +0x436C..+0x4390 (create fills them
+ * from SMASHER1/2 S1 DAT floats). */
+static void UniversalGlassInit(void *mem, int app) {
+    int i;
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D1F90; /* Glass board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Glass)";
+    *(char **)((char *)mem + 0x29B4) = "GLASS RACE";
+    *(char **)((char *)mem + 0x4344) = "Glass Theme";
+    g_LoadRaceData(mem, "GLASSRACE");
+    for (i = 0; i < 7; i++)
+        if (BoardHasOffset(mem, 0x436C + i * 4, 4))
+            *(DWORD *)((char *)mem + 0x436C + i * 4) = 0;
+    DebugLog("UniversalGlassInit done (no native ctor)");
+}
+
 void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     int raceIndex = g_pendingRaceIndex;
     g_lastAppParam = app;
@@ -228,9 +330,28 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         } else g_loadingContentId = 0;
     }
 
-    /* Step 1: base setup. Tower content (any slot): UniversalTowerInit —
-     * content-driven replica of the native Tower ctor (no native code runs).
-     * Mesh slots are filled later by S1-driven create (native-prefer). */
+    /* Step 1: base setup. NATIVE-SLOT FAST PATH (fix 2026-10-23): when the
+     * loaded content IS the slot's native content and we have a verified
+     * native level ctor, call it instead of replicating. Hand-replication
+     * missed engine fields the Toob/Glass scenes need (Toob died in
+     * Scene_Update frame 1; Glass render deref'd a NULL object+0x154).
+     * vtable slots [1,19,29,33] still redirect to our handlers, which
+     * delegate to native orig for these boards (UNI_NATIVE_CTOR), keeping
+     * only additive extras (update/render feature blocks). */
+    typedef void (__thiscall *NativeLevelCtor_t)(void *mem, int app);
+    NativeLevelCtor_t nativeCtor = NULL;
+    if (g_loadingContentId == raceIndex) {
+        if (g_loadingContentId == 10) nativeCtor = (NativeLevelCtor_t)0x41F4B0;
+        else if (g_loadingContentId == 11) nativeCtor = (NativeLevelCtor_t)0x41F110;
+        else if (g_loadingContentId == 12) nativeCtor = (NativeLevelCtor_t)0x424A90;
+    }
+    int useNativeCtor = (nativeCtor != NULL);
+    if (useNativeCtor) {
+        DebugLog("NativeCtor fast path: calling native level ctor...");
+        nativeCtor(mem, app);
+        DebugLog("NativeCtor fast path: native ctor done");
+    }
+    if (!useNativeCtor) {
     if (g_loadingContentId == 5) {
         DebugLog("Calling UniversalTowerInit...");
         UniversalTowerInit(mem, app);
@@ -249,11 +370,21 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     } else if (g_loadingContentId == 9) {
         DebugLog("Calling UniversalOddInit...");
         UniversalOddInit(mem, app);
+    } else if (g_loadingContentId == 10) {
+        DebugLog("Calling UniversalToobInit...");
+        UniversalToobInit(mem, app);
+    } else if (g_loadingContentId == 11) {
+        DebugLog("Calling UniversalWobblyInit...");
+        UniversalWobblyInit(mem, app);
+    } else if (g_loadingContentId == 12) {
+        DebugLog("Calling UniversalGlassInit...");
+        UniversalGlassInit(mem, app);
     } else {
         DebugLog("Calling Board_ctor...");
         g_BoardCtor(mem, app);
         DebugLog("Board_ctor done");
     }
+    } /* end if (!useNativeCtor) — native fast path skips replication */
 
     /* Ext heap: fresh lifecycle per construction. Drop any stale entry for
      * this address first (heap reuse after quit-to-menu/restart paths that
@@ -280,6 +411,10 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         } else g_loadingContentId = 0;
         *(int *)((char *)ext + UNI_CONTENT_FILE) = g_loadingContentId;
         { char cd[160]; wsprintfA(cd, "ContentId=%d path='%s' mem=0x%08X slot=%d", g_loadingContentId, rsl, (DWORD)mem, raceIndex); DebugLog(cd); }
+        /* Native-ctor fast path flag: our create/collide/racestate handlers
+         * delegate to native orig for these boards (replication skipped). */
+        *(int *)((char *)ext + UNI_NATIVE_CTOR) = useNativeCtor ? 1 : 0;
+        if (useNativeCtor) DebugLog("UNI_NATIVE_CTOR=1 (native-built board)");
     }
 
     /* Step 1b: Zero-fill old per-level data offsets (0x436C-0x6500).
@@ -313,19 +448,22 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         DebugLog(dbg2);
     }
 
-    /* Step 2: Set vtable. Tower/Up/Dizzy/Neon/Expert/Odd content keeps the
+    /* Step 2: Set vtable. Tower/Up/Dizzy/Neon/Expert/Odd/Toob/Wobbly/Glass
+     * content keeps the
      * vtable its Universal*Init set (native class for content); other
      * content gets its slot vtable. */
     if (g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4 &&
-        g_loadingContentId != 7 && g_loadingContentId != 8 && g_loadingContentId != 9)
+        g_loadingContentId != 7 && g_loadingContentId != 8 && g_loadingContentId != 9 &&
+        g_loadingContentId != 10 && g_loadingContentId != 11 && g_loadingContentId != 12)
         *(DWORD *)mem = g_levelVtables[raceIndex];
     DebugLog("Vtable set");
 
     /* Step 3: Set board name and race title (slot table — skipped for Tower,
-     * Up, Dizzy, Neon, Expert and Odd content, whose content names the
-     * Universal*Init set). */
+     * Up, Dizzy, Neon, Expert, Odd, Toob, Wobbly and Glass content, whose
+     * content names the Universal*Init set). */
     if (g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4 &&
-        g_loadingContentId != 7 && g_loadingContentId != 8 && g_loadingContentId != 9) {
+        g_loadingContentId != 7 && g_loadingContentId != 8 && g_loadingContentId != 9 &&
+        g_loadingContentId != 10 && g_loadingContentId != 11 && g_loadingContentId != 12) {
         *(char **)((char *)mem + UNI_BOARD_NAME) = ld->boardName;
         *(char **)((char *)mem + UNI_RACE_TITLE) = ld->raceTitle;
     }

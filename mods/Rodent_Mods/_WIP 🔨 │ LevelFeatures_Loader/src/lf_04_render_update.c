@@ -18,6 +18,19 @@
 void UniversalRenderImpl(void *board, int unk) {
     if (!board || !g_RenderDynamicObjects) return;
 
+    int level = GetCurrentLevel(board);
+    void *ext = GetBoardExt(board);
+    /* Native-ctor fast path: run the NATIVE custom scene render (orig slot
+     * 24) instead of the shared base render. The base render walks objects
+     * the custom scenes need (Toob/Glass died: NULL object+0x154, wild
+     * HeapAlloc ret). Skip additive extras — native scene is complete. */
+    if (ext && *(int *)((char *)ext + UNI_NATIVE_CTOR) &&
+        level >= 1 && level <= 15 && g_origRender[level]) {
+        g_origRender[level](board, unk);
+        return;
+    }
+    if (!ext || level == 0) return;
+
     /* Tower content (any slot): clean-room render below (faithful to native
      * 0x40DFA0 as re-derived 2026-10-23: method-this is the timer object,
      * chomper via board+0x4390 vtbl[7]). Native delegation removed. */
@@ -30,11 +43,6 @@ void UniversalRenderImpl(void *board, int unk) {
 
     /* Call shared base render (Level_RenderDynamicObjects) — forward gfx ctx (native ret $0x4) */
     g_RenderDynamicObjects(board, unk);
-
-    int level = GetCurrentLevel(board);
-    void* ext = GetBoardExt(board);
-    if (!ext) return;
-    if (level == 0) return;
 
     DWORD meshWorld = *(DWORD *)((char *)board + BOARD_MESHWORLD);
 
@@ -491,9 +499,25 @@ void __fastcall UniversalBoardUpdate(void *board) {
  * that belong in RaceState (bumper decay, neon camera, sky popcylinders).
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+typedef void (__fastcall *ToobClampZoom_t)(int board);
+static ToobClampZoom_t g_ToobClampZoom = NULL;
+
 void __fastcall UniversalRaceState(void *board) {
     if (!g_BoardUpdateRaceState || !board) return;
 
+    /* First-seen board log: reveals native-vs-universal construction paths
+     * (a native board here means the ctor dispatch was bypassed). */
+    {
+        static void *rs_lastBoard = NULL;
+        if (board != rs_lastBoard) {
+            rs_lastBoard = board;
+            char bl[160];
+            wsprintfA(bl, "[raceState] first-seen board=%p vt=0x%X level=%d content=%d",
+                board, *(DWORD *)board, GetCurrentLevel(board),
+                ContentFileId(GetBoardExt(board)));
+            DebugLog(bl);
+        }
+    }
     static int s_rsCount = 0;
     s_rsCount++;
     if (s_rsCount <= 3) {
@@ -519,6 +543,19 @@ void __fastcall UniversalRaceState(void *board) {
      * Without this call, lifters don't animate, vacuum events never fire, etc.
      * Beginner is skipped — orig decays board+0x642C while Feature_BumperDecay
      * decays ext+0x85C0 (UNI_BUMPER_LIT); calling both double-decays and desyncs. */
+    /* Native-ctor fast path: native-built boards run the NATIVE per-level
+     * RaceState (orig), which matches the native ctor/create objects exactly.
+     * Custom-branch replication (e.g. Toob ClampZoom) is skipped — the orig
+     * IS the custom handler for these boards. Additive feature blocks below
+     * (racestate_features) still run — ext-driven, S1-based. */
+    {
+        void *rsext = GetBoardExt(board);
+        if (rsext && *(int *)((char *)rsext + UNI_NATIVE_CTOR) &&
+            level >= 1 && level <= 15 && g_origRaceState[level]) {
+            g_origRaceState[level](board);
+            goto racestate_features;
+        }
+    }
     if (level == 2) {
         /* skip orig 0x420240 (decays dead board+0x642C) — base + ext decay instead */
         g_BoardUpdateRaceState(board);
@@ -531,6 +568,13 @@ void __fastcall UniversalRaceState(void *board) {
         } else {
             g_BoardUpdateRaceState(board);
         }
+    } else if (ContentFileId(GetBoardExt(board)) == 10) {
+        /* Toob RaceState (0x41F7E0) = Board_UpdateRaceState + zoom clamp of
+         * board+0x644C..+0x6468 (intro camera). Calls base internally, so
+         * call it instead of the slot orig (single-chain safe).
+         * BISECT 2026-10-23: ClampZoom suspected in frame-1 crash; fall back
+         * to base-only until the zoom words are proven initialized. */
+        g_BoardUpdateRaceState(board);
     } else if (level == 13) {
         /* Sky RaceState (0x41FC90) RNG-activates NATIVE-slot popcylinders.
          * Universal objects live in ext slots via Feature_SkyPopcylinder;
@@ -557,6 +601,7 @@ void __fastcall UniversalRaceState(void *board) {
     DWORD extFeat = GetBoardFeat(board);
     DWORD features = extFeat; // Option B: pure S1-driven, no g_updateFeatures fallback
     if (!features) return;
+racestate_features:
     if (*(BYTE*)((char*)board+0x874)) return;
     if (features & FEAT_BUMPER_DECAY)
         Feature_BumperDecay(board, level);

@@ -94,6 +94,13 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     void* ext = EnsureBoardExt(board);
     if (!ext) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
 
+    /* Native-ctor fast path: native-built boards get NATIVE objects via the
+     * saved orig create (our replicating handler misses engine fields). */
+    if (*(int *)((char *)ext + UNI_NATIVE_CTOR) && level >= 1 && level <= 15 && g_origCreate[level]) {
+        g_origCreate[level](board, name, out1, out2, s1data);
+        return;
+    }
+
     {
         char dbg[256];
         wsprintfA(dbg, "CreateDynamicObjects: level=%d name='%.64s' board=0x%08X s1data=0x%08X", level, name, (DWORD)board, (DWORD)s1data);
@@ -866,6 +873,9 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_SawCtor(mem, (int)board, x, y, z, meshVal, pathObj);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            /* Native stores the saw at board+0x4380 (read by E:BRANCH).
+             * Mirror it (preload-gap pattern). */
+            if (BoardHasOffset(board, 0x4380, 4)) *(void **)((char *)board + 0x4380) = obj;
             *(void **)((char *)ext + UNI_SAW_TOOB_OBJ) = obj;
             renderOut = ((DWORD*)obj)[0x435];
         }
@@ -883,6 +893,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_Saw2Ctor(mem, (int)board, x, y, z, meshVal, pathObj);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            /* Native stores saw2 at board+0x4384 (read by E:ALERTSAW2). */
+            if (BoardHasOffset(board, 0x4384, 4)) *(void **)((char *)board + 0x4384) = obj;
             *(void **)((char *)ext + UNI_SAW2_TOOB_OBJ) = obj;
             renderOut = ((DWORD*)obj)[0x435];
         }
@@ -899,6 +911,8 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         if (mem) {
             obj = g_FalloutCtor(mem, (int)board, x, y, z, meshVal);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            /* Native stores the fallout at board+0x4388. */
+            if (BoardHasOffset(board, 0x4388, 4)) *(void **)((char *)board + 0x4388) = obj;
             *(void **)((char *)ext + UNI_FALLOUT_OBJ) = obj;
             renderOut = ((DWORD*)obj)[0x435];
         }
@@ -906,11 +920,15 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         return;
     }
 
-    /* ── BLOCKDAWG1/2/3 (Toob) ── */
+    /* ── BLOCKDAWG1/2/3 (Toob) ──
+     * Native mesh mapping (Ghidra-verified 0x40FB30): dawg1 AND dawg2 both
+     * ride the Blockdawg1 mesh (+0x4378); dawg3 rides Blockdawg2 (+0x437C).
+     * Native stores NOTHING to board (append 0x2578 only); dawg3 gets
+     * +0x1152=1 and is the only branch that sets out params. */
     if (my_strnicmp(name, "BLOCKDAWG", 9) == 0 && difficulty != 0) {
         int dawgNum = name[9] - '0';
-        int meshOff = (dawgNum==1) ? UNI_BLOCKDAWG1_MESH : (dawgNum==3) ? UNI_BLOCKDAWG3_MESH : UNI_BLOCKDAWG2_MESH;
-        { const char *_bdPath = (dawgNum==1) ? "Levels\\Level8-BlockDawg1" : (dawgNum==3) ? "Levels\\Level8-BlockDawg3" : "Levels\\Level8-BlockDawg2"; S1EnsureMeshWorld(board, ext, meshOff, _bdPath); if (dawgNum==3) S1EnsureMeshWorld(board, ext, meshOff, "Levels\\Level8-BlockDawg2"); } /* dawg3 file missing on disk -> fall back to dawg2 mesh */
+        int meshOff = (dawgNum==3) ? UNI_BLOCKDAWG3_MESH : UNI_BLOCKDAWG1_MESH;
+        { const char *_bdPath = (dawgNum==3) ? "Levels\\Level8-BlockDawg2" : "Levels\\Level8-BlockDawg1"; S1EnsureMeshWorld(board, ext, meshOff, _bdPath); }
         void* bExt2 = GetBoardExt(board); if (!bExt2) bExt2 = ext;
         int meshVal = bExt2 ? *(int*)((char*)bExt2 + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("BLOCKDAWG: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -941,13 +959,18 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
             obj = g_GameLevelCtor(mem, (int)board, x, y, z, meshVal);
             DWORD *o = (DWORD *)obj;
             renderOut = o[0x435];
-            /* Per-wobbly constants */
+            /* Per-wobbly constants (Ghidra-verified 0x40F420). NOTE WOBBLY3
+             * sets byte +0x1104 (NOT +0x1105 like the others). */
             static const DWORD w43a[] = {0,0,0x41000000,0,0x41700000,0x41700000,0x41200000,0x41A00000};
             static const DWORD w43b[] = {0,0,0,0x41C80000,0,0,0x41200000,0};
             static const DWORD w440[] = {0,0,0x42C80000,0x43160000,0x432F0000,0x431B0000,0x43160000,0x42C80000};
             static const int w1105[] = {0,0,1,0,1,1,0,1};
             o[0x43A] = w43a[wNum]; o[0x43B] = w43b[wNum]; o[0x440] = w440[wNum];
-            if (w1105[wNum]) *(char*)((char*)obj + 0x1105) = 1;
+            if (wNum == 3) *(char*)((char*)obj + 0x1104) = 1;
+            else if (w1105[wNum]) *(char*)((char*)obj + 0x1105) = 1;
+            /* Native ctor slot feeds GameLevel_ctor — mirror it. */
+            if (BoardHasOffset(board, 0x436C + (wNum-1) * 4, 4))
+                *(void **)((char *)board + 0x436C + (wNum-1) * 4) = (void *)meshVal;
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
@@ -1241,6 +1264,15 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         *(float *)((char *)ext + REND_GLASS_S1_Z) = z;
         *(DWORD *)((char *)ext + REND_GLASS_TRANSP1) = 0;
         *(char *)((char *)ext + REND_GLASS_FLAG1) = 0;
+        /* Native mirrors (Ghidra-verified 0x40AD80): S1 DAT floats to
+         * board+0x436C/70/74, zero +0x4384, clear flag +0x438C. */
+        if (BoardHasOffset(board, 0x436C, 16)) {
+            *(float *)((char *)board + 0x436C) = x;
+            *(float *)((char *)board + 0x4370) = y;
+            *(float *)((char *)board + 0x4374) = z;
+            *(DWORD *)((char *)board + 0x4384) = 0;
+        }
+        if (BoardHasOffset(board, 0x438C, 1)) *(BYTE *)((char *)board + 0x438C) = 0;
         *(int*)out1 = 0; *(int*)out2 = 0;
         return;
     }
@@ -1250,6 +1282,15 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         *(float *)((char *)ext + REND_GLASS_S2_Z) = z;
         *(DWORD *)((char *)ext + REND_GLASS_TRANSP2) = 0xC2B40000; /* -90.0f */
         *(char *)((char *)ext + REND_GLASS_FLAG2) = 0;
+        /* Native mirrors: S1 DAT floats to +0x4378/7C/80, -90.0f timer
+         * +0x4388, clear flag +0x438D. */
+        if (BoardHasOffset(board, 0x4378, 16)) {
+            *(float *)((char *)board + 0x4378) = x;
+            *(float *)((char *)board + 0x437C) = y;
+            *(float *)((char *)board + 0x4380) = z;
+            *(float *)((char *)board + 0x4388) = -90.0f;
+        }
+        if (BoardHasOffset(board, 0x438D, 1)) *(BYTE *)((char *)board + 0x438D) = 0;
         *(int*)out1 = 0; *(int*)out2 = 0;
         return;
     }

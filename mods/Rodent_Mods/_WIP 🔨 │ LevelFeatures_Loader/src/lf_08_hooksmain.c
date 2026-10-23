@@ -640,9 +640,13 @@ static void InstallVtablePatches(void) {
         }
 
         /* Slot 33 (offset +0x84): CreateDynamicObjects → UniversalCreateDynamicObjects
-         * No delegation — universal handler recognizes all object names */
+         * Save original per level — the native-ctor fast path (UNI_NATIVE_CTOR)
+         * delegates to it so native-built boards get native objects. */
         {
             DWORD *slot = (DWORD *)(vtableAddr + 0x84);
+            if (i >= 1 && i <= 15) {
+                g_origCreate[i] = (CreateDynamic_t)*slot;
+            }
             VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
             *slot = (DWORD)&UniversalCreateDynamicObjects;
             VirtualProtect(slot, 4, oldProtect, &oldProtect);
@@ -656,6 +660,9 @@ static void InstallVtablePatches(void) {
             int is_two_param = (i==2 || i==5 || i==10 || i==12 || i==13 || i==14);
             if (is_two_param) {
                 DWORD *slot = (DWORD *)(vtableAddr + 0x60);
+                if (i >= 1 && i <= 15) {
+                    g_origRender[i] = (Render_t)*slot;
+                }
                 VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
                 *slot = (DWORD)&UniversalRender;
                 VirtualProtect(slot, 4, oldProtect, &oldProtect);
@@ -812,6 +819,7 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     g_PendulumAddIndex = (Pendulum_AddIndex_t)(g_moduleBase + RVA_Pendulum_AddIndex);
     g_ScoreObjectCtor = (ScoreObject_ctor_t)(g_moduleBase + RVA_ScoreObject_ctor);
     g_TimerDecrement = (Timer_Decrement_t)(g_moduleBase + RVA_Timer_Decrement);
+    g_ToobClampZoom = (ToobClampZoom_t)(g_moduleBase + RVA_ToobClampZoom);
     g_ArenaScoreParticleCtor = (ArenaScoreParticle_ctor_t)(g_moduleBase + RVA_ArenaScoreParticle_ctor);
     g_AthenaHashTableLookup = (AthenaHashTable_Lookup_t)(g_moduleBase + RVA_AthenaHashTable_Lookup);
     g_AthenaListContainsValue = (AthenaList_ContainsValue_t)(g_moduleBase + RVA_AthenaList_ContainsValue);

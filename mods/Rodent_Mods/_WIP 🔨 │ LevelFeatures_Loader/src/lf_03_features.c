@@ -897,7 +897,7 @@ static void Feature_BumperDecay(void *board, int level) {
     if (level == 2) {        /* Beginner */
         baseOfs = BRD_BUMPER_DECAY_BEG;
         count = 8;
-    } else if (level == 10) { /* Toob */
+    } else if (level == 10 || ContentFileId(ext) == 10) { /* Toob (content-gated: works in any slot) */
         baseOfs = BRD_BUMPER_DECAY_TOOB;
         count = 8;
     } else if (level == 14) { /* Master */

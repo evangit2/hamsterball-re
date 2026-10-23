@@ -211,6 +211,10 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     /* Get-only: an ext-less board is mid-teardown (ext freed on race close).
      * Resurrecting one here would bind zombie state to a dying board. */
     if (!ext) goto call_global;
+    /* Native-ctor fast path: native-built boards run PURE native collision
+     * (our per-name custom handlers would double-fire against the native
+     * ones, e.g. E:BRANCH teleport). Additive update/render extras stay. */
+    if (*(int *)((char *)ext + UNI_NATIVE_CTOR)) goto call_global;
     int level = GetCurrentLevel(board);
     if (level == 0 || level > 15) goto call_global;
 
@@ -270,6 +274,10 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         // file uses bare N:BUMPER, so skipping the write is behavior-preserving.
         if (name[8] < '1' || name[8] > '8' || name[9] != '\0') goto call_global;
         bumperNum = name[8] - '0';
+        /* Toob-native bumper counter (Ghidra-verified 0x410020):
+         * board+0x6448+num*4 = 1.0 (content-driven, works in any slot). */
+        if (ContentFileId(ext) == 10 && BoardHasOffset(board, 0x6448 + bumperNum * 4, 4))
+            *(float *)((char *)board + 0x6448 + bumperNum * 4) = 1.0f;
         DWORD litBase = UNI_BUMPER_LIT;
         // BUMPER_LIT is unified -> ext ; adjust for 1-based naming: lit index = bumperNum-1
         *(DWORD *)((char *)ext + (bumperNum-1) * 4 + litBase) = 0x3F800000;
@@ -913,6 +921,14 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
 
     /* ── Toob: E:BRANCH (pipe branching system) ── */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_BRANCH)) && my_strnicmp(name, "E:BRANCH", 8) == 0) {
+        /* Native (A)-arm (Ghidra-verified 0x410020): tourney-gated, sets the
+         * SAW obj (board+0x4380) +0x110C=1. Native slot first (mirrored at
+         * create), ext fallback. */
+        if (difficulty != 0 && my_stricmp(name + 8, "(A)") == 0) {
+            int sawObj = BoardHasOffset(board, 0x4380, 4) ? *(int *)((char *)board + 0x4380) : 0;
+            if (!sawObj) sawObj = *(int *)((char *)ext + UNI_SAW_TOOB_OBJ);
+            if (sawObj) *(BYTE *)(sawObj + 0x110C) = 1;
+        }
         if (g_AthenaHashTableLookup && g_CPUIDRNG && g_Vec3NormalizeAndScale &&
             g_AthenaListInit && g_AthenaListAppend && g_AthenaListGetSize &&
             g_AthenaListGetIterator && g_operatorNew) {
@@ -1147,16 +1163,28 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         *(int *)((char *)ball + 0xC5C) = 0xF;
     }
 
-    /* ── Glass: N:TENBONUS1 / N:TENBONUS2 ── */
+    /* ── Glass: N:TENBONUS1 / N:TENBONUS2 ──
+     * Native-exact trigger (Ghidra-verified 0x417760): |ball phys pos|
+     * (magnitude from world origin — the smashers sit near it) vs 3.75
+     * (TB1) / 2.0 (TB2), once-per-race board flags +0x438C/+0x438D.
+     * Sound channels are asymmetric in the binary: TB1 = App+0x52C,
+     * TB2 = App+0x4D0 (replicated verbatim). Positions from native
+     * board slots (+0x436C/70 ch +0x436C for TB1; +0x4380/7C ch +0x4378
+     * for TB2); ext copies kept for the render path. */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_TENBONUS1)) && my_strnicmp(name, "N:TENBONUS1", 11) == 0) {
         int phys = ball[0x69];
-        if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
-            float speed = sqrtf(*(float*)(phys+0xCA4)**(float*)(phys+0xCA4) + *(float*)(phys+0xCA8)**(float*)(phys+0xCA8) + *(float*)(phys+0xCAC)**(float*)(phys+0xCAC));
-            if (speed >= 2.0f && *(char *)((char *)ext + REND_GLASS_FLAG1) == 0) {
+        if (phys && !IsBadReadPtr((void *)phys, 0xCB0) &&
+            BoardHasOffset(board, 0x436C, 16)) {
+            float px = *(float *)(phys + 0xCA4);
+            float py = *(float *)(phys + 0xCA8);
+            float pz = *(float *)(phys + 0xCAC);
+            float mag = sqrtf(px*px + py*py + pz*pz);
+            if (mag < 3.75f && *(char *)((char *)board + 0x438C) == 0) {
+                *(BYTE *)((char *)board + 0x438C) = 1;
                 *(BYTE *)((char *)ext + REND_GLASS_FLAG1) = 1;
                 if (g_SoundPlay3D && app) {
                     DWORD snd = *(DWORD *)(app + 0x52C);
-                    if (snd) g_SoundPlay3D((void *)snd, *(float*)((char*)ext+REND_GLASS_S1_X), *(float*)((char*)ext+REND_GLASS_S1_Y), *(float*)((char*)ext+REND_GLASS_S1_Z), 1.0f);
+                    if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)board + 0x436C), *(float *)((char *)board + 0x4370), *(float *)((char *)board + 0x4374), 1.0f);
                 }
                 if (app) {
                     int gameMode = *(int *)(app + 0x220);
@@ -1177,13 +1205,18 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
     if ((*(BYTE*)((char*)ext + COLL_FLAG_TENBONUS2)) && my_strnicmp(name, "N:TENBONUS2", 11) == 0) {
         int phys = ball[0x69];
-        if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
-            float speed = sqrtf(*(float*)(phys+0xCA4)**(float*)(phys+0xCA4) + *(float*)(phys+0xCA8)**(float*)(phys+0xCA8) + *(float*)(phys+0xCAC)**(float*)(phys+0xCAC));
-            if (speed >= 2.0f && *(char *)((char *)ext + REND_GLASS_FLAG2) == 0) {
+        if (phys && !IsBadReadPtr((void *)phys, 0xCB0) &&
+            BoardHasOffset(board, 0x4378, 16)) {
+            float px = *(float *)(phys + 0xCA4);
+            float py = *(float *)(phys + 0xCA8);
+            float pz = *(float *)(phys + 0xCAC);
+            float mag = sqrtf(px*px + py*py + pz*pz);
+            if (mag < 2.0f && *(char *)((char *)board + 0x438D) == 0) {
+                *(BYTE *)((char *)board + 0x438D) = 1;
                 *(BYTE *)((char *)ext + REND_GLASS_FLAG2) = 1;
                 if (g_SoundPlay3D && app) {
-                    DWORD snd = *(DWORD *)(app + 0x52C);
-                    if (snd) g_SoundPlay3D((void *)snd, *(float*)((char*)ext+REND_GLASS_S2_X), *(float*)((char*)ext+REND_GLASS_S2_Y), *(float*)((char*)ext+REND_GLASS_S2_Z), 1.0f);
+                    DWORD snd = *(DWORD *)(app + 0x4D0);
+                    if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)board + 0x4378), *(float *)((char *)board + 0x437C), *(float *)((char *)board + 0x4380), 1.0f);
                 }
                 if (app) {
                     int gameMode = *(int *)(app + 0x220);
