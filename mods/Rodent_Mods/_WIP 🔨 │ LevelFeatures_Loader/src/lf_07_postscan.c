@@ -413,6 +413,13 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
         if (!name) continue;
         if (!VirtualQuery(name, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) continue;
         // name is S1 ref string, e.g. "Levels\\Level3-WaterWheel" or "BRIDGE" etc.
+        /* S1REF census (object audit 2026-10-24): log every S1 ref name so
+         * the log holds the EXPECTED object set (compare vs CREATE census). */
+        {
+            char s1dbg[128];
+            wsprintfA(s1dbg, "S1REF: '%.80s'", name);
+            DebugLog(s1dbg);
+        }
         // Phase1 full registry: every S1 prefix auto-enables its feat / ensures mesh
         /* Expert level5 BRIDGE1/2 are spinners (own creation path), not the
          * Intermediate drawbridge - never set the drawbridge anim flag for them. */
