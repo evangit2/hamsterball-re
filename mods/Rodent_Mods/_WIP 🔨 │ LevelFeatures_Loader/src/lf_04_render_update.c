@@ -23,11 +23,16 @@ void UniversalRenderImpl(void *board, int unk) {
     /* Native-ctor fast path: run the NATIVE custom scene render (orig slot
      * 24) instead of the shared base render. The base render walks objects
      * the custom scenes need (Toob/Glass died: NULL object+0x154, wild
-     * HeapAlloc ret). Skip additive extras — native scene is complete. */
-    if (ext && *(int *)((char *)ext + UNI_NATIVE_CTOR) &&
-        level >= 1 && level <= 15 && g_origRender[level]) {
-        g_origRender[level](board, unk);
-        return;
+     * HeapAlloc ret). Skip additive extras — native scene is complete.
+     * Origs by CONTENT (g_origRender[15] is NULL — 15 uses 1-param render
+     * and is never patched; cross-slot 15 falls back to base render). */
+    if (ext && *(int *)((char *)ext + UNI_NATIVE_CTOR)) {
+        int cslot = ContentFileId(ext);
+        int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
+        if (effSlot >= 1 && effSlot <= 15 && g_origRender[effSlot]) {
+            g_origRender[effSlot](board, unk);
+            return;
+        }
     }
     if (!ext || level == 0) return;
 
@@ -550,10 +555,13 @@ void __fastcall UniversalRaceState(void *board) {
      * (racestate_features) still run — ext-driven, S1-based. */
     {
         void *rsext = GetBoardExt(board);
-        if (rsext && *(int *)((char *)rsext + UNI_NATIVE_CTOR) &&
-            level >= 1 && level <= 15 && g_origRaceState[level]) {
-            g_origRaceState[level](board);
-            goto racestate_features;
+        if (rsext && *(int *)((char *)rsext + UNI_NATIVE_CTOR)) {
+            int cslot = ContentFileId(rsext);
+            int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
+            if (effSlot >= 1 && effSlot <= 15 && g_origRaceState[effSlot]) {
+                g_origRaceState[effSlot](board);
+                goto racestate_features;
+            }
         }
     }
     if (level == 2) {

@@ -330,21 +330,25 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         } else g_loadingContentId = 0;
     }
 
-    /* Step 1: base setup. NATIVE-SLOT FAST PATH (fix 2026-10-23): when the
-     * loaded content IS the slot's native content and we have a verified
-     * native level ctor, call it instead of replicating. Hand-replication
-     * missed engine fields the Toob/Glass scenes need (Toob died in
-     * Scene_Update frame 1; Glass render deref'd a NULL object+0x154).
+    /* Step 1: base setup. NATIVE-SLOT FAST PATH (fix 2026-10-23, extended to
+     * 13/14/15 2026-10-24): when the loaded content has a verified native
+     * level ctor, call it instead of replicating. Hand-replication missed
+     * engine fields the custom scenes need (Toob died in Scene_Update
+     * frame 1; Glass render deref'd a NULL object+0x154).
      * vtable slots [1,19,29,33] still redirect to our handlers, which
      * delegate to native orig for these boards (UNI_NATIVE_CTOR), keeping
      * only additive extras (update/render feature blocks). */
     typedef void (__thiscall *NativeLevelCtor_t)(void *mem, int app);
     NativeLevelCtor_t nativeCtor = NULL;
-    if (g_loadingContentId == raceIndex) {
-        if (g_loadingContentId == 10) nativeCtor = (NativeLevelCtor_t)0x41F4B0;
-        else if (g_loadingContentId == 11) nativeCtor = (NativeLevelCtor_t)0x41F110;
-        else if (g_loadingContentId == 12) nativeCtor = (NativeLevelCtor_t)0x424A90;
-    }
+    /* Content-driven (any slot): native-ctor fast path for 10-15. Native
+     * slots (content==slot) get exact-native boards; cross-slot swaps get
+     * native-built boards with origs looked up by CONTENT below. */
+    if (g_loadingContentId == 10) nativeCtor = (NativeLevelCtor_t)0x41F4B0;
+    else if (g_loadingContentId == 11) nativeCtor = (NativeLevelCtor_t)0x41F110;
+    else if (g_loadingContentId == 12) nativeCtor = (NativeLevelCtor_t)0x424A90;
+    else if (g_loadingContentId == 13) nativeCtor = (NativeLevelCtor_t)0x41F930;
+    else if (g_loadingContentId == 14) nativeCtor = (NativeLevelCtor_t)0x4206D0;
+    else if (g_loadingContentId == 15) nativeCtor = (NativeLevelCtor_t)0x424C20;
     int useNativeCtor = (nativeCtor != NULL);
     if (useNativeCtor) {
         DebugLog("NativeCtor fast path: calling native level ctor...");
@@ -451,8 +455,10 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     /* Step 2: Set vtable. Tower/Up/Dizzy/Neon/Expert/Odd/Toob/Wobbly/Glass
      * content keeps the
      * vtable its Universal*Init set (native class for content); other
-     * content gets its slot vtable. */
-    if (g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4 &&
+     * content gets its slot vtable. Native-ctor boards keep the vtable the
+     * native ctor set (skip unconditionally — incl. cross-slot). */
+    if (!useNativeCtor &&
+        g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4 &&
         g_loadingContentId != 7 && g_loadingContentId != 8 && g_loadingContentId != 9 &&
         g_loadingContentId != 10 && g_loadingContentId != 11 && g_loadingContentId != 12)
         *(DWORD *)mem = g_levelVtables[raceIndex];
@@ -460,8 +466,10 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
 
     /* Step 3: Set board name and race title (slot table — skipped for Tower,
      * Up, Dizzy, Neon, Expert, Odd, Toob, Wobbly and Glass content, whose
-     * content names the Universal*Init set). */
-    if (g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4 &&
+     * content names the Universal*Init set; native-ctor boards keep native
+     * content names). */
+    if (!useNativeCtor &&
+        g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4 &&
         g_loadingContentId != 7 && g_loadingContentId != 8 && g_loadingContentId != 9 &&
         g_loadingContentId != 10 && g_loadingContentId != 11 && g_loadingContentId != 12) {
         *(char **)((char *)mem + UNI_BOARD_NAME) = ld->boardName;
