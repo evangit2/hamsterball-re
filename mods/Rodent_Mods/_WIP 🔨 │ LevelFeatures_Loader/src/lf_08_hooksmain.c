@@ -11,6 +11,16 @@ static void UniversalConstructor(void *board, int raceIndex) {
         DebugLog("UniversalConstructor: invalid params");
         return;
     }
+    /* Tower full-native bypass: the native dispatch tail builds the entire
+     * scene (mesh/render/init/setup/objects). Skip everything here. */
+    {
+        void *bx0 = GetBoardExt(board);
+        if (bx0 && *(int *)((char *)bx0 + UNI_NATIVE_CTOR) &&
+            ContentFileId(bx0) == 5) {
+            DebugLog("Tower full-native: Constructor skipped, native tail builds scene");
+            return;
+        }
+    }
     if (!g_operatorNew || !g_LevelMeshWorldCtor || !g_LevelRenderCtor ||
         !g_LevelInitScene) {
         DebugLog("UniversalConstructor: function pointers not resolved");
@@ -82,19 +92,13 @@ static void UniversalConstructor(void *board, int raceIndex) {
         }
     }
     DebugLog("STEPMARK MeshWorld calling");
-    /* Tower-only bypass (audit 2026-10-24): the native Tower ctor already
-     * built this board's scene; rebuilding the meshWorld here hangs inside
-     * MeshWorldCtor (FD spins re-reading level4). Reuse the native mesh if
-     * valid, else proceed with NULL (scans are NULL-guarded; Board_Setup
-     * below still creates objects via the saved native orig create). */
-    int skipSceneBuild = 0;
-    {
-        void *preExt2 = GetBoardExt(board);
-        if (preExt2 && *(int *)((char *)preExt2 + UNI_NATIVE_CTOR) &&
-            ContentFileId(preExt2) == 5)
-            skipSceneBuild = 1;
-    }
-    if (!meshWorld && !skipSceneBuild) {
+    { char adbg[160]; wsprintfA(adbg, "MESHCALLARGS app=0x%08X gfx=0x%08X path='%s'",
+        app, (DWORD)gfx, meshPath); DebugLog(adbg); }
+    /* NOTE (audit 2026-10-24): the old Tower skipgate is gone — the
+     * earlier hang was a wrong-ctor artifact (Dizzy's 0x41D060 was used
+     * for Tower; real Tower ctor is 0x41E340). With the correct ctor the
+     * main-mesh build here is the first parse, same as all other levels. */
+    if (!meshWorld) {
         meshMem = g_operatorNew(0x10D0);
         if (!meshMem) return;
         meshWorld = g_LevelMeshWorldCtor(meshMem, gfx, meshPath);
@@ -791,6 +795,9 @@ static DWORD WINAPI PatchThread(LPVOID param) {
 
     /* Resolve Board_Update function pointers */
     g_SceneUpdate = (Scene_Update_t)(g_moduleBase + RVA_Scene_Update);
+    /* Tower native update (0x41E760: Scene_Update + Tower behaviors).
+     * Used for full-native Tower boards (our slot-1 replaces native). */
+    g_TowerNativeUpdate = (TowerUpdate_t)(g_moduleBase + 0x0001E760);
     g_BoardUpdateRaceState = (Board_UpdateRaceState_t)(g_moduleBase + RVA_Board_UpdateRaceState);
     g_RenderDynamicObjects = (Level_RenderDynamicObjects_t)(g_moduleBase + RVA_Level_RenderDynamicObjects);
     g_GraphicsSetProjection = (Graphics_SetProjection_t)(g_moduleBase + RVA_Graphics_SetProjection);
@@ -916,6 +923,8 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     DebugLog("InstallExtFreeHook done");
     PatchAllocSizes();
     DebugLog("PatchAllocSizes done");
+    /* TOWER-BISECT 2026-10-24: hook proven innocent (hang persists without
+     * it). Restored — file swaps need it. */
     InstallFileFallbackHook();
     DebugLog("InstallFileFallbackHook done");
     InstallBoardCtorHooks();

@@ -28,9 +28,12 @@ void UniversalRenderImpl(void *board, int unk) {
      * and is never patched; cross-slot 15 falls back to base render). */
     if (ext && *(int *)((char *)ext + UNI_NATIVE_CTOR)) {
         int cslot = ContentFileId(ext);
-        int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
+        int effSlot = (cslot == 5 || (cslot >= 10 && cslot <= 15)) ? cslot : level;
         if (effSlot >= 1 && effSlot <= 15 && g_origRender[effSlot]) {
+            static int rdbg = 0;
+            if (rdbg < 3 && effSlot == 5) { DebugLog("Tower render ENTER (orig)"); rdbg++; }
             g_origRender[effSlot](board, unk);
+            if (effSlot == 5) DebugLog("Tower render EXIT (orig)");
             return;
         }
     }
@@ -432,8 +435,130 @@ __attribute__((naked)) void UniversalRender(void) {
  * the per-level feature flags in g_updateFeatures[].
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* Forward: S1 audit scanner lives in lf_07 (same TU, defined later). */
+static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld);
+
 void __fastcall UniversalBoardUpdate(void *board) {
     if (!g_SceneUpdate || !board) return;
+
+    /* Tower full-native: run the NATIVE Tower update (Scene_Update +
+     * Tower behaviors at 0x41E760). Our feature blocks stay off (feats
+     * unset — native drives everything, exactly like vanilla). */
+    {
+        void *ux = GetBoardExt(board);
+        if (ux && *(int *)((char *)ux + UNI_NATIVE_CTOR) &&
+            ContentFileId(ux) == 5 && g_TowerNativeUpdate) {
+            static void *s_towerAudited = NULL;
+            /* Hail-mary 2026-10-24: the native tail never built Tower's
+             * scene (mesh NULL, no ball, no creates) in this process.
+             * Invoke the tail's scene builder (slot-0x48) directly here —
+             * if it returns, the board becomes vanilla-complete. */
+            {
+                static int s_s48done = 0;
+                if (!s_s48done) {
+                    s_s48done = 1;
+                    DWORD s48 = 0;
+                    /* Read current scene products first: if the tail built
+                     * the scene itself, do NOT re-run slot-0x48. */
+                    DWORD preMesh = 0, preRender = 0;
+                    if (!IsBadReadPtr((char*)board + BOARD_RENDEROBJ, 8)) {
+                        preMesh = *(DWORD*)((char*)board + BOARD_MESHWORLD);
+                        preRender = *(DWORD*)((char*)board + BOARD_RENDEROBJ);
+                    }
+                    { char se[96]; wsprintfA(se, "Tower pre-s48 mesh=0x%08X render=0x%08X", preMesh, preRender); DebugLog(se); }
+                    if (!preMesh || !preRender) {
+                        if (!IsBadReadPtr(board, 4) && !IsBadReadPtr(*(void**)board, 0x100))
+                            s48 = *(DWORD*)(*(DWORD*)board + 0x48);
+                        { char se[96]; wsprintfA(se, "Tower slot48 invoke target=0x%08X", s48); DebugLog(se); }
+                        if (s48 == 0x40D6D0) {
+                            DebugLog("Tower slot48 ENTER");
+                            ((void(__thiscall*)(void*))s48)(board);
+                            DebugLog("Tower slot48 EXIT");
+                        }
+                    } else {
+                        DebugLog("Tower tail built scene; deferred s48 skipped");
+                    }
+                }
+            }
+            /* Allocator probe: does game operator_new still work here?
+             * NULL = heap broken (explains tail's missing mesh/ball). */
+            {
+                static int s_allocTested = 0;
+                if (!s_allocTested && g_operatorNew) {
+                    s_allocTested = 1;
+                    void *tp = g_operatorNew(0x10D0);
+                    char ab[96]; wsprintfA(ab, "Tower alloc probe 0x10D0 -> 0x%08X", (DWORD)tp);
+                    DebugLog(ab);
+                }
+            }
+            /* Validate native-built lists BEFORE first update (one-shot).
+             * Scene_Update walks these; a corrupt list here = native setup
+             * exposed by heap layout (uninit read). */
+            {
+                static int s_lvDone = 0;
+                if (!s_lvDone) {
+                    s_lvDone = 1;
+                    int li; DWORD loffs[] = {0x2578,0x43B8,0x47D0,0x4BE8,0x5000,0x8B8,0x10EC,0xCD4,0x29D4,0};
+                    for (li = 0; loffs[li]; li++) {
+                        char lb[160]; DWORD lc = 0; void *li2 = NULL; int ok = 0;
+                        MEMORY_BASIC_INFORMATION mbi;
+                        if (!IsBadReadPtr((char*)board + loffs[li], 0x410)) {
+                            lc = *(DWORD*)((char*)board + loffs[li] + 4);
+                            li2 = *(void**)((char*)board + loffs[li] + 0x40C);
+                            if (li2 && VirtualQuery(li2, &mbi, sizeof(mbi)) && mbi.State == MEM_COMMIT) ok = (lc < 100000) ? 1 : 0;
+                            else if (!li2 && lc == 0) ok = 1;
+                        }
+                        wsprintfA(lb, "Tower list +%X count=%u items=0x%08X %s", loffs[li], lc, (DWORD)li2, ok ? "OK" : "BAD");
+                        DebugLog(lb);
+                    }
+                    /* Mesh/render slots: did the tail build the scene? */
+                    {
+                        char mb[160]; void *mwm2 = *(void**)((char*)board + BOARD_MESHWORLD);
+                        void *rob = *(void**)((char*)board + BOARD_RENDEROBJ);
+                        wsprintfA(mb, "Tower scene mesh=0x%08X render=0x%08X", (DWORD)mwm2, (DWORD)rob);
+                        DebugLog(mb);
+                    }
+                    /* Tail-completion: slot-0x48 writes board+0x3F18 timer.
+                     * NULL/garbage = slot-0x48 never ran or died early. */
+                    {
+                        char tb[160]; void *tmr = *(void**)((char*)board + 0x3F18);
+                        DWORD t10 = 0, t14 = 0;
+                        if (tmr && !IsBadReadPtr(tmr, 0x18)) {
+                            t10 = *(DWORD*)((char*)tmr + 0x10);
+                            t14 = *(DWORD*)((char*)tmr + 0x14);
+                        }
+                        wsprintfA(tb, "Tower tailcheck timer=0x%08X +10=0x%08X +14=0x%08X", (DWORD)tmr, t10, t14);
+                        DebugLog(tb);
+                    }
+                    /* Vtable integrity: did anything retarget Tower's vtable?
+                     * Expect vt=0x4D0A08, slot+0x48=0x40D6D0 (file-verified). */
+                    {
+                        char vb[160]; DWORD vt = *(DWORD*)board;
+                        DWORD s48 = 0;
+                        if (!IsBadReadPtr((void*)vt, 0x100)) s48 = *(DWORD*)(vt + 0x48);
+                        wsprintfA(vb, "Tower vtable=0x%08X slot48=0x%08X", vt, s48);
+                        DebugLog(vb);
+                    }
+                }
+            }
+            DebugLog("Tower native update ENTER");
+            /* Full native update now that the board is complete (deferred
+             * slot-0x48 built mesh/render/init/setup/objects). */
+            g_TowerNativeUpdate(board);
+            DebugLog("Tower native update EXIT");
+            /* Deferred read-only S1REF audit: mesh exists only after the
+             * native tail built it (post-Constructor), so scan here. */
+            if (s_towerAudited != board) {
+                void *mwm = *(void **)((char *)board + BOARD_MESHWORLD);
+                if (mwm && !IsBadReadPtr(mwm, 4)) {
+                    ScanS1AndAutoEnable(board, ux, mwm);
+                    s_towerAudited = board;
+                    DebugLog("Tower S1REF audit done (native mesh)");
+                }
+            }
+            return;
+        }
+    }
 
     static int s_updateCount = 0;
     s_updateCount++;
@@ -557,7 +682,7 @@ void __fastcall UniversalRaceState(void *board) {
         void *rsext = GetBoardExt(board);
         if (rsext && *(int *)((char *)rsext + UNI_NATIVE_CTOR)) {
             int cslot = ContentFileId(rsext);
-            int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
+            int effSlot = (cslot == 5 || (cslot >= 10 && cslot <= 15)) ? cslot : level;
             if (effSlot >= 1 && effSlot <= 15 && g_origRaceState[effSlot]) {
                 g_origRaceState[effSlot](board);
                 goto racestate_features;

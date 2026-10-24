@@ -100,7 +100,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
      * cross-slot swaps delegate to the content's own native handler. */
     if (*(int *)((char *)ext + UNI_NATIVE_CTOR)) {
         int cslot = ContentFileId(ext);
-        int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
+        int effSlot = (cslot == 5 || (cslot >= 10 && cslot <= 15)) ? cslot : level;
         if (effSlot >= 1 && effSlot <= 15 && g_origCreate[effSlot]) {
             g_origCreate[effSlot](board, name, out1, out2, s1data);
             return;

@@ -341,14 +341,15 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     typedef void (__thiscall *NativeLevelCtor_t)(void *mem, int app);
     NativeLevelCtor_t nativeCtor = NULL;
     /* Content-driven (any slot): native-ctor fast path for custom-scene
-     * contents (10-15). Native slots (content==slot) get exact-native
+     * contents (5,10-15). Native slots (content==slot) get exact-native
      * boards; cross-slot swaps get native-built boards with origs looked
-     * up by CONTENT below. Shared-scene contents (1-9, incl. Tower) keep
-     * the hand-replicated Universal*Init path. (Tower was trialed on the
-     * fast path 2026-10-24: native ctor + scene rebuild hangs/crashes on
-     * this rig in every config — needs dispatch-tail RE; vanilla loads
-     * it fine so this is mod-side, rig-visible.) */
-    if (g_loadingContentId == 10) nativeCtor = (NativeLevelCtor_t)0x41F4B0;
+     * up by CONTENT below. Shared-scene contents (1-4,6-9) keep the
+     * hand-replicated Universal*Init path. (Tower address corrected
+     * 2026-10-24: 0x41D060 is DIZZY's ctor (Ghidra-verified); Tower's is
+     * 0x41E340 (dispatch slot-5 target). The earlier fast-path trial used
+     * Dizzy's — all its Tower conclusions are void.) */
+    if (g_loadingContentId == 5) nativeCtor = (NativeLevelCtor_t)0x41E340;
+    else if (g_loadingContentId == 10) nativeCtor = (NativeLevelCtor_t)0x41F4B0;
     else if (g_loadingContentId == 11) nativeCtor = (NativeLevelCtor_t)0x41F110;
     else if (g_loadingContentId == 12) nativeCtor = (NativeLevelCtor_t)0x424A90;
     else if (g_loadingContentId == 13) nativeCtor = (NativeLevelCtor_t)0x41F930;
@@ -356,6 +357,12 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     else if (g_loadingContentId == 15) nativeCtor = (NativeLevelCtor_t)0x424C20;
     int useNativeCtor = (nativeCtor != NULL);
     if (useNativeCtor) {
+        /* Zero the full universal board BEFORE the native ctor: native
+         * Tower board is only 0x5418 (smallest) but gets a 0x7000 buffer;
+         * custom-scene code reading past the native end must see zeros
+         * (vanilla heap slack), not operator_new garbage (2026-10-24). */
+        { unsigned char *zb = (unsigned char *)mem; int zi;
+          for (zi = 0; zi < 0x7000; zi++) zb[zi] = 0; }
         DebugLog("NativeCtor fast path: calling native level ctor...");
         nativeCtor(mem, app);
         DebugLog("NativeCtor fast path: native ctor done");
@@ -394,6 +401,23 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         DebugLog("Board_ctor done");
     }
     } /* end if (!useNativeCtor) — native fast path skips replication */
+
+    /* Tower full-native bypass (2026-10-24): the native Tower ctor + tail
+     * build the complete board (proven: vanilla loads+runs Tower; the mod's
+     * own MeshWorldCtor call hangs pre-tail in every config). Stamp ext
+     * identity (handlers + render/racestate gates need it) and return —
+     * the native dispatch tail builds mesh/render/init/setup/objects.
+     * (Removed the TOWEREARLY experiment: same hang, poison predates Steps.) */
+    if (useNativeCtor && g_loadingContentId == 5) {
+        FreeBoardExt(mem);
+        void *extT = EnsureBoardExt(mem);
+        if (extT) {
+            *(int *)((char *)extT + UNI_CONTENT_FILE) = g_loadingContentId;
+            *(int *)((char *)extT + UNI_NATIVE_CTOR) = 1;
+        }
+        DebugLog("Tower full-native bypass: identity stamped, native tail builds scene");
+        return;
+    }
 
     /* Ext heap: fresh lifecycle per construction. Drop any stale entry for
      * this address first (heap reuse after quit-to-menu/restart paths that
