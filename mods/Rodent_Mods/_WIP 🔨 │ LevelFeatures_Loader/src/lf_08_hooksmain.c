@@ -55,16 +55,52 @@ static void UniversalConstructor(void *board, int raceIndex) {
         DebugLog(dbg3);
     }
 
+    /* Tower mesh-reuse note (audit 2026-10-24): INERT right now — Tower
+     * is back on replication (no NATIVE_CTOR flag), so this never fires.
+     * Kept + stepmarks kept: if Tower ever returns to the fast path,
+     * calling MeshWorldCtor on an already-parsed level4 spins re-reading
+     * the file (game parser not re-entrant for level4) — reuse instead. */
+
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (!app || IsBadReadPtr((void *)app, 0x200)) return;
     void *gfx = *(void **)((char *)app + 0x174);
     if (!gfx) return;
 
-    /* Step 1: MeshWorld */
-    void *meshMem = g_operatorNew(0x10D0);
-    if (!meshMem) return;
-    void *meshWorld = g_LevelMeshWorldCtor(meshMem, gfx, meshPath);
-    *(DWORD *)((char *)board + BOARD_MESHWORLD) = (DWORD)meshWorld;
+    /* Step 1: MeshWorld. Native-ctor fast-path boards (custom scenes) may
+     * already carry a native-built meshWorld — REUSE it (calling the ctor
+     * twice hangs on Tower's level4 and double-frees elsewhere). */
+    void *meshMem = NULL;
+    void *meshWorld = NULL;
+    {
+        void *preExt = GetBoardExt(board);
+        if (preExt && *(int *)((char *)preExt + UNI_NATIVE_CTOR)) {
+            void *nativeMW = *(void **)((char *)board + BOARD_MESHWORLD);
+            MEMORY_BASIC_INFORMATION mwbi;
+            if (nativeMW && VirtualQuery(nativeMW, &mwbi, sizeof(mwbi)) &&
+                mwbi.State == MEM_COMMIT)
+                meshWorld = nativeMW;
+        }
+    }
+    DebugLog("STEPMARK MeshWorld calling");
+    /* Tower-only bypass (audit 2026-10-24): the native Tower ctor already
+     * built this board's scene; rebuilding the meshWorld here hangs inside
+     * MeshWorldCtor (FD spins re-reading level4). Reuse the native mesh if
+     * valid, else proceed with NULL (scans are NULL-guarded; Board_Setup
+     * below still creates objects via the saved native orig create). */
+    int skipSceneBuild = 0;
+    {
+        void *preExt2 = GetBoardExt(board);
+        if (preExt2 && *(int *)((char *)preExt2 + UNI_NATIVE_CTOR) &&
+            ContentFileId(preExt2) == 5)
+            skipSceneBuild = 1;
+    }
+    if (!meshWorld && !skipSceneBuild) {
+        meshMem = g_operatorNew(0x10D0);
+        if (!meshMem) return;
+        meshWorld = g_LevelMeshWorldCtor(meshMem, gfx, meshPath);
+        *(DWORD *)((char *)board + BOARD_MESHWORLD) = (DWORD)meshWorld;
+    }
+    { char mwdbg[128]; wsprintfA(mwdbg, "STEPMARK MeshWorld done: meshWorld=0x%08X", (DWORD)meshWorld); DebugLog(mwdbg); }
 
     /* Step 1b: Extension heap allocation (Option B) — S1-driven. */
     {
@@ -76,18 +112,22 @@ static void UniversalConstructor(void *board, int raceIndex) {
         if (ext) ScanS1ReferencedMeshesForCollisions(board, ext, meshWorld, meshPath);
         // Build per-board cached collision flags (once, not per-collision)
         if (ext) BuildCollisionFlags(board, ext);
+        DebugLog("STEPMARK S1 scans done");
     }
 
-    /* Step 2: RenderObj */
+    /* Step 2: RenderObj (Tower reuses its native meshWorld above; render +
+     * init + setup still run — they operate on the reused native mesh). */
     void *renderMem = g_operatorNew(0x10D0);
     void *renderObj = NULL;
     if (renderMem) {
         renderObj = g_LevelRenderCtor(renderMem, meshWorld);
     }
     *(DWORD *)((char *)board + BOARD_RENDEROBJ) = (DWORD)renderObj;
+    DebugLog("STEPMARK RenderObj done");
 
-    /* Step 3: InitScene */
+    /* Step 3: InitScene. */
     g_LevelInitScene(board);
+    DebugLog("STEPMARK InitScene done");
 
     /* Step 4: Config-driven features (BEFORE Board_Setup)
      * The original game loads sub-meshes (bridge, tipper, etc.) in the

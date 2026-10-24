@@ -82,7 +82,7 @@ static void* S1EnsureSprite(void* board, void* ext, DWORD offset, const char* pa
     return spr;
 }
 
-void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out1, void *out2, int *s1data) {
+void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void *out1, void *out2, int *s1data) {
     /* OUT-PARAM RULE (blank-world fix 2026-10-22): out1 must be 0 or a REAL
      * game object — NEVER a mesh/render pointer. The native Setup caller
      * appends out1 to an object list; a mesh there poisons the D3D device
@@ -94,23 +94,16 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
     void* ext = EnsureBoardExt(board);
     if (!ext) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
 
-    /* CENSUS (object audit 2026-10-24): log every create call with its
-     * outputs so the log is a complete per-race object census. Fast-path
-     * boards delegate to orig below; log after with native out params. */
-    {
-        void *censext = GetBoardExt(board);
-        int isNative = (censext && *(int *)((char *)censext + UNI_NATIVE_CTOR));
-        if (isNative) {
-            int cslot = ContentFileId(censext);
-            int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
-            if (effSlot >= 1 && effSlot <= 15 && g_origCreate[effSlot]) {
-                g_origCreate[effSlot](board, name, out1, out2, s1data);
-                char censdbg[256];
-                wsprintfA(censdbg, "CREATE census: name='%.48s' slot=%d content=%d out1=0x%08X out2=0x%08X",
-                    name, level, cslot, *(DWORD *)out1, *(DWORD *)out2);
-                DebugLog(censdbg);
-                return;
-            }
+    /* Native-ctor fast path: native-built boards get NATIVE objects via the
+     * saved orig create (our replicating handler misses engine fields).
+     * Origs are looked up by CONTENT (native slot for that content), so
+     * cross-slot swaps delegate to the content's own native handler. */
+    if (*(int *)((char *)ext + UNI_NATIVE_CTOR)) {
+        int cslot = ContentFileId(ext);
+        int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
+        if (effSlot >= 1 && effSlot <= 15 && g_origCreate[effSlot]) {
+            g_origCreate[effSlot](board, name, out1, out2, s1data);
+            return;
         }
     }
 
@@ -1342,4 +1335,23 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         DebugLog(udbg);
     }
     *(int*)out1 = 0; *(int*)out2 = 0;
+}
+
+/* CENSUS wrapper (object audit 2026-10-24): every CreateDynamicObjects
+ * call on every board funnels through here, so the log holds a complete
+ * per-race object census (EXPECTED = S1REF lines, ACTUAL = these lines).
+ * vtable slot 33 points at this wrapper; it delegates to the Impl above
+ * (fast-path native orig or our mirrors) then logs name + out params. */
+void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out1, void *out2, int *s1data) {
+    if (!name || !out1 || !out2 || !s1data) return;
+    UniversalCreateDynamicObjectsImpl(board, name, out1, out2, s1data);
+    {
+        void *censext = GetBoardExt(board);
+        int cslot = censext ? ContentFileId(censext) : 0;
+        int clevel = GetCurrentLevel(board);
+        char censdbg[256];
+        wsprintfA(censdbg, "CREATE census: name='%.48s' slot=%d content=%d out1=0x%08X out2=0x%08X",
+            name, clevel, cslot, *(DWORD *)out1, *(DWORD *)out2);
+        DebugLog(censdbg);
+    }
 }

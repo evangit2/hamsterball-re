@@ -340,9 +340,14 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
      * only additive extras (update/render feature blocks). */
     typedef void (__thiscall *NativeLevelCtor_t)(void *mem, int app);
     NativeLevelCtor_t nativeCtor = NULL;
-    /* Content-driven (any slot): native-ctor fast path for 10-15. Native
-     * slots (content==slot) get exact-native boards; cross-slot swaps get
-     * native-built boards with origs looked up by CONTENT below. */
+    /* Content-driven (any slot): native-ctor fast path for custom-scene
+     * contents (10-15). Native slots (content==slot) get exact-native
+     * boards; cross-slot swaps get native-built boards with origs looked
+     * up by CONTENT below. Shared-scene contents (1-9, incl. Tower) keep
+     * the hand-replicated Universal*Init path. (Tower was trialed on the
+     * fast path 2026-10-24: native ctor + scene rebuild hangs/crashes on
+     * this rig in every config — needs dispatch-tail RE; vanilla loads
+     * it fine so this is mod-side, rig-visible.) */
     if (g_loadingContentId == 10) nativeCtor = (NativeLevelCtor_t)0x41F4B0;
     else if (g_loadingContentId == 11) nativeCtor = (NativeLevelCtor_t)0x41F110;
     else if (g_loadingContentId == 12) nativeCtor = (NativeLevelCtor_t)0x424A90;
