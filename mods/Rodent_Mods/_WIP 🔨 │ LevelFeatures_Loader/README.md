@@ -85,9 +85,6 @@ longer read; S1 `N:`/`E:` refs are the source of truth.
 
 1. Rename original `bass.dll` to `bass_real.dll`
 2. Copy `bass.dll` and `RaceFiles.txt` from the zip into the game folder
-3. Copy `Image.png` from the zip into the game's `Textures/` folder
-   (Tower's Level4 references it; the stock data is missing the file and
-   Tower hangs on load without it — any 64x64 PNG works, white is neutral)
 
 ## Build
 

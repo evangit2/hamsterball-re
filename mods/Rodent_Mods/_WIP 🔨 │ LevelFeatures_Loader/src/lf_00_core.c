@@ -568,10 +568,6 @@ typedef void (__thiscall *Scene_AddObject_t)(void *scene, void *obj);
 
 static Scene_Update_t             g_SceneUpdate = NULL;
 static Board_UpdateRaceState_t    g_BoardUpdateRaceState = NULL;
-/* Tower native Board_Update (0x41E760, __thiscall, Scene_Update + Tower
- * behaviors). Full-native Tower delegates here (our slot-1 replaces it). */
-typedef void (__thiscall *TowerUpdate_t)(void *board);
-static TowerUpdate_t              g_TowerNativeUpdate = NULL;
 
 /* Saved original vtable[19] (RaceState) for each level (1-15).
  * Several levels have custom RaceState handlers that iterate per-level
