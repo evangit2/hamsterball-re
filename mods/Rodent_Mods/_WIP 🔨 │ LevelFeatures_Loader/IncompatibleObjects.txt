@@ -1,0 +1,188 @@
+SHARED NAMES, DIFFERENT FUNCTIONS — cross-level incompatibility list
+Hamsterball race levels, binary-verified 2026-10-25 (Hamsterbot for RodentRacer)
+
+METHOD (all claims checked against Hamsterball.exe 1404928 bytes, base 0x400000):
+- Parsed all 15 race + 15 arena MESHWORLD (originals/, every file exact-size).
+- Read all 30 vtable[33] (factory, +0x84) and vtable[29] (handler, +0x74)
+  straight from the binary. Race factory/handler table in the skill docs
+  matches the reads exactly.
+- Recursive-descent disassembly (capstone) from every factory/handler entry,
+  collecting referenced strings = EXACT per-function name sets. Small window
+  (0x800) so neighboring functions can't pollute results; verified stable.
+- PUSH-site attribution for S1-ref consumers (which function references each
+  ref name).
+
+FILE MAP used below (content-verified, NOT file number):
+Level1=Warm-Up, LevelCascade=Beginner, Level2=Intermediate, Level3=Dizzy,
+Level4=Tower, LevelUp=Up, LevelDark=Neon, Level5=Expert, Level6=Odd,
+Level8=Toob, Level7=Wobbly, LevelGlass=Glass, Level9=Sky, Level10=Master,
+LevelImpossible=Impossible.
+
+FOUR RULES that dissolve most apparent conflicts:
+1. DispatchCollisionEvents (0x40C5D0) is GLOBAL and identical on all boards.
+   Exact set: DROPIN, E:ACTION, E:BREAK, E:JUMP, E:LIMIT, E:NODIZZY,
+   E:SAFESWITCH, E:SCORE, E:TRAJECTORY, N:NOCONTROL, N:SECRET, N:TARPIT,
+   N:UNLOCKSECRET, N:WATER, PIPEBONK, POPOUT (+modifiers ONCE/SCORE/TRUE/YES).
+   DROPIN/PIPEBONK/POPOUT compare name+2 (E: and N: both match). Anything in
+   this set behaves THE SAME on every level. No work needed.
+2. Factories/handlers use __strnicmp (case-INsensitive). 'Bonk'='BONK',
+   'Catapult'='CATAPULT', 'Tipper'='TIPPER', 'Gluebie'='GLUEBIE',
+   'SAFESPOt'='SAFESPOT', 'E:Dropin'='E:DROPIN'. Case variants are NOT
+   incompatibilities. Same for trailing-TAB duplicates ('X\t' = 'X').
+3. Submesh geoms fire race handlers. E:CATAPULTBOTTOM lives only in
+   Level4-Catapult.MESHWORLD yet Tower race v29 serves it; N:SWIRL only in
+   Level3-Swirl; N:BOUNCE only in LevelImpossible-Gear; N:BUMP only in
+   LevelDark-FlickRing. A handler with no MAIN-file geom is still live if a
+   submesh carries the name. Gate on GEOM presence (main + submeshes).
+4. v29-dead != mechanic-dead. Many race-file planes have arena-only v29
+   consumers (list below). Where the mechanic still works in race mode it
+   runs from per-race SETUP (S1-driven, e.g. VAC faces, hammer setup
+   ~0x438850) or UPDATE-side code, not from v29. Replicate setup+update,
+   not just v29.
+
+RACE v29 HANDLERS (exact, tiny subsets; base 0x413BD0 is empty fallthrough):
+WarmUp/Intermediate/Up/Expert/Sky: base (globals only). Beginner 0x413DF0:
+N:BUMPER. Dizzy 0x414350: N:SWIRL. Tower 0x414570: E:CATAPULTBOTTOM.
+Odd 0x414DA0: E:GRAVITY. Toob 0x415010: N:BUMPER. Wobbly 0x415540:
+N:SQUAREWOBBLY. Master 0x416140: E:LAUNCH(+LAUNCHPOINT). Neon 0x417490:
+N:BUMP. Glass 0x417EB0: N:GLASS. Impossible 0x418600: N:BOUNCE.
+
+RACE v33 FACTORIES (exact; 7 races = base PLATFORM/STANDS only):
+base (WarmUp/Beginner/Intermediate/Odd/Toob/Glass/Master): PLATFORM, STANDS.
+Dizzy 0x4143D0: SPINNY. Tower 0x414680: CATAPULT, MACE, TURRET.
+Up 0x414A20: LIFTER. Expert 0x414BD0: FAN (SUPER/SLOW/UP mods).
+Wobbly 0x415460: WOBBLY1. Sky 0x415A30: EDGECYLINDER, POPCYLINDER.
+Neon 0x4173B0: FLICKRING. Impossible 0x418760: GEAR.
+
+================================================================
+PART C — THE INCOMPATIBLE LIST (same name, different consumer)
+================================================================
+S6 EVENTS:
+
+C1. N:BUMPER1-8 — Beginner (6, small ~13 tris) vs Toob (8, big 72-156 tris).
+    Handlers: Beginner-race 0x413DF0 vs Toob-race 0x415010 vs Beginner-arena
+    0x4111E0 vs Toob-arena 0x410020 (richest: +SAWTEETH/SPINNY/BRANCH).
+    Four different bounce handlers for one name family.
+    LFL: keep per-board native replication, qualify by vtable (handler
+    address), never share. (Side note: docs said bumpers were Odd's — wrong.
+    They are Beginner+Toob.)
+
+C2. E:ALERTSAW2 (also as 'E:ALERTSAW2\t') — Expert + Toob files. The EVENT
+    is global (Dispatch has it; Expert-arena 0x40E6A0 adds custom behavior).
+    Difference is the BACKEND OBJECTS: Expert S1 SAWBLADE1/2 + SAW1-BREAK
+    (tournament-gated saw setup) vs Toob S1 SAW/SAW2 + SPINNY.
+    LFL: share the plane event; replicate saw OBJECTS per level,
+    presence-gated on S1 (SAWBLADE* vs SAW*). No event-layer conflict.
+    (E:ACTIVATESAW1/2 + E:ALERTSAW1 are Expert-ONLY, not shared. Your "saw
+    activate plane in expert and toob" = ALERTSAW2 shared-global +
+    ACTIVATESAW Expert-only.)
+
+C3. E:CALLHAMMER / E:HAMMERCHASE — Expert + Master files. Same shape as C2:
+    global event + per-level hammer backends (S1 HAMMERAREA1-4 both levels,
+    shared hammer setup ~0x438850; tournament-gate location TBD — likely
+    shared hammer code, so behavior matches).
+    LFL: share event; replicate hammer setup presence-gated on HAMMERAREA.
+
+C4. E:HELPINERTIA / E:UNHELPINERTIA — Up + Impossible files. Consumers are
+    Up-arena-v29 and Impossible-arena-v29 ONLY. Race-dead on both (mechanic
+    is setup/update-side). LFL: nothing to route; replicate setup pieces.
+
+C5. Arena-only planes sitting on race files (race-inert; replicate setup/
+    update instead, or leave inert for native parity):
+    Tower: E:OPENSESAME, E:BITE, E:MACETRIGGER, N:TRAPDOOR (geoms in
+      Trapdoor1/2 submeshes). Tower race v29 serves CATAPULTBOTTOM only.
+    Sky: E:HEATOFF/HEATON, E:NOPEGS/PEGS, E:TRAPPOP.
+    Odd: E:GROWSOUND/SHRINK/SWALLOW, E:PIPERANDOM, E:DROPLIFT,
+      N:JUMPFIRST/JUMPSECOND. (Docs said JUMPFIRST/SECOND were Tower's and
+      GROW/SHRINK were Toob's — both wrong, all Odd's.)
+    Up: E:VACPOPOUT. Toob: E:ALERTSAW2(partial, see C2), E:BRANCH(B).
+    Neon: E:LIGHTSOFF/ON, E:ZOOP (arena serves N:NEONPLATFORM too).
+    Glass: N:TENBONUS1/2 (consumer 0x417760, arena-side).
+    Expert: E:ACTIVATESAW1/2, E:ALERTSAW1, E:ALERTJUDGES, E:BELL, E:SCORE*
+      (arena-custom; race falls through to Dispatch globals where present).
+    Master: E:CALLHAMMER/HAMMERCHASE (see C3).
+    LFL: leave inert in race mode (= native parity), or optionally wire
+    arena behavior later. Your call.
+
+C6. Submesh-gated handlers (replicate when the GEOM is present, any level):
+    E:CATAPULTBOTTOM (Tower race v29), N:SWIRL (Dizzy), N:BOUNCE
+    (Impossible), N:BUMP (Neon race v29; stray N:BUMP planes on Toob/
+    Beginner main files are race-dead — leave inert).
+
+C7. COMPATIBLE (global, no action): N:GOAL*, E:LIMIT, E:DROPIN(+N:DROPIN,
+    +lowercase E:Dropin), E:POPOUT(+N:), E:PIPEBONK, E:NODIZZY<TIME>*,
+    E:SAFESWITCH(*), E:TRAJECTORY, N:TARPIT (Dizzy+Master), N:SECRET,
+    N:UNLOCKSECRET, N:NOCONTROL, N:WATER.
+    *N:GOAL is per-race finish (setup class, shared logic) — same everywhere.
+
+S1 REFS:
+
+C8. ASYMMETRIC NATIVES (native factory on one level, setup-or-skip on the
+    other — different code paths, verify each):
+    LIFTER: Up-race-v33 native vs Odd-race (base; Odd-arena native).
+      OPEN: does Odd TT have a working lifter? 10-second in-game check.
+    CATAPULT: Tower-race-v33 native vs Master-race (base; Master-arena
+      native). Same question for Master TT catapults.
+    POPCYLINDER: Sky-race-v33 native vs Master-race (base; Master-arena
+      native). Same question for Master TT popcylinders.
+    SPINNY: Dizzy-race-v33 native vs Toob-race (base; Toob-arena native).
+    LFL: native path where factory exists; replicate setup consumer
+    presence-gated (S1 name) where it doesn't. Never borrow the foreign
+    factory without its submesh slots (factories don't null-check
+    board+0x43xx — crash).
+
+C9. SYMMETRIC setup-class (both levels base-v33; same situation both sides;
+    replicate the shared setup consumer presence-gated):
+    BRIDGE (Intermediate+Master), BONK (Expert+Master), BLOCKDAWG1/2
+    (Toob+Master), TIPPER/GLUEBIE/TarBubble00-53 (Dizzy+Master),
+    HAMMERAREA1-4 (Expert+Master, setup ~0x438850).
+    Consumers: per-race setup functions (NOT v33). Same-name refs work if
+    LFL replicates each race's setup consumer keyed by S1-name presence —
+    exactly your "enable from the constructor based on meshworld" design,
+    no level IDs.
+
+C10. SINGLE-LEVEL (no conflict, listed so nobody "fixes" them):
+    SAW/SAW2/FALLOUT1/BRANCH+DAWGPATH (Toob), JUDGE/BELL/SAWBLADE/FAN*
+    (Expert; *FAN also slows... no, FAN S1 only Expert), TRAPDOOR/PILLAR/
+    EDGECYLINDER (Sky), WOBBLY1-7/WAVY1 (Wobbly), GEAR-family (Impossible),
+    DFLOOR/NEONPLATFORM/TRODE/FLICKRING (Neon), SPEEDCYLINDER/TIMEBUTTON/
+    VAC-IN (Up setup), SMASHER1/2 (Glass), LIFTER225 (Up).
+    PILLAR note: Sky consumer is setup-side (~0x41092B), not v33/v29.
+
+C11. GLOBAL SYSTEMS (shared, param-driven, safe): START1-1/START2-*,
+    FLAG02-18, SAFESPOT/SAFEPOS (+letter/[X]/[Z]/tab variants),
+    SECRET/SECRETUNLOCK, MOUSETRAP (CreateMouseTrap), BADBALL (XML params
+    CHASE/HOME/SIZE/SPINDISTANCE differ per level — data, not code).
+    BBRIDGE1/2, DAWGPATH1-3, VAC-VEC/OUT, JUMPPIPE1/2, PIPERANDOM1/2,
+    SAWPATH/SMALLSAWPATH, LAUNCHPOINT (Master v29/v33-adjacent, single
+    level), EXPLODEHELPER (no consumer anywhere — ignore), (NOCOLLIDE)
+    marker.
+
+================================================================
+PART D — doc corrections (skill is yours; I can't patch it)
+================================================================
+- N:BUMPER1-8 are Beginner+Toob, not Odd. N:JUMPFIRST/SECOND are Odd's,
+  not Tower's. GROW/SHRINK/SWALLOW/PIPERANDOM are Odd's, not Toob's.
+- "Expert has its own E:JUMP" is ARENA-side (0x40E6A0); race E:JUMP is
+  global on all levels.
+- Race factory table's "Refs Handled" is a lower bound; S1 names on
+  base-factory races (Master especially: Catapult/Bonk/Bridge/BlockDawg/
+  Gluebie/Tipper/TarBubble/Popcylinder/HammerArea) are setup-consumed,
+  not v33. Same for BRIDGE on Intermediate, LIFTER on Odd, TRAPDOOR on
+  Sky, SAW/SPINNY/FALLOUT on Toob.
+- N:MOUSETRAP S6 exists in no race file and has no PUSH consumer (one MOV
+  ref at 0x40D07B) — legacy/dead. Don't route it anywhere.
+- Wobbly-v29's PILLAR straw was neighbor leakage; exact set is
+  N:SQUAREWOBBLY only. (Method note: 0x800 descent window; 0x6000 leaked
+  neighbors — e.g. Master-v29 briefly "handled" neon content.)
+
+================================================================
+PART E — 5 quick in-game checks (TT mode, seconds each)
+================================================================
+1. Odd TT: working lifter anywhere? (decides C8-Odd: setup vs dead)
+2. Master TT: working catapult / popcylinder / tipper? (decides C8/C9-Master)
+3. Tower TT: do trapdoors open / maces bite? (decides whether C5-Tower
+   planes need arena-handler wiring or are decor)
+4. Sky TT: heat/cold + pegs do anything? (same for C5-Sky)
+5. Toob TT: do the saws move? (C2 backend liveness)
+Whatever you report, the handling column above says exactly where it slots.
