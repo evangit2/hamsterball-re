@@ -398,16 +398,26 @@ volatile int g_caveProbe = 0;        /* VEH-reading probe (0 = cave path untouch
  * CreateTexture'd scratch, bind it to a sprite +0x50, and swap that sprite
  * into ctx+0x37C so the game's own renderer draws it (ONE draw call).
  *
- * D3D8 slot constants (VERIFIED vs MinGW d3d8.h):
+ * D3D8 slot constants (VERIFIED vs MinGW d3d8.h IDirect3DTexture8 order:
+ * GetLevelDesc, GetSurfaceLevel, LockRect, UnlockRect, AddDirtyRect):
  *   IDirect3DDevice8::CreateTexture  = slot 20 / 0x50
- *   IDirect3DTexture8::GetLevelDesc  = slot 14 / 0x38
- *   IDirect3DTexture8::LockRect      = slot 16 / 0x40
- *   IDirect3DTexture8::UnlockRect    = slot 17 / 0x44
+ *   IDirect3DTexture8::GetLevelDesc  = slot 17 / 0x44
+ *   IDirect3DTexture8::LockRect      = slot 19 / 0x4C
+ *   IDirect3DTexture8::UnlockRect    = slot 20 / 0x50
+ * (2026-10-26: the old 0x38/0x40/0x44 values were slots 14/16/17 and hit
+ * SetAutoGenFilterType/GenerateMipSubLevels/GetLevelDesc — stack corruption
+ * + wild desc write on every capture/upload. Fixed.)
  */
-#define D3D_DEV_CREATETEXTURE   0x50
-#define D3D_TEX_GETLEVELDESC    0x38
-#define D3D_TEX_LOCKRECT        0x40
-#define D3D_TEX_UNLOCKRECT      0x44
+#define D3D_DEV_CREATETEXTURE   0x50   /* slot 20 (verified vs MinGW d3d8.h) */
+#define D3D_TEX_GETLEVELDESC    0x44   /* slot 17: GetLevelDesc (was 0x38=slot 14 SetAutoGenFilterType) */
+#define D3D_TEX_LOCKRECT        0x4C   /* slot 19: LockRect (was 0x40=slot 16 GenerateMipSubLevels) */
+#define D3D_TEX_UNLOCKRECT      0x50   /* slot 20: UnlockRect (was 0x44=slot 17 GetLevelDesc) */
+/* NOTE (2026-10-26): the old 0x38/0x40/0x44 values hit the wrong vtable slots:
+ * every capture/upload call corrupted the stack (callee cleans less than the
+ * 5 pushed args) and the "UnlockRect" call actually ran GetLevelDesc writing
+ * a desc struct to a garbage pointer. First-earn reveal crashed. Order per
+ * MinGW d3d8.h IDirect3DTexture8: GetLevelDesc, GetSurfaceLevel, LockRect,
+ * UnlockRect, AddDirtyRect (slots 17-21). */
 #define D3DFMT_A8R8G8B8         0x15
 #define D3DFMT_X8R8G8B8         0x16
 #define D3DPOOL_MANAGED         0x01
@@ -910,7 +920,9 @@ __attribute__((used)) void diamond_weasel_mult(DWORD results);
 __attribute__((used)) void diamond_weasel_mult_clear(DWORD results);
 __attribute__((used)) int  diamond_trophy_swap(DWORD results);
 __attribute__((used)) void diamond_trophy_restore(DWORD results);
+__attribute__((used)) void diamond_trophy_forget(void);   /* no-write variant (object changed) */
 static void vortex_disarm(void);   /* defined in the procedural-composite block */
+static void vortex_forget(void);   /* no-write variant (object changed) */
 
 /* BLOCK the results-screen click/keypress skip when the diamond time was
  * achieved for the current race. The skip latch (results+0x25) drives the
@@ -1034,15 +1046,22 @@ __attribute__((used)) void diamond_spawn_medal_effects(DWORD results, DWORD app)
     channel = *(DWORD*)(app + SND_CHANNEL_MEDAL);
     if (channel) {
         /* Sound_PlayChannel is __fastcall(ecx=channel) AND takes one stack
-         * arg (volume, pushed as 1.0f). The function ends in `ret 4` (verified
-         * at 0x459804 / 0x4595B0) and EVERY native call site pushes 0x3F800000
-         * first — see 0x44DB03, 0x44D991, 0x403805. Omitting the push leaves
-         * the callee to pop 4 bytes off OUR frame (stack corruption on return). */
+         * arg (volume, pushed as 1.0f). It has MIXED exits (verified 0x4597B0:
+         * ret $4 on the sounding path, plain ret on early-outs), so the callee
+         * does NOT reliably clean our push — snapshot esp and restore it, which
+         * balances both exits. A bare call corrupts esp by 4 on early-outs
+         * (popad then restores shifted registers + wrong esi into the game body).
+         * EVERY native call site pushes 0x3F800000 first — see 0x44DB03,
+         * 0x44D991, 0x403805. */
+        DWORD saved_esp;
         __asm__ volatile(
-            "pushl $0x3F800000\n\t"   /* volume 1.0f (callee ret 4 pops it) */
-            "movl %1, %%ecx\n\t"     /* channel (ecx = this) */
-            "call *%0\n\t"           /* Sound_PlayChannel(channel, 1.0f) */
-            : : "r"((void*)Sound_PlayChannel), "r"(channel)
+            "movl %%esp, %0\n\t"   /* snapshot (both exits restored below) */
+            "pushl $0x3F800000\n\t"   /* volume 1.0f */
+            "movl %2, %%ecx\n\t"     /* channel (ecx = this) */
+            "call *%1\n\t"           /* Sound_PlayChannel(channel, 1.0f) */
+            "movl %0, %%esp\n\t"     /* restore: balances ret-4 AND plain-ret */
+            : "=&r"(saved_esp)
+            : "r"((void*)Sound_PlayChannel), "r"(channel)
             : "eax", "ecx", "edx", "memory");
     }
     /* (2) Spawn the ring of 18 ArenaScoreParticle objects (one per 20deg). */
@@ -1947,8 +1966,7 @@ static void vortex_patch_anchor(int on) {
  * and free our texture/sprite/capture. Called at reveal end (+240). MUST
  * restore the anchor BEFORE the diamond trophy swap so the diamond isn't
  * shifted (the diamond draws at the same 0x208,0x63 anchor). */
-static void vortex_disarm(void) {
-    vortex_patch_anchor(0);   /* restore the medal draw anchor (BEFORE diamond swap) */
+static void vortex_swap_restore_write(void) {
     if (g_vortexSwapActive && g_vortexSwapCtx && g_vortexSwapCtx > 0x10000) {
         if (!IsBadReadPtr((void*)(g_vortexSwapCtx + CTX_WEASEL), 4))
             *(volatile DWORD*)(g_vortexSwapCtx + CTX_WEASEL) = g_vortexSwapOrig;
@@ -1956,6 +1974,8 @@ static void vortex_disarm(void) {
     }
     g_vortexSwapActive = 0; g_vortexSwapCtx = 0; g_vortexSwapOrig = 0;
     g_vortexSwapResults = 0;
+}
+static void vortex_free_all(void) {
     if (g_vortexSprite) { VirtualFree((void*)g_vortexSprite,0,MEM_RELEASE); g_vortexSprite=0; }
     if (g_vortexTex) {
         DWORD *rvt = *(DWORD**)g_vortexTex;
@@ -1975,6 +1995,23 @@ static void vortex_disarm(void) {
     g_vortexCaptW = g_vortexCaptH = 0;
     g_vortexWeaselW = g_vortexWeaselH = 0;
     g_vortexOrigTex = 0; g_vortexDevice = 0;
+}
+static void vortex_disarm(void) {
+    vortex_patch_anchor(0);   /* restore the medal draw anchor (BEFORE diamond swap) */
+    vortex_swap_restore_write();
+    vortex_free_all();
+}
+/* Forget an armed composite swap WITHOUT writing the sprite slot back. Use
+ * when the results object changed mid-cycle: the stored ctx belongs to a
+ * dead screen (write = use-after-free). Buffers/texture are still freed.
+ * (2026-10-26) */
+static void vortex_forget(void) {
+    vortex_patch_anchor(0);   /* .text anchor restore is always safe */
+    if (g_vortexSwapActive)
+        trace_logf("[vortex] SWAP-FORGET (no write; ctx=%08X dead screen)", g_vortexSwapCtx);
+    g_vortexSwapActive = 0; g_vortexSwapCtx = 0; g_vortexSwapOrig = 0;
+    g_vortexSwapResults = 0;
+    vortex_free_all();
 }
 
 /* Reset the vortex cycle. Called by the weasel cave at WEASEL_WHITE_START. */
@@ -2123,7 +2160,7 @@ __attribute__((used)) void diamond_vortex_tick(DWORD results) {
         return;
     }
     if (results != g_vortexResults) {            /* fresh session -> teardown */
-        if (g_vortexActive) { g_vortexActive = 0; vortex_sound_stop(); vortex_disarm(); }
+        if (g_vortexActive) { vortex_sound_stop(); vortex_forget(); }
         g_vortexResults = results;
     }
     frame = diamond_seq_frame(results);
@@ -2187,10 +2224,11 @@ __attribute__((used)) int diamond_trophy_swap(DWORD results) {
     DWORD app;
     cave_enter(results, "trophy_swap");
     /* Cross-screen guard: if a previous results screen armed the swap and we
-     * are now on a DIFFERENT results object, restore the old ctx before doing
-     * anything — the diamond sprite must not leak onto the new screen. */
+     * are now on a DIFFERENT results object, FORGET it without writing — the
+     * stored ctx belongs to a dead screen (restore would be a use-after-free).
+     * The old screen is gone; there is nothing to restore. */
     if (results != g_trophySwapResults)
-        diamond_trophy_restore(results);
+        diamond_trophy_forget();
     if (!results) return 0;
     if (IsBadReadPtr((void*)(results + RESULT_FRAME), 4)) return 0;
     frame = diamond_seq_frame(results);          /* frames since gold award */
@@ -2303,6 +2341,18 @@ __attribute__((used)) void diamond_trophy_restore(DWORD results) {
     }
     trace_logf("[diamond] TROPHY-SWAP disarm ctx=%08X restore=%08X",
                g_trophySwapCtx, g_trophySwapOrig);
+    g_trophySwapCtx = 0; g_trophySwapOrig = 0;
+    g_trophySwapResults = 0; g_trophySwapActive = 0;
+}
+
+/* Forget an armed trophy swap WITHOUT writing anything back. Use when the
+ * results object changed: the stored ctx belongs to a dead screen, so the
+ * restore write would be a use-after-free (or clobber a reused ctx). The old
+ * screen is gone — there is nothing to restore. (2026-10-26) */
+__attribute__((used)) void diamond_trophy_forget(void) {
+    if (!g_trophySwapActive) return;
+    trace_logf("[diamond] TROPHY-SWAP forget (no write; ctx=%08X dead screen)",
+               g_trophySwapCtx);
     g_trophySwapCtx = 0; g_trophySwapOrig = 0;
     g_trophySwapResults = 0; g_trophySwapActive = 0;
 }
@@ -3005,7 +3055,7 @@ static void __thiscall diamond_reveal_update(void *self) {
      *    diamond_trophy_swap, so without this the diamond sprite pointer would
      *    leak onto the next screen's ctx+0x37C. Restore if the object changed. */
     if (g_trophySwapActive && results != g_trophySwapResults)
-        diamond_trophy_restore(results);
+        diamond_trophy_forget();
     /* 3) now run the reveal (reads the time correctly). The consolidated
      *    procedural-composite vortex (diamond_vortex_tick) now does EVERYTHING
      *    the reveal needs in ONE texture + one ctx+0x37C swap:
