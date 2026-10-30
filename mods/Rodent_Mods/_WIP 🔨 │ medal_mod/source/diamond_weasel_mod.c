@@ -409,9 +409,9 @@ volatile int g_caveProbe = 0;        /* VEH-reading probe (0 = cave path untouch
  * + wild desc write on every capture/upload. Fixed.)
  */
 #define D3D_DEV_CREATETEXTURE   0x50   /* slot 20 (verified vs MinGW d3d8.h) */
-#define D3D_TEX_GETLEVELDESC    0x44   /* slot 17: GetLevelDesc (was 0x38=slot 14 SetAutoGenFilterType) */
-#define D3D_TEX_LOCKRECT        0x4C   /* slot 19: LockRect (was 0x40=slot 16 GenerateMipSubLevels) */
-#define D3D_TEX_UNLOCKRECT      0x50   /* slot 20: UnlockRect (was 0x44=slot 17 GetLevelDesc) */
+#define D3D_TEX_GETLEVELDESC    0x40   /* slot 16: GetLevelDesc (was 0x38=slot 14 SetAutoGenFilterType) */
+#define D3D_TEX_LOCKRECT        0x48   /* slot 18: LockRect (was 0x40=slot 15 GenerateMipSubLevels) */
+#define D3D_TEX_UNLOCKRECT      0x4C   /* slot 19: UnlockRect (was 0x44=slot 16 GetLevelDesc) */
 /* NOTE (2026-10-26): the old 0x38/0x40/0x44 values hit the wrong vtable slots:
  * every capture/upload call corrupted the stack (callee cleans less than the
  * 5 pushed args) and the "UnlockRect" call actually ran GetLevelDesc writing
@@ -911,6 +911,7 @@ static void diamond_set_add(DWORD results, float intens);   /* defined above */
 static void vortex_patch_anchor(int on);   /* defined in the procedural-composite block */
 /* patch-helper forward decls (defined in the patch-helpers section) */
 static void write_jmp(unsigned char *at, DWORD target);
+static void write_jmp_at(void *dest, DWORD target);
 static void patch_bytes(void *addr, const void *data, DWORD size);
 
 static int diamond_seq_frame(DWORD results);   /* frames since gold award */
@@ -1204,7 +1205,8 @@ __attribute__((used)) int diamond_reveal_draw(DWORD results) {
     /* UNCONDITIONAL one-shot per-run probe: confirms whether the 0x44CC3F
      * cave fires AT ALL (before any gate). 0 = cave not reached. */
     { static int p = 0; if (!p) { p = 1; trace_logf("[diamond] CAVE-FIRED results=%08X", results); } }
-    if (!diamond_first_earn(results)) return 0;   /* no reveal -> plain gold */
+    { int earned = diamond_first_earn(results);
+      if (!earned) return 0; }   /* no reveal -> plain gold */
     /* --- push click-to-continue until 55 after diamond (medal+295) --- */
     /* Native continue gate is results+0x78 = 1010 (0x3F2). Diamond is at
      * medal+240 (955+240=1195). User wants continue at diamond+55 = 1250.
@@ -1236,7 +1238,8 @@ __attribute__((used)) int diamond_reveal_draw(DWORD results) {
         return 0;                        /* draw gold (composite shown over it) */
     }
     /* paste the hold end -> swap to diamond */
-    return diamond_trophy_swap(results);  /* draws diamond + returns 1 to skip gold */
+    { int sr = diamond_trophy_swap(results);
+      return sr; }  /* draws diamond + returns 1 to skip gold */
 }
 
 /* ---- Award-update reveal driver (full-wrapper SEH replacement) ----
@@ -1277,7 +1280,7 @@ static void install_reveal_cave(void) {
     p[0]=0x6A; p[1]=0xFF;                                    p+=2;         /* push -1 */
     p[0]=0x68; *(DWORD*)(p+1) = EXE_BASE+(AWARD_UPDATE_SCOPE-EXE_BASE); p+=5; /* push 0x4CC77C */
     p[0]=0x50;                                                p+=1;         /* push eax */
-    p[0]=0x64; p[1]=0x89; p[2]=0x25; p[3]=0x00; p[4]=0x00; p[5]=0x00; p+=6; /* mov fs:[0],esp */
+    p[0]=0x64; p[1]=0x89; p[2]=0x25; p[3]=0x00; p[4]=0x00; p[5]=0x00; p[6]=0x00; p+=7; /* mov fs:[0],esp (7B: 64 89 25 + disp32) */
     p[0]=0x83; p[1]=0xEC; p[2]=0x18;                          p+=3;         /* sub esp,0x18 */
     p[0]=0x56;                                                p+=1;         /* push esi */
     p[0]=0x8B; p[1]=0xF1;                                     p+=2;         /* mov esi,ecx */
@@ -1289,10 +1292,10 @@ static void install_reveal_cave(void) {
     p[0]=0x61;                                                p+=1;         /* popad */
     /* --- hand off to the game's untouched body at 0x44D77B --- */
     write_jmp(p, body);                                        p+=5;
-    /* Patch the entry: 5-byte JMP to wrapper (6th byte = padding, never exec) */
-    unsigned char patch[5];
-    write_jmp(patch, (DWORD)g_presentStub);
-    patch_bytes((void*)entry, patch, 5);
+    /* Patch the entry: 5-byte JMP to wrapper (6th byte = padding, never exec).
+     * rel32 MUST be computed from entry (use write_jmp_at), NOT from a stack
+     * temp — the temp-relative JMP pointed at wild heap (0x0327D81D crash). */
+    write_jmp_at((void*)entry, (DWORD)g_presentStub);
     diag_log("[diamond] reveal: FULL WRAPPER replaces 0x44D760 (own SEH frame via 0x4CC77C, reveal inside, then jmp 0x44D77B)");
 }
 
@@ -1573,29 +1576,63 @@ typedef HRESULT (__stdcall *PFN_TexLockRect)(void*, UINT, Vortex_Locked*, const 
 typedef HRESULT (__stdcall *PFN_TexUnlockRect)(void*, UINT);
 typedef HRESULT (__stdcall *PFN_TexGetLevelDesc)(void*, UINT, void*);
 
+/* Guard for indirect D3D calls: the sprite/texture slots can hold stale
+ * (freed) pointers whose "vtable" passes range checks but points at data
+ * (strings like "Disa"/"Melb"). VirtualQuery the function pointer itself:
+ * real D3D entry points live in executable module pages; data does not.
+ * Returns 1 if p is committed + executable. */
+static int is_exec_code(DWORD p) {
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!p) return 0;
+    if (VirtualQuery((LPCVOID)p, &mbi, sizeof(mbi)) != sizeof(mbi)) return 0;
+    if (mbi.State != MEM_COMMIT) return 0;
+    {
+        DWORD x = mbi.Protect & 0xFF;
+        if (x == PAGE_EXECUTE || x == PAGE_EXECUTE_READ ||
+            x == PAGE_EXECUTE_READWRITE || x == PAGE_EXECUTE_WRITECOPY)
+            return 1;
+    }
+    return 0;
+}
+
 /* Read the weasel's pixel dims from its texture via GetLevelDesc. Returns
  * something sane (w,h scaled to texture-relative coords) or (0,0). */
-static void vortex_weasel_size(DWORD weaselTex, int *outW, int *outH) {
+static int vortex_weasel_size(DWORD weaselTex, int *outW, int *outH) {
     DWORD vt;
     PFN_TexGetLevelDesc GetLevelDesc;
     unsigned char desc[0x20];
+    HRESULT hr;
     *outW = 0; *outH = 0;
-    if (!weaselTex || IsBadReadPtr((void*)weaselTex, 4)) return;
+    if (!weaselTex || IsBadReadPtr((void*)weaselTex, 4)) return 0;
     vt = *(DWORD*)weaselTex;
-    if (!vt || IsBadReadPtr((void*)(vt + D3D_TEX_GETLEVELDESC), 4)) return;
+    if (!vt || IsBadReadPtr((void*)(vt + D3D_TEX_GETLEVELDESC), 4)) return 0;
     GetLevelDesc = (PFN_TexGetLevelDesc)(*(void**)(vt + D3D_TEX_GETLEVELDESC));
-    if (!GetLevelDesc) return;
+    if (!GetLevelDesc) return 0;
+    /* The slot can hold a stale data pointer (string bytes "Disa"/"Melb"):
+     * only call it if it points at executable code. */
+    if (!is_exec_code((DWORD)GetLevelDesc)) {
+        diag_logf("[diamond] PROBE sized: slot40=%08X not exec, skip", (DWORD)GetLevelDesc);
+        return 0;
+    }
     memset(desc, 0, sizeof(desc));
     /* D3DSURFACE_DESC (MinGW d3d8.h): Format(+0) Type(+4) Usage(+8) Pool(+0xC)
      * Size(+0x10) MultiSampleType(+0x14) Width(+0x18) Height(+0x1C). */
-    if (GetLevelDesc((void*)weaselTex, 0, desc) == 0 /*S_OK*/) {
+    hr = GetLevelDesc((void*)weaselTex, 0, desc);
+    {
         int w = (int)*(DWORD*)(desc + 0x18);
         int h = (int)*(DWORD*)(desc + 0x1C);
+        diag_logf("[diamond] PROBE sized hr=%d w=%d h=%d", (int)hr, w, h);
         /* Accept any 32-bit or masked format; we read texels as 4-byte ARGB.
          * Even if the format is 16-bit, GetLevelDesc still gives us the true
          * dims (which is all we need for the in-bounds capture buffer). */
-        if (w > 0 && h > 0) { *outW = w; *outH = h; }
+        if (hr == 0 /*S_OK*/ && w > 0 && h > 0 && w <= 2048 && h <= 2048) {
+            *outW = w; *outH = h; return 1;
+        }
     }
+    /* Not a live texture yet (stale/freed sprite slot, lazy game load):
+     * fail so start_cycle aborts and retries next frame. NEVER fall back
+     * to 128x128 with a garbage tex pointer (capture would call into it). */
+    return 0;
 }
 
 /* Create the scratch texture (recreated if size changed). */
@@ -1607,7 +1644,7 @@ static DWORD vortex_ensure_scratch(DWORD device, int w, int h) {
     vt = *(DWORD*)device;
     if (!vt || IsBadReadPtr((void*)(vt + D3D_DEV_CREATETEXTURE), 4)) return 0;
     CreateTexture = (PFN_CreateTexture)(*(void**)(vt + D3D_DEV_CREATETEXTURE));
-    if (!CreateTexture) return 0;
+    if (!CreateTexture || !is_exec_code((DWORD)CreateTexture)) return 0;
     if (g_vortexTex) {   /* release old scratch (Release = slot 2) */
         DWORD *rvt = *(DWORD**)g_vortexTex;
         if (rvt && !IsBadReadPtr((void*)(rvt + 0x08), 4)) {
@@ -1640,6 +1677,7 @@ static int vortex_upload(DWORD tex, int w, int h, const BYTE *rgba) {
     LockRect = (PFN_TexLockRect)(*(void**)(vt + D3D_TEX_LOCKRECT));
     UnlockRect = (PFN_TexUnlockRect)(*(void**)(vt + D3D_TEX_UNLOCKRECT));
     if (!LockRect || !UnlockRect) return 0;
+    if (!is_exec_code((DWORD)LockRect) || !is_exec_code((DWORD)UnlockRect)) return 0;
     memset(&lr, 0, sizeof(lr));
     if (LockRect((void*)tex, 0, &lr, NULL, 0) != 0) return 0;
     if (lr.pBits) {
@@ -1672,6 +1710,10 @@ static int vortex_capture_weasel(DWORD device, DWORD weaselTex, int capW, int ca
     LockRect = (PFN_TexLockRect)(*(void**)(vt + D3D_TEX_LOCKRECT));
     UnlockRect = (PFN_TexUnlockRect)(*(void**)(vt + D3D_TEX_UNLOCKRECT));
     if (!LockRect || !UnlockRect) { VirtualFree(buf,0,MEM_RELEASE); return 0; }
+    if (!is_exec_code((DWORD)LockRect) || !is_exec_code((DWORD)UnlockRect)) {
+        diag_logf("[diamond] PROBE capture slots not exec, abort");
+        VirtualFree(buf,0,MEM_RELEASE); return 0;
+    }
     memset(&lr, 0, sizeof(lr));
     /* Read the source texture's level 0.
      *
@@ -2034,9 +2076,35 @@ static void vortex_start_cycle(DWORD gfx, DWORD sprite, DWORD results) {
         DWORD app = *(DWORD*)(results + RESULT_APP);
         if (app && !IsBadReadPtr((void*)(app + SPRITE_WEAEL_APP), 4)) {
             DWORD sp = *(DWORD*)(app + SPRITE_WEAEL_APP);
+            /* VALIDATE the sprite: must carry the real sprite vtable 0x4D8F84.
+             * A stale/freed slot (string data, e.g. "Disa"/"Melb") passes
+             * IsBadReadPtr but its "texture" is garbage -> call into string.
+             * Skip the cycle this frame; the game may populate it later. */
+            if (sp && !IsBadReadPtr((void*)sp, 4)) {
+                DWORD sprvt = *(DWORD*)sp;
+                if (sprvt != 0x4D8F84) {
+                    diag_logf("[diamond] PROBE bad-sprite vt=%08X (want 4D8F84), skip", sprvt);
+                    return;
+                }
+            }
             if (sp && !IsBadReadPtr((void*)(sp + 0x50), 4)) {
                 weaselTex = *(DWORD*)(sp + 0x50);
-                vortex_weasel_size(weaselTex, &capW, &capH);
+                /* VALIDATE the texture wrapper: vtable must live in the game
+                 * image. A garbage texture pointer crashes GetLevelDesc. */
+                if (weaselTex && !IsBadReadPtr((void*)weaselTex, 4)) {
+                    DWORD texvt = *(DWORD*)weaselTex;
+                    if (texvt < 0x400000 || texvt >= 0x600000) {
+                        diag_logf("[diamond] PROBE bad-tex vt=%08X, skip", texvt);
+                        return;
+                    }
+                }
+                /* GetLevelDesc S_OK + sane dims = live texture. Anything else
+                 * (stale slot, lazy game load) aborts the cycle for a retry
+                 * next frame; never capture from a dead pointer. */
+                if (!vortex_weasel_size(weaselTex, &capW, &capH)) {
+                    diag_logf("[diamond] PROBE size-fail, retry next frame");
+                    return;
+                }
             }
             if (sp && !IsBadReadPtr((void*)(sp + 0xC8), 8)) {
                 float fw = *(float*)(sp + 0xC8), fh = *(float*)(sp + 0xCC);
@@ -2052,8 +2120,9 @@ static void vortex_start_cycle(DWORD gfx, DWORD sprite, DWORD results) {
     if (capH < VORTEX_TEX_MIN) capH = VORTEX_TEX_MIN;
     if (capW > VORTEX_TEX_MAX) capW = VORTEX_TEX_MAX;
     if (capH > VORTEX_TEX_MAX) capH = VORTEX_TEX_MAX;
-    if (weaselTex)
+    if (weaselTex) {
         vortex_capture_weasel(device, weaselTex, capW, capH);
+    }
     else
         return;   /* no weasel texture -> can't composite; abort cycle */
     /* The composite CANVAS is the weasel x VORTEX_CANVAS_SCALE (weasel drawn
@@ -2507,6 +2576,16 @@ static void write_jmp(unsigned char *at, DWORD target) {
     at[0] = 0xE9;
     *(DWORD*)(at + 1) = target - (DWORD)at - 5;
 }
+/* Entry-patch JMP: the 5 bytes are COPIED to dest, so the rel32 MUST be
+ * computed from dest (where the JMP executes), NOT from a stack temp.
+ * write_jmp(tmp,...)+patch_bytes(dest,tmp) gets this wrong (rel off by
+ * dest-tmp -> JMP to wild heap -> heap-EIP crash on first hit). */
+static void write_jmp_at(void *dest, DWORD target) {
+    unsigned char b[5];
+    b[0] = 0xE9;
+    *(DWORD*)(b + 1) = target - (DWORD)dest - 5;
+    patch_bytes(dest, b, 5);
+}
 static void patch_bytes(void *addr, const void *data, DWORD size) {
     DWORD old;
     VirtualProtect(addr, size, PAGE_EXECUTE_READWRITE, &old);
@@ -2805,10 +2884,9 @@ static void install_tt_piggyback(void) {
      * push&slot(5)=11..15 push str(5)=16..20 mov eax(2)=21..22 call(3)=23..25
      * done label = cave+26. jz at cave+9, disp = (cave+26)-(cave+11) = 15. */
     cave[10] = 15;
-    unsigned char patch[6];
-    memset(patch, 0x90, 6);
-    write_jmp(patch, (DWORD)cave);
-    patch_bytes((void*)patchAddr, patch, 6);
+    { static const unsigned char nops[6] = {0x90,0x90,0x90,0x90,0x90,0x90};
+      patch_bytes((void*)patchAddr, nops, 6); }   /* 6th byte stays NOP padding */
+    write_jmp_at((void*)patchAddr, (DWORD)cave);
     diag_log("[diamond] TT PIGGYBACK: diamond mini icon load hooked at 0x42A307 (main-thread gold-icon context)");
 }
 
@@ -2865,10 +2943,7 @@ static void install_tt_cave(void) {
     p[0]=0xE8; *(DWORD*)(p+1)=(DWORD)(ABF0_APPEND)-(DWORD)(p+5); p+=5;
     /* jmp retAddr (inc edi) */
     write_jmp(p, retAddr); p+=5;
-    unsigned char patch[5];
-    memset(patch, 0x90, 5);
-    write_jmp(patch, (DWORD)g_ttCave);
-    patch_bytes((void*)patchAddr, patch, 5);
+    write_jmp_at((void*)patchAddr, (DWORD)g_ttCave);
     g_ttInstalled = 1;
     diag_log("[diamond] TT PROBE: minimal re-emit cave (no diamond handler) installed");
     return;
@@ -2935,10 +3010,7 @@ static void install_skip_cave(void) {
     p[0]=0x38; p[1]=0x5E; p[2]=0x24; p+=3;
     /* jmp back */
     write_jmp(p, retAddr); p+=5;
-    unsigned char patch[5];
-    memset(patch, 0x90, 5);
-    write_jmp(patch, (DWORD)g_skipCave);
-    patch_bytes((void*)patchAddr, patch, 5);
+    write_jmp_at((void*)patchAddr, (DWORD)g_skipCave);
     diag_log("[diamond] skip-latch cave installed at 0x44CBAA");
 }
 
@@ -2994,9 +3066,7 @@ static void install_cb90_probe(void) {
     p[0]=0x56; p+=1;                              /* re-emit: push esi */
     p[0]=0x8B; p[1]=0xF1; p+=2;                   /* re-emit: mov esi,ecx */
     write_jmp(p, resume); p+=5;                   /* jmp 0x44CB94 */
-    unsigned char patch[5];
-    write_jmp(patch, (DWORD)stub);
-    patch_bytes((void*)addr, patch, 5);
+    write_jmp_at((void*)addr, (DWORD)stub);
     diag_log("[diamond] CB90 PROBE: trampoline at 0x44CB90 (non-SEH results fn)");
 }
 #endif /* DIAMOND_CB90_PROBE */
@@ -3157,9 +3227,7 @@ static void install_c6f1_probe(void) {
     p[0]=0x5E; p+=1;
     p[0]=0x83; p[1]=0xC4; p[2]=0x08; p+=3;
     p[0]=0xC3; p+=1;
-    unsigned char patch[5];
-    write_jmp(patch, (DWORD)stub);
-    patch_bytes((void*)addr, patch, 5);
+    write_jmp_at((void*)addr, (DWORD)stub);
     diag_log("[diamond] C6F1 PROBE: epilogue trampoline at 0x46C1F1 (non-SEH, installed from init thread)");
 }
 #endif /* DIAMOND_C6F1_PROBE */
