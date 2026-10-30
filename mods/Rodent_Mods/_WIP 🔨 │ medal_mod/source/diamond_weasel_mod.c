@@ -409,15 +409,14 @@ volatile int g_caveProbe = 0;        /* VEH-reading probe (0 = cave path untouch
  * + wild desc write on every capture/upload. Fixed.)
  */
 #define D3D_DEV_CREATETEXTURE   0x50   /* slot 20 (verified vs MinGW d3d8.h) */
-#define D3D_TEX_GETLEVELDESC    0x40   /* slot 16: GetLevelDesc (was 0x38=slot 14 SetAutoGenFilterType) */
-#define D3D_TEX_LOCKRECT        0x48   /* slot 18: LockRect (was 0x40=slot 15 GenerateMipSubLevels) */
-#define D3D_TEX_UNLOCKRECT      0x4C   /* slot 19: UnlockRect (was 0x44=slot 16 GetLevelDesc) */
-/* NOTE (2026-10-26): the old 0x38/0x40/0x44 values hit the wrong vtable slots:
- * every capture/upload call corrupted the stack (callee cleans less than the
- * 5 pushed args) and the "UnlockRect" call actually ran GetLevelDesc writing
- * a desc struct to a garbage pointer. First-earn reveal crashed. Order per
- * MinGW d3d8.h IDirect3DTexture8: GetLevelDesc, GetSurfaceLevel, LockRect,
- * UnlockRect, AddDirtyRect (slots 17-21). */
+#define D3D_TEX_GETLEVELDESC    0x38   /* slot 14: GetLevelDesc (MinGW d3d8.h; the Oct "one-high" fix was wrong for TEX slots) */
+#define D3D_TEX_LOCKRECT        0x40   /* slot 16: LockRect */
+#define D3D_TEX_UNLOCKRECT      0x44   /* slot 17: UnlockRect */
+/* NOTE (2026-10-26, corrected 2026-10-31): TEX slots follow MinGW d3d8.h
+ * IDirect3DTexture8 layout (slots 14/16/17). A same-day "one-high" change
+ * that was correct for DEVICE slots was wrongly applied here; restored.
+ * Order per MinGW d3d8.h IDirect3DTexture8: GetLevelDesc, GetSurfaceLevel,
+ * LockRect, UnlockRect, AddDirtyRect (slots 14-18). */
 #define D3DFMT_A8R8G8B8         0x15
 #define D3DFMT_X8R8G8B8         0x16
 #define D3DPOOL_MANAGED         0x01
@@ -459,8 +458,8 @@ static int    g_vortexSwapResults = 0;
  * constant reads in the render fn - a safe data write, restored on disarm
  * BEFORE the diamond swap so the diamond isn't shifted too. */
 static int    g_vortexAnchorPatched = 0;
-#define ANCHOR_PATCH_X   0x44E134   /* push $0x208 (imm32) */
-#define ANCHOR_PATCH_Y   0x44E132   /* push $0x63 (imm8) */
+#define ANCHOR_PATCH_X   0x44E135   /* push $0x208 imm32 (byte after the 0x68 opcode at 0x44E134) */
+#define ANCHOR_PATCH_Y   0x44E133   /* push $0x63 imm8 (byte after the 0x6A opcode at 0x44E132) */
 #define ANCHOR_ORIG_X    0x208
 #define ANCHOR_ORIG_Y    0x63
 /* The original weasel sprite's DRAW BOX (world units, +0xC8/+0xCC) — the
@@ -915,6 +914,9 @@ static void write_jmp_at(void *dest, DWORD target);
 static void patch_bytes(void *addr, const void *data, DWORD size);
 
 static int diamond_seq_frame(DWORD results);   /* frames since gold award */
+static DWORD vortex_good_gfx(DWORD sprite);  /* live gfx or App gfx fallback */
+static DWORD g_goldSprite;                   /* file-loaded gold sprite (vortex fallback source) */
+static DWORD vortex_gold_tex(DWORD gfx);     /* ensure gold sprite, return its texture */
 /* reveal-helper forward decls (defined below, used by diamond_reveal_draw) */
 __attribute__((used)) void diamond_vortex_tick(DWORD results);
 __attribute__((used)) void diamond_weasel_mult(DWORD results);
@@ -1788,7 +1790,28 @@ static DWORD vortex_make_sprite(DWORD gfx, DWORD tex, float w, float h) {
     *(float*)(sp + 0x3C) = 0.0f; *(float*)(sp + 0x40) = 0.0f;  /* emissive */
     *(volatile unsigned char*)(sp + 0x4C) = 0;                 /* blend flag */
     *(volatile unsigned char*)(sp + 0x4D) = 0;                 /* alpha flag */
-    *(DWORD*)(sp + 0x50) = tex;                                /* texture */
+    /* sprite+0x50 must be a texture RECORD (the draw resolves the real D3D
+     * texture at record+4: ApplyMat SetTexture([[mat+0x48]+4])). A raw D3D
+     * texture here makes the draw feed code bytes to SetTexture -> fault.
+     * Clone the gold sprite's record (renderer-known layout), point it at
+     * the scratch texture. Build the gold sprite first if the live path
+     * succeeded (fallback never ran, so no template exists yet). */
+    {
+        DWORD tmpl = 0;
+        if (!g_goldSprite) vortex_gold_tex(gfx);
+        if (g_goldSprite && !IsBadReadPtr((void*)(g_goldSprite + 0x50), 4))
+            tmpl = *(DWORD*)(g_goldSprite + 0x50);
+        if (tmpl && !IsBadReadPtr((void*)(tmpl + 0x1C), 4)) {
+            unsigned char *rec = (unsigned char*)VirtualAlloc(NULL, 0x20, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+            if (!rec) { VirtualFree(sp, 0, MEM_RELEASE); return 0; }
+            memcpy(rec, (void*)tmpl, 0x20);
+            *(DWORD*)(rec + 0x04) = tex;
+            *(DWORD*)(rec + 0x0C) = gfx;
+            *(DWORD*)(rec + 0x14) = (DWORD)(g_vortexTexW ? g_vortexTexW : g_vortexCaptW);
+            *(DWORD*)(rec + 0x18) = (DWORD)(g_vortexTexH ? g_vortexTexH : g_vortexCaptH);
+            *(DWORD*)(sp + 0x50) = (DWORD)rec;
+        } else { VirtualFree(sp, 0, MEM_RELEASE); return 0; }
+    }
     *(float*)(sp + 0xC8) = w;                                  /* box w */
     *(float*)(sp + 0xCC) = h;                                  /* box h */
     return (DWORD)sp;
@@ -1943,8 +1966,7 @@ static void vortex_composite_render(DWORD results, float t, int frame) {
             app = *(DWORD*)(results + RESULT_APP);
             if (app && !IsBadReadPtr((void*)(app + SPRITE_WEAEL_APP), 4)) {
                 DWORD sp = *(DWORD*)(app + SPRITE_WEAEL_APP);
-                if (sp && !IsBadReadPtr((void*)(sp + SPRITE_GFX), 4))
-                    gfx = *(DWORD*)(sp + SPRITE_GFX);
+                gfx = vortex_good_gfx(sp);
             }
         }
         if (!IsBadReadPtr((void*)(results + RESULT_CTX), 4))
@@ -2059,6 +2081,70 @@ static void vortex_forget(void) {
 /* Reset the vortex cycle. Called by the weasel cave at WEASEL_WHITE_START. */
 static void vortex_sound_start(void);
 static void vortex_sound_stop(void);
+/* Validate a gfx pointer by its vtable living in the game image. */
+static int vortex_gfx_ok(DWORD gfx) {
+    DWORD vt;
+    if (!gfx || gfx <= 0x10000 || IsBadReadPtr((void*)gfx, 4)) return 0;
+    vt = *(DWORD*)gfx;
+    return (vt >= 0x400000 && vt < 0x600000);
+}
+/* Good gfx for the vortex: live sprite's gfx when valid, else App+0x174
+ * (the slot sprite can be stale/freed on Wine or before first draw). */
+static DWORD vortex_good_gfx(DWORD sprite) {
+    if (sprite && !IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)) {
+        DWORD gfx = *(DWORD*)(sprite + SPRITE_GFX);
+        if (vortex_gfx_ok(gfx)) return gfx;
+    }
+    {
+        DWORD app = (DWORD)get_app();
+        if (app && !IsBadReadPtr((void*)(app + APP_GFX), 4)) {
+            DWORD gfx = *(DWORD*)(app + APP_GFX);
+            if (vortex_gfx_ok(gfx)) return gfx;
+        }
+    }
+    return 0;
+}
+/* sprite+0x50 is the game's texture RECORD (name/dims/gfx at +8/+14/+0C);
+ * the drawable IDirect3DTexture8 is at record+4 (ApplyMat at 0x4551DD:
+ * SetTexture([[mat+0x48]+4])). Resolve + validate, else 0. */
+static DWORD vortex_real_tex(DWORD rec) {
+    DWORD tex, vt;
+    if (!rec || IsBadReadPtr((void*)(rec + 4), 4)) return 0;
+    tex = *(DWORD*)(rec + 4);
+    if (!tex || IsBadReadPtr((void*)tex, 4)) return 0;
+    vt = *(DWORD*)tex;
+    if (!vt || IsBadReadPtr((void*)(vt + 0x44), 4)) return 0;
+    return tex;
+}
+/* Fallback gold texture for the vortex when the live slot is stale.
+ * Builds ONE persistent gold sprite through the game's own Sprite_ctor
+ * (same path as the diamond sprite), so the composite has real weasel
+ * pixels to lerp even when the award slot can't be captured (Wine, or
+ * any frame where the game hasn't populated it yet). */
+static DWORD g_goldSprite = 0;
+static char  g_goldFile[64] = "GoldenWeasel.png";
+static DWORD vortex_gold_tex(DWORD gfx) {
+    if (!g_goldSprite) {
+        if (gfx && gfx > 0x10000 && !IsBadReadPtr((void*)gfx, 4)) {
+            unsigned char *sp = (unsigned char*)VirtualAlloc(NULL, 0xD4, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+            if (sp) {
+                memset(sp, 0, 0xD4);
+                __asm__ volatile(
+                    "pushl %2\n\t"        /* filename */
+                    "pushl %1\n\t"        /* gfx */
+                    "movl %0, %%ecx\n\t"  /* sprite */
+                    "call *%3\n\t"        /* Sprite_ctor __thiscall RET 0x8? callee cleans 2 */
+                    : : "r"(sp), "r"(gfx), "r"(g_goldFile), "r"(0x45D0C0)
+                    : "eax", "ecx", "edx", "memory");
+                g_goldSprite = (DWORD)sp;
+            }
+        }
+        trace_logf("[vortex] gold fallback sprite=%08X", g_goldSprite);
+    }
+    if (g_goldSprite && !IsBadReadPtr((void*)(g_goldSprite + 0x50), 4))
+        return *(DWORD*)(g_goldSprite + 0x50);
+    return 0;
+}
 static void vortex_start_cycle(DWORD gfx, DWORD sprite, DWORD results) {
     int i;
     DWORD device = 0, weaselTex = 0;
@@ -2079,34 +2165,30 @@ static void vortex_start_cycle(DWORD gfx, DWORD sprite, DWORD results) {
             /* VALIDATE the sprite: must carry the real sprite vtable 0x4D8F84.
              * A stale/freed slot (string data, e.g. "Disa"/"Melb") passes
              * IsBadReadPtr but its "texture" is garbage -> call into string.
-             * Skip the cycle this frame; the game may populate it later. */
+             * Mark the live slot unusable and fall through to the file-loaded
+             * gold fallback below (no early return; the game may populate the
+             * slot later, but the cycle no longer waits for it). */
             if (sp && !IsBadReadPtr((void*)sp, 4)) {
                 DWORD sprvt = *(DWORD*)sp;
                 if (sprvt != 0x4D8F84) {
-                    diag_logf("[diamond] PROBE bad-sprite vt=%08X (want 4D8F84), skip", sprvt);
-                    return;
+                    diag_logf("[diamond] PROBE bad-sprite vt=%08X (want 4D8F84), fallback", sprvt);
+                    sp = 0;
                 }
             }
             if (sp && !IsBadReadPtr((void*)(sp + 0x50), 4)) {
                 weaselTex = *(DWORD*)(sp + 0x50);
-                /* VALIDATE the texture wrapper: vtable must live in the game
-                 * image. A garbage texture pointer crashes GetLevelDesc. */
-                if (weaselTex && !IsBadReadPtr((void*)weaselTex, 4)) {
-                    DWORD texvt = *(DWORD*)weaselTex;
-                    if (texvt < 0x400000 || texvt >= 0x600000) {
-                        diag_logf("[diamond] PROBE bad-tex vt=%08X, skip", texvt);
-                        return;
-                    }
-                }
+                /* resolve the texture RECORD to the real IDirect3DTexture8 */
+                weaselTex = vortex_real_tex(weaselTex);
                 /* GetLevelDesc S_OK + sane dims = live texture. Anything else
-                 * (stale slot, lazy game load) aborts the cycle for a retry
-                 * next frame; never capture from a dead pointer. */
-                if (!vortex_weasel_size(weaselTex, &capW, &capH)) {
-                    diag_logf("[diamond] PROBE size-fail, retry next frame");
-                    return;
+                 * (stale slot, lazy game load) falls through to the file-loaded
+                 * gold fallback below instead of aborting the cycle. */
+                if (weaselTex && !vortex_weasel_size(weaselTex, &capW, &capH)) {
+                    diag_logf("[diamond] PROBE size-fail, fallback");
+                    weaselTex = 0;
                 }
             }
-            if (sp && !IsBadReadPtr((void*)(sp + 0xC8), 8)) {
+            if (sp && !IsBadReadPtr((void*)(sp + 0xC8), 8) &&
+                !IsBadReadPtr((void*)sp, 4) && *(DWORD*)sp == 0x4D8F84) {
                 float fw = *(float*)(sp + 0xC8), fh = *(float*)(sp + 0xCC);
                 if (fw > 1.0f && fh > 1.0f) { g_vortexBoxW = fw; g_vortexBoxH = fh; }
             }
@@ -2120,8 +2202,20 @@ static void vortex_start_cycle(DWORD gfx, DWORD sprite, DWORD results) {
     if (capH < VORTEX_TEX_MIN) capH = VORTEX_TEX_MIN;
     if (capW > VORTEX_TEX_MAX) capW = VORTEX_TEX_MAX;
     if (capH > VORTEX_TEX_MAX) capH = VORTEX_TEX_MAX;
+    if (!weaselTex) {
+        /* live slot stale (Wine/lazy load) -> capture from the file-loaded
+         * gold sprite instead; same pixels via the game's own loader.
+         * Always re-size from the fallback texture (the 128 default would
+         * crop a 256-wide texture down to a possibly-empty quadrant). */
+        weaselTex = vortex_gold_tex(gfx);
+        weaselTex = vortex_real_tex(weaselTex);
+        if (weaselTex) {
+            capW = 0; capH = 0;
+            if (!vortex_weasel_size(weaselTex, &capW, &capH)) weaselTex = 0;
+        }
+    }
     if (weaselTex) {
-        vortex_capture_weasel(device, weaselTex, capW, capH);
+        if (!vortex_capture_weasel(device, weaselTex, capW, capH)) return;
     }
     else
         return;   /* no weasel texture -> can't composite; abort cycle */
@@ -2241,8 +2335,8 @@ __attribute__((used)) void diamond_vortex_tick(DWORD results) {
             app = *(DWORD*)(results + RESULT_APP);
             if (!app || IsBadReadPtr((void*)(app + SPRITE_WEAEL_APP), 4)) return;
             sprite = *(DWORD*)(app + SPRITE_WEAEL_APP);
-            gfx = (sprite && IsBadReadPtr((void*)(sprite + SPRITE_GFX), 4)==0)
-                    ? *(DWORD*)(sprite + SPRITE_GFX) : 0;
+            gfx = vortex_good_gfx(sprite);
+            if (!gfx) return;
             vortex_start_cycle(gfx, sprite, results);
         }
     } else {
