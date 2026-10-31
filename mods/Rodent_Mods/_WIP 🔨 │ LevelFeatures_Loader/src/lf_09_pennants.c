@@ -98,6 +98,29 @@ static void InstallFlagRenderHook(void) {
     DebugLog("InstallFlagRenderHook: FlagRender routed via Hook_FlagRender");
 }
 
+/* DETACH restore: put back E8 59 FB 05 00 (sole caller) if it's still ours. */
+void RestoreFlagRenderHook(void) {
+    if (!g_flagHookInstalled) return;
+    if (!g_moduleBase) return;
+    g_flagHookInstalled = 0;
+    unsigned char *site = (unsigned char*)(g_moduleBase + RVA_FlagRenderCallSite);
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery(site, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT) return;
+    if (IsBadReadPtr(site, 5)) return;
+    if (site[0] != 0xE8) return;
+    {
+        DWORD cur = (DWORD)site + 5 + *(DWORD*)(site + 1);
+        if (cur != (DWORD)(char*)&Hook_FlagRender) return;
+    }
+    {
+        DWORD old;
+        if (!VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &old)) return;
+        site[0] = 0xE8; site[1] = 0x59; site[2] = 0xFB; site[3] = 0x05; site[4] = 0x00;
+        VirtualProtect(site, 5, old, &old);
+        FlushInstructionCache(GetCurrentProcess(), site, 5);
+    }
+}
+
 /* True if obj is already listed in board+0x2160 (avoids double-render). */
 static int Pennant_InList(void *board, void *obj) {
     if (IsBadReadPtr((char*)board + BOARD_FLAG_LIST, 0x410)) return 0;

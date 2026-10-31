@@ -587,6 +587,8 @@ static Board_UpdateRaceState_t    g_BoardUpdateRaceState = NULL;
  * once (orig IS base on shared levels; customs self-delegate). */
 typedef void (__fastcall *RaceState_t)(void *board);
 static RaceState_t g_origRaceState[16] = { NULL }; /* index 1-15 */
+static void *g_origUpdate[16] = { NULL };   /* slot 1 orig (for DETACH restore) */
+static void *g_origDispatch[16] = { NULL }; /* slot 29 orig (for DETACH restore) */
 /* Saved original vtable[33] (CreateDynamicObjects) per level — used by the
  * native-ctor fast path (UNI_NATIVE_CTOR): native-built boards get native
  * objects via the orig create instead of our replicating handler. */

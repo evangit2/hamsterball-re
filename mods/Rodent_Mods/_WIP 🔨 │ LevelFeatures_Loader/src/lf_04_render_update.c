@@ -302,13 +302,19 @@ void UniversalRenderImpl(void *board, int unk) {
         if (g_GraphicsSetProjection)
             g_GraphicsSetProjection(gfx, 20.0f, 50000.0f);
 
-        /* Toggle render state (gfx+0x70C) — D3D state management */
+        /* Toggle Z-write off around skybox/clouds (native SkyBoard_RenderDynamic
+         * 0x410EC5: same 0x70C gate, fn on the gfx+0x154 sub-object's vtable
+         * slot 0x32 with (0xe, 0)). Call it on the SUB-OBJECT, not gfx —
+         * binary-verified: native loads [gfx+0x154] then its vtable. */
         if (*(char *)((char *)gfx + 0x70C) != 0) {
-            DWORD *gfxVtbl = *(DWORD **)gfx;
-            if (gfxVtbl) {
-                void (__thiscall *fnC8)(DWORD, int, int) =
-                    (void (__thiscall *)(DWORD, int, int))gfxVtbl[0x32];
-                if (fnC8) fnC8((DWORD)gfx, 0xe, 0);
+            DWORD subObj = *(DWORD *)((char *)gfx + 0x154);
+            if (subObj && !IsBadReadPtr((void *)subObj, 4)) {
+                DWORD *svtbl = *(DWORD **)subObj;
+                if (svtbl) {
+                    void (__thiscall *fnC8)(DWORD, int, int) =
+                        (void (__thiscall *)(DWORD, int, int))svtbl[0x32];
+                    if (fnC8) fnC8(subObj, 0xe, 0);
+                }
             }
             *(char *)((char *)gfx + 0x70C) = 0;
             (*(int *)((char *)gfx + 0x7C8))++;
@@ -329,13 +335,17 @@ void UniversalRenderImpl(void *board, int unk) {
         /* Re-enable culling */
         if (g_GraphicsSetCullMode2) g_GraphicsSetCullMode2(gfx, 1, 1);
 
-        /* Toggle render state back */
+        /* Toggle render state back (native 0x410F55: same gate, sub-object
+         * vtable slot 0x32 with (0xe, 1)). */
         if (*(char *)((char *)gfx + 0x70C) != 1) {
-            DWORD *gfxVtbl = *(DWORD **)gfx;
-            if (gfxVtbl) {
-                void (__thiscall *fnC8)(DWORD, int, int) =
-                    (void (__thiscall *)(DWORD, int, int))gfxVtbl[0x32];
-                if (fnC8) fnC8((DWORD)gfx, 0xe, 1);
+            DWORD subObj2 = *(DWORD *)((char *)gfx + 0x154);
+            if (subObj2 && !IsBadReadPtr((void *)subObj2, 4)) {
+                DWORD *svtbl2 = *(DWORD **)subObj2;
+                if (svtbl2) {
+                    void (__thiscall *fnC8b)(DWORD, int, int) =
+                        (void (__thiscall *)(DWORD, int, int))svtbl2[0x32];
+                    if (fnC8b) fnC8b(subObj2, 0xe, 1);
+                }
             }
             *(char *)((char *)gfx + 0x70C) = 1;
             (*(int *)((char *)gfx + 0x7C8))++;

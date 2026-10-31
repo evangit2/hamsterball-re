@@ -307,6 +307,7 @@ static void UniversalGlassInit(void *mem, int app) {
 typedef void (__thiscall *NativeBoardCtor_t)(void *mem, int app);
 static DWORD g_sizePatchOk = 0;
 static DWORD g_nativeBoardSize[16] = {0};
+static DWORD g_sizePushAddr[16] = {0}; /* address of the patched push imm32 */
 static const DWORD g_nativeLevelCtors[16] = {
     0,
     0x1CA40, /* 1 WarmUp */
@@ -845,6 +846,7 @@ static void InstallUniversalBoardSize(void) {
             /* c = CALL operator_new; preceding 5 bytes must be push imm32 */
             if (c[-5] != 0x68) continue;
             g_nativeBoardSize[i + 1] = *(DWORD *)(c - 4);   /* stock size */
+            g_sizePushAddr[i + 1] = (DWORD)(c - 4);
             { DWORD oldProtect;
               VirtualProtect(c - 5, 5, PAGE_EXECUTE_READWRITE, &oldProtect);
               *(DWORD *)(c - 4) = UNI_BOARD_SIZE;
@@ -873,5 +875,48 @@ static void InstallBoardCtorHooks(void) {
         *(DWORD *)(site + 1) = rel32;
         VirtualProtect(site, 5, oldProtect, &oldProtect);
         FlushInstructionCache(GetCurrentProcess(), site, 5);
+    }
+}
+
+/* DETACH restores (verify-before-write: only touch sites we own). */
+void RestoreBoardCtorHooks(void) {
+    int i;
+    if (!g_moduleBase) return;
+    for (i = 0; i < 15; i++) {
+        unsigned char *site = (unsigned char *)(g_moduleBase + g_ctorCallRVAs[i]);
+        if (IsBadReadPtr(site, 5)) continue;
+        if (site[0] != 0xE8) continue;
+        /* Only restore sites pointing at our thunks. */
+        {
+            DWORD cur = (DWORD)site + 5 + *(DWORD *)(site + 1);
+            if (cur != (DWORD)g_thunkPtrs[i + 1]) continue;
+        }
+        {
+            DWORD native = g_moduleBase + g_nativeLevelCtors[i + 1];
+            DWORD rel32 = native - ((DWORD)site + 5);
+            DWORD oldProtect;
+            VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &oldProtect);
+            *(DWORD *)(site + 1) = rel32;
+            VirtualProtect(site, 5, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), site, 5);
+        }
+    }
+}
+
+void RestoreAllocSizes(void) {
+    int i;
+    for (i = 1; i <= 15; i++) {
+        if (!(g_sizePatchOk & (1u << (i - 1)))) continue;
+        unsigned char *p = (unsigned char *)g_sizePushAddr[i];
+        if (!p || IsBadReadPtr(p, 4)) continue;
+        if (*(DWORD *)p != (DWORD)UNI_BOARD_SIZE) continue; /* not ours */
+        {
+            DWORD oldProtect;
+            VirtualProtect(p, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+            *(DWORD *)p = g_nativeBoardSize[i];
+            VirtualProtect(p, 4, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), p, 4);
+        }
+        g_sizePatchOk &= ~(1u << (i - 1));
     }
 }

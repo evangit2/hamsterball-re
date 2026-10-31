@@ -2,6 +2,10 @@
 /* Chapter-9 pennants (lf_09_pennants.c, included after this file). */
 void Pennant_PostSetup(void *board, void *ext, int raceIndex);
 static void InstallFlagRenderHook(void);
+/* Cross-chapter DETACH restores (defined in their own chapters). */
+void RestoreBoardCtorHooks(void);
+void RestoreAllocSizes(void);
+void RestoreFlagRenderHook(void);
 static void UniversalConstructor(void *board, int raceIndex) {
     void* ext = EnsureBoardExt(board);
     char buf[256];
@@ -653,6 +657,7 @@ static void InstallVtablePatches(void) {
         /* Slot 1 (offset +0x04): Board_Update → UniversalBoardUpdate */
         {
             DWORD *slot = (DWORD *)(vtableAddr + 0x04);
+            if (i >= 1 && i <= 15) g_origUpdate[i] = (void *)*slot;
             VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
             *slot = (DWORD)&UniversalBoardUpdate;
             VirtualProtect(slot, 4, oldProtect, &oldProtect);
@@ -675,9 +680,11 @@ static void InstallVtablePatches(void) {
         }
 
         /* Slot 29 (offset +0x74): DispatchCollision → UniversalDispatchCollision
-         * No need to save original — UniversalDispatchCollision calls g_OriginalDispatch directly */
+         * Save original for DETACH restore (dispatch still runs natively
+         * when the mod unloads; g_OriginalDispatch is our own call target). */
         {
             DWORD *slot = (DWORD *)(vtableAddr + 0x74);
+            if (i >= 1 && i <= 15) g_origDispatch[i] = (void *)*slot;
             VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
             *slot = (DWORD)&UniversalDispatchCollision;
             VirtualProtect(slot, 4, oldProtect, &oldProtect);
@@ -937,10 +944,186 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     return 0;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * DETACH cleanup — restore every patch so an unload leaves a vanilla game.
+ * Verify-before-write everywhere: only touch sites that still point at us.
+ * No logging here (file I/O at detach is unsafe); failures are silent skips.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static void RestoreVtablePatches(void) {
+    int i;
+    for (i = 1; i <= 15; i++) {
+        DWORD vtableAddr = g_levelVtables[i];
+        if (!vtableAddr) continue;
+        { MEMORY_BASIC_INFORMATION mbi; if (!VirtualQuery((void*)vtableAddr, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT || (DWORD)mbi.BaseAddress + mbi.RegionSize < vtableAddr + 0x88) continue; }
+        DWORD oldProtect;
+        /* slot 1 */ {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x04);
+            if (g_origUpdate[i] && *slot == (DWORD)&UniversalBoardUpdate) {
+                VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                *slot = (DWORD)g_origUpdate[i];
+                VirtualProtect(slot, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), slot, 4);
+            }
+        }
+        /* slot 19 */ {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x4C);
+            if (g_origRaceState[i] && *slot == (DWORD)&UniversalRaceState) {
+                VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                *slot = (DWORD)g_origRaceState[i];
+                VirtualProtect(slot, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), slot, 4);
+            }
+        }
+        /* slot 29 */ {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x74);
+            if (g_origDispatch[i] && *slot == (DWORD)&UniversalDispatchCollision) {
+                VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                *slot = (DWORD)g_origDispatch[i];
+                VirtualProtect(slot, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), slot, 4);
+            }
+        }
+        /* slot 33 */ {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x84);
+            if (g_origCreate[i] && *slot == (DWORD)&UniversalCreateDynamicObjects) {
+                VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                *slot = (DWORD)g_origCreate[i];
+                VirtualProtect(slot, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), slot, 4);
+            }
+        }
+        /* slot 24 (only the 6 patched levels) */ {
+            int is_two_param = (i==2 || i==5 || i==10 || i==12 || i==13 || i==14);
+            if (is_two_param) {
+                DWORD *slot = (DWORD *)(vtableAddr + 0x60);
+                if (g_origRender[i] && *slot == (DWORD)&UniversalRender) {
+                    VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                    *slot = (DWORD)g_origRender[i];
+                    VirtualProtect(slot, 4, oldProtect, &oldProtect);
+                    FlushInstructionCache(GetCurrentProcess(), slot, 4);
+                }
+            }
+        }
+    }
+}
+
+static void RestoreAdvanceRaceHook(void) {
+    if (!g_moduleBase) return;
+    unsigned char *orig = (unsigned char *)(g_moduleBase + 0x00027080);
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery(orig, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT) goto freetrap;
+    if (IsBadReadPtr(orig, 5)) goto freetrap;
+    if (orig[0] == 0xE9) {
+        DWORD cur = (DWORD)orig + 5 + *(DWORD *)(orig + 1);
+        if (cur == (DWORD)&Hook_AdvanceRace) {
+            /* Known prologue (binary-verified): mov eax,fs:[0]. */
+            static const unsigned char prologue[6] = {0x64,0xA1,0x00,0x00,0x00,0x00};
+            DWORD oldProtect;
+            if (VirtualProtect(orig, 6, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+                memcpy(orig, prologue, 6);
+                VirtualProtect(orig, 6, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), orig, 6);
+            }
+        }
+    }
+freetrap:
+    if (g_advanceTrampoline) { VirtualFree(g_advanceTrampoline, 0, MEM_RELEASE); g_advanceTrampoline = NULL; }
+    g_origAdvanceRace = NULL;
+}
+
+static void RestoreCtorHook(void) {
+    if (!g_moduleBase) return;
+    unsigned char *orig = (unsigned char *)(g_moduleBase + 0x000273E0);
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery(orig, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT) goto freetrap;
+    if (IsBadReadPtr(orig, 6)) goto freetrap;
+    if (orig[0] == 0xE9) {
+        DWORD cur = (DWORD)orig + 5 + *(DWORD *)(orig + 1);
+        if (cur == (DWORD)&Hook_UniversalConstructor) {
+            /* Known bytes (install-verified): FF 52 48 8B 4E 04. */
+            static const unsigned char orig6[6] = {0xFF,0x52,0x48,0x8B,0x4E,0x04};
+            DWORD oldProtect;
+            if (VirtualProtect(orig, 6, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+                memcpy(orig, orig6, 6);
+                VirtualProtect(orig, 6, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), orig, 6);
+            }
+        }
+    }
+freetrap:
+    if (g_ctorTrampoline) { VirtualFree(g_ctorTrampoline, 0, MEM_RELEASE); g_ctorTrampoline = NULL; }
+}
+
+static void RestoreFileFallbackHook(void) {
+    HMODULE exe = GetModuleHandleA(NULL);
+    if (!exe || IsBadReadPtr(exe, 0x100)) return;
+    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)exe;
+    if (dos->e_magic != 0x5A4D) return;
+    PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((char*)exe + dos->e_lfanew);
+    if (IsBadReadPtr(nt, sizeof(IMAGE_NT_HEADERS))) return;
+    if (nt->Signature != 0x00004550) return;
+    DWORD importRVA = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+    if (!importRVA) return;
+    PIMAGE_IMPORT_DESCRIPTOR imp = (PIMAGE_IMPORT_DESCRIPTOR)((char*)exe + importRVA);
+    for (; imp->Name; imp++) {
+        char *dllName = (char*)exe + imp->Name;
+        if (!dllName || IsBadReadPtr(dllName, 8)) continue;
+        if (my_stricmp(dllName, "KERNEL32.dll") != 0 && my_stricmp(dllName, "kernel32.dll") != 0) continue;
+        PIMAGE_THUNK_DATA thunk = (PIMAGE_THUNK_DATA)((char*)exe + imp->FirstThunk);
+        PIMAGE_THUNK_DATA origThunk = (PIMAGE_THUNK_DATA)((char*)exe + imp->OriginalFirstThunk);
+        int useOrig = (imp->OriginalFirstThunk != 0);
+        for (; thunk->u1.Function; thunk++, origThunk++) {
+            PIMAGE_THUNK_DATA nameThunk = useOrig ? origThunk : thunk;
+            if (IMAGE_SNAP_BY_ORDINAL(nameThunk->u1.Ordinal)) continue;
+            PIMAGE_IMPORT_BY_NAME byName = (PIMAGE_IMPORT_BY_NAME)((char*)exe + nameThunk->u1.AddressOfData);
+            if (IsBadReadPtr(byName, 4)) continue;
+            char *funcName = (char*)byName->Name;
+            if (!funcName || IsBadReadPtr(funcName, 4)) continue;
+            DWORD oldProtect;
+            if (strcmp(funcName, "CreateFileA")==0 && g_origCreateFileA &&
+                thunk->u1.Function == (DWORD)Hook_CreateFileA) {
+                VirtualProtect(&thunk->u1.Function, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                thunk->u1.Function = (DWORD)g_origCreateFileA;
+                VirtualProtect(&thunk->u1.Function, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), &thunk->u1.Function, 4);
+            } else if (strcmp(funcName, "CreateFileW")==0 && g_origCreateFileW &&
+                thunk->u1.Function == (DWORD)Hook_CreateFileW) {
+                VirtualProtect(&thunk->u1.Function, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                thunk->u1.Function = (DWORD)g_origCreateFileW;
+                VirtualProtect(&thunk->u1.Function, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), &thunk->u1.Function, 4);
+            }
+        }
+    }
+    g_origCreateFileA = NULL;
+    g_origCreateFileW = NULL;
+}
+
+static void RestoreAllHooks(void) {
+    RestoreVtablePatches();
+    RestoreAdvanceRaceHook();
+    RestoreCtorHook();
+    RestoreFileFallbackHook();
+    RestoreFlagRenderHook();
+    RestoreBoardCtorHooks();
+    RestoreAllocSizes();
+    /* Drop ext bindings (heap dies with the process; tidy for FreeLibrary). */
+    { int i; for (i = 0; i < MAX_EXT_MAP; i++) {
+        if (g_extMap[i].ext) {
+            if (HeapValidate(GetProcessHeap(), 0, g_extMap[i].ext))
+                HeapFree(GetProcessHeap(), 0, g_extMap[i].ext);
+        }
+        g_extMap[i].board = NULL; g_extMap[i].ext = NULL;
+        g_extMap[i].feat = 0; g_extMap[i].extSize = 0; g_extMap[i].boardSize = 0;
+    } }
+}
+
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
     if (fdwReason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hinstDLL);
         CreateThread(NULL, 0, PatchThread, NULL, 0, NULL);
+    } else if (fdwReason == DLL_PROCESS_DETACH) {
+        RestoreAllHooks();
     }
     return TRUE;
 }
