@@ -462,10 +462,11 @@ void __fastcall UniversalBoardUpdate(void *board) {
         DebugLog(dbg);
     }
 
-    /* Call base Scene_Update */
-    DebugLog("  [update] calling Scene_Update...");
+    /* Call base Scene_Update (entry/exit traced on the first 3 frames only —
+     * unconditional per-frame logging here is 2 file writes per frame). */
+    if (s_updateCount <= 3) DebugLog("  [update] calling Scene_Update...");
     g_SceneUpdate(board);
-    DebugLog("  [update] Scene_Update done");
+    if (s_updateCount <= 3) DebugLog("  [update] Scene_Update done");
 
     /* Get level and dispatch features */
     int level = GetCurrentLevel(board);

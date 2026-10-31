@@ -305,15 +305,19 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         float dx = *(float *)((char *)ball + 0x164) - *(float *)((char *)ext + UNI_WHEELEMBED_X);
         float dy = *(float *)((char *)ball + 0x168) - *(float *)((char *)ext + UNI_WHEELEMBED_Y);
         float dz = *(float *)((char *)ball + 0x16C) - *(float *)((char *)ext + UNI_WHEELEMBED_Z);
-        /* Transform via Gfx_ScaleY(-5.0) + Matrix_TransformVec3 */
+        /* Transform via ScaleY(-5.0) + Matrix_TransformVec3 — matrix composes
+         * into the fresh timerBuf, rel updated in place (native Dizzy
+         * rider pattern; the old code scaled gfx and transformed through
+         * a garbage matrix into a discarded buffer). */
         if (g_TimerInit && g_TimerCleanup && g_GfxScaleY && g_MatrixTransformVec3 && g_GfxSetPosition && app) {
             void *gfx = *(void **)(app + 0x174);
             if (gfx) {
             char timerBuf[68];
-            float transformed[16];
             g_TimerInit(timerBuf);
-            g_GfxScaleY(gfx, -5.0f);
-            g_MatrixTransformVec3(transformed, &dx);
+            g_GfxScaleY(timerBuf, -5.0f);
+            { float rel[3] = { dx, dy, dz };
+              g_MatrixTransformVec3(timerBuf, rel);
+              dx = rel[0]; dy = rel[1]; dz = rel[2]; }
             dx += *(float *)((char *)ext + UNI_WHEELEMBED_X);
             dy += *(float *)((char *)ext + UNI_WHEELEMBED_Y);
             dz += *(float *)((char *)ext + UNI_WHEELEMBED_Z);

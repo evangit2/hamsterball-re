@@ -153,10 +153,14 @@ static void Feature_BridgeAnimation(void *board, int level) {
             if (g_TimerInit && g_TimerCleanup && g_GfxScaleZ && g_GfxSetPosition && g_MatrixTransformVec3 && app) {
                 void *gfx = *(void **)(app + 0x174);
                 if (gfx) {
+                /* Compose into the fresh timer buffer (native Intermediate
+                 * 0x41CFBA-0x41D012 pattern); draw below uses timerBuf.
+                 * Scaling the persistent gfx object instead loses the
+                 * rotation AND pollutes gfx for every other draw. */
                 char timerBuf[68];
                 g_TimerInit(timerBuf);
-                g_GfxScaleZ(gfx, -*anglePtr);
-                g_GfxSetPosition(gfx, *pivotX, *pivotY, *pivotZ);
+                g_GfxScaleZ(timerBuf, -*anglePtr);
+                g_GfxSetPosition(timerBuf, *pivotX, *pivotY, *pivotZ);
                 DWORD *renderVtbl = *(DWORD **)renderObj;
                 if (renderVtbl) {
                     void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))renderVtbl[0x16];
@@ -434,7 +438,8 @@ static void Feature_SwirlZones(void *board, int level) {
         char timerBuf[68];
         g_TimerInit(timerBuf);
 
-        /* Primary swirl mesh rotation (Gfx_ScaleY) */
+        /* Primary swirl mesh rotation — compose into timerBuf (drawn below),
+         * never the persistent gfx object (same class as bridge/windmill). */
         if (swirlDbg < 3) DebugLog("  [swirl] step3a: primary mesh rotation");
         /* Native angle lives at board+0x4BBC on Dizzy-class boards (zeroed
          * per WATERWHEEL S1 at create, decremented here); ext mirror else. */
@@ -450,13 +455,13 @@ static void Feature_SwirlZones(void *board, int level) {
             float ry = *(float*)((char*)ext + OFF_WATER_ROT_Y);
             float rz = *(float*)((char*)ext + OFF_WATER_ROT_Z);
             if (rx!=0 || ry!=0 || rz!=0) {
-                if (ry!=0) g_GfxScaleY(gfx, angle1 * ry); else g_GfxScaleY(gfx, angle1);
-                if (rx!=0) g_GfxScaleX(gfx, angle1 * rx);
-                if (rz!=0) g_GfxScaleZ(gfx, angle1 * rz);
-            } else g_GfxScaleY(gfx, angle1);
+                if (ry!=0) g_GfxScaleY(timerBuf, angle1 * ry); else g_GfxScaleY(timerBuf, angle1);
+                if (rx!=0) g_GfxScaleX(timerBuf, angle1 * rx);
+                if (rz!=0) g_GfxScaleZ(timerBuf, angle1 * rz);
+            } else g_GfxScaleY(timerBuf, angle1);
         }
         if (swirlDbg < 3) DebugLog("  [swirl] step3a: calling GfxSetPosition");
-        g_GfxSetPosition(gfx, *(float*)((char*)ext + OFF_WHEEL_EMBED_X), *(float*)((char*)ext + OFF_WHEEL_EMBED_Y), *(float*)((char*)ext + OFF_WHEEL_EMBED_Z));
+        g_GfxSetPosition(timerBuf, *(float*)((char*)ext + OFF_WHEEL_EMBED_X), *(float*)((char*)ext + OFF_WHEEL_EMBED_Y), *(float*)((char*)ext + OFF_WHEEL_EMBED_Z));
         if (swirlDbg < 3) DebugLog("  [swirl] step3a: Gfx calls done, calling render");
         // Re-enabled after ext-heap fix — heap overflow was corrupting spatial tree at +0x18
         {
@@ -510,9 +515,9 @@ static void Feature_SwirlZones(void *board, int level) {
         if (swirlDbg < 3) DebugLog("  [swirl] step3b: calling Matrix44Zero");
         g_Matrix44Zero((int *)timerBuf);
         if (swirlDbg < 3) DebugLog("  [swirl] step3b: calling GfxScaleX");
-        g_GfxScaleX(gfx, *pAngS);
+        g_GfxScaleX(timerBuf, *pAngS);
         if (swirlDbg < 3) DebugLog("  [swirl] step3b: calling GfxSetPosition");
-        g_GfxSetPosition(gfx,
+        g_GfxSetPosition(timerBuf,
             isDizzy ? *(float *)((char *)board + 0x4BCC) : *(float *)((char *)ext + OFF_SWIRL_POS_X),
             isDizzy ? *(float *)((char *)board + 0x4BD0) : *(float *)((char *)ext + OFF_SWIRL_POS_Y),
             isDizzy ? *(float *)((char *)board + 0x4BD4) : *(float *)((char *)ext + OFF_SWIRL_POS_Z));

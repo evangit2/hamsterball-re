@@ -1404,6 +1404,16 @@ static void NormalizeRaceFile(char *out, const char *in) {
     for (k=0;tmp[k];k++) if (tmp[k]=='\\' || tmp[k]=='/') hasSep=1;
     if (!hasSep) { my_strncpy(out, "levels\\", MAX_PATH); strncat(out, tmp, MAX_PATH-strlen(out)-1); }
     else { my_strncpy(out, tmp, MAX_PATH); }
+    /* Squeeze separator runs (user-typed "levels\\x", mixed "levels//x"):
+     * single backslash. Relative game paths only (no UNC to preserve). */
+    { char *r = out, *w = out; int lastSep = 0;
+      while (*r) {
+          int isSep = (*r == '\\' || *r == '/');
+          if (isSep) { if (!lastSep) *w++ = '\\'; lastSep = 1; }
+          else { *w++ = *r; lastSep = 0; }
+          r++;
+      }
+      *w = '\0'; }
 }
 
 static int RaceFileExists(const char *base) {

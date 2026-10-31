@@ -940,7 +940,7 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     DebugLog("InstallHook done");
     InstallFlagRenderHook();
     DebugLog("InstallFlagRenderHook done");
-    DebugLog("=== PatchThread complete (v2 swirlfix) ===\n");
+    DebugLog("=== PatchThread complete ===\n");
     return 0;
 }
 
