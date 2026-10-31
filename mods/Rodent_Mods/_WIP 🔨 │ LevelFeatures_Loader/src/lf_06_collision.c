@@ -1288,9 +1288,20 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                 float vz = *(float *)(phys + 0xCAC) * 2.0f;
                 float vy = 0.0f;
                 float speed = sqrtf(vx*vx + vz*vz);
-                if (speed < 1.25f) g_Vec3NormalizeAndScale((float[]){vx,vy,vz}, 1.25f);
+                /* NOTE: NormalizeAndScale(vec, s) rewrites vec in place —
+                 * the old code passed a compound-literal temp and kept the
+                 * stale vx/vy/vz, so the clamp never applied. */
+                if (speed < 1.25f) {
+                    float dir[3] = {vx, vy, vz};
+                    g_Vec3NormalizeAndScale(dir, 1.25f);
+                    vx = dir[0]; vy = dir[1]; vz = dir[2];
+                }
                 speed = sqrtf(vx*vx + vy*vy + vz*vz);
-                if (speed > 3.0f) g_Vec3NormalizeAndScale((float[]){vx,vy,vz}, 3.0f);
+                if (speed > 3.0f) {
+                    float dir[3] = {vx, vy, vz};
+                    g_Vec3NormalizeAndScale(dir, 3.0f);
+                    vx = dir[0]; vy = dir[1]; vz = dir[2];
+                }
                 *(float *)(phys + 0xCA4) = vx;
                 *(float *)(phys + 0xCA8) = vy;
                 *(float *)(phys + 0xCAC) = vz;

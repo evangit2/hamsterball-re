@@ -985,7 +985,8 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
 
     /* ── WAVY1 (Wobbly) ── */
     if (my_strnicmp(name, "WAVY1", 5) == 0) {
-        int gfx = *(int *)(app + 0x174);
+        /* app can be 0 from GetBoardApp (menu-shell boards) — guard it. */
+        int gfx = (app && !IsBadReadPtr((void *)app, 0x500)) ? *(int *)(app + 0x174) : 0;
         if (gfx) *(char *)(gfx + 2000) = 1;
         void *mem = g_operatorNew(0x1AE7C);
         if (mem) {

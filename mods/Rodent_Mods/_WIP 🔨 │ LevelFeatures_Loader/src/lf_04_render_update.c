@@ -34,7 +34,12 @@ void UniversalRenderImpl(void *board, int unk) {
             return;
         }
     }
-    if (!ext || level == 0) return;
+    if (!ext || level == 0) {
+        /* Degrade to base render, never blank: ext can miss on teardown
+         * races / map pressure while the board is still drawn. */
+        if (!ext && board) g_RenderDynamicObjects(board, unk);
+        return;
+    }
 
     /* Tower content (any slot): clean-room render below (faithful to native
      * 0x40DFA0 as re-derived 2026-10-23: method-this is the timer object,

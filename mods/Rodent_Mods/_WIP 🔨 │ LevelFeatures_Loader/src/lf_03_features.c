@@ -698,7 +698,12 @@ static void Feature_Windmill(void *board, int level) {
         if (wmr && !IsBadReadPtr((void *)wmr, 4) &&
             g_TimerInit && g_TimerCleanup && g_GfxScaleY && g_GfxSetPosition) {
             /* Native Tower (0x41E80B-0x41E85E): TimerInit(T) -> ScaleY(T,angle)
-             * -> SetPosition(T,x,y,z) -> draw wmr with T. Single buffer. */
+             * -> SetPosition(T,x,y,z) -> draw wmr with T. Single buffer.
+             * Mirror board+0x43A4 advance (native 0x41E861 fadds _DAT_004CF418
+             * = 3.0): chomper bob timer must advance here too, else the
+             * content-5 early-return freezes it at sin(0)*10. */
+            { void *ext5 = GetBoardExt(board);
+              if (ext5) *(float *)((char *)ext5 + UNI_CHOMP_TIMER) += 3.0f; }
             char timerBuf[68];
             g_TimerInit(timerBuf);
             g_GfxScaleY(timerBuf, *bAng);
