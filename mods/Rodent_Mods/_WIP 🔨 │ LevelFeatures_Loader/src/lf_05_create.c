@@ -970,7 +970,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
      * ride the Blockdawg1 mesh (+0x4378); dawg3 rides Blockdawg2 (+0x437C).
      * Native stores NOTHING to board (append 0x2578 only); dawg3 gets
      * +0x1152=1 and is the only branch that sets out params. */
-    if (my_strnicmp(name, "BLOCKDAWG", 9) == 0 && difficulty != 0) {
+    if (my_strnicmp(name, "BLOCKDAWG", 9) == 0 && difficulty != 0 && name[9] >= '1' && name[9] <= '3') {
         int dawgNum = name[9] - '0';
         int meshOff = (dawgNum==3) ? UNI_BLOCKDAWG3_MESH : UNI_BLOCKDAWG1_MESH;
         { const char *_bdPath = (dawgNum==3) ? "Levels\\Level8-BlockDawg2" : "Levels\\Level8-BlockDawg1"; S1EnsureMeshWorld(board, ext, meshOff, _bdPath); }
@@ -1280,7 +1280,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     }
 
     /* ── BBRIDGE1/2 (Master) ── */
-    if (my_strnicmp(name, "BBRIDGE", 7) == 0) {
+    if (my_strnicmp(name, "BBRIDGE", 7) == 0 && name[7] >= '1' && name[7] <= '2') {
         int bNum = name[7] - '0';
         int meshOff = (bNum == 1) ? UNI_BBRIDGE1_MESH : UNI_BBRIDGE2_MESH;
         int storeOff = (bNum == 1) ? UNI_BBRIDGE1_OBJ : UNI_BBRIDGE2_OBJ;
