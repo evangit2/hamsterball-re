@@ -1798,11 +1798,12 @@ static DWORD vortex_make_sprite(DWORD gfx, DWORD tex, float w, float h) {
      * succeeded (fallback never ran, so no template exists yet). */
     {
         DWORD tmpl = 0;
+        unsigned char *rec = NULL;
         if (!g_goldSprite) vortex_gold_tex(gfx);
         if (g_goldSprite && !IsBadReadPtr((void*)(g_goldSprite + 0x50), 4))
             tmpl = *(DWORD*)(g_goldSprite + 0x50);
         if (tmpl && !IsBadReadPtr((void*)(tmpl + 0x1C), 4)) {
-            unsigned char *rec = (unsigned char*)VirtualAlloc(NULL, 0x20, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+            rec = (unsigned char*)VirtualAlloc(NULL, 0x20, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
             if (!rec) { VirtualFree(sp, 0, MEM_RELEASE); return 0; }
             memcpy(rec, (void*)tmpl, 0x20);
             *(DWORD*)(rec + 0x04) = tex;
@@ -1811,6 +1812,27 @@ static DWORD vortex_make_sprite(DWORD gfx, DWORD tex, float w, float h) {
             *(DWORD*)(rec + 0x18) = (DWORD)(g_vortexTexH ? g_vortexTexH : g_vortexCaptH);
             *(DWORD*)(sp + 0x50) = (DWORD)rec;
         } else { VirtualFree(sp, 0, MEM_RELEASE); return 0; }
+        /* sprite+8 material: the draw can resolve the texture through the
+         * MATERIAL ([mat+0x48] -> record) instead of sprite+0x50. A zeroed
+         * material leaves +0x48 NULL -> [NULL+4] faults inside the draw
+         * (SEH swallows it, trophy vanishes). Clone the gold sprite's
+         * material so the path resolves exactly like a ctor-built sprite. */
+        {
+            DWORD gmat = 0;
+            if (g_goldSprite && !IsBadReadPtr((void*)(g_goldSprite + 8), 4))
+                gmat = *(DWORD*)(g_goldSprite + 8);
+            if (gmat && !IsBadReadPtr((void*)(gmat + 0x4C), 4)) {
+                unsigned char *mat = (unsigned char*)VirtualAlloc(NULL, 0x50, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+                if (!mat) { VirtualFree(rec, 0, MEM_RELEASE); VirtualFree(sp, 0, MEM_RELEASE); return 0; }
+                memcpy(mat, (void*)gmat, 0x50);
+                *(DWORD*)(mat + 0x48) = (DWORD)rec;
+                *(DWORD*)(sp + 8) = (DWORD)mat;
+            } else { VirtualFree(rec, 0, MEM_RELEASE); VirtualFree(sp, 0, MEM_RELEASE); return 0; }
+        }
+        /* match the gold sprite's blend/alpha bytes (some drivers need the
+         * same flags to blend the scratch like the file texture) */
+        if (g_goldSprite && !IsBadReadPtr((void*)(g_goldSprite + 0x4C), 4))
+            *(DWORD*)(sp + 0x4C) = *(DWORD*)(g_goldSprite + 0x4C);
     }
     *(float*)(sp + 0xC8) = w;                                  /* box w */
     *(float*)(sp + 0xCC) = h;                                  /* box h */
@@ -1898,6 +1920,10 @@ static void vortex_composite_render(DWORD results, float t, int frame) {
             BYTE *d = buf + ((size_t)dstY*w + ox)*4;
             for (x = 0; x < g_vortexWeaselW; x++) {
                 BYTE r=s[0], g=s[1], b=s[2], a=s[3];
+                /* Some drivers report a valid RGB frame with a zero alpha
+                 * channel (format quirk). A zero-alpha weasel composites to
+                 * nothing -> trophy "disappears". Any lit pixel is opaque. */
+                if (!a && (r || g || b)) a = 0xFF;
                 if (a) {
                     int dr=(int)((255-r)*t), dg=(int)((255-g)*t), db=(int)((255-b)*t);
                     r=(BYTE)(r+dr); g=(BYTE)(g+dg); b=(BYTE)(b+db);
