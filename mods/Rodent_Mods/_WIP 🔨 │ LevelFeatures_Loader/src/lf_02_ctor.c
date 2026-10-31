@@ -298,6 +298,44 @@ static void UniversalGlassInit(void *mem, int app) {
     DebugLog("UniversalGlassInit done (no native ctor)");
 }
 
+/* Fail-closed size tracking: bit i = level i+1 alloc patched to 0x7000.
+ * g_nativeBoardSize holds the stock operator_new size per slot (captured
+ * before rewrite); g_nativeLevelCtors holds the slot's genuine native ctor
+ * (RVA; Ghidra-verified: WarmUp 0x41CA40, Master 0x4206D0, + repo table).
+ * If a slot's patch misses, mem is native-sized and the universal layout
+ * would heap-corrupt — the logic below runs the native ctor instead. */
+typedef void (__thiscall *NativeBoardCtor_t)(void *mem, int app);
+static DWORD g_sizePatchOk = 0;
+static DWORD g_nativeBoardSize[16] = {0};
+static const DWORD g_nativeLevelCtors[16] = {
+    0,
+    0x1CA40, /* 1 WarmUp */
+    0x200E0, /* 2 Beginner */
+    0x1CB20, /* 3 Intermediate */
+    0x1D060, /* 4 Dizzy */
+    0x1E340, /* 5 Tower */
+    0x20390, /* 6 Up */
+    0x24440, /* 7 Neon */
+    0x1EA40, /* 8 Expert */
+    0x1ED80, /* 9 Odd */
+    0x1F4B0, /* 10 Toob */
+    0x1F110, /* 11 Wobbly */
+    0x24A90, /* 12 Glass */
+    0x1F930, /* 13 Sky */
+    0x206D0, /* 14 Master */
+    0x24C20, /* 15 Impossible */
+};
+
+/* Universal board size: every level board allocates 0x7000 bytes (>= the
+ * largest native board, Master 0x6498, plus margin). Any content in any slot
+ * gets a board big enough for the largest per-level layout (Tower lists at
+ * 0x5000, Dizzy fields, etc.) — no OOB writes on file/slot swaps.
+ * Runs inside InstallBoardCtorHooks: for each of the 15 ctor CALL sites,
+ * scan back for the operator_new CALL and rewrite its preceding push $SIZE.
+ * Verification is strict: CALL target must be operator_new exactly, and the
+ * 5 bytes before it must be a push imm32 (0x68). */
+#define UNI_BOARD_SIZE 0x7000
+
 void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     int raceIndex = g_pendingRaceIndex;
     g_lastAppParam = app;
@@ -310,6 +348,18 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     }
     if (!g_BoardCtor || !g_LoadRaceData) {
         DebugLog("UniversalBoardCtorLogic: function pointers not resolved");
+        return;
+    }
+
+    /* Fail closed: if this slot's alloc patch missed, mem is native-sized and
+     * every universal layout write past it is heap corruption. Run the slot's
+     * genuine native ctor on its native-sized mem (exact vanilla behavior;
+     * mod handlers degrade cleanly with no ext). */
+    if (!(g_sizePatchOk & (1u << (raceIndex - 1)))) {
+        char fb[160];
+        wsprintfA(fb, "UniversalBoardCtorLogic: size patch missing slot %d (native %dB) — native ctor fallback", raceIndex, g_nativeBoardSize[raceIndex]);
+        DebugLog(fb);
+        ((NativeBoardCtor_t)(g_moduleBase + g_nativeLevelCtors[raceIndex]))(mem, app);
         return;
     }
 
@@ -404,6 +454,13 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     if (!ext) {
         DebugLog("UniversalBoardCtorLogic: EnsureBoardExt failed");
         return;
+    }
+
+    /* Record this board's true alloc size for precise BoardHasOffset checks
+     * (VirtualQuery over-estimates game-heap regions). */
+    {
+        DWORD known = (g_sizePatchOk & (1u << (raceIndex - 1))) ? (DWORD)UNI_BOARD_SIZE : g_nativeBoardSize[raceIndex];
+        if (known) { int bi; for (bi = 0; bi < MAX_EXT_MAP; bi++) if (g_extMap[bi].board == mem) { g_extMap[bi].boardSize = known; break; } }
     }
 
     /* Step 0 (cont.): stamp per-board content id (ext exists from here). */
@@ -769,15 +826,8 @@ static void *g_thunkPtrs[16] = {
     Thunk_Level13, Thunk_Level14, Thunk_Level15,
 };
 
-/* Universal board size: every level board allocates 0x7000 bytes (>= the
- * largest native board, Master 0x6498, plus margin). Any content in any slot
- * gets a board big enough for the largest per-level layout (Tower lists at
- * 0x5000, Dizzy fields, etc.) — no OOB writes on file/slot swaps.
- * Runs inside InstallBoardCtorHooks: for each of the 15 ctor CALL sites,
- * scan back for the operator_new CALL and rewrite its preceding push $SIZE.
- * Verification is strict: CALL target must be operator_new exactly, and the
- * 5 bytes before it must be a push imm32 (0x68). */
-#define UNI_BOARD_SIZE 0x7000
+/* Size-patch install per ctor CALL site below (tracking tables live above,
+ * before UniversalBoardCtorLogic). */
 
 static void InstallUniversalBoardSize(void) {
     DWORD newAddr = g_moduleBase + RVA_operator_new;
@@ -794,11 +844,13 @@ static void InstallUniversalBoardSize(void) {
             if ((DWORD)(c + 5 + *(int *)(c + 1)) != newAddr) continue;
             /* c = CALL operator_new; preceding 5 bytes must be push imm32 */
             if (c[-5] != 0x68) continue;
+            g_nativeBoardSize[i + 1] = *(DWORD *)(c - 4);   /* stock size */
             { DWORD oldProtect;
               VirtualProtect(c - 5, 5, PAGE_EXECUTE_READWRITE, &oldProtect);
               *(DWORD *)(c - 4) = UNI_BOARD_SIZE;
               VirtualProtect(c - 5, 5, oldProtect, &oldProtect);
               FlushInstructionCache(GetCurrentProcess(), c - 5, 5); }
+            g_sizePatchOk |= (1u << i);
             break;
         }
     }

@@ -349,9 +349,14 @@ __attribute__((naked)) static void Hook_AdvanceRace(void) {
 }
 
 void __cdecl Hook_AdvanceRaceLogic(DWORD a1) { /* non-static + cdecl: referenced from naked asm above */
-    /* Free the outgoing board's ext *before* the call (App+0x178 is the cur board)
-     * and sweep stales *after* the call. Covers both reuse and free cases.
-     * App pointer is at absolute 0x005341E0 (RVA 0x1341E0 from g_moduleBase). */
+    /* Free the outgoing board's ext *before* the call and sweep stales
+     * *after* the call. Covers both reuse and free cases.
+     * App pointer is at absolute 0x005341E0 (RVA 0x1341E0 from g_moduleBase).
+     * NOTE: App+0x178 is ASSUMED to be the current board (binary: AdvanceRace
+     * never reads +0x178; App_Ctor treats 0x174-0x184 as zeroed device
+     * slots). Only free when the pointer actually owns an ext — a device
+     * pointer never matches a map key, so a mistap degrades to sweep-lazy
+     * instead of a wrong free. */
     void* curBoard = NULL;
     DWORD appPtrAddr = g_moduleBase ? g_moduleBase + 0x1341E0 : 0x005341E0;
     MEMORY_BASIC_INFORMATION mbi;
@@ -362,7 +367,7 @@ void __cdecl Hook_AdvanceRaceLogic(DWORD a1) { /* non-static + cdecl: referenced
             curBoard = *(void**)((char*)app + 0x178);
         }
     }
-    if (curBoard) {
+    if (curBoard && GetBoardExt(curBoard)) {
         FreeBoardExt(curBoard);
     }
     if (g_origAdvanceRace) g_origAdvanceRace((void*)g_savedAdvanceECX, a1);

@@ -371,13 +371,22 @@ typedef enum {
  * g_extFeat is per-board auto-enable bitmask (replaces g_updateFeatures[level]).
  * ═══════════════════════════════════════════════════════════════════════════ */
 #define MAX_EXT_MAP 32
-typedef struct { void* board; void* ext; DWORD feat; DWORD extSize; } ExtEntry;
+typedef struct { void* board; void* ext; DWORD feat; DWORD extSize; DWORD boardSize; } ExtEntry;
 static ExtEntry g_extMap[32] = {{0}};
 
 /* Board bounds check via VirtualQuery — IsBadWritePtr only checks page
  * writability, not HeapAlloc bounds. This checks committed region size. */
 static int BoardHasOffset(void* board, DWORD offset, DWORD need) {
     if (!board) return 0;
+    /* Precise check when the ctor recorded this board's real alloc size.
+     * (VirtualQuery over-estimates: game heaps commit in large regions, and
+     * game boards are not on the process heap so the HeapSize branch below
+     * never fires for them.) */
+    { int i; for (i = 0; i < MAX_EXT_MAP; i++)
+        if (g_extMap[i].board == board && g_extMap[i].boardSize) {
+            if (offset + need > g_extMap[i].boardSize) return 0;
+            return 1;
+        } }
     MEMORY_BASIC_INFORMATION mbi;
     if (!VirtualQuery(board, &mbi, sizeof(mbi))) return 0;
     if (mbi.State != MEM_COMMIT) return 0;
@@ -448,7 +457,7 @@ static int SweepStaleExts(void) {
             if (g_extMap[i].ext && HeapValidate(GetProcessHeap(), 0, g_extMap[i].ext))
                 HeapFree(GetProcessHeap(), 0, g_extMap[i].ext);
             g_extMap[i].board = NULL; g_extMap[i].ext = NULL;
-            g_extMap[i].extSize = 0; g_extMap[i].feat = 0;
+            g_extMap[i].extSize = 0; g_extMap[i].feat = 0; g_extMap[i].boardSize = 0;
             freed = 1;
         }
     }
@@ -487,6 +496,7 @@ static void FreeBoardExt(void* board) {
             if (HeapValidate(GetProcessHeap(), 0, g_extMap[i].ext)) HeapFree(GetProcessHeap(),0,g_extMap[i].ext);
             g_extMap[i].ext=NULL;
             g_extMap[i].extSize=0;
+            g_extMap[i].boardSize=0;
         }
         g_extMap[i].feat=0;
         g_extMap[i].board=NULL;
