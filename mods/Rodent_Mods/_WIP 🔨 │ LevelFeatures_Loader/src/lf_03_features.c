@@ -566,20 +566,24 @@ static void Feature_SwirlZones(void *board, int level) {
             }
         }
         while (rb) {
-            /* Wheel carry (native block 4: ScaleY(-0.5) + transform). */
+            /* Wheel carry (native block 4: ScaleY(-0.5) + transform).
+             * Binary-verified (0x41DCC2-0x41DD90): TimerInit(tB) then
+             * ScaleY into tB, inline matrix*rel with rel updated IN PLACE
+             * (0x40A0B0 writes arg2; bridge block mirrors this via
+             * Transform(ctimer, cd)+read-cd). So scale tB (not gfxR),
+             * transform (tB, rel), read rel. */
             if (*(char *)(rb + 0x778)) {
                 float rel[3];
-                float out[16];
                 char tB[68];
                 rel[0] = *(float *)(rb + BALL_POS_X_OFS) - wcx2;
                 rel[1] = *(float *)(rb + BALL_POS_Y_OFS) - wcy2;
                 rel[2] = *(float *)(rb + BALL_POS_Z_OFS) - wcz2;
                 g_TimerInit(tB);
-                g_GfxScaleY(gfxR, -0.5f);
-                g_MatrixTransformVec3(out, rel);
-                *(float *)(rb + BALL_POS_X_OFS) = wcx2 + out[0];
-                *(float *)(rb + BALL_POS_Y_OFS) = wcy2 + out[1];
-                *(float *)(rb + BALL_POS_Z_OFS) = wcz2 + out[2];
+                g_GfxScaleY(tB, -0.5f);
+                g_MatrixTransformVec3(tB, rel);
+                *(float *)(rb + BALL_POS_X_OFS) = wcx2 + rel[0];
+                *(float *)(rb + BALL_POS_Y_OFS) = wcy2 + rel[1];
+                *(float *)(rb + BALL_POS_Z_OFS) = wcz2 + rel[2];
                 g_TimerCleanup(tB);
             }
             /* Swirl capture / carry (native block 5). */
@@ -609,19 +613,19 @@ static void Feature_SwirlZones(void *board, int level) {
                 *(int *)(rb + 0x78C) = 5;
                 {
                 float rel[3];
-                float out[16];
                 char tB[68];
                 float ox = *(float *)(rb + BALL_POS_X_OFS);
                 float oy = *(float *)(rb + BALL_POS_Y_OFS);
                 float oz = *(float *)(rb + BALL_POS_Z_OFS);
                 rel[0] = ox - scx; rel[1] = oy - scy; rel[2] = oz - scz;
+                float old0 = rel[0], old1 = rel[1], old2 = rel[2];
                 g_TimerInit(tB);
-                g_GfxScaleX(gfxR, sdelta);
-                g_MatrixTransformVec3(out, rel);
+                g_GfxScaleX(tB, sdelta);
+                g_MatrixTransformVec3(tB, rel);
                 g_TimerCleanup(tB);
-                *(float *)(rb + BALL_POS_X_OFS) = scx + out[0];
-                *(float *)(rb + BALL_POS_Y_OFS) = scy + out[1];
-                *(float *)(rb + BALL_POS_Z_OFS) = scz + out[2];
+                *(float *)(rb + BALL_POS_X_OFS) = scx + rel[0];
+                *(float *)(rb + BALL_POS_Y_OFS) = scy + rel[1];
+                *(float *)(rb + BALL_POS_Z_OFS) = scz + rel[2];
                 DWORD phys = *(DWORD *)(rb + BALL_PHYS_PTR_OFS);
                 if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
                     float vx = *(float *)(phys + BALL_PHYS_VEL_X);
@@ -629,9 +633,9 @@ static void Feature_SwirlZones(void *board, int level) {
                     float vz = *(float *)(phys + BALL_PHYS_VEL_Z);
                     float osp = sqrtf(vx*vx + vy*vy + vz*vz);
                     *(int *)(rb + 0x788) = (int)(osp * 10000.0f);
-                    float nvx = vx + (out[0] - rel[0]) * 0.1f;
-                    float nvy = vy + (out[1] - rel[1]) * 0.1f;
-                    float nvz = vz + (out[2] - rel[2]) * 0.1f;
+                    float nvx = vx + (rel[0] - old0) * 0.1f;
+                    float nvy = vy + (rel[1] - old1) * 0.1f;
+                    float nvz = vz + (rel[2] - old2) * 0.1f;
                     float nsp = sqrtf(nvx*nvx + nvy*nvy + nvz*nvz);
                     if (nsp > osp && osp > 0.0f && nsp > 0.0f) {
                         float s = osp / nsp;
