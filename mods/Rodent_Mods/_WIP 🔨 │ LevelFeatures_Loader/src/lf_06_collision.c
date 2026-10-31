@@ -485,12 +485,15 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             if (g_RotatorTriggerSound) g_RotatorTriggerSound(meshObj);
             if (app) {
                 int gameMode = *(int *)(app + 0x220);
-                if (gameMode && *(char *)(gameMode + 0x10) == 0 && *(char *)(gameMode + 0x11) == 0) {
-                    *(DWORD *)(ball[6]*0xA0 + 0x5EC + app) = 500;
+                /* Score slots are app+pidx*0xA0 (4 HUD slots); badballs carry
+                 * [6]=-1 — never write a foreign slot. */
+                int pidxA = ball[6];
+                if (gameMode && pidxA >= 0 && pidxA <= 3 && *(char *)(gameMode + 0x10) == 0 && *(char *)(gameMode + 0x11) == 0) {
+                    *(DWORD *)(pidxA*0xA0 + 0x5EC + app) = 500;
                     if (g_operatorNew && g_ScoreObjectCtor && g_TimerDecrement && g_AthenaListAppend) {
                         void *mem = g_operatorNew(0x30);
                         if (mem) {
-                            int so = g_ScoreObjectCtor(mem, (int)board, ball[6]*0xA0 + 0x5CC + app, "EXTRA TIME:");
+                            int so = g_ScoreObjectCtor(mem, (int)board, pidxA*0xA0 + 0x5CC + app, "EXTRA TIME:");
                             g_TimerDecrement(so);
                             g_AthenaListAppend((void *)((char *)board + UNI_SCORE_LIST), so);
                         }
@@ -703,12 +706,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         if (g_BellActivate && *(int *)((char *)ext + UNI_BELL_OBJ)) g_BellActivate(*(int *)((char *)ext + UNI_BELL_OBJ));
         if (app) {
             int gameMode = *(int *)(app + 0x220);
-            if (gameMode && *(char *)(gameMode + 0x10) == 0 && *(char *)(gameMode + 0x11) == 0) {
-                *(DWORD *)(ball[6]*0xA0 + 0x5EC + app) = 500;
+            int pidxB = ball[6];
+            if (gameMode && pidxB >= 0 && pidxB <= 3 && *(char *)(gameMode + 0x10) == 0 && *(char *)(gameMode + 0x11) == 0) {
+                *(DWORD *)(pidxB*0xA0 + 0x5EC + app) = 500;
                 if (g_operatorNew && g_ScoreObjectCtor && g_TimerDecrement && g_AthenaListAppend) {
                     void *mem = g_operatorNew(0x30);
                     if (mem) {
-                        int so = g_ScoreObjectCtor(mem, (int)board, ball[6]*0xA0 + 0x5CC + app, "EXTRA TIME:");
+                        int so = g_ScoreObjectCtor(mem, (int)board, pidxB*0xA0 + 0x5CC + app, "EXTRA TIME:");
                         g_TimerDecrement(so);
                         g_AthenaListAppend((void *)((char *)board + UNI_SCORE_LIST), so);
                     }
@@ -1188,12 +1192,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                 }
                 if (app) {
                     int gameMode = *(int *)(app + 0x220);
-                    if (gameMode && *(char *)(gameMode + 0x10) == 0 && *(char *)(gameMode + 0x11) == 0) {
-                        *(DWORD *)(ball[6]*0xA0 + 0x5EC + app) = 1000;
+                    int pidxC = ball[6];
+                    if (gameMode && pidxC >= 0 && pidxC <= 3 && *(char *)(gameMode + 0x10) == 0 && *(char *)(gameMode + 0x11) == 0) {
+                        *(DWORD *)(pidxC*0xA0 + 0x5EC + app) = 1000;
                         if (g_operatorNew && g_ScoreObjectCtor && g_TimerDecrement && g_AthenaListAppend) {
                             void *mem = g_operatorNew(0x30);
                             if (mem) {
-                                int so = g_ScoreObjectCtor(mem, (int)board, ball[6]*0xA0 + 0x5CC + app, "EXTRA TIME:");
+                                int so = g_ScoreObjectCtor(mem, (int)board, pidxC*0xA0 + 0x5CC + app, "EXTRA TIME:");
                                 g_TimerDecrement(so);
                                 g_AthenaListAppend((void *)((char *)board + UNI_SCORE_LIST), so);
                             }
@@ -1220,12 +1225,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                 }
                 if (app) {
                     int gameMode = *(int *)(app + 0x220);
-                    if (gameMode && *(char *)(gameMode + 0x10) == 0 && *(char *)(gameMode + 0x11) == 0) {
-                        *(DWORD *)(ball[6]*0xA0 + 0x5EC + app) = 1000;
+                    int pidxD = ball[6];
+                    if (gameMode && pidxD >= 0 && pidxD <= 3 && *(char *)(gameMode + 0x10) == 0 && *(char *)(gameMode + 0x11) == 0) {
+                        *(DWORD *)(pidxD*0xA0 + 0x5EC + app) = 1000;
                         if (g_operatorNew && g_ScoreObjectCtor && g_TimerDecrement && g_AthenaListAppend) {
                             void *mem = g_operatorNew(0x30);
                             if (mem) {
-                                int so = g_ScoreObjectCtor(mem, (int)board, ball[6]*0xA0 + 0x5CC + app, "EXTRA TIME:");
+                                int so = g_ScoreObjectCtor(mem, (int)board, pidxD*0xA0 + 0x5CC + app, "EXTRA TIME:");
                                 g_TimerDecrement(so);
                                 g_AthenaListAppend((void *)((char *)board + UNI_SCORE_LIST), so);
                             }

@@ -337,6 +337,7 @@ typedef enum {
     FEAT_NEON_CAM      = 1 << 5,  /* Neon ball-following camera */
     FEAT_SKY_POPCYL    = 1 << 6,  /* Sky popcylinder activator */
     FEAT_EXPERT_LISTS  = 1 << 7,  /* Expert spinner lists 4380/4798 inited */
+    FEAT_TOWER_LISTS   = 1 << 8,  /* Tower lists 43B8/47D0/4BE8/5000 inited (cross-level) */
 } UpdateFeature;
 
 /* Render feature flags — separate from update features.

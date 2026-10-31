@@ -327,8 +327,10 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         S1EnsureMeshWorld(board, ext, UNI_CATAPULT_MESH, "Levels\\Level4-Catapult");
         int meshOff = UNI_CATAPULT_MESH;
         int meshVal = *(int*)((char*)ext + meshOff);
-        /* Always mirror into native slot (preload never runs under mod). */
-        *(int *)((char *)board + 0x436C) = meshVal;
+        /* Mirror only a real mesh into a real board (preload never runs under
+         * mod; a NULL mirror would clobber the native slot). */
+        if (meshVal && BoardHasOffset(board, 0x436C, 4))
+            *(int *)((char *)board + 0x436C) = meshVal;
         if (!meshVal) { DebugLog("CATAPULT: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1108);
         if (mem) {
@@ -338,6 +340,15 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             int listOff = UNI_CATAPULT_LIST;
             g_AthenaListAppend((void*)((char*)ext + listOff), (int)obj);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            /* Cross-level: Tower 2nd-lists exist natively only on Tower content
+             * (9a-extra3). Init once here for other contents. */
+            if (ContentFileId(ext) != 5 && !(GetBoardFeat(board) & FEAT_TOWER_LISTS) && g_AthenaListInit && BoardHasOffset(board, 0x5000, 4)) {
+                g_AthenaListInit((void*)((char*)board + 0x43B8), 0);
+                g_AthenaListInit((void*)((char*)board + 0x47D0), 0);
+                g_AthenaListInit((void*)((char*)board + 0x4BE8), 0);
+                g_AthenaListInit((void*)((char*)board + 0x5000), 0);
+                OrBoardFeat(board, FEAT_TOWER_LISTS);
+            }
             g_AthenaListAppend((void*)((char*)board + 0x43B8), (int)obj); /* native 2nd list (inited Step 9a-extra3) */
             renderOut = o[0x435];
         }
@@ -355,8 +366,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         if (!meshVal) {
             S1EnsureMeshWorld(board, ext, UNI_MACE_MESH, "Levels\\Level4-Mace");
             meshVal = *(int*)((char*)ext + UNI_MACE_MESH);
-            /* Always mirror into native slot (preload never runs under mod). */
-            *(int *)((char *)board + 0x4378) = meshVal;
+            /* Mirror only a real mesh into a real board. */
+            if (meshVal && BoardHasOffset(board, 0x4378, 4))
+                *(int *)((char *)board + 0x4378) = meshVal;
         }
         if (!meshVal) { DebugLog("MACE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         /* YellowLink chain mesh (native Tower ctor +0x4374, MeshNode 0x18).
@@ -381,6 +393,13 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             DWORD *o = (DWORD *)obj;
             memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            if (ContentFileId(ext) != 5 && !(GetBoardFeat(board) & FEAT_TOWER_LISTS) && g_AthenaListInit && BoardHasOffset(board, 0x5000, 4)) {
+                g_AthenaListInit((void*)((char*)board + 0x43B8), 0);
+                g_AthenaListInit((void*)((char*)board + 0x47D0), 0);
+                g_AthenaListInit((void*)((char*)board + 0x4BE8), 0);
+                g_AthenaListInit((void*)((char*)board + 0x5000), 0);
+                OrBoardFeat(board, FEAT_TOWER_LISTS);
+            }
             g_AthenaListAppend((void*)((char*)board + 0x5000), (int)obj); /* native 2nd list (inited Step 9a-extra3) */
             g_AthenaListAppend((void*)((char*)ext + UNI_MACE_LIST), (int)obj);
             if (g_AthenaListGetSize((void*)((char*)board + 0x5000)) == 1) {
@@ -406,7 +425,8 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         if (!dExt) {
             S1EnsureMeshWorld(board, ext, UNI_DRAWBRIDGE_MESH, "Levels\\Level4-Drawbridge");
             dExt = *(int*)((char*)ext + UNI_DRAWBRIDGE_MESH);
-            *(int *)((char *)board + 0x4370) = dExt;
+            if (dExt && BoardHasOffset(board, 0x4370, 4))
+                *(int *)((char *)board + 0x4370) = dExt;
         }
 #if 1 /* delegation off 2026-10-22, own Glass path */
         int meshVal = dExt;
@@ -417,6 +437,13 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             DWORD *o = (DWORD *)obj;
             memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            if (ContentFileId(ext) != 5 && !(GetBoardFeat(board) & FEAT_TOWER_LISTS) && g_AthenaListInit && BoardHasOffset(board, 0x5000, 4)) {
+                g_AthenaListInit((void*)((char*)board + 0x43B8), 0);
+                g_AthenaListInit((void*)((char*)board + 0x47D0), 0);
+                g_AthenaListInit((void*)((char*)board + 0x4BE8), 0);
+                g_AthenaListInit((void*)((char*)board + 0x5000), 0);
+                OrBoardFeat(board, FEAT_TOWER_LISTS);
+            }
             /* Native 2nd list: required by the update loop (empty list =
              * update crash). Setup kill earlier was the garbage mesh, not this. */
             g_AthenaListAppend((void*)((char*)board + 0x4BE8), (int)obj);
@@ -447,8 +474,10 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
          * loaded mesh into the native slot so game code sees a valid mesh. */
         S1EnsureMeshWorld(board, ext, UNI_WINDMILL_MESH, "Levels\\Level4-Windmill");
         int extMesh = *(int *)((char *)ext + UNI_WINDMILL_MESH);
-        /* Always mirror: native preload never runs under the mod. */
-        *(int *)((char *)board + 0x437C) = extMesh;
+        /* Mirror only a real mesh (native preload never runs under the mod,
+         * but a NULL mirror would clobber a valid native slot). */
+        if (extMesh && BoardHasOffset(board, 0x437C, 4))
+            *(int *)((char *)board + 0x437C) = extMesh;
         int mesh = extMesh;
         if (!mesh) { DebugLog("WINDMILL: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10D0);
@@ -484,6 +513,13 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             DWORD *o = (DWORD *)obj;
             memcpy(&o[0x438], &x, 4); memcpy(&o[0x439], &y, 4); memcpy(&o[0x43A], &z, 4);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            if (ContentFileId(ext) != 5 && !(GetBoardFeat(board) & FEAT_TOWER_LISTS) && g_AthenaListInit && BoardHasOffset(board, 0x5000, 4)) {
+                g_AthenaListInit((void*)((char*)board + 0x43B8), 0);
+                g_AthenaListInit((void*)((char*)board + 0x47D0), 0);
+                g_AthenaListInit((void*)((char*)board + 0x4BE8), 0);
+                g_AthenaListInit((void*)((char*)board + 0x5000), 0);
+                OrBoardFeat(board, FEAT_TOWER_LISTS);
+            }
             g_AthenaListAppend((void*)((char*)board + 0x47D0), (int)obj); /* native 2nd list (inited Step 9a-extra3) */
             g_AthenaListAppend((void*)((char*)ext + UNI_TRAPDOOR_LIST), (int)obj);
             renderOut = o[0x435];
@@ -538,8 +574,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
          * the mod. Mirror our loaded mesh into the native slot. */
         S1EnsureMeshWorld(board, ext, UNI_TURRET_MESH, "Levels\\Level4-Turret");
         int tExt = *(int *)((char *)ext + UNI_TURRET_MESH);
-        /* Always mirror: native preload never runs under the mod. */
-        *(int *)((char *)board + 0x43B4) = tExt;
+        /* Mirror only a real mesh into a real board. */
+        if (tExt && BoardHasOffset(board, 0x43B4, 4))
+            *(int *)((char *)board + 0x43B4) = tExt;
         void *meshPtr = (void *)tExt;
         if (!meshPtr) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x10D0);
@@ -825,8 +862,10 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     }
 
     /* ── LIFTER (Up tubes) ──
-     * S1: LIFTER2, LIFTER3... — Up only, level-gate removed (name-driven) */
-    if (my_strnicmp(name, "LIFTER", 6) == 0) {
+     * S1: LIFTER2, LIFTER3... — Up only, level-gate removed (name-driven).
+     * Require a digit suffix: bare LIFTER belongs to Odd (caught above on
+     * level 9); LIFTERFOO-style names must not build tubes. */
+    if (my_strnicmp(name, "LIFTER", 6) == 0 && name[6] >= '0' && name[6] <= '9') {
         S1EnsureMeshWorld(board, ext, UNI_LIFTER_MESH, "Levels\\LevelUp-Lifter");
         long num = atol(name + 6);
         int meshVal = *(int*)((char*)ext + UNI_LIFTER_MESH);
