@@ -95,7 +95,7 @@ void UniversalRenderImpl(void *board, int unk) {
      * Iterates ehVector slots, renders bumpers with reflective material
      * when their lit value is non-zero. Reads from unified offsets. */
     if (features & REND_BUMPER) {
-        int bumperCount = (level == 14) ? 4 : 8;
+        int bumperCount = (level == 14 || ContentFileId(ext) == 14) ? 4 : 8;
         float *litPtr = (float *)((char *)ext + UNI_BUMPER_LIT);
         char *slotPtr = (char *)ext + UNI_EHVECTOR;
         int i;
@@ -221,11 +221,11 @@ void UniversalRenderImpl(void *board, int unk) {
         if (g_TimerInit && g_TimerCleanup) {
             g_TimerInit(timerBuf);
 
-            /* Smasher 1: Gfx_ScaleX(transparency), then call Timer vtable[0x08]
-             * with position floats (X, Y, Z) — NOT a mesh pointer.
-             * Original: vtable[0x08](timerObj, posX, posY, posZ) */
+            /* Smasher 1: scale the FRESH timer matrix (native pattern: Scale/
+             * Position always target a per-frame buffer, never the persistent
+             * gfx object — scaling gfx accumulates across frames). */
             float transp1 = *(float *)((char *)ext + REND_GLASS_TRANSP1);
-            if (g_GfxScaleX) g_GfxScaleX(gfx, transp1);
+            if (g_GfxScaleX) g_GfxScaleX(timerBuf, transp1);
             DWORD *timerVtbl = *(DWORD **)timerBuf;
             if (timerVtbl) {
                 void (__thiscall *fn8)(DWORD, float, float, float) = (void (__thiscall *)(DWORD, float, float, float))timerVtbl[2];
@@ -253,11 +253,11 @@ void UniversalRenderImpl(void *board, int unk) {
                 }
             }
 
-            /* Smasher 2: Gfx_ScaleX(transparency2), render mesh */
+            /* Smasher 2: same fresh-buffer pattern (never scale persistent gfx). */
             char timerBuf2[68];
             g_TimerInit(timerBuf2);
             float transp2 = *(float *)((char *)ext + REND_GLASS_TRANSP2);
-            if (g_GfxScaleX) g_GfxScaleX(gfx, transp2);
+            if (g_GfxScaleX) g_GfxScaleX(timerBuf2, transp2);
             DWORD *timerVtbl2 = *(DWORD **)timerBuf2;
             if (timerVtbl2) {
                 void (__thiscall *fn8)(DWORD, float, float, float) = (void (__thiscall *)(DWORD, float, float, float))timerVtbl2[2];
@@ -569,7 +569,7 @@ void __fastcall UniversalRaceState(void *board) {
             }
         }
     }
-    if (level == 2) {
+    if (level == 2 || ContentFileId(GetBoardExt(board)) == 2) {
         /* skip orig 0x420240 (decays dead board+0x642C) — base + ext decay instead */
         g_BoardUpdateRaceState(board);
     } else if (level == 7 || ContentFileId(GetBoardExt(board)) == 7) {
@@ -588,7 +588,7 @@ void __fastcall UniversalRaceState(void *board) {
          * BISECT 2026-10-23: ClampZoom suspected in frame-1 crash; fall back
          * to base-only until the zoom words are proven initialized. */
         g_BoardUpdateRaceState(board);
-    } else if (level == 13) {
+    } else if (level == 13 || ContentFileId(GetBoardExt(board)) == 13) {
         /* Sky RaceState (0x41FC90) RNG-activates NATIVE-slot popcylinders.
          * Universal objects live in ext slots via Feature_SkyPopcylinder;
          * calling both double-activates (2x rate + doubled sounds) and runs

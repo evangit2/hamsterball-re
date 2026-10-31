@@ -189,9 +189,9 @@ static void Feature_SwirlZones(void *board, int level) {
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (!app || IsBadReadPtr((void *)app, 0x600)) return;
 
-    /* Unified lists live in ext */
-    int swirlListOfs = (level == 14) ? BRD_SWIRL_LIST_M : BRD_SWIRL_LIST;
-    int tarListOfs = (level == 14) ? BRD_TARBUBBLE_LIST_M : BRD_TARBUBBLE_LIST;
+    /* Unified lists live in ext — content-keyed so swapped files behave identically */
+    int swirlListOfs = (level == 14 || ContentFileId(ext) == 14) ? BRD_SWIRL_LIST_M : BRD_SWIRL_LIST;
+    int tarListOfs = (level == 14 || ContentFileId(ext) == 14) ? BRD_TARBUBBLE_LIST_M : BRD_TARBUBBLE_LIST;
     // swirlListOfs/tarListOfs are UNI offsets >=0x6500 — use ext
 
     /* Dizzy-class boards use NATIVE slots/list walks (native Dizzy update
@@ -425,9 +425,9 @@ static void Feature_SwirlZones(void *board, int level) {
     }
     if (swirlDbg < 3) DebugLog("  [swirl] step2 done");
 
-    /* Dizzy-only: mesh rotation (Master doesn't rotate meshes) */
+    /* Dizzy-only: mesh rotation (Master doesn't rotate meshes) — content-keyed */
     if (swirlDbg < 3) DebugLog("  [swirl] step3: mesh rotation");
-    if (level != 14 && g_TimerInit && g_TimerCleanup && g_GfxScaleY &&
+    if (level != 14 && ContentFileId(ext) != 14 && g_TimerInit && g_TimerCleanup && g_GfxScaleY &&
         g_GfxSetPosition && g_Matrix44Zero && app) {
         void *gfx = *(void **)(app + 0x174);
         if (gfx) {
@@ -493,8 +493,8 @@ static void Feature_SwirlZones(void *board, int level) {
         DebugLog("  [swirl] step3a done (full)");
     }
 
-    /* Dizzy: secondary swirl mesh rotation (Gfx_ScaleX) */
-    if (level != 14 && g_TimerInit && g_TimerCleanup && g_GfxScaleX &&
+    /* Dizzy: secondary swirl mesh rotation (Gfx_ScaleX) — content-keyed, Master skips */
+    if (level != 14 && ContentFileId(ext) != 14 && g_TimerInit && g_TimerCleanup && g_GfxScaleX &&
         g_GfxSetPosition && g_Matrix44Zero && app) {
         void *gfx = *(void **)(app + 0x174);
         if (gfx) {
@@ -754,10 +754,12 @@ static void Feature_Windmill(void *board, int level) {
     if (g_TimerInit && g_TimerCleanup && g_GfxScaleY && g_GfxSetPosition && app) {
         void *gfx = *(void **)(app + 0x174);
         if (gfx) {
+        /* Compose into the fresh timer buffer (native Tower pattern), never
+         * the persistent gfx object. Draw below uses timerBuf. */
         char timerBuf[68];
         g_TimerInit(timerBuf);
-        g_GfxScaleY(gfx, *anglePtr);
-        g_GfxSetPosition(gfx, *posX, *posY, *posZ);
+        g_GfxScaleY(timerBuf, *anglePtr);
+        g_GfxSetPosition(timerBuf, *posX, *posY, *posZ);
         DWORD renderObj = *renderPtr;
         if (renderObj) {
             DWORD *vtbl = *(DWORD **)renderObj;
@@ -906,13 +908,13 @@ static void Feature_BumperDecay(void *board, int level) {
     int baseOfs;
     int count;
 
-    if (level == 2) {        /* Beginner */
+    if (level == 2 || ContentFileId(ext) == 2) {        /* Beginner (any slot) */
         baseOfs = BRD_BUMPER_DECAY_BEG;
         count = 8;
     } else if (level == 10 || ContentFileId(ext) == 10) { /* Toob (content-gated: works in any slot) */
         baseOfs = BRD_BUMPER_DECAY_TOOB;
         count = 8;
-    } else if (level == 14) { /* Master */
+    } else if (level == 14 || ContentFileId(ext) == 14) { /* Master (any slot) */
         baseOfs = BRD_BUMPER_DECAY_MAST;
         count = 4;
     } else {
