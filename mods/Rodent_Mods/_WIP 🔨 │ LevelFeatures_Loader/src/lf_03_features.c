@@ -692,11 +692,13 @@ static void Feature_Windmill(void *board, int level) {
         }
         DWORD wmr = *(DWORD *)((char *)board + 0x437C);
         if (wmr && !IsBadReadPtr((void *)wmr, 4) &&
-            g_Matrix4Identity && g_GfxScaleY && g_GfxSetPosition) {
-            char tA[68], tB[68], tC[68];
-            g_Matrix4Identity(tA);
-            g_GfxScaleY(tB, *bAng);
-            g_GfxSetPosition(tC,
+            g_TimerInit && g_TimerCleanup && g_GfxScaleY && g_GfxSetPosition) {
+            /* Native Tower (0x41E80B-0x41E85E): TimerInit(T) -> ScaleY(T,angle)
+             * -> SetPosition(T,x,y,z) -> draw wmr with T. Single buffer. */
+            char timerBuf[68];
+            g_TimerInit(timerBuf);
+            g_GfxScaleY(timerBuf, *bAng);
+            g_GfxSetPosition(timerBuf,
                 *(float *)((char *)board + 0x4380),
                 *(float *)((char *)board + 0x4384),
                 *(float *)((char *)board + 0x4388));
@@ -705,8 +707,9 @@ static void Feature_Windmill(void *board, int level) {
                 void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))vt[0x16];
                 void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))vt[0x15];
                 if (fn58) fn58(wmr);
-                if (fn54) fn54(wmr, tA);
+                if (fn54) fn54(wmr, timerBuf);
             }
+            g_TimerCleanup(timerBuf);
         }
         return;
     }
