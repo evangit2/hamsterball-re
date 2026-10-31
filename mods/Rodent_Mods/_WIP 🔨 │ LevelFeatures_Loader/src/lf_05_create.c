@@ -212,7 +212,11 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
         }
         OrBoardFeat(board, FEAT_SWIRL);
-        *(int*)out1 = (int)obj; *(int*)out2 = (int)renderOut;
+        /* Native Dizzy TIPPER (Dizzy_CreateDynamicObjects 0x40A643-0x40A6FB,
+         * binary-verified: "TIPPER"@0x4CF69C) stores vis at obj+0x10D4 and
+         * appends obj to board+0x2578, leaving out1/out2 UNTOUCHED. Writing
+         * out1=obj would double-append via Setup; writing out2=vis would put
+         * a non-object in an object list. Leave both alone. */
         return;
     }
 

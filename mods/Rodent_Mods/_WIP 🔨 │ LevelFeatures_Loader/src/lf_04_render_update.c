@@ -341,9 +341,13 @@ void UniversalRenderImpl(void *board, int unk) {
             (*(int *)((char *)gfx + 0x7C8))++;
         }
 
-        /* Adjust projection based on gfx field */
+        /* Adjust projection from gfx field — native SkyBoard_RenderDynamic tail
+         * (0x410F8E-0x410FAD, binary-verified): f=((f+f)*1100.0+0x454D4143);
+         * SetProjection(gfx, 20.0, f+f). Constants are native ROM floats, not
+         * reciprocals. */
         float fovAdjust = *(float *)((char *)gfx + 0x188);
-        fovAdjust = (fovAdjust + fovAdjust) * 0.0009765625f + 0.00048828125f;
+        { DWORD cb = 0x454D4143; float m2; memcpy(&m2, &cb, 4);
+          fovAdjust = (fovAdjust + fovAdjust) * 1100.0f + m2; }
         if (g_GraphicsSetProjection)
             g_GraphicsSetProjection(gfx, 20.0f, fovAdjust + fovAdjust);
     }
