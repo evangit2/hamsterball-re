@@ -121,13 +121,15 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.4** — Bumper flash reads OUR postscan mesh lists (ext
+UNI_EHVECTOR+i*0x418), not the native board+0x436C slots the generic
+replica ctor never fills (that was the missing glow: chain ran, slots
+empty, gate skipped every frame). Same meshes/stride/vtbl call.
 - **v13.3** — Bumper flash render rewritten to native-exact
-(Scene_RenderReflectiveObjects7 0x411380): slots advance per bumper from
-loader-populated board+0x436C (was fixed ext slot), ctx 0x60 bytes
+(Scene_RenderReflectiveObjects7 0x411380): per-bumper slots, ctx 0x60 bytes
 (was 64B stack smash vs 78 native), native field layout (lit +0x10/+0x20,
 byte +0x4C), ctx pointer on GFX+0x7C0 (was board+0x7C0, never read);
-empty slots skipped (swap-slot safe). Fixes Beginner 4-6 Draw crash +
-missing white flash.
+empty slots skipped (swap-slot safe). Fixed Beginner 4-6 Draw crash.
 - **v13.2** — Expert/Tower/Wobbly slot-1 stabilization: JUDGE outs (NULL,
 NULL) + 0x4BBC board link (game-side JUDGE consumer faults on non-null
 out1); zeroed hammyjudge write removed (untested, not needed); Expert fans

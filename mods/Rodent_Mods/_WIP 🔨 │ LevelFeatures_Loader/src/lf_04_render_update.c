@@ -92,24 +92,32 @@ void UniversalRenderImpl(void *board, int unk) {
     if (!features) return;
 
     /* ── Bumper Reflective Render (Beginner, Toob, Master) ──
-     * Faithful to native Scene_RenderReflectiveObjects7 (0x411380):
-     * slots advance per bumper (board+0x436C+i*0x418, loader-populated),
-     * lit drives the flash, ctx layout matches native exactly, ctx pointer
-     * goes on GFX+0x7C0 (not board). Old replica used a fixed ext slot,
-     * undersized ctx (64<78 native bytes = stack smash), wrong field
-     * offsets and board+0x7C0 (never read) — invisible flash + Draw crash. */
-    if (features & REND_BUMPER) {
+     * Faithful to native Scene_RenderReflectiveObjects7 (0x411380): one
+     * slot per bumper, lit drives the flash, ctx layout matches native,
+     * ctx pointer on GFX+0x7C0. Slots come from OUR postscan collect
+     * (UniversalPostSetup: AthenaList-init + Scene_CollectByNameFilter
+     * "N:BUMPER%d" into ext UNI_EHVECTOR+i*0x418) — the replica board
+     * ctor is generic and never fills the native board+0x436C slots, so
+     * reading those is always empty (the missing-glow bug). Same meshes,
+     * same stride, same vtbl[0x14] call. Old replica used a fixed ext
+     * slot + undersized ctx + board+0x7C0 (Draw crash + no flash). */
+    if ((features & REND_BUMPER) &&
+        (level == 2 || level == 10 || level == 14 ||
+         ContentFileId(ext) == 2 || ContentFileId(ext) == 10 ||
+         ContentFileId(ext) == 14)) {
         int bumperCount = (level == 14 || ContentFileId(ext) == 14) ? 4 : 8;
         float *litPtr = (float *)((char *)ext + UNI_BUMPER_LIT);
         int i;
         for (i = 0; i < bumperCount; i++) {
             if (litPtr[i] != 0.0f) {
-                /* Presence gate: native loader populates board+0x436C slots.
-                 * Swap-slot boards (foreign file) have empty slots — skip
-                 * rather than rendering a hollow slot. */
-                char *slotPtr = (char *)board + 0x436C + i * 0x418;
-                if (IsBadReadPtr(slotPtr, 0x418)) continue;
-                if (*(int *)(slotPtr + 0x04) == 0) continue; /* empty list */
+                /* Presence gate: our postscan collect fills ext slots with
+                 * AthenaLists (count + readable items). Skip anything
+                 * else rather than rendering a hollow/garbage slot. */
+                char *slotPtr = (char *)ext + UNI_EHVECTOR + i * 0x418;
+                if (IsBadReadPtr(slotPtr, 0x410)) continue;
+                if (*(int *)(slotPtr + 0x04) <= 0) continue;
+                { DWORD itArr = *(DWORD *)(slotPtr + 0x40C);
+                  if (!itArr || IsBadReadPtr((void *)itArr, 4)) continue; }
                 /* Native ctx is 0x4E bytes (Init writes vtable+17 dwords+
                  * 2 bytes); 64-byte buffer smashed the stack. */
                 char renderCtx[0x60];
