@@ -121,6 +121,10 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.5** — Intermediate bridge: return (mesh, render) like native
+(Scene_CreateDynamicObjects 0x40C430 drops out2 when out1 NULL — the
+absent bridge); S1 pivot + 45/0/50 angle/state/counter mirrored to
+board+0x4374/80; ext angle init 45 (was 0, started flat).
 - **v13.4** — Bumper flash reads OUR postscan mesh lists (ext
 UNI_EHVECTOR+i*0x418), not the native board+0x436C slots the generic
 replica ctor never fills (that was the missing glow: chain ran, slots

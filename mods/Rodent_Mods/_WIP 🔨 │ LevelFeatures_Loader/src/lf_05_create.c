@@ -804,6 +804,29 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         *(float *)((char *)ext + BRD_BRIDGE_PIVOT_X) = x;
         *(float *)((char *)ext + BRD_BRIDGE_PIVOT_Y) = y;
         *(float *)((char *)ext + BRD_BRIDGE_PIVOT_Z) = z;
+        /* Native parity (Intermediate_CreateDynamicObjects 0x40A550,
+         * LevelBoard_Intermediate_ctor 0x41CB20): S1 xyz lives at
+         * board+0x4374/78/7C, angle/state/counter at board+0x4380/84/88
+         * (45.0/0/50). The TipperVisual + game lists read BOARD fields.
+         * Init ext angle/state/counter once (InitBridge is dead code, ext
+         * starts zeroed = bridge would start flat instead of raised 45). */
+        if (BoardHasOffset(board, 0x4374, 12)) {
+            *(float *)((char *)board + 0x4374) = x;
+            *(float *)((char *)board + 0x4378) = y;
+            *(float *)((char *)board + 0x437C) = z;
+        }
+        if (*(float *)((char *)ext + UNI_BRIDGE_ANGLE) == 0.0f &&
+            *(int *)((char *)ext + UNI_BRIDGE_STATE) == 0 &&
+            *(int *)((char *)ext + UNI_BRIDGE_COUNTER) == 0) {
+            *(float *)((char *)ext + UNI_BRIDGE_ANGLE) = 45.0f;
+            *(int *)((char *)ext + UNI_BRIDGE_STATE) = 0;
+            *(int *)((char *)ext + UNI_BRIDGE_COUNTER) = 50;
+        }
+        if (BoardHasOffset(board, 0x4380, 12)) {
+            *(float *)((char *)board + 0x4380) = *(float *)((char *)ext + UNI_BRIDGE_ANGLE);
+            *(int *)((char *)board + 0x4384) = *(int *)((char *)ext + UNI_BRIDGE_STATE);
+            *(int *)((char *)board + 0x4388) = *(int *)((char *)ext + UNI_BRIDGE_COUNTER);
+        }
         /* Fix 2026-10-21: arm N:BRIDGE here, at creation time. The S1-name
          * table (BuildCollisionFlags, postscan) can never enable it:
          * Intermediate's bridge S1 is named 'BRIDGE' (no N: prefix) while
@@ -811,13 +834,18 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
          * this lazy creation anyway. Without the flag the rider mark
          * (ball+0x778) never fires and the bridge tilts but carries nothing. */
         if (brMesh) *(BYTE*)((char*)ext + COLL_FLAG_BRIDGE) = 1;
+        OrBoardFeat(board, FEAT_BRIDGE_ANIM);
+        /* Native parity (0x40A550 + Scene_CreateDynamicObjects 0x40C430):
+         * out1 = bridge MeshWorld, out2 = render (0 when NOCOLLIDE).
+         * Setup appends out1 to the object/scene lists and out2 to the
+         * render lists — NULL out1 drops the render (absent bridge).
+         * The 2026-10-21 kill is not reverted blindly: that build also
+         * ran a zeroed pivot + flat angle; both are initialized above. */
+        obj = brMesh;
         if (!strstr(name, "(NOCOLLIDE)"))
             renderOut = *(int *)((char *)ext + UNI_SAW1_OBJ);
-        OrBoardFeat(board, FEAT_BRIDGE_ANIM);
-        /* Fix 2026-10-21: return (NULL, render) — pos-only. Returning the
-         * MeshWorld* as obj poisoned the game's object list (wrong type in
-         * a game-object list) and killed both balls on Intermediate. */
-        obj = NULL;
+        else
+            renderOut = 0;
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
     }
