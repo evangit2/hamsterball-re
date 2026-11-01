@@ -92,34 +92,44 @@ void UniversalRenderImpl(void *board, int unk) {
     if (!features) return;
 
     /* ── Bumper Reflective Render (Beginner, Toob, Master) ──
-     * Iterates ehVector slots, renders bumpers with reflective material
-     * when their lit value is non-zero. Reads from unified offsets. */
+     * Faithful to native Scene_RenderReflectiveObjects7 (0x411380):
+     * slots advance per bumper (board+0x436C+i*0x418, loader-populated),
+     * lit drives the flash, ctx layout matches native exactly, ctx pointer
+     * goes on GFX+0x7C0 (not board). Old replica used a fixed ext slot,
+     * undersized ctx (64<78 native bytes = stack smash), wrong field
+     * offsets and board+0x7C0 (never read) — invisible flash + Draw crash. */
     if (features & REND_BUMPER) {
         int bumperCount = (level == 14 || ContentFileId(ext) == 14) ? 4 : 8;
         float *litPtr = (float *)((char *)ext + UNI_BUMPER_LIT);
-        char *slotPtr = (char *)ext + UNI_EHVECTOR;
         int i;
         for (i = 0; i < bumperCount; i++) {
             if (litPtr[i] != 0.0f) {
-                /* Set up render context with lit value as material multiplier */
-                char renderCtx[64];
+                /* Presence gate: native loader populates board+0x436C slots.
+                 * Swap-slot boards (foreign file) have empty slots — skip
+                 * rather than rendering a hollow slot. */
+                char *slotPtr = (char *)board + 0x436C + i * 0x418;
+                if (IsBadReadPtr(slotPtr, 0x418)) continue;
+                if (*(int *)(slotPtr + 0x04) == 0) continue; /* empty list */
+                /* Native ctx is 0x4E bytes (Init writes vtable+17 dwords+
+                 * 2 bytes); 64-byte buffer smashed the stack. */
+                char renderCtx[0x60];
                 if (g_RenderContextInit) g_RenderContextInit(renderCtx);
-                *(float *)(renderCtx + 0x10) = litPtr[i];  /* lit float */
-                *(float *)(renderCtx + 0x14) = litPtr[i];  /* duplicate */
-                /* Set all material components to 1.0 */
+                *(float *)(renderCtx + 0x10) = litPtr[i];  /* lit */
+                *(float *)(renderCtx + 0x20) = litPtr[i];  /* lit */
                 *(DWORD *)(renderCtx + 0x04) = 0x3F800000;
                 *(DWORD *)(renderCtx + 0x08) = 0x3F800000;
                 *(DWORD *)(renderCtx + 0x0C) = 0x3F800000;
-                *(char *)(renderCtx + 0x20) = (litPtr[i] != 1.0f) ? 1 : 0;
-                *(DWORD *)(renderCtx + 0x24) = 0x3F800000;
-                *(DWORD *)(renderCtx + 0x28) = 0x3F800000;
-                *(DWORD *)(renderCtx + 0x2C) = 0x3F800000;
-                *(DWORD *)(renderCtx + 0x30) = 0x3F800000;
+                *(DWORD *)(renderCtx + 0x14) = 0x3F800000;
+                *(DWORD *)(renderCtx + 0x18) = 0x3F800000;
+                *(DWORD *)(renderCtx + 0x1C) = 0x3F800000;
                 *(DWORD *)(renderCtx + 0x34) = 0x3F800000;
                 *(DWORD *)(renderCtx + 0x38) = 0x3F800000;
                 *(DWORD *)(renderCtx + 0x3C) = 0x3F800000;
-                /* Store render context pointer on board */
-                *(void **)((char *)board + 0x7C0) = renderCtx;
+                *(DWORD *)(renderCtx + 0x40) = 0x3F800000;
+                *(char *)(renderCtx + 0x4C) = (litPtr[i] != 1.0f) ? 1 : 0;
+                /* Ctx pointer belongs on GFX+0x7C0 (native reads it there). */
+                if (!IsBadReadPtr((void *)unk, 0x800))
+                    *(void **)((char *)unk + 0x7C0) = renderCtx;
                 /* Call meshWorld->vtable[0x14](slotPtr) to render bumper */
                 if (meshWorld && !IsBadReadPtr((void *)meshWorld, 0x54)) {
                     DWORD *vtbl = *(DWORD **)meshWorld;
@@ -133,7 +143,8 @@ void UniversalRenderImpl(void *board, int unk) {
             }
         }
         /* Clear render context pointer */
-        *(void **)((char *)board + 0x7C0) = NULL;
+        if (!IsBadReadPtr((void *)unk, 0x800))
+            *(void **)((char *)unk + 0x7C0) = NULL;
     }
 
     /* ── Tower Render — split per reference (WINDMILL / CHOMPER / TURRET tower) ──
