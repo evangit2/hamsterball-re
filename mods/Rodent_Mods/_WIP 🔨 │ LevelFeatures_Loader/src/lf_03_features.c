@@ -150,28 +150,32 @@ static void Feature_BridgeAnimation(void *board, int level) {
                     }
                 }
             }
-            if (g_TimerInit && g_TimerCleanup && g_GfxScaleZ && g_GfxSetPosition && g_MatrixTransformVec3 && app) {
-                void *gfx = *(void **)(app + 0x174);
-                if (gfx) {
-                /* Compose into the fresh timer buffer (native Intermediate
-                 * 0x41CFBA-0x41D012 pattern); draw below uses timerBuf.
-                 * Scaling the persistent gfx object instead loses the
-                 * rotation AND pollutes gfx for every other draw. */
-                char timerBuf[68];
-                g_TimerInit(timerBuf);
-                g_GfxScaleZ(timerBuf, -*anglePtr);
-                g_GfxSetPosition(timerBuf, *pivotX, *pivotY, *pivotZ);
-                DWORD *renderVtbl = *(DWORD **)renderObj;
-                if (renderVtbl) {
-                    void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))renderVtbl[0x16];
-                    void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))renderVtbl[0x15]; /* native: ECX=obj + push timer, ret $0x4 */
-                    if (fn58) fn58((DWORD)renderObj);
-                    if (fn54) fn54((DWORD)renderObj, timerBuf);
-                }
-                g_TimerCleanup(timerBuf);
-                }
-            }
         } break;
+    }
+    /* Pose EVERY frame (all states), not just while rising. The mesh keeps
+     * its last transform — posing only in state 3 snaps raised→flat on the
+     * first rise frame and hides the fall + pause. Same absolute compose
+     * (ScaleZ(-angle) + pivot, native 0x41CFBA pattern), idempotent. */
+    if (g_TimerInit && g_TimerCleanup && g_GfxScaleZ && g_GfxSetPosition && g_MatrixTransformVec3 && app) {
+        void *gfx = *(void **)(app + 0x174);
+        if (gfx) {
+        /* Compose into the fresh timer buffer (native Intermediate
+         * 0x41CFBA-0x41D012 pattern); draw below uses timerBuf.
+         * Scaling the persistent gfx object instead loses the
+         * rotation AND pollutes gfx for every other draw. */
+        char timerBuf[68];
+        g_TimerInit(timerBuf);
+        g_GfxScaleZ(timerBuf, -*anglePtr);
+        g_GfxSetPosition(timerBuf, *pivotX, *pivotY, *pivotZ);
+        DWORD *renderVtbl = *(DWORD **)renderObj;
+        if (renderVtbl) {
+            void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))renderVtbl[0x16];
+            void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))renderVtbl[0x15]; /* native: ECX=obj + push timer, ret $0x4 */
+            if (fn58) fn58((DWORD)renderObj);
+            if (fn54) fn54((DWORD)renderObj, timerBuf);
+        }
+        g_TimerCleanup(timerBuf);
+        }
     }
     /* Board mirror: native keeps angle/state/counter at board+0x4380/84/88
      * (the TipperVisual + game lists read BOARD fields). Mirror every frame

@@ -7,7 +7,7 @@ mark them FIXED with the version instead.
 | # | Race | Fault | Status |
 |---|------|-------|--------|
 | 1 | Beginner | Crash touching bumpers 4/5/6 (`0001:00054176`, Draw op). Bumpers 1–3 bounce but never glow white. | FIXED v13.3 (crash) + v13.4 (glow), user-confirmed |
-| 2 | Intermediate | Bridge misplaced or absent. Sounds still work. | FIX v13.5 (out1=NULL dropped the render; now returns mesh+render like native, board mirrors, 45° init), awaiting user test |
+| 2 | Intermediate | Bridge misplaced or absent. Sounds still work. | FIX v13.5 (visible) + v13.6 (fall/pause/raise cycle + carry), awaiting user test |
 | 3 | Dizzy | Spiral warps ball incorrectly. Tippers invisible. Gluebies don't slow ball. Waterwheel incorrectly warps ball. | OPEN (4 sub-items) |
 | 4 | Tower | Catapult crashes game (`BASS.dll 0001:000028B7`, Update op). Cannot test farther objects. | OPEN |
 | 5 | Up | Smaller lifters absent. | OPEN |

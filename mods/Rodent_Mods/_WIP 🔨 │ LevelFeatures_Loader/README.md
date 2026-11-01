@@ -121,6 +121,9 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.6** — Bridge posed every frame (was rise-only: snap raised→flat,
+invisible fall+pause). Carry verified native-exact (-0.5f push present in
+binary). Rebuild with bass.def (a bad build dropped all BASS forwards).
 - **v13.5** — Intermediate bridge: return (mesh, render) like native
 (Scene_CreateDynamicObjects 0x40C430 drops out2 when out1 NULL — the
 absent bridge); S1 pivot + 45/0/50 angle/state/counter mirrored to
