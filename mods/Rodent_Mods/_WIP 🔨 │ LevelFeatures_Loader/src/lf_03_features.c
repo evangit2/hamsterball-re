@@ -97,8 +97,11 @@ static void Feature_BridgeAnimation(void *board, int level) {
                     if (snd) g_SoundPlay3D((void *)snd, *pivotX, *pivotY, *pivotZ, 1.0f);
                 }
                 if (g_SceneForEachBallSetVelocity && g_Vec3CopyUpd) {
+                    /* Native (0x41CDAE-0x41CDBF): Vec3_Copy(stackvec, &pivot)
+                     * then call with (x, y, z) at stack top — full pivot, no
+                     * radius. Passing (y, z, 0.5) marked the wrong balls. */
                     float pivot[3]; g_Vec3CopyUpd(pivot, pivotX);
-                    g_SceneForEachBallSetVelocity(board, pivot[1], pivot[2], 0.5f);
+                    g_SceneForEachBallSetVelocity(board, pivot[0], pivot[1], pivot[2]);
                 }
             }
         } break;

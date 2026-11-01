@@ -121,6 +121,8 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.7** — Bridge rider mark passed (y, z, 0.5), native passes (x, y, z):
+wrong balls carried (teleports/stuck). Fixed to full pivot.
 - **v13.6** — Bridge posed every frame (was rise-only: snap raised→flat,
 invisible fall+pause). Carry verified native-exact (-0.5f push present in
 binary). Rebuild with bass.def (a bad build dropped all BASS forwards).
