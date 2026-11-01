@@ -422,8 +422,10 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
         }
         // Phase1 full registry: every S1 prefix auto-enables its feat / ensures mesh
         /* Expert level5 BRIDGE1/2 are spinners (own creation path), not the
-         * Intermediate drawbridge - never set the drawbridge anim flag for them. */
-        if ((my_strnicmp(name, "BRIDGE", 6)==0 || my_strnicmp(name, "BBRIDGE", 7)==0) && GetCurrentLevel(board) != 8) {
+         * Intermediate drawbridge - never set the drawbridge anim flag for
+         * them. Presence-gated on the S1 name (digit suffix = spinner), never
+         * on slot: GetCurrentLevel reads 1 for file-swapped levels. */
+        if (((my_strnicmp(name, "BRIDGE", 6)==0 && (name[6] < '0' || name[6] > '9')) || my_strnicmp(name, "BBRIDGE", 7)==0) && GetCurrentLevel(board) != 8) {
             OrBoardFeat(board, FEAT_BRIDGE_ANIM);
         }
         if (my_strnicmp(name, "WATERWHEEL", 10)==0 || my_strnicmp(name, "WHEELEMBED", 10)==0 || my_strnicmp(name, "SWIRL", 5)==0 || my_strnicmp(name, "TarBubble", 9)==0 || my_strnicmp(name, "GLUEBIE", 7)==0 || my_strnicmp(name, "TIPPER", 6)==0) {

@@ -121,6 +121,13 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.2** — Expert/Tower/Wobbly slot-1 stabilization: JUDGE outs (NULL,
+NULL) + 0x4BBC board link (game-side JUDGE consumer faults on non-null
+out1); zeroed hammyjudge write removed (untested, not needed); Expert fans
++ board mirrors deferred (`g_enableExpertFans/Mirrors = 0`, full-set
+interaction still open); Tower MACE Tower-ctor + ext trust-gate + YellowLink
+presence + AthenaLists presence; Wobbly exact-native per-wNum constants;
+BRIDGEn digit-routed to spinner path; all diag probes/audits removed
 - **v13.1** — Neon scene-loader tail (Step 6c) with S3-gap gate
 - **v13** — Option B: per-board ext heap, vanilla-sized boards, S1 feat scan
 - **v12.3** — Tower/Sky render split

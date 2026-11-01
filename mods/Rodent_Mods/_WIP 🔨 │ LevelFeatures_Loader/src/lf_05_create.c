@@ -22,9 +22,25 @@ static DWORD GetBoardApp(void *board) {
  * hung Stands_ctor in a 4-billion-iteration clone loop, 2026-10-22).
  * Real game objects have a vtable in the exe image; garbage does not.
  * Tower content (no native ctor) never trusts board slots — ext owns them. */
+/* Ship-shape feature gates (Expert slot-1 stabilization 2026-11-01):
+ * - EXPERT_FANS_ON = 0 (deferred): LFL fans update + render fine in
+ *   isolation, but crash post-Scene_Update render when combined with the
+ *   full Expert set ( combinatorial, still open; needs Windows RE ).
+ * - EXPERT_MIRRORS_ON = 0 (deferred): mirroring LFL objs into WarmUp
+ *   board slots (+0x436C/+0x4370/+0x4374/+0x4FD4) crashes shared-code
+ *   readers that expect WarmUp's occupants; WarmUp's values are safe.
+ * All other Expert classes build unconditionally (presence-gated inits). */
+static int g_enableExpertFans = 0;
+static int g_enableExpertMirrors = 0;
 static int BoardMeshOrZero(void *board, DWORD slotOff) {
+    /* Tower objects (MACE/WINDMILL/DRAWBRIDGE/Catapult/TURRET/Trapdoor S1s,
+     * FEAT_WINDMILL set in the S1 scan) never trust board preload slots:
+     * replicated boards never ran the static preload, so the slots hold
+     * allocator garbage that can pass IsBadReadPtr — always ext-load there
+     * (CATAPULT pattern). The old content==5 gate missed file-swapped Tower
+     * (content reads 1), trusting Warm-Up-replicated garbage. */
+    if (GetBoardFeat(board) & FEAT_WINDMILL) return 0;
     int v = *(int *)((char *)board + slotOff);
-    if (ContentFileId(GetBoardExt(board)) == 5) return 0;
     if (!v || IsBadReadPtr((void *)v, 4)) return 0;
     { int vt = *(int *)v;
       if (vt < 0x400000 || vt >= 0x500000) return 0; }
@@ -376,11 +392,11 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         }
         if (!meshVal) { DebugLog("MACE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         /* YellowLink chain mesh (native Tower ctor +0x4374, MeshNode 0x18).
-         * Tower content only; shared Meshes asset so safe for any slot.
-         * Cleared: the 0001:000570A4 hang was garbage-mesh trust (board
-         * +0x4378 = 0x03000000 passed IsBadReadPtr), now fixed by
-         * BoardMeshOrZero — YellowLink was never the culprit. */
-        if (ContentFileId(GetBoardExt(board)) == 5 && BoardHasOffset(board, 0x4374, 4)) {
+         * Set whenever MACE S1s are built (presence, not content): the native
+         * Tower board ctor provides it, replicated boards don't — and file-
+         * swapped Tower skipped it (content!=5), leaving Warm-Up garbage at
+         * +0x4374 for native mace code to deref. Shared Meshes asset, safe. */
+        if (BoardHasOffset(board, 0x4374, 4)) {
             int yExt = *(int *)((char *)ext + UNI_YELLOWLINK_MESH);
             if (!yExt || IsBadReadPtr((void *)yExt, 4)) {
                 S1EnsureMeshNode(board, ext, UNI_YELLOWLINK_MESH, "Meshes\\YellowLink");
@@ -390,9 +406,10 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         }
         void *mem = g_operatorNew(0x110C);
         if (mem) {
-            /* Tower MACE S1s build via 0x438750 (own class); other
-             * levels via 0x437CB0. Verified in native Tower create. */
-            if (ContentFileId(GetBoardExt(board)) == 5 && g_MaceTowerCtor) obj = g_MaceTowerCtor(mem, (int)board, meshVal);
+            /* MACE S1s are Tower maces: always the Tower class ctor
+             * (0x438750). Content-keying misrouted file-swapped Tower to the
+             * generic ctor (0x437CB0), building malformed objects. */
+            if (g_MaceTowerCtor) obj = g_MaceTowerCtor(mem, (int)board, meshVal);
             else obj = g_MaceCtor(mem, (int)board, meshVal);
             DWORD *o = (DWORD *)obj;
             memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
@@ -626,8 +643,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             obj = g_BonkCtor(mem, (int)board, x, y, z);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             /* Native stores the bonk obj at board+0x436C (read by
-             * E:CALLHAMMER/E:HAMMERCHASE). Mirror it. */
-            if (BoardHasOffset(board, 0x436C, 4)) *(void **)((char *)board + 0x436C) = obj;
+             * E:CALLHAMMER/E:HAMMERCHASE). Expert slot-1 mirrors stay off
+             * until the shared-code occupant issue is root-caused. */
+            if (g_enableExpertMirrors && BoardHasOffset(board, 0x436C, 4)) *(void **)((char *)board + 0x436C) = obj;
             DWORD *o = (DWORD *)obj;
             renderOut = o[0x43E];
             int storeOff = UNI_BONK_MESH;
@@ -640,6 +658,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
 
     /* ── FAN (Expert) ── */
     if (my_strnicmp(name, "FAN", 3) == 0 && difficulty != 0) {
+        /* Ship state: fans deferred because full-set Expert crashes are
+         * still open. Keep the native-shape creation path intact. */
+        if (!g_enableExpertFans) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1188);
         if (mem) {
             obj = g_FanCtor(mem, (int)board, x, y, z, fparam);
@@ -661,8 +682,8 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             /* Native stores the saw obj in board+0x4370 ("1") / +0x4374 ("2")
              * (Expert slot33 0x40E487/0x40E4A8) - the saw update reads its slot. */
-            if (strstr(name, "1")) { g_SawBladeSetVariant(obj, 1); *(void **)((char *)ext + UNI_SAWBLADE1_OBJ) = obj; *(void **)((char *)board + 0x4370) = obj; }
-            if (strstr(name, "2")) { g_SawBladeSetVariant(obj, 2); *(void **)((char *)ext + UNI_SAWBLADE2_OBJ) = obj; *(void **)((char *)board + 0x4374) = obj; }
+            if (strstr(name, "1")) { g_SawBladeSetVariant(obj, 1); *(void **)((char *)ext + UNI_SAWBLADE1_OBJ) = obj; if (g_enableExpertMirrors) *(void **)((char *)board + 0x4370) = obj; }
+            if (strstr(name, "2")) { g_SawBladeSetVariant(obj, 2); *(void **)((char *)ext + UNI_SAWBLADE2_OBJ) = obj; if (g_enableExpertMirrors) *(void **)((char *)board + 0x4374) = obj; }
         }
         /* Native SAWBLADE out2 = 0 (local_14 untouched by the SAW branch). */
         *(int*)out1 = (int)obj; *(int*)out2 = 0;
@@ -716,16 +737,20 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
 
     /* ── BRIDGE (Intermediate/Master drawbridge, position-only) ──
      * S1: BRIDGE / BRIDGE(NOCOLLIDE) — SAWBRIDGE is Expert spinner, handled above
-     * Vanilla level5 has S1 name "BRIDGE" but expects Spinner_Level_ctor;
-     * Intermediate BRIDGE is pos-only. Dispatch by level to handle both files. */
+     * Expert file uses BRIDGE1/BRIDGE2 (digit suffix) but expects
+     * Spinner_Level_ctor. Presence-routed on the NAME (digit = spinner),
+     * never on slot: GetCurrentLevel reads 1 for file-swapped levels,
+     * which misrouted Expert spinners into the drawbridge path (out1=NULL,
+     * shared render, no 0x4380/0x4798 lists -> load crash). */
     if (my_strnicmp(name, "BRIDGE", 6) == 0) {
-        int _lvl = GetCurrentLevel(board);
-        if (_lvl == 8 && my_strnicmp(name, "SAWBRIDGE", 9) != 0) {
-                       /* Expert vanilla "BRIDGE" — treat as SAWBRIDGE spinner */
+        char brc6 = name[6];
+        if (brc6 >= '0' && brc6 <= '9') {
+                       /* Expert BRIDGEn spinner — same path as SAWBRIDGE */
             S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level2-Bridge");
             void* brMesh2 = *(void**)((char*)ext + UNI_BONK_STORE);
             /* Native Spinner_Level_ctor reads its mesh from board+0x4378
-             * (preload gap under mod - mirror ours in, Tower pattern). */
+             * (preload gap under mod - mirror ours in, Tower pattern).
+             * CTOR-REQUIRED: never diag-skipped (faults inside create). */
             if (brMesh2) *(void**)((char*)board + 0x4378) = brMesh2;
             void* brRender2 = *(void**)((char*)ext + UNI_SAW1_OBJ);
             if (!brRender2 && brMesh2) {
@@ -807,16 +832,29 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
              * walked by native scene code). Mirror it — ext-only judges
              * are never driven. */
             if (BoardHasOffset(board, 0x4BBC, 4) && g_AthenaListAppend) {
-                if (!(GetBoardFeat(board) & FEAT_EXPERT_LISTS) && g_AthenaListInit) {
-                    g_AthenaListInit((void*)((char*)board + 0x4380), 0);
-                    g_AthenaListInit((void*)((char*)board + 0x4798), 0);
-                    g_AthenaListInit((void*)((char*)board + 0x4BBC), 0);
-                    OrBoardFeat(board, FEAT_EXPERT_LISTS);
+                /* Per-list init (order-independent): the spinner branch may
+                 * have inited 4380/4798 first and set FEAT_EXPERT_LISTS —
+                 * that must NOT mark 4BBC done. Track 4BBC with its own bit,
+                 * else JUDGE appends to an uninit list (heap corruption). */
+                if (g_AthenaListInit) {
+                    if (!(GetBoardFeat(board) & FEAT_EXPERT_LISTS)) {
+                        g_AthenaListInit((void*)((char*)board + 0x4380), 0);
+                        g_AthenaListInit((void*)((char*)board + 0x4798), 0);
+                        OrBoardFeat(board, FEAT_EXPERT_LISTS);
+                    }
+                    if (!(GetBoardFeat(board) & FEAT_EXPERT_JUDGE)) {
+                        g_AthenaListInit((void*)((char*)board + 0x4BBC), 0);
+                        OrBoardFeat(board, FEAT_EXPERT_JUDGE);
+                    }
                 }
                 g_AthenaListAppend((void*)((char*)board + 0x4BBC), (int)obj);
             }
         }
-        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        /* Ship state: return (NULL,NULL) for JUDGE. The game-side JUDGE
+         * consumer crashes on a non-null out1 (proven: (judge,0)+link
+         * crashes, (0,0)+link runs). Judges are driven via the 0x4BBC
+         * board link above, so NULL outs lose nothing. */
+        *(int*)out1 = 0; *(int*)out2 = 0;
         return;
     }
 
@@ -826,8 +864,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         if (mem) {
             obj = g_BellCtor(mem, (int)board, x, y, z);
             *(void **)((char *)ext + UNI_BELL_OBJ) = obj;
-            /* Native stores the bell at board+0x4FD4. Mirror it. */
-            if (BoardHasOffset(board, 0x4FD4, 4)) *(void **)((char *)board + 0x4FD4) = obj;
+            /* Native stores the bell at board+0x4FD4. Expert slot-1 mirrors
+             * stay off until the shared-code occupant issue is root-caused. */
+            if (g_enableExpertMirrors && BoardHasOffset(board, 0x4FD4, 4)) *(void **)((char *)board + 0x4FD4) = obj;
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
@@ -997,6 +1036,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
 
     /* ── WOBBLY1-7 (Wobbly) ── */
     if (my_strnicmp(name, "WOBBLY", 6) == 0 && name[6] >= '1' && name[6] <= '7') {
+        /* DIAG2 CLOSED: mirrors exonerated (blank persisted with mirrors off;
+         * exact-native constants were the fix). Mirrors back ON (native). */
+        static int wdiag2 = 0;
         int wNum = name[6] - '0';
         int meshOff = UNI_WOBBLY_BASE + (wNum-1) * 4;
         { const char *_wPath = (wNum==1) ? "Levels\\Level7-Wobbly1" : (wNum==2) ? "Levels\\Level7-Wobbly2" : (wNum==3) ? "Levels\\Level7-Wobbly3" : (wNum==4) ? "Levels\\Level7-Wobbly4" : (wNum==5) ? "Levels\\Level7-Wobbly5" : (wNum==6) ? "Levels\\Level7-Wobbly6" : "Levels\\Level7-Wobbly7"; S1EnsureMeshWorld(board, ext, meshOff, _wPath); }
@@ -1008,17 +1050,20 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             obj = g_GameLevelCtor(mem, (int)board, x, y, z, meshVal);
             DWORD *o = (DWORD *)obj;
             renderOut = o[0x435];
-            /* Per-wobbly constants (Ghidra-verified 0x40F420). NOTE WOBBLY3
-             * sets byte +0x1104 (NOT +0x1105 like the others). */
-            static const DWORD w43a[] = {0,0,0x41000000,0,0x41700000,0x41700000,0x41200000,0x41A00000};
-            static const DWORD w43b[] = {0,0,0,0x41C80000,0,0,0x41200000,0};
-            static const DWORD w440[] = {0,0,0x42C80000,0x43160000,0x432F0000,0x431B0000,0x43160000,0x42C80000};
-            static const int w1105[] = {0,0,1,0,1,1,0,1};
-            o[0x43A] = w43a[wNum]; o[0x43B] = w43b[wNum]; o[0x440] = w440[wNum];
-            if (wNum == 3) *(char*)((char*)obj + 0x1104) = 1;
-            else if (w1105[wNum]) *(char*)((char*)obj + 0x1105) = 1;
-            /* Native ctor slot feeds GameLevel_ctor — mirror it. */
-            if (BoardHasOffset(board, 0x436C + (wNum-1) * 4, 4))
+            /* Per-wobbly constants — EXACT native replica (Wobbly_CreateDynamicObjects
+             * 0x40F420): write ONLY what native writes per WOBBLYn. Extra zero-writes
+             * clobber ctor-set values (e.g. WOBBLY1's 0x43A/0x440) and poisoned the
+             * platform update (blank render + READY hang via slot 1). */
+            if (wNum == 2) { o[0x43A] = 0x41000000; o[0x440] = 0x42C80000; *(char*)((char*)obj + 0x1105) = 1; }
+            else if (wNum == 3) { o[0x43B] = 0x41C80000; o[0x440] = 0x43160000; *(char*)((char*)obj + 0x1104) = 1; }
+            else if (wNum == 4) { o[0x43A] = 0x41700000; o[0x440] = 0x432F0000; *(char*)((char*)obj + 0x1105) = 1; }
+            else if (wNum == 5) { o[0x43A] = 0x41700000; o[0x440] = 0x431B0000; *(char*)((char*)obj + 0x1105) = 1; }
+            else if (wNum == 6) { o[0x43A] = 0x41200000; o[0x43B] = 0x41200000; o[0x440] = 0x43160000; }
+            else if (wNum == 7) { o[0x43A] = 0x41A00000; o[0x440] = 0x42C80000; *(char*)((char*)obj + 0x1105) = 1; }
+            /* WOBBLY1: native sets nothing beyond GameLevel_ctor. */
+            /* Native ctor slot feeds GameLevel_ctor — mirror it.
+             * DIAG2: skip mirrors (poison suspect), objects still built. */
+            if (!wdiag2 && BoardHasOffset(board, 0x436C + (wNum-1) * 4, 4))
                 *(void **)((char *)board + 0x436C + (wNum-1) * 4) = (void *)meshVal;
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
         }
@@ -1028,6 +1073,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
 
     /* ── WAVY1 (Wobbly) ── */
     if (my_strnicmp(name, "WAVY1", 5) == 0) {
+        /* DIAG4: WAVY back on (WOBBLYs skipped). */
         /* app can be 0 from GetBoardApp (menu-shell boards) — guard it. */
         int gfx = (app && !IsBadReadPtr((void *)app, 0x500)) ? *(int *)(app + 0x174) : 0;
         if (gfx) *(char *)(gfx + 2000) = 1;
