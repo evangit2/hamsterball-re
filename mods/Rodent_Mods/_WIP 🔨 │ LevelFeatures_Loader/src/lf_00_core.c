@@ -616,6 +616,33 @@ static Gfx_SetPosition_t          g_GfxSetPosition = NULL;
 static Timer_Init_t               g_TimerInit = NULL;
 static Timer_Cleanup_t            g_TimerCleanup = NULL;
 static Matrix_TransformVec3_t     g_MatrixTransformVec3 = NULL;
+/* Replicates the native ScaleZ call frame exactly (Intermediate carry
+ * 0x41CF17-2B, pose 0x41CFC0-D5): the callee reads a mode dword at
+ * [call-esp+0xC0] (0 = carry, 1 = pose) that a plain C call leaves as
+ * stack garbage — without it the built matrix is scrambled (SCALETEST:
+ * X->(0,999,-8) instead of ~(1000,-9,0)) and every carried ball gets
+ * axis-scrambled each frame. Buffers used with this must be >= 0x100. */
+static void ScaleZ_Native(void *timer, float angle, int mode) {
+    union { float f; int i; } u; u.f = angle;
+    __asm__ volatile (
+        "subl $0x100, %%esp\n\t"
+        "movl $0, (%%esp)\n\t"
+        "movl %%esp, %%eax\n\t"
+        "movl $0x40, %%ecx\n"          /* zero all 0x100 bytes of scratch */
+        "xorl %%edx, %%edx\n"
+        "1:\n\t"
+        "movl %%edx, (%%eax)\n\t"
+        "addl $4, %%eax\n\t"
+        "decl %%ecx\n\t"
+        "jnz 1b\n\t"
+        "movl %2, 0xB8(%%esp)\n\t"
+        "pushl %1\n\t"
+        "movl %0, %%ecx\n\t"
+        "call *%3\n\t"
+        "addl $0x104, %%esp\n\t"
+        : : "r"(timer), "r"(u.i), "r"(mode), "r"(g_GfxScaleZ)
+        : "eax", "ecx", "edx", "memory", "cc");
+}
 static Matrix44_Zero_t            g_Matrix44Zero = NULL;
 static Scene_ForEachBall_SetVelocity_t g_SceneForEachBallSetVelocity = NULL;
 static FUN_0044fa90_t             g_CreateTarBubble = NULL;

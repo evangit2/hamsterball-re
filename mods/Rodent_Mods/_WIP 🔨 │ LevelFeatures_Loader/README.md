@@ -121,6 +121,9 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.9** — Bridge carry is manual pure-C Rx(-0.5°/frame) + far-unmark
+(diag BRIDGECARRY/BRIDGEAFTER lines in; boot probe OUT). PARTIALLY FIXED.
+- **v13.8** — Superseded by v13.9 (native ScaleZ scrambles from our frame).
 - **v13.7** — Bridge rider mark passed (y, z, 0.5), native passes (x, y, z):
 wrong balls carried (teleports/stuck). Fixed to full pivot.
 - **v13.6** — Bridge posed every frame (was rise-only: snap raised→flat,

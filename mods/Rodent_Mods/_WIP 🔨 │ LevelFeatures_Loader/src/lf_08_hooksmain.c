@@ -898,6 +898,8 @@ static DWORD WINAPI PatchThread(LPVOID param) {
 
     DebugLog("Function pointers resolved");
 
+    /* DIAG probe removed v13.8b (crashed on load for user; in-race diag kept). */
+
     GetConfigPath();
     {
         char dbg_cp[320];

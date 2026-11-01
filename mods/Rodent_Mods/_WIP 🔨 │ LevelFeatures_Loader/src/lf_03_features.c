@@ -137,19 +137,49 @@ static void Feature_BridgeAnimation(void *board, int level) {
                     int bi;
                     for (bi = 0; bi < bn; bi++) {
                         DWORD cb = ((DWORD *)barr)[bi];
-                        float cd[3]; char ctimer[68];
+                        float cd[3]; char ctimer[256];
                         if (!cb || IsBadReadPtr((void *)cb, 0x800)) continue;
                         if (!*(BYTE *)((char *)cb + 0x778)) continue;
                         cd[0] = *(float *)((char *)cb + 0x164) - *pivotX;
                         cd[1] = *(float *)((char *)cb + 0x168) - *pivotY;
                         cd[2] = *(float *)((char *)cb + 0x16C) - *pivotZ;
-                        g_TimerInit(ctimer);
-                        g_GfxScaleZ(ctimer, -0.5f);
-                        g_MatrixTransformVec3((float *)ctimer, cd);
+                        /* FIX v13.8: +0x778 is sticky (native never clears it:
+                         * two movb $1 sites, no clear). A ball marked by one
+                         * touch is still marked 200+ units away next rise and
+                         * gets swung in a huge arc (fling/teleport, then
+                         * killplane respawn). Gate on the ForEachBall radius
+                         * (500, 0x4CF3D8): too far to be on the deck means
+                         * don't carry, and clear the stale mark so one touch
+                         * doesn't doom every future rise. */
+                        { float d2 = cd[0]*cd[0] + cd[1]*cd[1] + cd[2]*cd[2];
+                          if (d2 > 250000.0f) {
+                            *(BYTE *)((char *)cb + 0x778) = 0;
+                            { char ug[80]; wsprintfA(ug, "BRIDGEUNMARK far=%d", (int)d2);
+                              DebugLog(ug); }
+                            continue;
+                          } }
+                        /* DIAG v13.8: log carry inputs (remove after). */
+                        { char dlg[200]; float bx0 = *(float *)((char *)cb + 0x164), by0 = *(float *)((char *)cb + 0x168), bz0 = *(float *)((char *)cb + 0x16C);
+                          wsprintfA(dlg, "BRIDGECARRY ang=%d piv=(%d,%d,%d) ball=(%d,%d,%d) rel=(%d,%d,%d)",
+                            (int)*anglePtr, (int)*pivotX, (int)*pivotY, (int)*pivotZ,
+                            (int)bx0, (int)by0, (int)bz0,
+                            (int)cd[0], (int)cd[1], (int)cd[2]); DebugLog(dlg); }
+                        /* v13.9 MANUAL carry (pure C, exact): native ScaleZ output
+                         * depends on its exact caller stack frame (uninitialized
+                         * reads) and scrambles from our call site (SCALETEST).
+                         * The deck pitches about X: x unchanged, YZ rotated by
+                         * -0.5 deg/frame (ride log: rel rotates ~-38 deg in YZ
+                         * over the 45 deg rise). */
+                        { float mc = 0.9999619f, ms = -0.0087265f;
+                          float oy = cd[1], oz = cd[2];
+                          cd[1] = mc*oy - ms*oz; cd[2] = ms*oy + mc*oz; }
                         *(float *)((char *)cb + 0x164) = cd[0] + *pivotX;
                         *(float *)((char *)cb + 0x168) = cd[1] + *pivotY;
                         *(float *)((char *)cb + 0x16C) = cd[2] + *pivotZ;
-                        g_TimerCleanup(ctimer);
+                        { char ag[120]; wsprintfA(ag, "BRIDGEAFTER ang=%d ball=(%d,%d,%d)",
+                            (int)*anglePtr,
+                            (int)*(float *)((char *)cb + 0x164), (int)*(float *)((char *)cb + 0x168), (int)*(float *)((char *)cb + 0x16C));
+                          DebugLog(ag); }
                     }
                 }
             }
@@ -166,9 +196,9 @@ static void Feature_BridgeAnimation(void *board, int level) {
          * 0x41CFBA-0x41D012 pattern); draw below uses timerBuf.
          * Scaling the persistent gfx object instead loses the
          * rotation AND pollutes gfx for every other draw. */
-        char timerBuf[68];
+        char timerBuf[256];
         g_TimerInit(timerBuf);
-        g_GfxScaleZ(timerBuf, -*anglePtr);
+        ScaleZ_Native(timerBuf, -*anglePtr, 1);
         g_GfxSetPosition(timerBuf, *pivotX, *pivotY, *pivotZ);
         DWORD *renderVtbl = *(DWORD **)renderObj;
         if (renderVtbl) {
