@@ -218,43 +218,12 @@ static void Feature_BridgeAnimation(void *board, int level) {
  * the gluebie-tail draw pattern. Tip deflection animation later.
  * Skipped on native-ctor boards (native render draws those itself).
  * ═══════════════════════════════════════════════════════════════════════════ */
-/* TIPPER VISUALS (append-only): native render never draws OUR 0x2578 objects
- * (same gap as the bridge before its manual pose), so tipper planks are
- * solid but invisible. The engine draws visuals that sit in the render
- * list at board+0x8B0+0x18 (gluebie update appends there every cycle and
- * gluebies show) -- so append each tipper visual once per board. No pose
- * calls: the previous build called v[0x54] (a reposition helper, NOT the
- * draw) with the wrong sequence and corrupted a load ("Could not load").
- * If planks show at the wrong spot, positioning comes next. */
-static DWORD tipVisBoard = 0;
+/* TIPPER VISUALS (DISABLED 2026-11-02): the append target board+0x8B0 is
+ * heap garbage on universal boards (native ctor zeroes+inits it; ours
+ * skips memset) -- appending corrupted the heap and crashed Dizzy ~3s in.
+ * Tippers stay invisible until a safe draw path is verified. */
 static void Feature_TipperVisual(void *board, int level) {
-    if (*(BYTE*)((char*)board+0x874)) return;
-    if (!g_SceneUpdate) return;
-    void* ext = GetBoardExt(board);
-    if (!ext) return;
-    if (*(int *)((char *)ext + UNI_NATIVE_CTOR)) return;
-    if (tipVisBoard == (DWORD)board) return;
-    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
-    if (!app || IsBadReadPtr((void *)app, 0x600)) return;
-    if (!g_AthenaListAppend) return;
-    if (!BoardHasOffset(board, 0x8B0, 4)) return;
-    DWORD renderBase = *(DWORD *)((char *)board + 0x8B0);
-    if (!renderBase || IsBadReadPtr((void *)renderBase, 0x20)) return;
-    int n = g_AthenaListGetSize ? g_AthenaListGetSize((void *)((char *)board + UNI_OBJ_LIST)) : 0;
-    if (n <= 0) return;
-    DWORD *items = *(DWORD **)((char *)board + UNI_OBJ_LIST + 0x40C);
-    if (!items || IsBadReadPtr((void *)items, n * 4)) return;
-    int i, found = 0;
-    for (i = 0; i < n; i++) {
-        DWORD obj = items[i];
-        if (!obj || IsBadReadPtr((void *)obj, 0x1100)) continue;
-        if (*(DWORD *)obj != 0x4D4ED8) continue; /* tipper vtable (Tipper_ctor) */
-        DWORD vis = *(DWORD *)(obj + 0x10D4);
-        if (!vis || IsBadReadPtr((void *)vis, 0x100)) continue;
-        g_AthenaListAppend((void *)(renderBase + 0x18), (int)vis);
-        found++;
-    }
-    if (found) tipVisBoard = (DWORD)board;
+    (void)board; (void)level; return;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
