@@ -245,9 +245,9 @@ static void Feature_TipperVisual(void *board, int level) {
     if (!mesh58 || !mesh54) return;
     if (IsBadReadPtr((void *)mesh58, 16) || IsBadReadPtr((void *)mesh54, 16)) return;
     int n = *(int *)((char *)ext + UNI_TIPPER_POSE_N);
-    if (n <= 0 || n > 8) return;
+    if (n > 8) return;
     int i;
-    for (i = 0; i < n; i++) {
+    if (n > 0) for (i = 0; i < n; i++) {
         float *pp = (float *)((char *)ext + UNI_TIPPER_POSES + i * 16);
         char timerBuf[256];
         { int zi; for (zi = 0; zi < 256; zi++) timerBuf[zi] = 0; }
@@ -257,6 +257,29 @@ static void Feature_TipperVisual(void *board, int level) {
         mesh58((DWORD)tipMesh, (DWORD)meshVtbl);
         mesh54((DWORD)tipMesh, timerBuf);
         g_TimerCleanup(timerBuf);
+    }
+    /* Locator: draw the same mesh above the player ball. If the user sees
+     * a plank floating over their ball, the draw path works and only the
+     * stored poses are wrong. If not, the draw itself is broken. */
+    if (BoardHasOffset(board, 0x29D4, 8)) {
+        int bn = g_AthenaListGetSize ? g_AthenaListGetSize((void *)((char *)board + 0x29D4)) : 0;
+        if (bn > 0) {
+            DWORD *bitems = *(DWORD **)((char *)board + 0x29D4 + 0x40C);
+            if (bitems && !IsBadReadPtr((void *)bitems, 4)) {
+                DWORD b = bitems[0];
+                if (b && !IsBadReadPtr((void *)b, 0x170)) {
+                    char timerBuf[256];
+                    { int zi; for (zi = 0; zi < 256; zi++) timerBuf[zi] = 0; }
+                    g_TimerInit(timerBuf);
+                    g_GfxScaleY(timerBuf, 0.0f);
+                    g_GfxSetPosition(timerBuf, *(float *)(b + 0x164),
+                        *(float *)(b + 0x168) + 100.0f, *(float *)(b + 0x16C));
+                    mesh58((DWORD)tipMesh, (DWORD)meshVtbl);
+                    mesh54((DWORD)tipMesh, timerBuf);
+                    g_TimerCleanup(timerBuf);
+                }
+            }
+        }
     }
 }
 
