@@ -220,14 +220,15 @@ static void Feature_BridgeAnimation(void *board, int level) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 /* TIPPER VISUALS: native render never draws OUR 0x2578 objects (same gap as
  * the bridge before its manual pose), so tipper planks are solid but invisible.
- * Base render DOES draw visuals in the render list at *(obj+0x10D0)+0x8B0+0x18
- * (gluebie update appends there every cycle and gluebies show) -- but the
- * visual must be POSED first (solidify writes a valid transform; appending
- * an unposed visual crashed the renderer). Mirror the gluebie update tail
- * exactly, every frame: TimerInit + ScaleY(yaw) + SetPosition + obj v[0x58]
- * (no args) + obj v[0x54] (ECX=obj, push timer) + Cleanup, then append the
- * visual once per board. Tip deflection animation later (static yaw now). */
-static DWORD tipVisBoard = 0;
+ * Fix mirrors the WORKING bridge pose exactly: draw the raw tipper mesh
+ * (Level3-Tipper file mesh, same object class as the bridge mesh) once per
+ * tipper with its static yaw -- TimerInit + ScaleY(yaw) + SetPosition +
+ * mesh v[0x58] (ECX=mesh, EDX=vtable) + mesh v[0x54] (ECX=mesh, push timer)
+ * + Cleanup. No render lists (appending to board+0x8B0 hung: not a real
+ * list on universal boards), no solidify helpers (wrong vtable class for
+ * tipper objs -- caused a bad load), no native visual objects touched.
+ * Per tipper: pos/yaw read live from its 0x2578 obj (0x10D8/DC/E0 + 0x10E8).
+ * Tip deflection animation later (static yaw now). */
 static void Feature_TipperVisual(void *board, int level) {
     if (*(BYTE*)((char*)board+0x874)) return;
     if (!g_SceneUpdate) return;
@@ -237,28 +238,25 @@ static void Feature_TipperVisual(void *board, int level) {
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (!app || IsBadReadPtr((void *)app, 0x600)) return;
     if (!g_TimerInit || !g_TimerCleanup || !g_GfxScaleY || !g_GfxSetPosition) return;
-    if (!g_AthenaListAppend) return;
     void *gfx = *(void **)(app + 0x174);
     if (!gfx) return;
+    DWORD tipMesh = *(DWORD *)((char *)ext + UNI_TIPPER_MESH);
+    if (!tipMesh || IsBadReadPtr((void *)tipMesh, 0x100)) return;
+    DWORD *meshVtbl = *(DWORD **)tipMesh;
+    if (!meshVtbl || IsBadReadPtr((void *)meshVtbl, 0x160)) return;
+    void (__fastcall *mesh58)(DWORD, DWORD) = (void (__fastcall *)(DWORD, DWORD))meshVtbl[0x58];
+    void (__thiscall *mesh54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))meshVtbl[0x54];
+    if (!mesh58 || !mesh54) return;
+    if (IsBadReadPtr((void *)mesh58, 16) || IsBadReadPtr((void *)mesh54, 16)) return;
     int n = g_AthenaListGetSize ? g_AthenaListGetSize((void *)((char *)board + UNI_OBJ_LIST)) : 0;
     if (n <= 0) return;
     DWORD *items = *(DWORD **)((char *)board + UNI_OBJ_LIST + 0x40C);
     if (!items || IsBadReadPtr((void *)items, n * 4)) return;
-    int doAppend = (tipVisBoard != (DWORD)board);
-    DWORD renderBase = 0;
-    if (doAppend) {
-        if (!BoardHasOffset(board, 0x8B0, 4)) return;
-        renderBase = *(DWORD *)((char *)board + 0x8B0);
-        if (!renderBase || IsBadReadPtr((void *)renderBase, 0x20)) return;
-    }
-    int i, found = 0;
+    int i;
     for (i = 0; i < n; i++) {
         DWORD obj = items[i];
         if (!obj || IsBadReadPtr((void *)obj, 0x1100)) continue;
         if (*(DWORD *)obj != 0x4D4ED8) continue; /* tipper vtable (Tipper_ctor) */
-        DWORD vis = *(DWORD *)(obj + 0x10D4);
-        if (!vis || IsBadReadPtr((void *)vis, 0x100)) continue;
-        /* Pose (solidify): gluebie-tail sequence, static yaw. */
         float x = *(float *)(obj + 0x10D8);
         float y = *(float *)(obj + 0x10DC);
         float z = *(float *)(obj + 0x10E0);
@@ -268,20 +266,10 @@ static void Feature_TipperVisual(void *board, int level) {
         g_TimerInit(timerBuf);
         g_GfxScaleY(timerBuf, yaw);
         g_GfxSetPosition(timerBuf, x, y, z);
-        DWORD *objVtbl = *(DWORD **)obj;
-        if (objVtbl && !IsBadReadPtr((void *)objVtbl, 0x160)) {
-            void (__thiscall *fn58)(DWORD) = (void (__thiscall *)(DWORD))objVtbl[0x58];
-            void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))objVtbl[0x54];
-            if (fn58) fn58(obj);
-            if (fn54) fn54(obj, timerBuf);
-        }
+        mesh58((DWORD)tipMesh, (DWORD)meshVtbl);
+        mesh54((DWORD)tipMesh, timerBuf);
         g_TimerCleanup(timerBuf);
-        if (doAppend) {
-            g_AthenaListAppend((void *)(renderBase + 0x18), (int)vis);
-            found++;
-        }
     }
-    if (doAppend && found) tipVisBoard = (DWORD)board;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
