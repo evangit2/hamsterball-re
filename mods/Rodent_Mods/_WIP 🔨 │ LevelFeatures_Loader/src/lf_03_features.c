@@ -62,16 +62,23 @@ static void InitBridge(void *board) {
 
 static void Feature_BridgeAnimation(void *board, int level) {
     // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
+    static int bb = 0; int trace = (bb < 3);
+    if (trace) DebugLog("BBSTEP enter");
     if (*(BYTE*)((char*)board+0x874)) return;
     if (!g_SceneUpdate) return;
+    if (trace) DebugLog("BBSTEP past-gates");
     void* ext = GetBoardExt(board);
+    if (trace) { char m[80]; wsprintfA(m, "BBSTEP ext=%p", ext); DebugLog(m); }
     int ballCount = g_AthenaListGetSize((void *)((char *)board + UNI_RACE_BALL_LIST));
+    if (trace) { DebugLog("BBSTEP past-ballcount"); }
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (ballCount == 1 && app && !IsBadReadPtr((void *)app, 0x600)) {
         DWORD ball = *(DWORD *)(app + APP_BALL_PTR);
+        if (trace) DebugLog("BBSTEP ball-read");
         if (ball && !IsBadReadPtr((void *)ball, 0x200) && *(char *)(ball + 0x14C))
             return;
     }
+    if (trace) DebugLog("BBSTEP past-ballcheck");
     DWORD renderObj;
     float *anglePtr; int *statePtr; int *counterPtr; float *pivotX; float *pivotY; float *pivotZ;
     if (!ext) return;
@@ -84,6 +91,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
     pivotY = (float*)((char*)ext + UNI_BRIDGE_PIVOT_Y);
     pivotZ = (float*)((char*)ext + UNI_BRIDGE_PIVOT_Z);
     if (!renderObj) return;
+    if (trace) { char m2[80]; wsprintfA(m2, "BBSTEP render=%p state=%d", (void *)renderObj, *statePtr); DebugLog(m2); }
     int state = *statePtr;
     { static int hb = 0; if ((++hb % 600) == 0) {
         char hbmsg[100]; wsprintfA(hbmsg, "BRIDGEHB state=%d ang=%d", state, (int)*anglePtr);
@@ -222,6 +230,8 @@ static void Feature_BridgeAnimation(void *board, int level) {
         *(int *)((char *)board + 0x4384) = *statePtr;
         *(int *)((char *)board + 0x4388) = *counterPtr;
     }
+    if (trace) DebugLog("BBSTEP done");
+    bb++;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

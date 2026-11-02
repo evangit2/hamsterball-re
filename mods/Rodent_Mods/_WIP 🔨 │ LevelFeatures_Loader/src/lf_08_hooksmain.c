@@ -599,43 +599,58 @@ static void InstallFileFallbackHook(void) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 void DebugLog(const char *msg) {
-    /* Write next to the DLL, or fall back to game directory */
-    char logPath[MAX_PATH];
-    if (g_configPath[0]) {
-        strcpy(logPath, g_configPath);
-        char *p = strrchr(logPath, '\\');
-        if (p) {
-            strcpy(p + 1, "lfdebug.log");
+    /* Keep-one-handle: open once per process (append), flush per line.
+     * (Per-line open/write/close lost the tail whenever an external
+     * scanner/viewer briefly locked the file mid-run - fix 2026-11-02.)
+     * Handle is never closed; the OS reclaims it at process exit. */
+    static HANDLE hLog = NULL;
+    static int logSeq = 0;
+    static int logInitTried = 0;
+    if (!hLog && !logInitTried) {
+        logInitTried = 1;
+        char logPath[MAX_PATH];
+        if (g_configPath[0]) {
+            strcpy(logPath, g_configPath);
+            char *p = strrchr(logPath, '\\');
+            if (p) { strcpy(p + 1, "lfdebug.log"); }
+            else { strcpy(logPath, "lfdebug.log"); }
         } else {
             strcpy(logPath, "lfdebug.log");
         }
-    } else {
-        /* GetConfigPath failed (common under Wine/BoxedWine) — use game dir */
-        strcpy(logPath, "lfdebug.log");
-    }
-    HANDLE hFile = CreateFileA(logPath, GENERIC_WRITE,
-                               FILE_SHARE_READ, NULL, OPEN_ALWAYS,
-                               FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile == INVALID_HANDLE_VALUE) {
-        /* Stock installs under Program Files are not writable without
-         * elevation — fall back to %TEMP% so diagnostics still land
-         * (fix 2026-09-18). GetTempPathA ends with a separator. */
-        char tmp[MAX_PATH], tlog[MAX_PATH];
-        DWORD tl = GetTempPathA(MAX_PATH, tmp);
-        if (tl > 0 && tl < MAX_PATH - 12) {
-            strcpy(tlog, tmp);
-            strcat(tlog, "lfdebug.log");
-            hFile = CreateFileA(tlog, GENERIC_WRITE,
-                                FILE_SHARE_READ, NULL, OPEN_ALWAYS,
-                                FILE_ATTRIBUTE_NORMAL, NULL);
+        hLog = CreateFileA(logPath, GENERIC_WRITE,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hLog == INVALID_HANDLE_VALUE) {
+            hLog = NULL;
+            char tmp[MAX_PATH], tlog[MAX_PATH];
+            DWORD tl = GetTempPathA(MAX_PATH, tmp);
+            if (tl > 0 && tl < MAX_PATH - 12) {
+                strcpy(tlog, tmp);
+                strcat(tlog, "lfdebug.log");
+                HANDLE ht = CreateFileA(tlog, GENERIC_WRITE,
+                                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                        NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                if (ht != INVALID_HANDLE_VALUE) hLog = ht;
+            }
         }
-        if (hFile == INVALID_HANDLE_VALUE) return;
+        if (hLog) {
+            SetFilePointer(hLog, 0, NULL, FILE_END);
+            logSeq = 0;
+        }
     }
-    SetFilePointer(hFile, 0, NULL, FILE_END);
-    DWORD written;
-    WriteFile(hFile, msg, strlen(msg), &written, NULL);
-    WriteFile(hFile, "\r\n", 2, &written, NULL);
-    CloseHandle(hFile);
+    if (!hLog) return;
+    {
+        char seq[32]; int sl = 0; int v = ++logSeq; char rev[12]; int rl = 0;
+        if (v == 0) { seq[0] = '0'; sl = 1; }
+        else { while (v > 0 && rl < 11) { rev[rl++] = '0' + (v % 10); v /= 10; } while (rl > 0) seq[sl++] = rev[--rl]; }
+        seq[sl++] = ' '; seq[sl] = 0;
+        DWORD written = 0;
+        SetFilePointer(hLog, 0, NULL, FILE_END);
+        WriteFile(hLog, seq, sl, &written, NULL);
+        WriteFile(hLog, msg, strlen(msg), &written, NULL);
+        WriteFile(hLog, "\r\n", 2, &written, NULL);
+        FlushFileBuffers(hLog);
+    }
 }
 
 /* Forward declaration for auto-test (unused, kept for future testing) */
@@ -726,7 +741,7 @@ static void InstallVtablePatches(void) {
 }
 
 static DWORD WINAPI PatchThread(LPVOID param) {
-    DebugLog("=== PatchThread started ===");
+    { char boot[64]; wsprintfA(boot, "=== PatchThread started pid=%u ===", (unsigned)GetCurrentProcessId()); DebugLog(boot); }
     Sleep(1000); // 1s: early enough to beat first level load (~3-4s), late enough for BASS init
     DebugLog("Sleep done, resolving module base");
     g_moduleBase = (DWORD)GetModuleHandleA("Hamsterball.exe");
