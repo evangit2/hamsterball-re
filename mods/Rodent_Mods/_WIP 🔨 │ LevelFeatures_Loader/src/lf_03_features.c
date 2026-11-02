@@ -618,16 +618,17 @@ static void Feature_SwirlZones(void *board, int level) {
             }
         }
         while (rb) {
-            /* Wheel carry (native block 4: ScaleY(-0.5) + inline transform).
-             * Clean Ry(-0.5): x'=c*x+s*z, z'=-s*x+c*z, y unchanged
+            /* Wheel carry (native 0x41DC80: Scale 0x457C90(-speed) mode 3 +
+             * inline matrix, center board+0x4BB0). Builder 0x45AE21 keeps
+             * row0=[1,0,0] => Rx (NOT Ry): x unchanged,
+             * y'=c*y-s*z, z'=s*y+c*z with the FIXED -0.5 step
              * (c=0.9999619, s=-0.0087265). Never route through the Scale
-             * helpers and never copy probe-measured matrices (the probe
-             * frame produced garbage that forced x to wheel-center). */
+             * helpers. */
             if (*(char *)(rb + 0x778)) {
-                float rx = *(float *)(rb + BALL_POS_X_OFS) - wcx2;
+                float ry = *(float *)(rb + BALL_POS_Y_OFS) - wcy2;
                 float rz = *(float *)(rb + BALL_POS_Z_OFS) - wcz2;
-                *(float *)(rb + BALL_POS_X_OFS) = wcx2 + 0.9999619f * rx - 0.0087265f * rz;
-                *(float *)(rb + BALL_POS_Z_OFS) = wcz2 + 0.0087265f * rx + 0.9999619f * rz;
+                *(float *)(rb + BALL_POS_Y_OFS) = wcy2 + 0.9999619f * ry + 0.0087265f * rz;
+                *(float *)(rb + BALL_POS_Z_OFS) = wcz2 - 0.0087265f * ry + 0.9999619f * rz;
             }
             /* Swirl capture / carry (native block 5). */
             if (*(char *)(rb + 0x779) == 0) {
@@ -661,18 +662,17 @@ static void Feature_SwirlZones(void *board, int level) {
                 float oz = *(float *)(rb + BALL_POS_Z_OFS);
                 rel[0] = ox - scx; rel[1] = oy - scy; rel[2] = oz - scz;
                 float old0 = rel[0], old1 = rel[1], old2 = rel[2];
-                /* Manual ScaleX (native block 5): clean Rx(A) with the
-                 * ACCUMULATED angle (board+0x4BD8, *pAngS): x unchanged,
-                 * y'=c*y-s*z, z'=s*y+c*z. Never route through the Scale
-                 * helpers and never copy probe-measured matrices (the
-                 * probe frame produced garbage that forced z to center). */
-                { float mc, ms;
-                  float *pAngSC = isDizzy ? (float *)((char *)board + 0x4BD8)
-                                          : (float *)((char *)ext + OFF_SWIRL_ANGLE2);
-                  mc = my_cos_deg(*pAngSC); ms = my_sin_deg(*pAngSC);
-                  float ny = mc * rel[1] - ms * rel[2];
-                  float nz = ms * rel[1] + mc * rel[2];
-                  rel[1] = ny; rel[2] = nz; }
+                /* Manual Scale (native 0x41DE90: Scale 0x457C60(+step)
+                 * mode 4 + inline matrix, center board+0x4BCC, angle is the
+                 * FIXED +0.5 step from frame slot 0x2C — NOT the accumulated
+                 * board+0x4BD8 (that feeds the POSE at 0x41DE0C only).
+                 * Builder 0x45AEBD keeps row1=[0,1,0] => Ry (NOT Rx):
+                 * y unchanged, x'=c*x+s*z, z'=-s*x+c*z
+                 * (c=cos0.5=0.9999619, s=sin0.5=0.0087265). Never route
+                 * through the Scale helpers. */
+                { float nx = 0.9999619f * rel[0] + 0.0087265f * rel[2];
+                  float nz = -0.0087265f * rel[0] + 0.9999619f * rel[2];
+                  rel[0] = nx; rel[2] = nz; }
                 *(float *)(rb + BALL_POS_X_OFS) = scx + rel[0];
                 *(float *)(rb + BALL_POS_Y_OFS) = scy + rel[1];
                 *(float *)(rb + BALL_POS_Z_OFS) = scz + rel[2];
