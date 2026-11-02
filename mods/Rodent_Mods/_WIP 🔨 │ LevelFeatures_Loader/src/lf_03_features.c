@@ -619,17 +619,15 @@ static void Feature_SwirlZones(void *board, int level) {
         }
         while (rb) {
             /* Wheel carry (native block 4: ScaleY(-0.5) + inline transform).
-             * BINARY-MEASURED (ScaleY -0.5 deg, wheel frame, zero-seed):
-             * XMAT-style probe => (x,y,z)->(0, z, -sin(-0.5)*x).
-             * Native does the multiply inline (no TransformVec3 call), so we
-             * do it by hand too — never route through the Scale helpers
-             * (their output depends on caller stack garbage). */
+             * Clean Ry(-0.5): x'=c*x+s*z, z'=-s*x+c*z, y unchanged
+             * (c=0.9999619, s=-0.0087265). Never route through the Scale
+             * helpers and never copy probe-measured matrices (the probe
+             * frame produced garbage that forced x to wheel-center). */
             if (*(char *)(rb + 0x778)) {
                 float rx = *(float *)(rb + BALL_POS_X_OFS) - wcx2;
                 float rz = *(float *)(rb + BALL_POS_Z_OFS) - wcz2;
-                *(float *)(rb + BALL_POS_X_OFS) = wcx2;
-                *(float *)(rb + BALL_POS_Y_OFS) = wcy2 + rz;
-                *(float *)(rb + BALL_POS_Z_OFS) = wcz2 + 0.0087f * rx;
+                *(float *)(rb + BALL_POS_X_OFS) = wcx2 + 0.9999619f * rx - 0.0087265f * rz;
+                *(float *)(rb + BALL_POS_Z_OFS) = wcz2 + 0.0087265f * rx + 0.9999619f * rz;
             }
             /* Swirl capture / carry (native block 5). */
             if (*(char *)(rb + 0x779) == 0) {
@@ -663,18 +661,18 @@ static void Feature_SwirlZones(void *board, int level) {
                 float oz = *(float *)(rb + BALL_POS_Z_OFS);
                 rel[0] = ox - scx; rel[1] = oy - scy; rel[2] = oz - scz;
                 float old0 = rel[0], old1 = rel[1], old2 = rel[2];
-                /* Manual ScaleX (native block 5): BINARY-MEASURED (ScaleX,
-                 * swirl frame, zero-seed, -0.5 deg): (x,y,z)->(c*y+s*z, z, 0)
-                 * with c=cosA, s=sinA. Native passes the ACCUMULATED angle
-                 * (board+0x4BD8, *pAngS) — NOT the step. Never route through
-                 * the Scale helpers (caller-stack-garbage matrix). */
+                /* Manual ScaleX (native block 5): clean Rx(A) with the
+                 * ACCUMULATED angle (board+0x4BD8, *pAngS): x unchanged,
+                 * y'=c*y-s*z, z'=s*y+c*z. Never route through the Scale
+                 * helpers and never copy probe-measured matrices (the
+                 * probe frame produced garbage that forced z to center). */
                 { float mc, ms;
                   float *pAngSC = isDizzy ? (float *)((char *)board + 0x4BD8)
                                           : (float *)((char *)ext + OFF_SWIRL_ANGLE2);
                   mc = my_cos_deg(*pAngSC); ms = my_sin_deg(*pAngSC);
-                  float ny = rel[2];
-                  float nx = mc * rel[1] + ms * rel[2];
-                  rel[0] = nx; rel[1] = ny; rel[2] = 0.0f; }
+                  float ny = mc * rel[1] - ms * rel[2];
+                  float nz = ms * rel[1] + mc * rel[2];
+                  rel[1] = ny; rel[2] = nz; }
                 *(float *)(rb + BALL_POS_X_OFS) = scx + rel[0];
                 *(float *)(rb + BALL_POS_Y_OFS) = scy + rel[1];
                 *(float *)(rb + BALL_POS_Z_OFS) = scz + rel[2];
