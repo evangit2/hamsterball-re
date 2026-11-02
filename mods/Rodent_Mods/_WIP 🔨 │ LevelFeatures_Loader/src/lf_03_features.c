@@ -210,6 +210,55 @@ static void Feature_BridgeAnimation(void *board, int level) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+ * Feature block: Tipper Visuals (Dizzy + any universal board with tippers)
+ * Native render never draws OUR 0x2578 objects (same gap as the bridge
+ * before its manual pose), so tipper planks are solid but invisible.
+ * Draw each tipper's visual (obj+0x10D4) with its static yaw every frame:
+ * TimerInit + ScaleY(yaw) + SetPosition(x,y,z) + obj v[0x54] + Cleanup —
+ * the gluebie-tail draw pattern. Tip deflection animation later.
+ * Skipped on native-ctor boards (native render draws those itself).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static void Feature_TipperVisual(void *board, int level) {
+    if (*(BYTE*)((char*)board+0x874)) return;
+    if (!g_SceneUpdate) return;
+    void* ext = GetBoardExt(board);
+    if (!ext) return;
+    if (*(int *)((char *)ext + UNI_NATIVE_CTOR)) return;
+    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+    if (!app || IsBadReadPtr((void *)app, 0x600)) return;
+    if (!g_TimerInit || !g_TimerCleanup || !g_GfxScaleY || !g_GfxSetPosition) return;
+    void *gfx = *(void **)(app + 0x174);
+    if (!gfx) return;
+    int n = g_AthenaListGetSize ? g_AthenaListGetSize((void *)((char *)board + UNI_OBJ_LIST)) : 0;
+    if (n <= 0) return;
+    DWORD *items = *(DWORD **)((char *)board + UNI_OBJ_LIST + 0x40C);
+    if (!items || IsBadReadPtr((void *)items, n * 4)) return;
+    int i;
+    for (i = 0; i < n; i++) {
+        DWORD obj = items[i];
+        if (!obj || IsBadReadPtr((void *)obj, 0x1100)) continue;
+        if (*(DWORD *)obj != 0x4D4ED8) continue; /* tipper vtable (Tipper_ctor) */
+        DWORD vis = *(DWORD *)(obj + 0x10D4);
+        if (!vis || IsBadReadPtr((void *)vis, 0x100)) continue;
+        float x = *(float *)(obj + 0x10D8);
+        float y = *(float *)(obj + 0x10DC);
+        float z = *(float *)(obj + 0x10E0);
+        float yaw = *(float *)(obj + 0x10E8);
+        char timerBuf[256];
+        { int zi; for (zi = 0; zi < 256; zi++) timerBuf[zi] = 0; }
+        g_TimerInit(timerBuf);
+        g_GfxScaleY(timerBuf, yaw);
+        g_GfxSetPosition(timerBuf, x, y, z);
+        DWORD *renderVtbl = *(DWORD **)obj;
+        if (renderVtbl && !IsBadReadPtr((void *)renderVtbl, 0x160)) {
+            void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))renderVtbl[0x54];
+            if (fn54) fn54(obj, timerBuf);
+        }
+        g_TimerCleanup(timerBuf);
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
  * Feature block: Swirl Zones (Dizzy / Master)
  * Proximity check → velocity scale + tar bubbles + mesh rotation
  * Replicates DizzyBoard_Update (0x41D510) / Master Board_Update (0x420DA0)

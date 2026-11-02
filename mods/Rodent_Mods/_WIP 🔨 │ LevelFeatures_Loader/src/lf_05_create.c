@@ -227,6 +227,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             }
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
         }
+        OrBoardFeat(board, FEAT_TIPPER_VIS);
         OrBoardFeat(board, FEAT_SWIRL);
         /* Native Dizzy TIPPER (Dizzy_CreateDynamicObjects 0x40A643-0x40A6FB,
          * binary-verified: "TIPPER"@0x4CF69C) stores vis at obj+0x10D4 and
@@ -324,6 +325,11 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             obj = g_GluebieCtor(mem, (int)board, meshVal);
             DWORD *o = (DWORD *)obj;
             memcpy(&o[0x435], &x, 4); memcpy(&o[0x436], &y, 4); memcpy(&o[0x437], &z, 4);
+            /* Deterministic prox radius base: ctor leaves 0x1100 unset and
+             * op_new does not zero, so the slow-field radius (0x1100*60)
+             * starts as heap garbage (huge = permanent grab / tiny = no
+             * slow). Vanilla-fresh pages read zero; match that. */
+            *(int *)((char *)obj + 0x1100) = 0;
             /* Original appends to board+0x4378 (Gluebie list) + board+0x2578 (obj list).
              * UNI_MESH_3 (0x85EC) is a mesh SLOT, not an AthenaList — appending to it
              * clobbers mesh pointers at 0x8620-0x862C via the iter array. */

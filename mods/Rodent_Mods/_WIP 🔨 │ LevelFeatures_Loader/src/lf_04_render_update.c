@@ -492,6 +492,11 @@ void __fastcall UniversalBoardUpdate(void *board) {
         if (featDbg < 3) DebugLog("  [update] Feature_BridgeAnimation done");
     }
 
+    /* Tipper visuals (any universal board with tippers) */
+    if (features & FEAT_TIPPER_VIS) {
+        Feature_TipperVisual(board, level);
+    }
+
     /* Swirl zones (Dizzy + Master) */
     if (features & FEAT_SWIRL) {
         if (featDbg < 3) DebugLog("  [update] Feature_SwirlZones...");
