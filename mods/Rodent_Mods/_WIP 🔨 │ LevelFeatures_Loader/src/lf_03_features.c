@@ -180,13 +180,17 @@ static void Feature_BridgeAnimation(void *board, int level) {
         } break;
     }
     /* Pose EVERY frame (all states). Binary-verified against the last
-     * working build (lfl_diag): NO TimerInit, NO zeroing, DIRECT Scale call
-     * (compiler frame), EDX=vtable on the first draw call. The wrapper +
-     * TimerInit variants all crashed on open (0x4098D9D) — never again. */
+     * working build (lfl_diag): DIRECT Scale call (compiler frame — the
+     * hand-rolled wrapper frame crashed the render), EDX=vtable on the
+     * first draw call. Deterministic seed (zero + TimerInit) so the Scale
+     * output can't depend on our stack garbage (raw-stack seed rendered
+     * the deck level-sized). */
     if (g_TimerInit && g_TimerCleanup && g_GfxScaleZ && g_GfxSetPosition && g_MatrixTransformVec3 && app) {
         void *gfx = *(void **)(app + 0x174);
         if (gfx) {
         char timerBuf[256];
+        { int zi; for (zi = 0; zi < 256; zi++) timerBuf[zi] = 0; }
+        g_TimerInit(timerBuf);
         g_GfxScaleZ(timerBuf, -*anglePtr);
         g_GfxSetPosition(timerBuf, *pivotX, *pivotY, *pivotZ);
         DWORD *renderVtbl = *(DWORD **)renderObj;
