@@ -62,23 +62,16 @@ static void InitBridge(void *board) {
 
 static void Feature_BridgeAnimation(void *board, int level) {
     // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
-    static int bb = 0; int trace = (bb < 3);
-    if (trace) DebugLog("BBSTEP enter");
     if (*(BYTE*)((char*)board+0x874)) return;
     if (!g_SceneUpdate) return;
-    if (trace) DebugLog("BBSTEP past-gates");
     void* ext = GetBoardExt(board);
-    if (trace) { char m[80]; wsprintfA(m, "BBSTEP ext=%x", ext); DebugLog(m); }
     int ballCount = g_AthenaListGetSize((void *)((char *)board + UNI_RACE_BALL_LIST));
-    if (trace) { DebugLog("BBSTEP past-ballcount"); }
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (ballCount == 1 && app && !IsBadReadPtr((void *)app, 0x600)) {
         DWORD ball = *(DWORD *)(app + APP_BALL_PTR);
-        if (trace) DebugLog("BBSTEP ball-read");
         if (ball && !IsBadReadPtr((void *)ball, 0x200) && *(char *)(ball + 0x14C))
             return;
     }
-    if (trace) DebugLog("BBSTEP past-ballcheck");
     DWORD renderObj;
     float *anglePtr; int *statePtr; int *counterPtr; float *pivotX; float *pivotY; float *pivotZ;
     if (!ext) return;
@@ -91,18 +84,14 @@ static void Feature_BridgeAnimation(void *board, int level) {
     pivotY = (float*)((char*)ext + UNI_BRIDGE_PIVOT_Y);
     pivotZ = (float*)((char*)ext + UNI_BRIDGE_PIVOT_Z);
     if (!renderObj) return;
-    if (trace) { char m2[80]; wsprintfA(m2, "BBSTEP render=%x state=%d", (void *)renderObj, *statePtr); DebugLog(m2); }
     int state = *statePtr;
-    { static int hb = 0; if ((++hb % 600) == 0) {
-        char hbmsg[100]; wsprintfA(hbmsg, "BRIDGEHB state=%d ang=%d", state, (int)*anglePtr);
-        DebugLog(hbmsg); } }
     switch (state) {
-    case 0: { int c = *counterPtr - 1; *counterPtr = c; if (c < 1) { *statePtr = 1; DebugLog("BRIDGESTATE 0->1"); } } break;
+    case 0: { int c = *counterPtr - 1; *counterPtr = c; if (c < 1) { *statePtr = 1; } } break;
     case 1: {
             float angle = *anglePtr - 3.0f;
             *anglePtr = angle;
             if (angle < 0.0f) {
-                *anglePtr = 0.0f; *counterPtr = 0x7D; *statePtr = 2; DebugLog("BRIDGESTATE 1->2");
+                *anglePtr = 0.0f; *counterPtr = 0x7D; *statePtr = 2;
                 if (app && !IsBadReadPtr((void *)app, 0x800) && g_SoundPlay3D) {
                     DWORD snd = *(DWORD *)(app + APP_SOUNDFX_47C);
                     if (snd) g_SoundPlay3D((void *)snd, *pivotX, *pivotY, *pivotZ, 1.0f);
@@ -116,7 +105,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
                 }
             }
         } break;
-    case 2: { int c = *counterPtr - 1; *counterPtr = c; if (c < 1) { *statePtr = 3; DebugLog("BRIDGESTATE 2->3"); } } break;
+    case 2: { int c = *counterPtr - 1; *counterPtr = c; if (c < 1) { *statePtr = 3; } } break;
     case 3: {
             float angle = *anglePtr + 0.5f;
             *anglePtr = angle;
@@ -132,7 +121,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
                     if (snd) g_SoundPlay3D((void *)snd, *pivotX, *pivotY, *pivotZ, 1.0f);
                 }
             }
-            if (angle >= 45.0f) { *anglePtr = 45.0f; *counterPtr = 0x4B; *statePtr = 0; DebugLog("BRIDGESTATE 3->0"); }
+            if (angle >= 45.0f) { *anglePtr = 45.0f; *counterPtr = 0x4B; *statePtr = 0; }
             /* Rider carry — native Intermediate Board_Update state 3
              * (0x41CE9D, Ghidra-verified 2026-09-11: 0x402BF0=Vec3_Copy,
              * 0x40A0B0=(mat,vec-inplace) stdcall, ECX officially scratch):
@@ -165,8 +154,6 @@ static void Feature_BridgeAnimation(void *board, int level) {
                         { float d2 = cd[0]*cd[0] + cd[1]*cd[1] + cd[2]*cd[2];
                           if (d2 > 250000.0f) {
                             *(BYTE *)((char *)cb + 0x778) = 0;
-                            { char ug[80]; wsprintfA(ug, "BRIDGEUNMARK far=%d", (int)d2);
-                              DebugLog(ug); }
                             continue;
                           } }
                         /* DIAG v13.8: log carry inputs (remove after). */
@@ -187,44 +174,23 @@ static void Feature_BridgeAnimation(void *board, int level) {
                         *(float *)((char *)cb + 0x164) = cd[0] + *pivotX;
                         *(float *)((char *)cb + 0x168) = cd[1] + *pivotY;
                         *(float *)((char *)cb + 0x16C) = cd[2] + *pivotZ;
-                        { char ag[120]; wsprintfA(ag, "BRIDGEAFTER ang=%d ball=(%d,%d,%d)",
-                            (int)*anglePtr,
-                            (int)*(float *)((char *)cb + 0x164), (int)*(float *)((char *)cb + 0x168), (int)*(float *)((char *)cb + 0x16C));
-                          DebugLog(ag); }
                     }
                 }
             }
         } break;
     }
-    if (trace) DebugLog("BBSTEP past-switch");
-    /* Pose EVERY frame (all states), not just while rising. The mesh keeps
-     * its last transform — posing only in state 3 snaps raised→flat on the
-     * first rise frame and hides the fall + pause. Same absolute compose
-     * (ScaleZ(-angle) + pivot, native 0x41CFBA pattern), idempotent. */
+    /* Pose EVERY frame (all states). Binary-verified against the last
+     * working build (lfl_diag): NO TimerInit, NO zeroing, DIRECT Scale call
+     * (compiler frame), EDX=vtable on the first draw call. The wrapper +
+     * TimerInit variants all crashed on open (0x4098D9D) — never again. */
     if (g_TimerInit && g_TimerCleanup && g_GfxScaleZ && g_GfxSetPosition && g_MatrixTransformVec3 && app) {
         void *gfx = *(void **)(app + 0x174);
         if (gfx) {
-        /* Compose into the fresh timer buffer (native Intermediate
-         * 0x41CFBA-0x41D012 pattern); draw below uses timerBuf.
-         * Scaling the persistent gfx object instead loses the
-         * rotation AND pollutes gfx for every other draw. */
         char timerBuf[256];
-        { int zi; for (zi = 0; zi < 256; zi++) timerBuf[zi] = 0; }
-        if (trace) DebugLog("BBSTEP pose-timerinit");
-        g_TimerInit(timerBuf);
-        if (trace) DebugLog("BBSTEP pose-scalez");
-        ScaleZ_Native(timerBuf, -*anglePtr, 0); /* mode 0 (probed-clean Rx);
-        native pose uses mode 1 but that matrix crashes the render from our
-        frame (0x4098D9D); mode 0 rotates identically for our purpose */
-        if (trace) DebugLog("BBSTEP pose-setpos");
+        g_GfxScaleZ(timerBuf, -*anglePtr);
         g_GfxSetPosition(timerBuf, *pivotX, *pivotY, *pivotZ);
-        if (trace) DebugLog("BBSTEP pose-vtbl");
         DWORD *renderVtbl = *(DWORD **)renderObj;
         if (renderVtbl) {
-            /* Native 0x41CFF8-0x41D000: ECX=obj, EDX=vtable (freshly loaded
-             * for the slot fetch, passed through) — 2-arg fastcall. A 1-arg
-             * call leaves EDX as layout-dependent garbage and the callee
-             * dereferences it (crash 0x4098D9D). */
             void (__fastcall *fn58)(DWORD, DWORD) = (void (__fastcall *)(DWORD, DWORD))renderVtbl[0x16];
             void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))renderVtbl[0x15]; /* native: ECX=obj + push timer, ret $0x4 */
             if (fn58) fn58((DWORD)renderObj, (DWORD)renderVtbl);
@@ -241,8 +207,6 @@ static void Feature_BridgeAnimation(void *board, int level) {
         *(int *)((char *)board + 0x4384) = *statePtr;
         *(int *)((char *)board + 0x4388) = *counterPtr;
     }
-    if (trace) DebugLog("BBSTEP done");
-    bb++;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
