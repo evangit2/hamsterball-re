@@ -218,12 +218,70 @@ static void Feature_BridgeAnimation(void *board, int level) {
  * the gluebie-tail draw pattern. Tip deflection animation later.
  * Skipped on native-ctor boards (native render draws those itself).
  * ═══════════════════════════════════════════════════════════════════════════ */
-/* TIPPER VISUALS (DISABLED 2026-11-02): the append target board+0x8B0 is
- * heap garbage on universal boards (native ctor zeroes+inits it; ours
- * skips memset) -- appending corrupted the heap and crashed Dizzy ~3s in.
- * Tippers stay invisible until a safe draw path is verified. */
+/* TIPPER VISUALS: native render never draws OUR 0x2578 objects (same gap as
+ * the bridge before its manual pose), so tipper planks are solid but invisible.
+ * Base render DOES draw visuals in the render list at *(obj+0x10D0)+0x8B0+0x18
+ * (gluebie update appends there every cycle and gluebies show) -- but the
+ * visual must be POSED first (solidify writes a valid transform; appending
+ * an unposed visual crashed the renderer). Mirror the gluebie update tail
+ * exactly, every frame: TimerInit + ScaleY(yaw) + SetPosition + obj v[0x58]
+ * (no args) + obj v[0x54] (ECX=obj, push timer) + Cleanup, then append the
+ * visual once per board. Tip deflection animation later (static yaw now). */
+static DWORD tipVisBoard = 0;
 static void Feature_TipperVisual(void *board, int level) {
-    (void)board; (void)level; return;
+    if (*(BYTE*)((char*)board+0x874)) return;
+    if (!g_SceneUpdate) return;
+    void* ext = GetBoardExt(board);
+    if (!ext) return;
+    if (*(int *)((char *)ext + UNI_NATIVE_CTOR)) return;
+    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+    if (!app || IsBadReadPtr((void *)app, 0x600)) return;
+    if (!g_TimerInit || !g_TimerCleanup || !g_GfxScaleY || !g_GfxSetPosition) return;
+    if (!g_AthenaListAppend) return;
+    void *gfx = *(void **)(app + 0x174);
+    if (!gfx) return;
+    int n = g_AthenaListGetSize ? g_AthenaListGetSize((void *)((char *)board + UNI_OBJ_LIST)) : 0;
+    if (n <= 0) return;
+    DWORD *items = *(DWORD **)((char *)board + UNI_OBJ_LIST + 0x40C);
+    if (!items || IsBadReadPtr((void *)items, n * 4)) return;
+    int doAppend = (tipVisBoard != (DWORD)board);
+    DWORD renderBase = 0;
+    if (doAppend) {
+        if (!BoardHasOffset(board, 0x8B0, 4)) return;
+        renderBase = *(DWORD *)((char *)board + 0x8B0);
+        if (!renderBase || IsBadReadPtr((void *)renderBase, 0x20)) return;
+    }
+    int i, found = 0;
+    for (i = 0; i < n; i++) {
+        DWORD obj = items[i];
+        if (!obj || IsBadReadPtr((void *)obj, 0x1100)) continue;
+        if (*(DWORD *)obj != 0x4D4ED8) continue; /* tipper vtable (Tipper_ctor) */
+        DWORD vis = *(DWORD *)(obj + 0x10D4);
+        if (!vis || IsBadReadPtr((void *)vis, 0x100)) continue;
+        /* Pose (solidify): gluebie-tail sequence, static yaw. */
+        float x = *(float *)(obj + 0x10D8);
+        float y = *(float *)(obj + 0x10DC);
+        float z = *(float *)(obj + 0x10E0);
+        float yaw = *(float *)(obj + 0x10E8);
+        char timerBuf[256];
+        { int zi; for (zi = 0; zi < 256; zi++) timerBuf[zi] = 0; }
+        g_TimerInit(timerBuf);
+        g_GfxScaleY(timerBuf, yaw);
+        g_GfxSetPosition(timerBuf, x, y, z);
+        DWORD *objVtbl = *(DWORD **)obj;
+        if (objVtbl && !IsBadReadPtr((void *)objVtbl, 0x160)) {
+            void (__thiscall *fn58)(DWORD) = (void (__thiscall *)(DWORD))objVtbl[0x58];
+            void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))objVtbl[0x54];
+            if (fn58) fn58(obj);
+            if (fn54) fn54(obj, timerBuf);
+        }
+        g_TimerCleanup(timerBuf);
+        if (doAppend) {
+            g_AthenaListAppend((void *)(renderBase + 0x18), (int)vis);
+            found++;
+        }
+    }
+    if (doAppend && found) tipVisBoard = (DWORD)board;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
