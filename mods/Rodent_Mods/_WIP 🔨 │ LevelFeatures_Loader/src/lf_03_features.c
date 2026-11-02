@@ -156,12 +156,8 @@ static void Feature_BridgeAnimation(void *board, int level) {
                             *(BYTE *)((char *)cb + 0x778) = 0;
                             continue;
                           } }
-                        /* DIAG v13.8: log carry inputs (remove after). */
-                        { char dlg[200]; float bx0 = *(float *)((char *)cb + 0x164), by0 = *(float *)((char *)cb + 0x168), bz0 = *(float *)((char *)cb + 0x16C);
-                          wsprintfA(dlg, "BRIDGECARRY ang=%d piv=(%d,%d,%d) ball=(%d,%d,%d) rel=(%d,%d,%d)",
-                            (int)*anglePtr, (int)*pivotX, (int)*pivotY, (int)*pivotZ,
-                            (int)bx0, (int)by0, (int)bz0,
-                            (int)cd[0], (int)cd[1], (int)cd[2]); DebugLog(dlg); }
+                        /* (BRIDGECARRY per-frame log removed v13.13: file I/O on the
+                         * game thread lagged the ride; carry verified working.) */
                         /* v13.9 MANUAL carry (pure C, exact): native ScaleZ output
                          * depends on its exact caller stack frame (uninitialized
                          * reads) and scrambles from our call site (SCALETEST).
