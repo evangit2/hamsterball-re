@@ -626,7 +626,7 @@ static void ScaleZ_Native(void *timer, float angle, int mode) {
     __asm__ volatile (
         "subl $0x100, %%esp\n\t"
         "movl $0, (%%esp)\n\t"
-        "movl %2, 0xB8(%%esp)\n\t"
+        "movl %2, 0xBC(%%esp)\n\t"   /* = call-esp+0xC4 (native 0x41CF20/0x41CFCA slot) */
         "pushl %1\n\t"
         "movl %0, %%ecx\n\t"
         "call *%3\n\t"

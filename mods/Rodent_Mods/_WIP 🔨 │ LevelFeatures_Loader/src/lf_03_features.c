@@ -68,7 +68,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
     if (!g_SceneUpdate) return;
     if (trace) DebugLog("BBSTEP past-gates");
     void* ext = GetBoardExt(board);
-    if (trace) { char m[80]; wsprintfA(m, "BBSTEP ext=%p", ext); DebugLog(m); }
+    if (trace) { char m[80]; wsprintfA(m, "BBSTEP ext=%x", ext); DebugLog(m); }
     int ballCount = g_AthenaListGetSize((void *)((char *)board + UNI_RACE_BALL_LIST));
     if (trace) { DebugLog("BBSTEP past-ballcount"); }
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
@@ -91,7 +91,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
     pivotY = (float*)((char*)ext + UNI_BRIDGE_PIVOT_Y);
     pivotZ = (float*)((char*)ext + UNI_BRIDGE_PIVOT_Z);
     if (!renderObj) return;
-    if (trace) { char m2[80]; wsprintfA(m2, "BBSTEP render=%p state=%d", (void *)renderObj, *statePtr); DebugLog(m2); }
+    if (trace) { char m2[80]; wsprintfA(m2, "BBSTEP render=%x state=%d", (void *)renderObj, *statePtr); DebugLog(m2); }
     int state = *statePtr;
     { static int hb = 0; if ((++hb % 600) == 0) {
         char hbmsg[100]; wsprintfA(hbmsg, "BRIDGEHB state=%d ang=%d", state, (int)*anglePtr);
@@ -196,6 +196,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
             }
         } break;
     }
+    if (trace) DebugLog("BBSTEP past-switch");
     /* Pose EVERY frame (all states), not just while rising. The mesh keeps
      * its last transform — posing only in state 3 snaps raised→flat on the
      * first rise frame and hides the fall + pause. Same absolute compose
@@ -209,14 +210,24 @@ static void Feature_BridgeAnimation(void *board, int level) {
          * rotation AND pollutes gfx for every other draw. */
         char timerBuf[256];
         { int zi; for (zi = 0; zi < 256; zi++) timerBuf[zi] = 0; }
+        if (trace) DebugLog("BBSTEP pose-timerinit");
         g_TimerInit(timerBuf);
-        ScaleZ_Native(timerBuf, -*anglePtr, 1);
+        if (trace) DebugLog("BBSTEP pose-scalez");
+        ScaleZ_Native(timerBuf, -*anglePtr, 0); /* mode 0 (probed-clean Rx);
+        native pose uses mode 1 but that matrix crashes the render from our
+        frame (0x4098D9D); mode 0 rotates identically for our purpose */
+        if (trace) DebugLog("BBSTEP pose-setpos");
         g_GfxSetPosition(timerBuf, *pivotX, *pivotY, *pivotZ);
+        if (trace) DebugLog("BBSTEP pose-vtbl");
         DWORD *renderVtbl = *(DWORD **)renderObj;
         if (renderVtbl) {
-            void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))renderVtbl[0x16];
+            /* Native 0x41CFF8-0x41D000: ECX=obj, EDX=vtable (freshly loaded
+             * for the slot fetch, passed through) — 2-arg fastcall. A 1-arg
+             * call leaves EDX as layout-dependent garbage and the callee
+             * dereferences it (crash 0x4098D9D). */
+            void (__fastcall *fn58)(DWORD, DWORD) = (void (__fastcall *)(DWORD, DWORD))renderVtbl[0x16];
             void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))renderVtbl[0x15]; /* native: ECX=obj + push timer, ret $0x4 */
-            if (fn58) fn58((DWORD)renderObj);
+            if (fn58) fn58((DWORD)renderObj, (DWORD)renderVtbl);
             if (fn54) fn54((DWORD)renderObj, timerBuf);
         }
         g_TimerCleanup(timerBuf);
@@ -790,9 +801,9 @@ static void Feature_Windmill(void *board, int level) {
                 *(float *)((char *)board + 0x4388));
             DWORD *vt = *(DWORD **)wmr;
             if (vt) {
-                void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))vt[0x16];
+                void (__fastcall *fn58)(DWORD, DWORD) = (void (__fastcall *)(DWORD, DWORD))vt[0x16];
                 void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))vt[0x15];
-                if (fn58) fn58(wmr);
+                if (fn58) fn58(wmr, (DWORD)vt);
                 if (fn54) fn54(wmr, timerBuf);
             }
             g_TimerCleanup(timerBuf);
@@ -841,9 +852,9 @@ static void Feature_Windmill(void *board, int level) {
         if (renderObj) {
             DWORD *vtbl = *(DWORD **)renderObj;
             if (vtbl) {
-                void (__fastcall *fn58)(DWORD) = (void (__fastcall *)(DWORD))vtbl[0x16];
+                void (__fastcall *fn58)(DWORD, DWORD) = (void (__fastcall *)(DWORD, DWORD))vtbl[0x16];
                 void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))vtbl[0x15]; /* native: ECX=obj + push timer, ret $0x4 */
-                if (fn58) fn58((DWORD)renderObj);
+                if (fn58) fn58((DWORD)renderObj, (DWORD)vtbl);
                 if (fn54) fn54((DWORD)renderObj, timerBuf);
             }
         }
