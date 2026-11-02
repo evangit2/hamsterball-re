@@ -599,6 +599,11 @@ static void InstallFileFallbackHook(void) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 void DebugLog(const char *msg) {
+    /* LOGGING DISABLED 2026-11-02 (user: per-frame file I/O on the game
+     * thread lagged loads and dropped Dizzy to ~2fps; 600 identical swirl
+     * lines per session). All call sites stay; re-enable by deleting the
+     * next line when diagnostics are needed. */
+    (void)msg; return;
     /* Keep-one-handle: open once per process (append), flush per line.
      * (Per-line open/write/close lost the tail whenever an external
      * scanner/viewer briefly locked the file mid-run - fix 2026-11-02.)
