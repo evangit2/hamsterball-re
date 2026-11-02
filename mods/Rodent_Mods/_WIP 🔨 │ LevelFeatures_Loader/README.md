@@ -121,6 +121,8 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.11** — Pose timer buffer zeroed (unzeroed buffer crashed Intermediate
+on open); state-transition lines + heartbeat in log.
 - **v13.10** — Dizzy wheel + swirl carries are manual pure-C (measured ScaleY/
 ScaleX matrices; accumulated angle for swirl). Tippers/gluebies still open.
 - **v13.9** — Bridge carry is manual pure-C Rx(-0.5°/frame) + far-unmark

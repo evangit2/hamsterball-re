@@ -85,13 +85,16 @@ static void Feature_BridgeAnimation(void *board, int level) {
     pivotZ = (float*)((char*)ext + UNI_BRIDGE_PIVOT_Z);
     if (!renderObj) return;
     int state = *statePtr;
+    { static int hb = 0; if ((++hb % 600) == 0) {
+        char hbmsg[100]; wsprintfA(hbmsg, "BRIDGEHB state=%d ang=%d", state, (int)*anglePtr);
+        DebugLog(hbmsg); } }
     switch (state) {
-    case 0: { int c = *counterPtr - 1; *counterPtr = c; if (c < 1) *statePtr = 1; } break;
+    case 0: { int c = *counterPtr - 1; *counterPtr = c; if (c < 1) { *statePtr = 1; DebugLog("BRIDGESTATE 0->1"); } } break;
     case 1: {
             float angle = *anglePtr - 3.0f;
             *anglePtr = angle;
             if (angle < 0.0f) {
-                *anglePtr = 0.0f; *counterPtr = 0x7D; *statePtr = 2;
+                *anglePtr = 0.0f; *counterPtr = 0x7D; *statePtr = 2; DebugLog("BRIDGESTATE 1->2");
                 if (app && !IsBadReadPtr((void *)app, 0x800) && g_SoundPlay3D) {
                     DWORD snd = *(DWORD *)(app + APP_SOUNDFX_47C);
                     if (snd) g_SoundPlay3D((void *)snd, *pivotX, *pivotY, *pivotZ, 1.0f);
@@ -105,7 +108,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
                 }
             }
         } break;
-    case 2: { int c = *counterPtr - 1; *counterPtr = c; if (c < 1) *statePtr = 3; } break;
+    case 2: { int c = *counterPtr - 1; *counterPtr = c; if (c < 1) { *statePtr = 3; DebugLog("BRIDGESTATE 2->3"); } } break;
     case 3: {
             float angle = *anglePtr + 0.5f;
             *anglePtr = angle;
@@ -121,7 +124,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
                     if (snd) g_SoundPlay3D((void *)snd, *pivotX, *pivotY, *pivotZ, 1.0f);
                 }
             }
-            if (angle >= 45.0f) { *anglePtr = 45.0f; *counterPtr = 0x4B; *statePtr = 0; }
+            if (angle >= 45.0f) { *anglePtr = 45.0f; *counterPtr = 0x4B; *statePtr = 0; DebugLog("BRIDGESTATE 3->0"); }
             /* Rider carry — native Intermediate Board_Update state 3
              * (0x41CE9D, Ghidra-verified 2026-09-11: 0x402BF0=Vec3_Copy,
              * 0x40A0B0=(mat,vec-inplace) stdcall, ECX officially scratch):
@@ -197,6 +200,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
          * Scaling the persistent gfx object instead loses the
          * rotation AND pollutes gfx for every other draw. */
         char timerBuf[256];
+        { int zi; for (zi = 0; zi < 256; zi++) timerBuf[zi] = 0; }
         g_TimerInit(timerBuf);
         ScaleZ_Native(timerBuf, -*anglePtr, 1);
         g_GfxSetPosition(timerBuf, *pivotX, *pivotY, *pivotZ);
