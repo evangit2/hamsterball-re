@@ -121,6 +121,8 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.10** — Dizzy wheel + swirl carries are manual pure-C (measured ScaleY/
+ScaleX matrices; accumulated angle for swirl). Tippers/gluebies still open.
 - **v13.9** — Bridge carry is manual pure-C Rx(-0.5°/frame) + far-unmark
 (diag BRIDGECARRY/BRIDGEAFTER lines in; boot probe OUT). PARTIALLY FIXED.
 - **v13.8** — Superseded by v13.9 (native ScaleZ scrambles from our frame).

@@ -226,6 +226,20 @@ static void Feature_BridgeAnimation(void *board, int level) {
  * Replicates DizzyBoard_Update (0x41D510) / Master Board_Update (0x420DA0)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* Tiny sin/cos (degrees) — no libm in this DLL. Taylor to x^9/x^8 after
+ * range reduction; plenty for per-frame game angles. */
+static float my_sin_deg(float deg) {
+    float a = deg;
+    while (a > 180.0f) a -= 360.0f;
+    while (a < -180.0f) a += 360.0f;
+    float x = a * 0.01745329252f;
+    float x2 = x * x;
+    return x * (1.0f - x2 * (0.16666667f - x2 * (0.00833333f - x2 * 0.00019841f)));
+}
+static float my_cos_deg(float deg) {
+    return my_sin_deg(deg + 90.0f);
+}
+
 static void Feature_SwirlZones(void *board, int level) {
     // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
     if (*(BYTE*)((char*)board+0x874)) return;
@@ -615,25 +629,18 @@ static void Feature_SwirlZones(void *board, int level) {
             }
         }
         while (rb) {
-            /* Wheel carry (native block 4: ScaleY(-0.5) + transform).
-             * Binary-verified (0x41DCC2-0x41DD90): TimerInit(tB) then
-             * ScaleY into tB, inline matrix*rel with rel updated IN PLACE
-             * (0x40A0B0 writes arg2; bridge block mirrors this via
-             * Transform(ctimer, cd)+read-cd). So scale tB (not gfxR),
-             * transform (tB, rel), read rel. */
+            /* Wheel carry (native block 4: ScaleY(-0.5) + inline transform).
+             * BINARY-MEASURED (ScaleY -0.5 deg, wheel frame, zero-seed):
+             * XMAT-style probe => (x,y,z)->(0, z, -sin(-0.5)*x).
+             * Native does the multiply inline (no TransformVec3 call), so we
+             * do it by hand too — never route through the Scale helpers
+             * (their output depends on caller stack garbage). */
             if (*(char *)(rb + 0x778)) {
-                float rel[3];
-                char tB[68];
-                rel[0] = *(float *)(rb + BALL_POS_X_OFS) - wcx2;
-                rel[1] = *(float *)(rb + BALL_POS_Y_OFS) - wcy2;
-                rel[2] = *(float *)(rb + BALL_POS_Z_OFS) - wcz2;
-                g_TimerInit(tB);
-                g_GfxScaleY(tB, -0.5f);
-                g_MatrixTransformVec3(tB, rel);
-                *(float *)(rb + BALL_POS_X_OFS) = wcx2 + rel[0];
-                *(float *)(rb + BALL_POS_Y_OFS) = wcy2 + rel[1];
-                *(float *)(rb + BALL_POS_Z_OFS) = wcz2 + rel[2];
-                g_TimerCleanup(tB);
+                float rx = *(float *)(rb + BALL_POS_X_OFS) - wcx2;
+                float rz = *(float *)(rb + BALL_POS_Z_OFS) - wcz2;
+                *(float *)(rb + BALL_POS_X_OFS) = wcx2;
+                *(float *)(rb + BALL_POS_Y_OFS) = wcy2 + rz;
+                *(float *)(rb + BALL_POS_Z_OFS) = wcz2 + 0.0087f * rx;
             }
             /* Swirl capture / carry (native block 5). */
             if (*(char *)(rb + 0x779) == 0) {
@@ -662,16 +669,23 @@ static void Feature_SwirlZones(void *board, int level) {
                 *(int *)(rb + 0x78C) = 5;
                 {
                 float rel[3];
-                char tB[68];
                 float ox = *(float *)(rb + BALL_POS_X_OFS);
                 float oy = *(float *)(rb + BALL_POS_Y_OFS);
                 float oz = *(float *)(rb + BALL_POS_Z_OFS);
                 rel[0] = ox - scx; rel[1] = oy - scy; rel[2] = oz - scz;
                 float old0 = rel[0], old1 = rel[1], old2 = rel[2];
-                g_TimerInit(tB);
-                g_GfxScaleX(tB, sdelta);
-                g_MatrixTransformVec3(tB, rel);
-                g_TimerCleanup(tB);
+                /* Manual ScaleX (native block 5): BINARY-MEASURED (ScaleX,
+                 * swirl frame, zero-seed, -0.5 deg): (x,y,z)->(c*y+s*z, z, 0)
+                 * with c=cosA, s=sinA. Native passes the ACCUMULATED angle
+                 * (board+0x4BD8, *pAngS) — NOT the step. Never route through
+                 * the Scale helpers (caller-stack-garbage matrix). */
+                { float mc, ms;
+                  float *pAngSC = isDizzy ? (float *)((char *)board + 0x4BD8)
+                                          : (float *)((char *)ext + OFF_SWIRL_ANGLE2);
+                  mc = my_cos_deg(*pAngSC); ms = my_sin_deg(*pAngSC);
+                  float ny = rel[2];
+                  float nx = mc * rel[1] + ms * rel[2];
+                  rel[0] = nx; rel[1] = ny; rel[2] = 0.0f; }
                 *(float *)(rb + BALL_POS_X_OFS) = scx + rel[0];
                 *(float *)(rb + BALL_POS_Y_OFS) = scy + rel[1];
                 *(float *)(rb + BALL_POS_Z_OFS) = scz + rel[2];
