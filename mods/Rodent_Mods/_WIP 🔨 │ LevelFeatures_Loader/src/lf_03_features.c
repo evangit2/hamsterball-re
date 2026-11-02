@@ -218,13 +218,15 @@ static void Feature_BridgeAnimation(void *board, int level) {
  * the gluebie-tail draw pattern. Tip deflection animation later.
  * Skipped on native-ctor boards (native render draws those itself).
  * ═══════════════════════════════════════════════════════════════════════════ */
-/* TIPPER VISUALS: native render never draws OUR 0x2578 objects (same gap as
- * the bridge before its manual pose), so tipper planks are solid but invisible.
- * Draw the raw tipper mesh (Level3-Tipper file mesh, same object class as the
- * working bridge mesh) once per stored tipper pose -- TimerInit + ScaleY(yaw)
- * + SetPosition + mesh v[0x58] (ECX=mesh, EDX=vtable) + mesh v[0x54]
- * (ECX=mesh, push timer) + Cleanup. Poses stored at create (no list walk).
- * No render lists, no solidify helpers, no native visual objects touched. */
+/* TIPPER VISUALS (Ghidra-verified): native render never draws OUR 0x2578
+ * objects, so tipper planks are solid but invisible. The tipper visual
+ * (obj+0x10D4) carries cloned spatial trees (Stands_ctor/TipperVisual_ctor);
+ * the shared update tail positions them via obj v[0x58]() (no args) then
+ * obj v[0x54](obj, posed timer) -- trampolines through obj+0x434 (Stands
+ * node, always valid). No render lists (board+0x8B0 is unbuilt garbage on
+ * every board -- appending crashed/hung twice), no object walks (poses
+ * stored at create). Per tipper: TimerInit + ScaleY(yaw) + SetPosition +
+ * v[0x58] + v[0x54] + Cleanup. Static yaw for now; deflection later. */
 static void Feature_TipperVisual(void *board, int level) {
     if (*(BYTE*)((char*)board+0x874)) return;
     if (!g_SceneUpdate) return;
@@ -236,50 +238,32 @@ static void Feature_TipperVisual(void *board, int level) {
     if (!g_TimerInit || !g_TimerCleanup || !g_GfxScaleY || !g_GfxSetPosition) return;
     void *gfx = *(void **)(app + 0x174);
     if (!gfx) return;
-    DWORD tipMesh = *(DWORD *)((char *)ext + UNI_TIPPER_MESH);
-    if (!tipMesh || IsBadReadPtr((void *)tipMesh, 0x100)) return;
-    DWORD *meshVtbl = *(DWORD **)tipMesh;
-    if (!meshVtbl || IsBadReadPtr((void *)meshVtbl, 0x160)) return;
-    void (__fastcall *mesh58)(DWORD, DWORD) = (void (__fastcall *)(DWORD, DWORD))meshVtbl[0x58];
-    void (__thiscall *mesh54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))meshVtbl[0x54];
-    if (!mesh58 || !mesh54) return;
-    if (IsBadReadPtr((void *)mesh58, 16) || IsBadReadPtr((void *)mesh54, 16)) return;
     int n = *(int *)((char *)ext + UNI_TIPPER_POSE_N);
-    if (n > 8) return;
-    int i;
-    if (n > 0) for (i = 0; i < n; i++) {
-        float *pp = (float *)((char *)ext + UNI_TIPPER_POSES + i * 16);
+    if (n <= 0 || n > 8) return;
+    int ni = g_AthenaListGetSize ? g_AthenaListGetSize((void *)((char *)board + UNI_OBJ_LIST)) : 0;
+    if (ni <= 0) return;
+    DWORD *items = *(DWORD **)((char *)board + UNI_OBJ_LIST + 0x40C);
+    if (!items || IsBadReadPtr((void *)items, ni * 4)) return;
+    int i, ti = 0;
+    for (i = 0; i < ni && ti < n; i++) {
+        DWORD obj = items[i];
+        if (!obj || IsBadReadPtr((void *)obj, 0x1100)) continue;
+        if (*(DWORD *)obj != 0x4D4ED8) continue; /* tipper vtable (Tipper_ctor) */
+        float *pp = (float *)((char *)ext + UNI_TIPPER_POSES + ti * 16);
+        ti++;
         char timerBuf[256];
         { int zi; for (zi = 0; zi < 256; zi++) timerBuf[zi] = 0; }
         g_TimerInit(timerBuf);
         g_GfxScaleY(timerBuf, pp[3]);
         g_GfxSetPosition(timerBuf, pp[0], pp[1], pp[2]);
-        mesh58((DWORD)tipMesh, (DWORD)meshVtbl);
-        mesh54((DWORD)tipMesh, timerBuf);
-        g_TimerCleanup(timerBuf);
-    }
-    /* Locator: draw the same mesh above the player ball. If the user sees
-     * a plank floating over their ball, the draw path works and only the
-     * stored poses are wrong. If not, the draw itself is broken. */
-    if (BoardHasOffset(board, 0x29D4, 8)) {
-        int bn = g_AthenaListGetSize ? g_AthenaListGetSize((void *)((char *)board + 0x29D4)) : 0;
-        if (bn > 0) {
-            DWORD *bitems = *(DWORD **)((char *)board + 0x29D4 + 0x40C);
-            if (bitems && !IsBadReadPtr((void *)bitems, 4)) {
-                DWORD b = bitems[0];
-                if (b && !IsBadReadPtr((void *)b, 0x170)) {
-                    char timerBuf[256];
-                    { int zi; for (zi = 0; zi < 256; zi++) timerBuf[zi] = 0; }
-                    g_TimerInit(timerBuf);
-                    g_GfxScaleY(timerBuf, 0.0f);
-                    g_GfxSetPosition(timerBuf, *(float *)(b + 0x164),
-                        *(float *)(b + 0x168) + 100.0f, *(float *)(b + 0x16C));
-                    mesh58((DWORD)tipMesh, (DWORD)meshVtbl);
-                    mesh54((DWORD)tipMesh, timerBuf);
-                    g_TimerCleanup(timerBuf);
-                }
-            }
+        DWORD *objVtbl = *(DWORD **)obj;
+        if (objVtbl && !IsBadReadPtr((void *)objVtbl, 0x160)) {
+            void (__thiscall *fn58)(DWORD) = (void (__thiscall *)(DWORD))objVtbl[0x58];
+            void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))objVtbl[0x54];
+            if (fn58) fn58(obj);
+            if (fn54) fn54(obj, timerBuf);
         }
+        g_TimerCleanup(timerBuf);
     }
 }
 
