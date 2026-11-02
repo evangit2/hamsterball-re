@@ -335,6 +335,14 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             DWORD *o = (DWORD *)obj;
             memcpy(&o[0x435], &x, 4); memcpy(&o[0x436], &y, 4); memcpy(&o[0x437], &z, 4);
             /* 0x1100 deliberately untouched (native heap behavior parity). */
+            /* Prox slow-field center (0x10E0/0x10E4/0x10E8): ctor and
+             * create never write it (verified: no 0x10E0+ stores in
+             * either), so the Dizzy prox reads stale heap. The visual
+             * uses 0x10D4/D8/DC (create triple, proven by correct
+             * placement), so these three are free: seed (x,y,z). */
+            memcpy((char *)obj + 0x10E0, &x, 4);
+            memcpy((char *)obj + 0x10E4, &y, 4);
+            memcpy((char *)obj + 0x10E8, &z, 4);
             /* Original appends to board+0x4378 (Gluebie list) + board+0x2578 (obj list).
              * UNI_MESH_3 (0x85EC) is a mesh SLOT, not an AthenaList — appending to it
              * clobbers mesh pointers at 0x8620-0x862C via the iter array. */
