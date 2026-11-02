@@ -220,15 +220,11 @@ static void Feature_BridgeAnimation(void *board, int level) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 /* TIPPER VISUALS: native render never draws OUR 0x2578 objects (same gap as
  * the bridge before its manual pose), so tipper planks are solid but invisible.
- * Fix mirrors the WORKING bridge pose exactly: draw the raw tipper mesh
- * (Level3-Tipper file mesh, same object class as the bridge mesh) once per
- * tipper with its static yaw -- TimerInit + ScaleY(yaw) + SetPosition +
- * mesh v[0x58] (ECX=mesh, EDX=vtable) + mesh v[0x54] (ECX=mesh, push timer)
- * + Cleanup. No render lists (appending to board+0x8B0 hung: not a real
- * list on universal boards), no solidify helpers (wrong vtable class for
- * tipper objs -- caused a bad load), no native visual objects touched.
- * Per tipper: pos/yaw read live from its 0x2578 obj (0x10D8/DC/E0 + 0x10E8).
- * Tip deflection animation later (static yaw now). */
+ * Draw the raw tipper mesh (Level3-Tipper file mesh, same object class as the
+ * working bridge mesh) once per stored tipper pose -- TimerInit + ScaleY(yaw)
+ * + SetPosition + mesh v[0x58] (ECX=mesh, EDX=vtable) + mesh v[0x54]
+ * (ECX=mesh, push timer) + Cleanup. Poses stored at create (no list walk).
+ * No render lists, no solidify helpers, no native visual objects touched. */
 static void Feature_TipperVisual(void *board, int level) {
     if (*(BYTE*)((char*)board+0x874)) return;
     if (!g_SceneUpdate) return;
@@ -248,24 +244,16 @@ static void Feature_TipperVisual(void *board, int level) {
     void (__thiscall *mesh54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))meshVtbl[0x54];
     if (!mesh58 || !mesh54) return;
     if (IsBadReadPtr((void *)mesh58, 16) || IsBadReadPtr((void *)mesh54, 16)) return;
-    int n = g_AthenaListGetSize ? g_AthenaListGetSize((void *)((char *)board + UNI_OBJ_LIST)) : 0;
-    if (n <= 0) return;
-    DWORD *items = *(DWORD **)((char *)board + UNI_OBJ_LIST + 0x40C);
-    if (!items || IsBadReadPtr((void *)items, n * 4)) return;
+    int n = *(int *)((char *)ext + UNI_TIPPER_POSE_N);
+    if (n <= 0 || n > 8) return;
     int i;
     for (i = 0; i < n; i++) {
-        DWORD obj = items[i];
-        if (!obj || IsBadReadPtr((void *)obj, 0x1100)) continue;
-        if (*(DWORD *)obj != 0x4D4ED8) continue; /* tipper vtable (Tipper_ctor) */
-        float x = *(float *)(obj + 0x10D8);
-        float y = *(float *)(obj + 0x10DC);
-        float z = *(float *)(obj + 0x10E0);
-        float yaw = *(float *)(obj + 0x10E8);
+        float *pp = (float *)((char *)ext + UNI_TIPPER_POSES + i * 16);
         char timerBuf[256];
         { int zi; for (zi = 0; zi < 256; zi++) timerBuf[zi] = 0; }
         g_TimerInit(timerBuf);
-        g_GfxScaleY(timerBuf, yaw);
-        g_GfxSetPosition(timerBuf, x, y, z);
+        g_GfxScaleY(timerBuf, pp[3]);
+        g_GfxSetPosition(timerBuf, pp[0], pp[1], pp[2]);
         mesh58((DWORD)tipMesh, (DWORD)meshVtbl);
         mesh54((DWORD)tipMesh, timerBuf);
         g_TimerCleanup(timerBuf);

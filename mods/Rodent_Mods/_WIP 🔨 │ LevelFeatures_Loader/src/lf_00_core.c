@@ -933,6 +933,8 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_SAW_MESH         0x86CC  /* Saw mesh (Toob) */
 #define UNI_FALLOUT_MESH     0x86D0  /* Fallout mesh (Toob) */
 #define UNI_GLUEBIE_MESH     0x86D4  /* Gluebie mesh (Dizzy) */
+#define UNI_TIPPER_POSES     0xBB00  /* 8 tipper poses x,y,z,yaw (16B each) */
+#define UNI_TIPPER_POSE_N    0xBB80  /* tipper pose count */
 #define UNI_LOOPER_MESH      0x86D8  /* Looper mesh (Impossible) */
 #define UNI_GEAR_MESH        0x86DC  /* Gear mesh (Impossible) */
 #define UNI_BIGGEAR_MESH     0x86E0  /* BigGear mesh (Impossible) */
