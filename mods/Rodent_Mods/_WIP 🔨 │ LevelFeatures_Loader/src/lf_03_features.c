@@ -227,8 +227,15 @@ static void Feature_BridgeAnimation(void *board, int level) {
  * every board -- appending crashed/hung twice), no object walks (poses
  * stored at create). Per tipper: TimerInit + ScaleY(yaw) + SetPosition +
  * v[0x58] + v[0x54] + Cleanup. Static yaw for now; deflection later. */
+static int g_tipFrames = 0;
+static void *g_tipBoard = NULL;
 static void Feature_TipperVisual(void *board, int level) {
     if (*(BYTE*)((char*)board+0x874)) return;
+    if (board != g_tipBoard) { g_tipBoard = board; g_tipFrames = 0; }
+    /* Load gate: the solidify calls mutate spatial state. Firing during
+     * FinishLoad corrupts the in-progress load ("Could not load: 86L").
+     * Wait ~10s of frames so load + countdown fully complete first. */
+    if (g_tipFrames < 600) { g_tipFrames++; return; }
     if (!g_SceneUpdate) return;
     void* ext = GetBoardExt(board);
     if (!ext) return;
