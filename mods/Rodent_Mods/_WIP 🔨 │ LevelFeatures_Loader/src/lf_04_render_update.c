@@ -495,7 +495,6 @@ void __fastcall UniversalBoardUpdate(void *board) {
     /* Tipper visuals (any universal board with tippers) */
     if (features & FEAT_TIPPER_VIS) {
         Feature_TipperVisual(board, level);
-        Feature_TipperPin(board);
     }
 
     /* Swirl zones (Dizzy + Master) */

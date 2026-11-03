@@ -301,58 +301,6 @@ static float my_cos_deg(float deg) {
     return my_sin_deg(deg + 90.0f);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
- * Feature block: Tipper pin (Dizzy) — user 2026-11-03: use the EXACT
- * collision mesh from their collision-good DLL, no fake walls.
- * Verified: that DLL registers nothing custom (single S1-mesh use, same
- * create path); its solidity = intact native chain. The native tip
- * machine appends the tipper vis (TipperVisual, wraps the real 68-vert
- * Level3-Tipper S6) to board+0x8B0+0x18 on fire (0x437AEF, sound +
- * 0x453810 thiscall) and removes it when the tip ends (0x437BC1,
- * 0x453690). Ball_FindMeshCollision (0x403980) reads that list, so the
- * vis IS the collision mesh while present. This pin keeps it present
- * once fired (same native call, per-tipper latch) instead of blinking,
- * using the exact mesh — no accumulator walls.
- * Append ONLY after the tip machine has posed the vis (F0>3 or state
- * nonzero): appending a never-fired (unposed, F0=0) vis puts garbage
- * matrices into the collision tree -> Update crash ~12s in (tip23/24).
- * ═══════════════════════════════════════════════════════════════════════════ */
-static int g_tipPinN = 0;
-static void *g_tipPinBoard = NULL;
-static DWORD g_tipPinObjs[8];
-static void Feature_TipperPin(void *board) {
-    if (*(BYTE*)((char*)board+0x874)) return;
-    if (board != g_tipPinBoard) { g_tipPinBoard = board; g_tipPinN = 0; }
-    if (g_tipPinN >= 8) return;
-    if (!g_AthenaListGetSize || !g_AthenaListAppend) return;
-    int ni = g_AthenaListGetSize((void *)((char *)board + UNI_OBJ_LIST));
-    if (ni <= 0) return;
-    DWORD *items = *(DWORD **)((char *)board + UNI_OBJ_LIST + 0x40C);
-    if (!items || IsBadReadPtr((void *)items, ni * 4)) return;
-    DWORD rend = *(DWORD *)((char *)board + 0x8B0);
-    if (!rend || IsBadReadPtr((void *)rend, 0x20)) return;
-    void *list = (void *)((char *)rend + 0x18);
-    int ti;
-    for (ti = 0; ti < ni; ti++) {
-        DWORD obj = items[ti];
-        if (!obj || IsBadReadPtr((void *)obj, 0x1100)) continue;
-        if (*(DWORD *)obj != 0x4D4ED8) continue;
-        /* only posed (fired) visses: F0 nonzero or machine running */
-        float F0 = *(float *)(obj + 0x10F0);
-        int st = *(int *)(obj + 0x10F8);
-        if (F0 < 3.0f && F0 > -3.0f && st == 0) continue;
-        int k, latched = 0;
-        for (k = 0; k < g_tipPinN; k++) {
-            if (g_tipPinObjs[k] == obj) { latched = 1; break; }
-        }
-        if (latched) continue;
-        DWORD vis = *(DWORD *)(obj + 0x10D4);
-        if (!vis || IsBadReadPtr((void *)vis, 4)) continue;
-        g_AthenaListAppend(list, (int)vis);
-        if (g_tipPinN < 8) g_tipPinObjs[g_tipPinN++] = obj;
-    }
-}
-
 static void Feature_SwirlZones(void *board, int level) {
     // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
     if (*(BYTE*)((char*)board+0x874)) return;
