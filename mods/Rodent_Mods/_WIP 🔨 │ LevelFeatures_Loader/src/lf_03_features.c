@@ -335,8 +335,9 @@ static void Feature_TipperWalls(void *board) {
         float F0 = *(float *)(obj + 0x10F0);
         float aF0 = F0 < 0 ? -F0 : F0;
         if (aF0 < 3.0f) continue; /* flush: track solid is enough */
-        float H = 6.0f + aF0 * 0.4f;
-        if (H > 30.0f) H = 30.0f;
+        /* Hump visual is ~21u tall (rig-measured vs 52u ball); H tracks F0. */
+        float H = 4.0f + aF0 * 0.3f;
+        if (H > 24.0f) H = 24.0f;
         float px = *(float *)(obj + 0x10D8);
         float py = *(float *)(obj + 0x10DC);
         float pz = *(float *)(obj + 0x10E0);
@@ -345,8 +346,8 @@ static void Feature_TipperWalls(void *board) {
         float ca = my_cos_deg(-yaw), sa = my_sin_deg(-yaw);
         float cx = px + 47.7f * ca - (-23.75f) * sa;
         float cz = pz + 47.7f * sa + (-23.75f) * ca;
-        /* AABB of yaw-rotated 95x142 plate + margin, in yaw frame below */
-        float hx = 60.0f, hz = 83.0f;
+        /* Box hugs the 95x142 visual (+small margin); yaw frame below. */
+        float hx = 56.0f, hz = 90.0f;
         float top = py + H, bot = py - 2.0f;
         int bi;
         for (bi = 0; bi < nb; bi++) {
@@ -381,8 +382,8 @@ static void Feature_TipperWalls(void *board) {
                     acc[1] += f; /* top: stand */
                 } else if (penx <= penz && penx <= penb) {
                     float f = penx * 8.0f; if (f > 70.0f) f = 70.0f;
-                    acc[0] += (dx < 0 ? -f * ca : f * ca) + 0.0f;
-                    acc[2] += (dx < 0 ? -f * (-sa) : f * (-sa));
+                    acc[0] += (dx < 0 ? -f * ca : f * ca);
+                    acc[2] += (dx < 0 ? f * sa : -f * sa);
                 } else if (penz <= penb) {
                     float f = penz * 8.0f; if (f > 70.0f) f = 70.0f;
                     acc[0] += (dz < 0 ? -f * sa : f * sa);
