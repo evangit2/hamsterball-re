@@ -424,6 +424,53 @@ static void Feature_SwirlZones(void *board, int level) {
     void *zoneBase = isDizzy ? board : ext;
     DWORD zoneOff = isDizzy ? 0x4378 : (DWORD)swirlListOfs;
 
+    /* TEMP DIAG (glue-weak): every 30th frame, log ball vs zones so one user
+     * run shows whether the ball enters fields and whether scale applies.
+     * REMOVE before closing the gluebie fault. */
+    if (isDizzy) {
+        static int glueDiagTick = 0;
+        if ((glueDiagTick++ % 30) == 0 && ballIdx && !IsBadReadPtr((void *)ballIdx, 0x300)) {
+            int zc = 0; float bestD = 1e30f; float bestR = 0.0f;
+            DWORD za = *(DWORD *)((char *)zoneBase + zoneOff + 0x40C);
+            zc = *(int *)((char *)zoneBase + zoneOff + 4);
+            if (zc > 0 && za && !IsBadReadPtr((void *)za, zc * 4)) {
+                int k; float bx = *(float *)(ballIdx + BALL_POS_X_OFS);
+                float by = *(float *)(ballIdx + BALL_POS_Y_OFS);
+                float bz = *(float *)(ballIdx + BALL_POS_Z_OFS);
+                for (k = 0; k < zc; k++) {
+                    int z = *(int *)(za + k * 4);
+                    if (!z || IsBadReadPtr((void *)z, 0x1108)) continue;
+                    float dx = *(float *)(z + 0x10D4) - bx;
+                    float dy = *(float *)(z + 0x10D8) - by;
+                    float dz = *(float *)(z + 0x10DC) - bz;
+                    float d = sqrtf(dx*dx + dy*dy + dz*dz);
+                    float r = *(float *)(z + 0x1100) * 60.0f;
+                    if (d < bestD) { bestD = d; bestR = r; }
+                }
+                {
+                    DWORD ph = *(DWORD *)(ballIdx + BALL_PHYS_PTR_OFS);
+                    float sp = 0.0f;
+                    if (ph && !IsBadReadPtr((void *)ph, 0xCB0)) {
+                        float vx = *(float *)(ph + BALL_PHYS_VEL_X);
+                        float vy = *(float *)(ph + BALL_PHYS_VEL_Y);
+                        float vz = *(float *)(ph + BALL_PHYS_VEL_Z);
+                        sp = sqrtf(vx*vx + vy*vy + vz*vz);
+                    }
+                    char gb[220];
+                    wsprintfA(gb, "GLUEDIAG ball=(%.0f,%.0f,%.0f) spd=%.1f zones=%d near=%.0f rad=%.0f %s",
+                        *(float *)(ballIdx + BALL_POS_X_OFS), *(float *)(ballIdx + BALL_POS_Y_OFS),
+                        *(float *)(ballIdx + BALL_POS_Z_OFS), sp, zc, bestD, bestR,
+                        (bestD < bestR) ? "HIT" : "-");
+                    DebugLog(gb);
+                }
+            } else {
+                char gb2[96];
+                wsprintfA(gb2, "GLUEDIAG no zones: count=%d arr=0x%X nball=%d", zc, za, ballCount);
+                DebugLog(gb2);
+            }
+        }
+    }
+
     /* NATIVE PARITY (Dizzy 0x41D510 lines 92-107): clear every zone's +0x1104
      * at frame start, before the ball loop sets the hit ones. LFL set 1 on
      * hit but never cleared — first touch froze that gluebie's anim forever
