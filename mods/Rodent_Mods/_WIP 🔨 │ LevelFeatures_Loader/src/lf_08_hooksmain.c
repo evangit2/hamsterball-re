@@ -780,6 +780,7 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     /* Resolve CreateDynamicObjects ctors */
     g_TipperCtor = (Ctor3_t)(g_moduleBase + RVA_Tipper_ctor);
     g_TipperVisualCtor = (TipperVisual_ctor_t)(g_moduleBase + RVA_TipperVisual_ctor);
+    g_TipperUpdate = (TipperUpdate_t)(g_moduleBase + RVA_Tipper_Update);
     g_GluebieCtor = (Ctor3_t)(g_moduleBase + RVA_Gluebie_ctor);
     g_CatapultCtor = (Ctor3_t)(g_moduleBase + RVA_Catapult_ctor);
     g_MaceCtor = (Ctor3_t)(g_moduleBase + RVA_Mace_ctor);

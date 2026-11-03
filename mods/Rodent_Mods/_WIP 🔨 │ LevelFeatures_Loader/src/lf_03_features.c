@@ -228,30 +228,50 @@ static void Feature_BridgeAnimation(void *board, int level) {
  * stored at create). Per tipper: TimerInit + ScaleY(yaw) + SetPosition +
  * v[0x58] + v[0x54] + Cleanup. Static yaw for now; deflection later. */
 static void Feature_TipperVisual(void *board, int level) {
-    /* NATIVE TAIL (Dizzy 0x437C0B-0x437C6F, byte-matched): obj v[0x58]()
-     * then obj v[0x54](obj, posed timer). LOAD GATE on board+0x3A44
-     * (the base render's own live flag: 0 = loading, !=0 = live).
-     * Frame-count gates failed everywhere (600 frames elapse mid-load on
-     * fast AND slow machines) -> mid-load device calls corrupt the loader
-     * ("Could not load: 86L"). This gate is what the engine itself uses. */
+    /* Plan A (2026-11-03): drive native slot-11 update 0x437A40 per tipper.
+     * Native owns the 0-3 fire/hold/blink machine, the Append/Remove of vis
+     * on board+0x8B0+0x18, the Play3D fire sound, and the pose tail. Same
+     * gates as bridge (pause + board+0x3A44 live flag + native-ctor skip).
+     * If this crashes/misbehaves, Plan B = replicate the machine in C
+     * (old manual static-yaw draw kept below under #if 0). */
     if (*(BYTE*)((char*)board+0x874)) return;
-    if (!g_SceneUpdate) return;
+    if (!g_TipperUpdate) return;
     if (*(int *)((char *)board + 0x3A44) == 0) return;
     void* ext = GetBoardExt(board);
     if (!ext) return;
     if (*(int *)((char *)ext + UNI_NATIVE_CTOR)) return;
-    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
-    if (!app || IsBadReadPtr((void *)app, 0x600)) return;
-    if (!g_TimerInit || !g_TimerCleanup || !g_GfxScaleZ || !g_GfxScaleX || !g_GfxSetPosition) return;
-    void *gfx = *(void **)(app + 0x174);
-    if (!gfx) return;
-    int ni = g_AthenaListGetSize ? g_AthenaListGetSize((void *)((char *)board + UNI_OBJ_LIST)) : 0;
+    if (!g_AthenaListGetSize) return;
+    int ni = g_AthenaListGetSize((void *)((char *)board + UNI_OBJ_LIST));
     if (ni <= 0) return;
     DWORD *items = *(DWORD **)((char *)board + UNI_OBJ_LIST + 0x40C);
     if (!items || IsBadReadPtr((void *)items, ni * 4)) return;
     int i;
     for (i = 0; i < ni; i++) {
         DWORD obj = items[i];
+        if (!obj || IsBadReadPtr((void *)obj, 0x1104)) continue;
+        if (*(DWORD *)obj != 0x4D4ED8) continue;
+        g_TipperUpdate((void *)obj);
+    }
+    return;
+#if 0
+    /* Plan B fallback: old manual static-yaw draw (no state machine). */
+    if (!g_SceneUpdate) return;
+    if (*(int *)((char *)board + 0x3A44) == 0) return;
+    void* ext2 = GetBoardExt(board);
+    if (!ext2) return;
+    if (*(int *)((char *)ext2 + UNI_NATIVE_CTOR)) return;
+    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+    if (!app || IsBadReadPtr((void *)app, 0x600)) return;
+    if (!g_TimerInit || !g_TimerCleanup || !g_GfxScaleZ || !g_GfxScaleX || !g_GfxSetPosition) return;
+    void *gfx = *(void **)(app + 0x174);
+    if (!gfx) return;
+    int ni2 = g_AthenaListGetSize ? g_AthenaListGetSize((void *)((char *)board + UNI_OBJ_LIST)) : 0;
+    if (ni2 <= 0) return;
+    DWORD *items2 = *(DWORD **)((char *)board + UNI_OBJ_LIST + 0x40C);
+    if (!items2 || IsBadReadPtr((void *)items2, ni2 * 4)) return;
+    int j;
+    for (j = 0; j < ni2; j++) {
+        DWORD obj = items2[j];
         if (!obj || IsBadReadPtr((void *)obj, 0x1100)) continue;
         if (*(DWORD *)obj != 0x4D4ED8) continue;
         DWORD vis = *(DWORD *)(obj + 0x10D4);
@@ -279,6 +299,7 @@ static void Feature_TipperVisual(void *board, int level) {
         }
         g_TimerCleanup(timerBuf);
     }
+#endif
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

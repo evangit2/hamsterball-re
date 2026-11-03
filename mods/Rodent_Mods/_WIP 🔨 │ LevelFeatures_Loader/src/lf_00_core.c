@@ -68,6 +68,7 @@ void DebugLog(const char *msg);
 /* CreateDynamicObjects ctor RVAs */
 #define RVA_Tipper_ctor              0x00037960
 #define RVA_TipperVisual_ctor        0x000661a0
+#define RVA_Tipper_Update            0x00037A40 /* tipper slot-11 update (FUN_00437A40, Ghidra-created 2026-11-03): 4-state fire/hold/blink machine + pose tail */
 #define RVA_Gluebie_ctor             0x00037cb0
 #define RVA_Catapult_ctor            0x00037e10
 #define RVA_Mace_ctor                0x00038750

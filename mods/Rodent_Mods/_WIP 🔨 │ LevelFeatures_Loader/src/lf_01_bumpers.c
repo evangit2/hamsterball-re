@@ -75,6 +75,11 @@ static void *g_Vec3ListFree = NULL;
 /* CreateDynamicObjects ctor pointers */
 static Ctor3_t g_TipperCtor = NULL;
 static TipperVisual_ctor_t g_TipperVisualCtor = NULL;
+/* Plan A (2026-11-03): drive the native tipper slot-11 update (0x437A40,
+ * __fastcall ECX=obj, returns 1). Native owns the 0-3 fire/hold/blink state
+ * machine + the Append/Remove of vis on board+0x8B0 + the pose tail. */
+typedef int (__fastcall *TipperUpdate_t)(void *obj);
+static TipperUpdate_t g_TipperUpdate = NULL;
 static Ctor3_t g_GluebieCtor = NULL;
 static Ctor3_t g_CatapultCtor = NULL;
 static Ctor3_t g_MaceCtor = NULL;
