@@ -311,11 +311,15 @@ static float my_cos_deg(float deg) {
  * 0x453810 thiscall) and removes it when the tip ends (0x437BC1,
  * 0x453690). Ball_FindMeshCollision (0x403980) reads that list, so the
  * vis IS the collision mesh while present. This pin keeps it present
- * ALWAYS (same native call, membership-checked, no dupes) instead of
+ * ALWAYS (same native call, append-once latch) instead of
  * blinking, using the exact mesh — no accumulator walls.
  * ═══════════════════════════════════════════════════════════════════════════ */
+static int g_tipPinned = 0;
+static void *g_tipPinBoard = NULL;
 static void Feature_TipperPin(void *board) {
     if (*(BYTE*)((char*)board+0x874)) return;
+    if (board != g_tipPinBoard) { g_tipPinBoard = board; g_tipPinned = 0; }
+    if (g_tipPinned) return; /* append once total (native fire-equivalent) */
     if (!g_AthenaListGetSize || !g_AthenaListAppend) return;
     int ni = g_AthenaListGetSize((void *)((char *)board + UNI_OBJ_LIST));
     if (ni <= 0) return;
@@ -324,26 +328,17 @@ static void Feature_TipperPin(void *board) {
     DWORD rend = *(DWORD *)((char *)board + 0x8B0);
     if (!rend || IsBadReadPtr((void *)rend, 0x20)) return;
     void *list = (void *)((char *)rend + 0x18);
-    int ti;
+    int ti, done = 0;
     for (ti = 0; ti < ni; ti++) {
         DWORD obj = items[ti];
         if (!obj || IsBadReadPtr((void *)obj, 0x1100)) continue;
         if (*(DWORD *)obj != 0x4D4ED8) continue;
         DWORD vis = *(DWORD *)(obj + 0x10D4);
         if (!vis || IsBadReadPtr((void *)vis, 4)) continue;
-        /* membership check: skip if already present (no dupes) */
-        int nc = g_AthenaListGetSize(list);
-        int found = 0, k = 0;
-        if (nc > 0 && nc < 256) {
-            DWORD *litems = *(DWORD **)((char *)list + 0x40C);
-            if (litems && !IsBadReadPtr((void *)litems, nc * 4)) {
-                for (k = 0; k < nc; k++) {
-                    if (litems[k] == vis) { found = 1; break; }
-                }
-            }
-        }
-        if (!found) g_AthenaListAppend(list, (int)vis);
+        g_AthenaListAppend(list, (int)vis);
+        done++;
     }
+    if (done) g_tipPinned = 1; /* latch: never append again */
 }
 
 static void Feature_SwirlZones(void *board, int level) {
