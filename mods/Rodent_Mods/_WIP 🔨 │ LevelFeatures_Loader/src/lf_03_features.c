@@ -302,98 +302,47 @@ static float my_cos_deg(float deg) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * Feature block: Tipper walls (Dizzy) — user report 2026-11-03: ball
- * "passes through the sides" of the raised hump. Root cause: the plank's
- * S6 has only the 2 top strips (N:NOCONTROL); sides/bottom are hollow, and
- * the native tip blink toggles an EMPTY vis (no solidity change). The hump
- * raises with the native tip parameter F0 (obj+0x10F0) but has no walls.
- * Fix: per-frame AABB walls (accumulators ONLY, never pos-writes) centered
- * on the visual (S1 + R(-yaw)*(47.7,-23.75)), height follows |F0|.
- * Sign convention (-yaw) matches the native ScaleX(360-yaw) pose hint;
- * TIPBOX log lines let the user confirm placement (flip sign if mirrored).
- * Skipped while flush (F0<3, track solid handles it).
+ * Feature block: Tipper pin (Dizzy) — user 2026-11-03: use the EXACT
+ * collision mesh from their collision-good DLL, no fake walls.
+ * Verified: that DLL registers nothing custom (single S1-mesh use, same
+ * create path); its solidity = intact native chain. The native tip
+ * machine appends the tipper vis (TipperVisual, wraps the real 68-vert
+ * Level3-Tipper S6) to board+0x8B0+0x18 on fire (0x437AEF, sound +
+ * 0x453810 thiscall) and removes it when the tip ends (0x437BC1,
+ * 0x453690). Ball_FindMeshCollision (0x403980) reads that list, so the
+ * vis IS the collision mesh while present. This pin keeps it present
+ * ALWAYS (same native call, membership-checked, no dupes) instead of
+ * blinking, using the exact mesh — no accumulator walls.
  * ═══════════════════════════════════════════════════════════════════════════ */
-static int g_tipboxLog = 0;
-static void Feature_TipperWalls(void *board) {
+static void Feature_TipperPin(void *board) {
     if (*(BYTE*)((char*)board+0x874)) return;
-    void* ext = GetBoardExt(board);
-    if (!ext) return;
-    if (!g_AthenaListGetSize) return;
+    if (!g_AthenaListGetSize || !g_AthenaListAppend) return;
     int ni = g_AthenaListGetSize((void *)((char *)board + UNI_OBJ_LIST));
     if (ni <= 0) return;
     DWORD *items = *(DWORD **)((char *)board + UNI_OBJ_LIST + 0x40C);
     if (!items || IsBadReadPtr((void *)items, ni * 4)) return;
-    int nb = g_AthenaListGetSize((void *)((char *)board + UNI_BALL_LIST));
-    if (nb <= 0) return;
-    DWORD *bitems = *(DWORD **)((char *)board + UNI_BALL_LIST + 0x40C);
-    if (!bitems || IsBadReadPtr((void *)bitems, nb * 4)) return;
+    DWORD rend = *(DWORD *)((char *)board + 0x8B0);
+    if (!rend || IsBadReadPtr((void *)rend, 0x20)) return;
+    void *list = (void *)((char *)rend + 0x18);
     int ti;
     for (ti = 0; ti < ni; ti++) {
         DWORD obj = items[ti];
         if (!obj || IsBadReadPtr((void *)obj, 0x1100)) continue;
         if (*(DWORD *)obj != 0x4D4ED8) continue;
-        float F0 = *(float *)(obj + 0x10F0);
-        float aF0 = F0 < 0 ? -F0 : F0;
-        if (aF0 < 3.0f) continue; /* flush: track solid is enough */
-        /* Hump visual is ~21u tall (rig-measured vs 52u ball); H tracks F0. */
-        float H = 4.0f + aF0 * 0.3f;
-        if (H > 24.0f) H = 24.0f;
-        float px = *(float *)(obj + 0x10D8);
-        float py = *(float *)(obj + 0x10DC);
-        float pz = *(float *)(obj + 0x10E0);
-        float yaw = *(float *)(obj + 0x10E8);
-        /* visual center = S1 + R(-yaw)*(47.7,-23.75); 360-yaw per native pose */
-        float ca = my_cos_deg(-yaw), sa = my_sin_deg(-yaw);
-        float cx = px + 47.7f * ca - (-23.75f) * sa;
-        float cz = pz + 47.7f * sa + (-23.75f) * ca;
-        /* Box hugs the 95x142 visual (+small margin); yaw frame below. */
-        float hx = 56.0f, hz = 90.0f;
-        float top = py + H, bot = py - 2.0f;
-        int bi;
-        for (bi = 0; bi < nb; bi++) {
-            DWORD ball = bitems[bi];
-            if (!ball || IsBadReadPtr((void *)ball, 0x180)) continue;
-            float bx = *(float *)(ball + 0x164);
-            float by = *(float *)(ball + 0x168);
-            float bz = *(float *)(ball + 0x16C);
-            /* to yaw frame R(-yaw) (same convention as center above) */
-            float rx = bx - cx, rz = bz - cz;
-            float dx = rx * ca - rz * sa;
-            float dz = rx * sa + rz * ca;
-            float ex = hx + 26.0f, ez = hz + 26.0f;
-            if (dx > -ex && dx < ex && dz > -ez && dz < ez &&
-                by > bot - 26.0f && by < top + 26.0f) {
-                float penx = ex - (dx < 0 ? -dx : dx);
-                float penz = ez - (dz < 0 ? -dz : dz);
-                float pent = (top + 26.0f) - by;
-                float penb = by - (bot - 26.0f);
-                float *acc = (float *)(ball + 0x170);
-                if (g_tipboxLog < 6) {
-                    char lb[160];
-                    wsprintfA(lb, "TIPBOX tip=%d F0=%.1f H=%.1f ball=(%.0f,%.0f,%.0f)",
-                        ti, F0, H, bx, by, bz);
-                    DebugLog(lb);
-                    g_tipboxLog++;
-                }
-                /* smallest penetration wins; spring push, capped.
-                 * Top is gentle support (stand, not launch); sides block. */
-                if (pent <= penx && pent <= penz && pent <= penb) {
-                    float f = pent * 1.5f; if (f > 18.0f) f = 18.0f;
-                    acc[1] += f; /* top: stand */
-                } else if (penx <= penz && penx <= penb) {
-                    float f = penx * 8.0f; if (f > 70.0f) f = 70.0f;
-                    acc[0] += (dx < 0 ? -f * ca : f * ca);
-                    acc[2] += (dx < 0 ? f * sa : -f * sa);
-                } else if (penz <= penb) {
-                    float f = penz * 8.0f; if (f > 70.0f) f = 70.0f;
-                    acc[0] += (dz < 0 ? -f * sa : f * sa);
-                    acc[2] += (dz < 0 ? -f * ca : f * ca);
-                } else {
-                    float f = penb * 6.0f; if (f > 60.0f) f = 60.0f;
-                    acc[1] -= f; /* below: push down/out */
+        DWORD vis = *(DWORD *)(obj + 0x10D4);
+        if (!vis || IsBadReadPtr((void *)vis, 4)) continue;
+        /* membership check: skip if already present (no dupes) */
+        int nc = g_AthenaListGetSize(list);
+        int found = 0, k = 0;
+        if (nc > 0 && nc < 256) {
+            DWORD *litems = *(DWORD **)((char *)list + 0x40C);
+            if (litems && !IsBadReadPtr((void *)litems, nc * 4)) {
+                for (k = 0; k < nc; k++) {
+                    if (litems[k] == vis) { found = 1; break; }
                 }
             }
         }
+        if (!found) g_AthenaListAppend(list, (int)vis);
     }
 }
 
