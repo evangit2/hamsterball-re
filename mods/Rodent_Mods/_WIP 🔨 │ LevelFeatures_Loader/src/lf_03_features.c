@@ -227,56 +227,55 @@ static void Feature_BridgeAnimation(void *board, int level) {
  * every board -- appending crashed/hung twice), no object walks (poses
  * stored at create). Per tipper: TimerInit + ScaleY(yaw) + SetPosition +
  * v[0x58] + v[0x54] + Cleanup. Static yaw for now; deflection later. */
-static int g_tipFrames = 0;
-static void *g_tipBoard = NULL;
 static void Feature_TipperVisual(void *board, int level) {
+    /* NATIVE TAIL (Dizzy 0x437C0B-0x437C6F, byte-matched): obj v[0x58]()
+     * then obj v[0x54](obj, posed timer). LOAD GATE on board+0x3A44
+     * (the base render's own live flag: 0 = loading, !=0 = live).
+     * Frame-count gates failed everywhere (600 frames elapse mid-load on
+     * fast AND slow machines) -> mid-load device calls corrupt the loader
+     * ("Could not load: 86L"). This gate is what the engine itself uses. */
     if (*(BYTE*)((char*)board+0x874)) return;
-    if (board != g_tipBoard) { g_tipBoard = board; g_tipFrames = 0; }
-    /* Load gate: the solidify calls mutate spatial state. Firing during
-     * FinishLoad corrupts the in-progress load ("Could not load: 86L").
-     * Wait ~10s of frames so load + countdown fully complete first. */
-    if (g_tipFrames < 600) { g_tipFrames++; return; }
     if (!g_SceneUpdate) return;
+    if (*(int *)((char *)board + 0x3A44) == 0) return;
     void* ext = GetBoardExt(board);
     if (!ext) return;
     if (*(int *)((char *)ext + UNI_NATIVE_CTOR)) return;
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (!app || IsBadReadPtr((void *)app, 0x600)) return;
-    if (!g_TimerInit || !g_TimerCleanup || !g_GfxScaleY || !g_GfxSetPosition) return;
+    if (!g_TimerInit || !g_TimerCleanup || !g_GfxScaleZ || !g_GfxScaleX || !g_GfxSetPosition) return;
     void *gfx = *(void **)(app + 0x174);
     if (!gfx) return;
-    int n = *(int *)((char *)ext + UNI_TIPPER_POSE_N);
-    if (n <= 0 || n > 8) return;
     int ni = g_AthenaListGetSize ? g_AthenaListGetSize((void *)((char *)board + UNI_OBJ_LIST)) : 0;
     if (ni <= 0) return;
     DWORD *items = *(DWORD **)((char *)board + UNI_OBJ_LIST + 0x40C);
     if (!items || IsBadReadPtr((void *)items, ni * 4)) return;
-    int i, ti = 0;
-    for (i = 0; i < ni && ti < n; i++) {
+    int i;
+    for (i = 0; i < ni; i++) {
         DWORD obj = items[i];
         if (!obj || IsBadReadPtr((void *)obj, 0x1100)) continue;
-        if (*(DWORD *)obj != 0x4D4ED8) continue; /* tipper vtable (Tipper_ctor) */
-        float *pp = (float *)((char *)ext + UNI_TIPPER_POSES + ti * 16);
-        ti++;
+        if (*(DWORD *)obj != 0x4D4ED8) continue;
+        DWORD vis = *(DWORD *)(obj + 0x10D4);
+        if (!vis || IsBadReadPtr((void *)vis, 0x60)) continue;
+        DWORD *visVtbl = *(DWORD **)vis;
+        if (!visVtbl || IsBadReadPtr((void *)visVtbl, 0x60)) continue;
+        float px = *(float *)(obj + 0x10D8);
+        float py = *(float *)(obj + 0x10DC);
+        float pz = *(float *)(obj + 0x10E0);
+        float yaw = *(float *)(obj + 0x10E8);
         char timerBuf[256];
         { int zi; for (zi = 0; zi < 256; zi++) timerBuf[zi] = 0; }
         g_TimerInit(timerBuf);
-        g_GfxScaleY(timerBuf, pp[3]);
-        g_GfxSetPosition(timerBuf, pp[0], pp[1], pp[2]);
-        DWORD *objVtbl = *(DWORD **)obj;
-        if (objVtbl && !IsBadReadPtr((void *)objVtbl, 0x160)) {
-            /* Tail shape: v[0x58]() no args, v[0x54](obj, timer) with the
-             * posed timer -- byte-matched to the native gluebie tail. */
-            /* SOLIDIFY PULLED (tip11): the obj v[0x58]/v[0x54] calls break
-             * Dizzy load ("Could not load: 86L") even gated + correctly shaped.
-             * Mechanism TBD -- do NOT re-enable without rig proof. Poses kept. */
-            (void)objVtbl; (void)timerBuf;
-#if 0
-            void (__thiscall *fn58)(DWORD) = (void (__thiscall *)(DWORD))objVtbl[0x58];
-            void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))objVtbl[0x54];
-            if (fn58) fn58(obj);
-            if (fn54) fn54(obj, timerBuf);
-#endif
+        g_GfxScaleZ(timerBuf, 0.0f);
+        g_GfxScaleX(timerBuf, 360.0f - yaw);
+        g_GfxSetPosition(timerBuf, px, py, pz);
+        {
+            DWORD *ovt = *(DWORD **)obj;
+            if (ovt && !IsBadReadPtr((void *)ovt, 0x160)) {
+                void (__thiscall *fn58)(DWORD) = (void (__thiscall *)(DWORD))ovt[0x58];
+                void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))ovt[0x54];
+                if (fn58) fn58(obj);
+                if (fn54) fn54(obj, timerBuf);
+            }
         }
         g_TimerCleanup(timerBuf);
     }

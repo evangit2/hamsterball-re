@@ -201,6 +201,19 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
                       meshOff, meshVal, renderOff, *(int*)((char*)ext + renderOff), level, x2,y2,z2);
             DebugLog(dbg);
         }
+        /* The RenderCtor product's +0x434 node is NULL, so the bridge-style
+         * [0x16]/[0x15] trampoline draw no-ops on it. Share the mesh's node
+         * (MeshWorldCtor inits it) so the render actually draws. */
+        {
+            DWORD rObj = *(DWORD *)((char *)ext + UNI_TIPPER_RENDER);
+            DWORD mObj = *(DWORD *)((char *)ext + UNI_TIPPER_MESH);
+            if (rObj && mObj && !IsBadReadPtr((void *)rObj, 0x440) && !IsBadReadPtr((void *)mObj, 0x440)) {
+                DWORD mNode = *(DWORD *)((char *)mObj + 0x434);
+                DWORD rNode = *(DWORD *)((char *)rObj + 0x434);
+                if (mNode && !rNode && !IsBadReadPtr((void *)mNode, 4))
+                    *(DWORD *)((char *)rObj + 0x434) = mNode;
+            }
+        }
         void *mem = g_operatorNew(0x1104);
         if (mem) {
             /* Mirror into the native mesh slot first (native Dizzy create
@@ -221,9 +234,17 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             }
             void *vmem = g_operatorNew(0x10D0);
             if (vmem) {
-                void *vis = g_TipperVisualCtor(vmem, *(int*)((char*)ext + renderOff));
+                /* Visual source MUST be the tipper Level (mesh), not the render:
+                 * TipperVisual_ctor clones Level trees from arg+0x18. A render
+                 * has no tree list -> empty visual -> invisible planks. */
+                void *vis = g_TipperVisualCtor(vmem, meshVal);
                 o[0x435] = (DWORD)vis;
                 g_TipperVisualAttach(vis, (void*)obj);
+                /* ENGINE REGISTRATION PULLED (tip18): appending vis to
+                 * board+0x8B0+0x18 lets the base render draw it, but the vis
+                 * as built (trees cloned from the minimal Level3-Tipper)
+                 * crashes the engine renderer. Do NOT re-enable without a
+                 * drawable vis. */
             }
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             /* Store pose for the mesh draw (no 0x2578 walk at draw time). */
@@ -238,11 +259,12 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         }
         OrBoardFeat(board, FEAT_TIPPER_VIS);
         OrBoardFeat(board, FEAT_SWIRL);
-        /* Native Dizzy TIPPER (Dizzy_CreateDynamicObjects 0x40A643-0x40A6FB,
-         * binary-verified: "TIPPER"@0x4CF69C) stores vis at obj+0x10D4 and
-         * appends obj to board+0x2578, leaving out1/out2 UNTOUCHED. Writing
-         * out1=obj would double-append via Setup; writing out2=vis would put
-         * a non-object in an object list. Leave both alone. */
+        /* NATIVE BUGFIX: Dizzy_CreateDynamicObjects leaves out1/out2
+         * UNTOUCHED for TIPPER (gluebie returns obj). The S1 dispatcher
+         * appends out1 to the scene-drawn list; untouched = never drawn =
+         * invisible planks (vanilla quirk). Return obj like gluebie does.
+         * (No double-append: out1 goes to the scene list, not 0x2578.) */
+        *(int*)out1 = (int)obj; *(int*)out2 = 0;
         return;
     }
 
