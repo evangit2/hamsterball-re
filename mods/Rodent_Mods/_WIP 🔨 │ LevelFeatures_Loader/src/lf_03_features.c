@@ -265,10 +265,18 @@ static void Feature_TipperVisual(void *board, int level) {
         g_GfxSetPosition(timerBuf, pp[0], pp[1], pp[2]);
         DWORD *objVtbl = *(DWORD **)obj;
         if (objVtbl && !IsBadReadPtr((void *)objVtbl, 0x160)) {
+            /* Tail shape: v[0x58]() no args, v[0x54](obj, timer) with the
+             * posed timer -- byte-matched to the native gluebie tail. */
+            /* SOLIDIFY PULLED (tip11): the obj v[0x58]/v[0x54] calls break
+             * Dizzy load ("Could not load: 86L") even gated + correctly shaped.
+             * Mechanism TBD -- do NOT re-enable without rig proof. Poses kept. */
+            (void)objVtbl; (void)timerBuf;
+#if 0
             void (__thiscall *fn58)(DWORD) = (void (__thiscall *)(DWORD))objVtbl[0x58];
             void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))objVtbl[0x54];
             if (fn58) fn58(obj);
             if (fn54) fn54(obj, timerBuf);
+#endif
         }
         g_TimerCleanup(timerBuf);
     }
