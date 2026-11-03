@@ -386,6 +386,10 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
              * content (not slot): Dizzy file in any slot drives it. */
             if (GetCurrentLevel(board) == 4 || ContentFileId(GetBoardExt(board)) == 4)
                 g_AthenaListAppend((void*)((char*)board + 0x4378), (int)obj);
+            /* Gluebie-only boards (custom levels with GLUEBIE but no
+             * TIPPER/WATERWHEEL/SWIRL S1) never got FEAT_SWIRL — the slow
+             * never ran at all. Gluebies ARE the zones; enable it here. */
+            OrBoardFeat(board, FEAT_SWIRL);
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;

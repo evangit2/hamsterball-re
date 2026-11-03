@@ -449,9 +449,24 @@ static void Feature_SwirlZones(void *board, int level) {
                     float ballX = *(float *)(ballIdx + BALL_POS_X_OFS);
                     float ballY = *(float *)(ballIdx + BALL_POS_Y_OFS);
                     float ballZ = *(float *)(ballIdx + BALL_POS_Z_OFS);
-                    float zoneX = *(float *)(zoneIdx + 0x10E0);
-                    float zoneY = *(float *)(zoneIdx + 0x10E4);
-                    float zoneZ = *(float *)(zoneIdx + 0x10E8);
+                    float zoneX, zoneY, zoneZ;
+                    /* NATIVE DATA BUG (2026-11-03): Dizzy reads zone pos from
+                     * obj+0x10E0/4/8, but NOTHING ever writes it there — ctor
+                     * and create skip it, and the native gluebie update
+                     * (FUN_0043ECC0, driven via the slot-19 0x2578 walk)
+                     * zeroes it every frame. So native-zone reads are (0,0,0)
+                     * and our S1 seed at create is wiped before we read it.
+                     * obj+0x10D4/8/C carries the S1 pos stably (create triple,
+                     * update only reads it for posing) — use it on Dizzy. */
+                    if (isDizzy) {
+                        zoneX = *(float *)(zoneIdx + 0x10D4);
+                        zoneY = *(float *)(zoneIdx + 0x10D8);
+                        zoneZ = *(float *)(zoneIdx + 0x10DC);
+                    } else {
+                        zoneX = *(float *)(zoneIdx + 0x10E0);
+                        zoneY = *(float *)(zoneIdx + 0x10E4);
+                        zoneZ = *(float *)(zoneIdx + 0x10E8);
+                    }
                     float radius = *(float *)(zoneIdx + 0x1100) * 60.0f;
 
                     float dx = zoneX - ballX;
