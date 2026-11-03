@@ -424,6 +424,27 @@ static void Feature_SwirlZones(void *board, int level) {
     void *zoneBase = isDizzy ? board : ext;
     DWORD zoneOff = isDizzy ? 0x4378 : (DWORD)swirlListOfs;
 
+    /* NATIVE PARITY (Dizzy 0x41D510 lines 92-107): clear every zone's +0x1104
+     * at frame start, before the ball loop sets the hit ones. LFL set 1 on
+     * hit but never cleared — first touch froze that gluebie's anim forever
+     * (native gluebie update reads the flag for its motion branch). */
+    if (g_AthenaListGetIterator && g_AthenaListGetSize) {
+        int clrIter = g_AthenaListGetIterator((void *)((char *)zoneBase + zoneOff));
+        if (clrIter >= 0) {
+            int clrCount = *(int *)((char *)zoneBase + zoneOff + 4);
+            DWORD clrArr = *(DWORD *)((char *)zoneBase + zoneOff + 0x40C);
+            if (clrCount > 0 && clrArr && !IsBadReadPtr((void *)clrArr, clrCount * 4)) {
+                int k;
+                for (k = 0; k < clrCount; k++) {
+                    int z = *(int *)(clrArr + k * 4);
+                    if (z && !IsBadReadPtr((void *)z, 0x1108))
+                        *(BYTE *)((char *)z + 0x1104) = 0;
+                }
+            }
+            *(int *)((char *)zoneBase + zoneOff + 8 + clrIter * 4) = 0;
+        }
+    }
+
     while (ballIdx) {
         /* Skip balls in tar (ball+0x2CC != 0) — they get sinking logic */
         char inTar = *(char *)(ballIdx + BALL_IN_TAR_OFS);
