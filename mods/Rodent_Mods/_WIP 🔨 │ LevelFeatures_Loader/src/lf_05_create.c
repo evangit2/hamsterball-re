@@ -234,10 +234,21 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             }
             void *vmem = g_operatorNew(0x10D0);
             if (vmem) {
-                /* Visual source MUST be the tipper Level (mesh), not the render:
-                 * TipperVisual_ctor clones Level trees from arg+0x18. A render
-                 * has no tree list -> empty visual -> invisible planks. */
-                void *vis = g_TipperVisualCtor(vmem, meshVal);
+                /* NATIVE-EXACT (2026-11-03): Dizzy_CreateDynamicObjects passes
+                 * board+0x4370 (the Level3-Tipper RENDER) to TipperVisual_ctor,
+                 * not the mesh. The render carries the tree/S6 arrangement the
+                 * clone + collision expect; mesh-sourced visses render but stay
+                 * hollow (ball passes through). Fall back to mesh only if the
+                 * render is missing. */
+                DWORD rVal = *(DWORD *)((char *)ext + UNI_TIPPER_RENDER);
+                void *visSrc = (rVal && !IsBadReadPtr((void *)rVal, 0x440))
+                    ? (void *)rVal : meshVal;
+                if (BoardHasOffset(board, 0x4370, 4)) {
+                    int natR = *(int *)((char *)board + 0x4370);
+                    if ((!natR || IsBadReadPtr((void *)natR, 4)) && visSrc == (void *)rVal)
+                        *(int *)((char *)board + 0x4370) = (int)rVal;
+                }
+                void *vis = g_TipperVisualCtor(vmem, visSrc);
                 o[0x435] = (DWORD)vis;
                 g_TipperVisualAttach(vis, (void*)obj);
                 /* ENGINE REGISTRATION PULLED (tip18): appending vis to
