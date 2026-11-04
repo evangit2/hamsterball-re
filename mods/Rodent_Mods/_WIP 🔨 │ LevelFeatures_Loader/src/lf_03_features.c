@@ -440,9 +440,15 @@ static void Feature_SwirlZones(void *board, int level) {
                 for (k = 0; k < zc; k++) {
                     int z = *(int *)(za + k * 4);
                     if (!z || IsBadReadPtr((void *)z, 0x1108)) continue;
-                    float dx = *(float *)(z + 0x10D4) - bx;
-                    float dy = *(float *)(z + 0x10D8) - by;
-                    float dz = *(float *)(z + 0x10DC) - bz;
+                    float qx = *(float *)(z + 0x10E0);
+                    float qy = *(float *)(z + 0x10E4);
+                    float qz = *(float *)(z + 0x10E8);
+                    float dx, dy, dz;
+                    if (qx == 0.0f && qy == 0.0f && qz == 0.0f) {
+                        dx = *(float *)(z + 0x10D4) - bx;
+                        dy = *(float *)(z + 0x10D8) - by;
+                        dz = *(float *)(z + 0x10DC) - bz;
+                    } else { dx = qx - bx; dy = qy - by; dz = qz - bz; }
                     float d = sqrtf(dx*dx + dy*dy + dz*dz);
                     float r = *(float *)(z + 0x1100) * 60.0f;
                     if (d < bestD) { bestD = d; bestR = r; }
@@ -520,18 +526,22 @@ static void Feature_SwirlZones(void *board, int level) {
                     float ballY = *(float *)(ballIdx + BALL_POS_Y_OFS);
                     float ballZ = *(float *)(ballIdx + BALL_POS_Z_OFS);
                     float zoneX, zoneY, zoneZ;
-                    /* NATIVE DATA BUG (2026-11-03): Dizzy reads zone pos from
-                     * obj+0x10E0/4/8, but NOTHING ever writes it there — ctor
-                     * and create skip it, and the native gluebie update
-                     * (FUN_0043ECC0, driven via the slot-19 0x2578 walk)
-                     * zeroes it every frame. So native-zone reads are (0,0,0)
-                     * and our S1 seed at create is wiped before we read it.
-                     * obj+0x10D4/8/C carries the S1 pos stably (create triple,
-                     * update only reads it for posing) — use it on Dizzy. */
+                    /* CENTER = LIVE POS (Dizzy 0x41D820-862: native reads
+                     * obj+0x10E0/4/8 as the zone center). +0x10D4/8/C is the
+                     * static S1 home; +0x10E0/4/8 is where the gluebie's
+                     * motion update writes its current position. Reading home
+                     * parked every field where the gluebie STARTED while the
+                     * visual wandered off — touching the visual did nothing.
+                     * Zero-guard falls back to home (never origin). */
                     if (isDizzy) {
-                        zoneX = *(float *)(zoneIdx + 0x10D4);
-                        zoneY = *(float *)(zoneIdx + 0x10D8);
-                        zoneZ = *(float *)(zoneIdx + 0x10DC);
+                        float lx = *(float *)(zoneIdx + 0x10E0);
+                        float ly = *(float *)(zoneIdx + 0x10E4);
+                        float lz = *(float *)(zoneIdx + 0x10E8);
+                        if (lx == 0.0f && ly == 0.0f && lz == 0.0f) {
+                            zoneX = *(float *)(zoneIdx + 0x10D4);
+                            zoneY = *(float *)(zoneIdx + 0x10D8);
+                            zoneZ = *(float *)(zoneIdx + 0x10DC);
+                        } else { zoneX = lx; zoneY = ly; zoneZ = lz; }
                     } else {
                         zoneX = *(float *)(zoneIdx + 0x10E0);
                         zoneY = *(float *)(zoneIdx + 0x10E4);
