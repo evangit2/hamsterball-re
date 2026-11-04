@@ -463,12 +463,12 @@ static void Feature_SwirlZones(void *board, int level) {
                         (int)*(float *)(ballIdx + BALL_POS_X_OFS), (int)*(float *)(ballIdx + BALL_POS_Y_OFS),
                         (int)*(float *)(ballIdx + BALL_POS_Z_OFS), spi, zc, (int)bestD, (int)bestR,
                         (bestD < bestR) ? "HIT" : "-");
-                    DebugLog(gb);
+                    DebugLogForce(gb);
                 }
             } else {
                 char gb2[96];
                 wsprintfA(gb2, "GLUEDIAG no zones: count=%d arr=0x%X nball=%d", zc, za, ballCount);
-                DebugLog(gb2);
+                DebugLogForce(gb2);
             }
         }
     }

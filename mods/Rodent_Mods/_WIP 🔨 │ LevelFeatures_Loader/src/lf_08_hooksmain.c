@@ -602,7 +602,10 @@ void DebugLog(const char *msg) {
     /* LOGGING DISABLED 2026-11-02 (user: per-frame file I/O on the game
      * thread lagged loads and dropped Dizzy to ~2fps; 600 identical swirl
      * lines per session). All call sites stay; re-enable by deleting the
-     * next line when diagnostics are needed. */
+     * next line when diagnostics are needed.
+     * TEMP-DIAG channels use DebugLogForce below (own handle, throttled
+     * call sites only) so diagnostics still reach disk while this stays off.
+     */
     (void)msg; return;
     /* Keep-one-handle: open once per process (append), flush per line.
      * (Per-line open/write/close lost the tail whenever an external
@@ -659,6 +662,61 @@ void DebugLog(const char *msg) {
 }
 
 /* Forward declaration for auto-test (unused, kept for future testing) */
+
+/* TEMP-DIAG direct log channel: bypasses the disabled DebugLog above.
+ * Own keep-one handle, same path/fallback logic. ONLY throttled TEMP-DIAG
+ * call sites (<=2 lines/sec) may use this — never hot paths. */
+static HANDLE hForceLog = NULL;
+static int forceInitTried = 0;
+static char forceLogPath[MAX_PATH];
+void DebugLogForce(const char *msg) {
+    if (!hForceLog && !forceInitTried) {
+        forceInitTried = 1;
+        if (g_configPath[0]) {
+            strcpy(forceLogPath, g_configPath);
+            char *p = strrchr(forceLogPath, '\\');
+            if (p) { strcpy(p + 1, "lfdebug.log"); }
+            else { strcpy(forceLogPath, "lfdebug.log"); }
+        } else {
+            strcpy(forceLogPath, "lfdebug.log");
+        }
+        hForceLog = CreateFileA(forceLogPath, GENERIC_WRITE,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hForceLog == INVALID_HANDLE_VALUE) {
+            hForceLog = NULL;
+            char tmp[MAX_PATH];
+            DWORD tl = GetTempPathA(MAX_PATH, tmp);
+            if (tl > 0 && tl < MAX_PATH - 12) {
+                strcpy(forceLogPath, tmp);
+                strcat(forceLogPath, "lfdebug.log");
+                HANDLE ht = CreateFileA(forceLogPath, GENERIC_WRITE,
+                                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                        NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                if (ht != INVALID_HANDLE_VALUE) hForceLog = ht;
+            }
+        }
+        if (hForceLog) {
+            SetFilePointer(hForceLog, 0, NULL, FILE_END);
+            /* INIT line proves which file got the log */
+            {
+                char ini[300]; DWORD w = 0;
+                wsprintfA(ini, "INIT log=%s", forceLogPath);
+                WriteFile(hForceLog, ini, strlen(ini), &w, NULL);
+                WriteFile(hForceLog, "\r\n", 2, &w, NULL);
+                FlushFileBuffers(hForceLog);
+            }
+        }
+    }
+    if (!hForceLog) return;
+    {
+        DWORD w = 0;
+        SetFilePointer(hForceLog, 0, NULL, FILE_END);
+        WriteFile(hForceLog, msg, strlen(msg), &w, NULL);
+        WriteFile(hForceLog, "\r\n", 2, &w, NULL);
+        FlushFileBuffers(hForceLog);
+    }
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Vtable patching — replace slots 1, 19, 29, 33 in all 15 level vtables
