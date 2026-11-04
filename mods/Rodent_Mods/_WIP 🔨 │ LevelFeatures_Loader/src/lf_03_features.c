@@ -322,6 +322,13 @@ static float my_cos_deg(float deg) {
     return my_sin_deg(deg + 90.0f);
 }
 
+/* RATE/PERSISTENCE DIAG (glue-weak): counts every frame the x0.95 scale
+ * actually writes + last pre/post speeds. Printed by the 30f GLUEDIAG.
+ * REMOVE before closing the gluebie fault. */
+static int g_scaledFrames = 0;
+static float g_lastPre = 0.0f;
+static float g_lastPost = 0.0f;
+
 static void Feature_SwirlZones(void *board, int level) {
     // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
     if (*(BYTE*)((char*)board+0x874)) return;
@@ -465,10 +472,11 @@ static void Feature_SwirlZones(void *board, int level) {
                     /* NOTE: wsprintfA (USER32) has NO float support — %f
                      * crashes inside USER32 (0001:0004FE02). Ints only. */
                     char gb[220];
-                    wsprintfA(gb, "GLUEDIAG ball=(%d,%d,%d) spd10=%d zones=%d near=%d rad=%d %s",
+                    wsprintfA(gb, "GLUEDIAG ball=(%d,%d,%d) spd10=%d zones=%d near=%d rad=%d %s scaled=%d pre10=%d post10=%d",
                         (int)*(float *)(ballIdx + BALL_POS_X_OFS), (int)*(float *)(ballIdx + BALL_POS_Y_OFS),
                         (int)*(float *)(ballIdx + BALL_POS_Z_OFS), spi, zc, (int)bestD, (int)bestR,
-                        (bestD < bestR) ? "HIT" : "-");
+                        (bestD < bestR) ? "HIT" : "-",
+                        g_scaledFrames, (int)(10.0f * g_lastPre), (int)(10.0f * g_lastPost));
                     DebugLogForce(gb);
                 }
             } else {
@@ -528,11 +536,15 @@ static void Feature_SwirlZones(void *board, int level) {
                     float zoneX, zoneY, zoneZ;
                     /* CENTER = LIVE POS (Dizzy 0x41D820-862: native reads
                      * obj+0x10E0/4/8 as the zone center). +0x10D4/8/C is the
-                     * static S1 home; +0x10E0/4/8 is where the gluebie's
-                     * motion update writes its current position. Reading home
-                     * parked every field where the gluebie STARTED while the
-                     * visual wandered off — touching the visual did nothing.
-                     * Zero-guard falls back to home (never origin). */
+                     * static S1 home. The gluebie update (0x43ECC0) zeroes
+                     * +0x10E0 then recomputes it via Matrix_TransformVec3
+                     * (0x401D60) from the anchor — so live == home value;
+                     * reading either gives the same field. Keep the live read
+                     * (native-exact) with a home fallback for the zero phase.
+                     * NOTE 2026-11-04: verified live==home, so this branch is
+                     * NOT the weak-slow cause — fields were already at the
+                     * visuals (user log: 12 clean HITs). Cause hunt moved to
+                     * scale-rate/persistence diag (g_scaledFrames). */
                     if (isDizzy) {
                         float lx = *(float *)(zoneIdx + 0x10E0);
                         float ly = *(float *)(zoneIdx + 0x10E4);
@@ -574,6 +586,11 @@ static void Feature_SwirlZones(void *board, int level) {
                                 *(float *)(phys + BALL_PHYS_VEL_X) = vx;
                                 *(float *)(phys + BALL_PHYS_VEL_Y) = vy;
                                 *(float *)(phys + BALL_PHYS_VEL_Z) = vz;
+                                /* RATE DIAG: count every scaled frame + keep
+                                 * last pre/post speeds for the 30f print. */
+                                g_scaledFrames++;
+                                g_lastPre = speed;
+                                g_lastPost = speed * scale;
                             }
                             /* Play sound + spawn particles on first contact */
                             if (!*(char *)(ballIdx + BALL_TAR_SOUND_FLAG)) {
