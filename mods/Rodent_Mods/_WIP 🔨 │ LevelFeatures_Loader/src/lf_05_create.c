@@ -197,8 +197,8 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         if (!meshVal) { DebugLog("TIPPER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         {
             char dbg[256];
-            wsprintfA(dbg, "TIPPER: meshOff=0x%X meshVal=0x%X renderOff=0x%X renderVal=0x%X level=%d rot=%.1f,%.1f,%.1f",
-                      meshOff, meshVal, renderOff, *(int*)((char*)ext + renderOff), level, x2,y2,z2);
+            wsprintfA(dbg, "TIPPER: meshOff=0x%X meshVal=0x%X renderOff=0x%X renderVal=0x%X level=%d rot=%d,%d,%d",
+                      meshOff, meshVal, renderOff, *(int*)((char*)ext + renderOff), level, (int)x2,(int)y2,(int)z2);
             DebugLog(dbg);
         }
         /* The RenderCtor product's +0x434 node is NULL, so the bridge-style
@@ -308,7 +308,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         OrBoardFeat(board, FEAT_SWIRL);
         {
             char dbg[256];
-            wsprintfA(dbg, "WATERWHEEL: pos=%.1f,%.1f,%.1f rot=%.1f,%.1f,%.1f feat SWIRL auto-enabled", x,y,z,x2,y2,z2);
+            wsprintfA(dbg, "WATERWHEEL: pos=%d,%d,%d rot=%d,%d,%d feat SWIRL auto-enabled", (int)x,(int)y,(int)z,(int)x2,(int)y2,(int)z2);
             DebugLog(dbg);
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;

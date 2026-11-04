@@ -449,17 +449,19 @@ static void Feature_SwirlZones(void *board, int level) {
                 }
                 {
                     DWORD ph = *(DWORD *)(ballIdx + BALL_PHYS_PTR_OFS);
-                    float sp = 0.0f;
+                    int spi = 0;
                     if (ph && !IsBadReadPtr((void *)ph, 0xCB0)) {
                         float vx = *(float *)(ph + BALL_PHYS_VEL_X);
                         float vy = *(float *)(ph + BALL_PHYS_VEL_Y);
                         float vz = *(float *)(ph + BALL_PHYS_VEL_Z);
-                        sp = sqrtf(vx*vx + vy*vy + vz*vz);
+                        spi = (int)(10.0f * sqrtf(vx*vx + vy*vy + vz*vz));
                     }
+                    /* NOTE: wsprintfA (USER32) has NO float support — %f
+                     * crashes inside USER32 (0001:0004FE02). Ints only. */
                     char gb[220];
-                    wsprintfA(gb, "GLUEDIAG ball=(%.0f,%.0f,%.0f) spd=%.1f zones=%d near=%.0f rad=%.0f %s",
-                        *(float *)(ballIdx + BALL_POS_X_OFS), *(float *)(ballIdx + BALL_POS_Y_OFS),
-                        *(float *)(ballIdx + BALL_POS_Z_OFS), sp, zc, bestD, bestR,
+                    wsprintfA(gb, "GLUEDIAG ball=(%d,%d,%d) spd10=%d zones=%d near=%d rad=%d %s",
+                        (int)*(float *)(ballIdx + BALL_POS_X_OFS), (int)*(float *)(ballIdx + BALL_POS_Y_OFS),
+                        (int)*(float *)(ballIdx + BALL_POS_Z_OFS), spi, zc, (int)bestD, (int)bestR,
                         (bestD < bestR) ? "HIT" : "-");
                     DebugLog(gb);
                 }
