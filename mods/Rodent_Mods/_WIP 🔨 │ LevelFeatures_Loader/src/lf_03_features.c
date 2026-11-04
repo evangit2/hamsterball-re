@@ -469,14 +469,20 @@ static void Feature_SwirlZones(void *board, int level) {
                         float vz = *(float *)(ph + BALL_PHYS_VEL_Z);
                         spi = (int)(10.0f * sqrtf(vx*vx + vy*vy + vz*vz));
                     }
-                    /* NOTE: wsprintfA (USER32) has NO float support — %f
+                    /* RATE CHECK: game tick (App+0x5E8) per 30 calls. If gt
+                     * advances ~60 per line, this driver runs at HALF the
+                     * native board-update rate (half the bites = half slow).
+                     * NOTE: wsprintfA (USER32) has NO float support — %f
                      * crashes inside USER32 (0001:0004FE02). Ints only. */
+                    int gt = -1;
+                    if (app && !IsBadReadPtr((void *)app, 0x600))
+                        gt = *(int *)((char *)app + 0x5E8);
                     char gb[220];
-                    wsprintfA(gb, "GLUEDIAG ball=(%d,%d,%d) spd10=%d zones=%d near=%d rad=%d %s scaled=%d pre10=%d post10=%d",
+                    wsprintfA(gb, "GLUEDIAG ball=(%d,%d,%d) spd10=%d zones=%d near=%d rad=%d %s scaled=%d pre10=%d post10=%d gt=%d",
                         (int)*(float *)(ballIdx + BALL_POS_X_OFS), (int)*(float *)(ballIdx + BALL_POS_Y_OFS),
                         (int)*(float *)(ballIdx + BALL_POS_Z_OFS), spi, zc, (int)bestD, (int)bestR,
                         (bestD < bestR) ? "HIT" : "-",
-                        g_scaledFrames, (int)(10.0f * g_lastPre), (int)(10.0f * g_lastPost));
+                        g_scaledFrames, (int)(10.0f * g_lastPre), (int)(10.0f * g_lastPost), gt);
                     DebugLogForce(gb);
                 }
             } else {
