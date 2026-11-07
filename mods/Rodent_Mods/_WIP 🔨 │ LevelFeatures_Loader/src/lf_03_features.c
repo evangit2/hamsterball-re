@@ -610,9 +610,9 @@ static void Feature_SwirlZones(void *board, int level) {
                                 for (p = 0; p < 3 && g_operatorNew && g_AthenaListAppend; p++) {
                                     float *part = (float *)g_operatorNew(0x14);
                                     if (part) {
-                                        /* Native particle init: dword[3]=1 (bits
-                                         * 0x00000001), byte+16=0. */
-                                        ((int *)part)[3] = 1;
+                                        /* Native particle init: dword[3]=6 (bits of
+                                         * 8.407791e-45, NOT 1), byte+16=0. */
+                                        ((int *)part)[3] = 6;
                                         *(char *)((char *)part + 16) = 0;
                                         /* Random direction (normalized) */
                                         if (g_RNG) {
