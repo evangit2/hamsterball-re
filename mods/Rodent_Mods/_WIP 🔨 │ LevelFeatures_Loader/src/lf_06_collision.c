@@ -122,6 +122,10 @@ typedef void (__fastcall *Hammer_ChaseStart_t)(int obj);
 typedef void (__thiscall *Pendulum_PlayCollisionSound_t)(void *obj, int ball);
 typedef void (__thiscall *Pendulum_AddIndex_t)(void *obj, int ball);
 typedef int (__thiscall *ScoreObject_ctor_t)(void *mem, int board, int timerOffset, const char *label);
+/* MWParser tag destructor: native (Odd 0x40EE29) calls vtable[0] as
+ * TagDtor(tag, 1) — ECX=tag pointer, flag 1 pushed. A bare (1) call would
+ * put 1 in ECX and push nothing (wrong this + stack shift). */
+typedef void (__thiscall *MWParser_TagDtor_t)(void *tag, int flags);
 typedef void (__fastcall *Timer_Decrement_t)(int obj);
 typedef void *__thiscall (*ArenaScoreParticle_ctor_t)(void *mem, int app);
 typedef float *(__thiscall *AthenaHashTable_Lookup_t)(void *hashTable, float *out, const char *key, char *found);
@@ -741,9 +745,9 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                     if (my_stricmp((char *)tag[2], "Z") == 0 && g_BallSetFlatGravity)
                         g_BallSetFlatGravity((int)ball);
                 }
-                /* Original game: (**(code **)*puVar4)(1) — double dereference.
-                 * tag[0] is a pointer to a vtable; vtable[0] is the destructor. */
-                (*(void (__thiscall **)(DWORD))(*(DWORD*)tag[0]))(1);
+                /* Native shape (Odd 0x40EE29): ECX=tag, push 1, call [tag0].
+                 * tag[0] is a pointer to a vtable; vtable[0] is the dtor. */
+                ((MWParser_TagDtor_t)(*(DWORD *)tag[0]))((void *)tag, 1);
             }
             g_StreamReaderDtor(strObj);
         }

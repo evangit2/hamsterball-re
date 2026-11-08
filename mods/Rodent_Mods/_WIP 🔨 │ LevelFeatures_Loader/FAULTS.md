@@ -8,12 +8,12 @@ mark them FIXED with the version instead.
 |---|------|-------|--------|
 | 1 | Beginner | Crash touching bumpers 4/5/6 (`0001:00054176`, Draw op). Bumpers 1–3 bounce but never glow white. | FIXED v13.3 (crash) + v13.4 (glow), user-confirmed |
 | 2 | Intermediate | Bridge misplaced or absent. Sounds still work. | FIXED v13.9 (manual Rx carry + far-unmark), user-confirmed 2026-11-03 |
-| 3 | Dizzy | Spiral warps ball incorrectly. Tippers invisible. Gluebies don't slow ball. Waterwheel incorrectly warps ball. | FIXED — waterwheel/looper/tippers (user-confirmed 2026-11-03); gluebies FIXED (bubble dword 1→6 restores stacking drag, user-confirmed 2026-11-07); spiral OPEN |
+| 3 | Dizzy | Spiral warps ball incorrectly. Tippers invisible. Gluebies don't slow ball. Waterwheel incorrectly warps ball. | FIXED — all four user-confirmed 2026-11-07 (waterwheel/looper/tippers 11-03; glue bubbles + spiral 11-07) |
 | 4 | Tower | Catapult crashes game (`BASS.dll 0001:000028B7`, Update op). Cannot test farther objects. | OPEN |
 | 5 | Up | Smaller lifters absent. | OPEN |
 | 6 | Neon | Ball outline red instead of yellow. 8-ball doesn't glow. | OPEN |
 | 7 | Expert | Fans absent. Bridges are drawbridges (Intermediate type) instead of falling bridges (Expert type). | OPEN |
-| 8 | Odd | Crash at gravity flip (`2454000:00000400`, Update op). Cannot test farther objects. | OPEN |
+| 8 | Odd | Crash at gravity flip (2454000:00000400, Update op). Cannot test farther objects. | PARTIALLY FIXED — tag-dtor call passed this=1+no stack arg (MinGW 1-arg thiscall); now TagDtor(tag,1) matching native 0x40EE29 (codegen-verified). Shipped 2026-11-07, awaiting user retest |
 | 9 | Toob | Branching paths don't work. | OPEN |
 | 10 | Wobbly | Wobbly platforms don't move (wavy bridge does). | OPEN |
 | 11 | Glass | Glass has no reflection and normal friction. Smashers can't break. | OPEN (3 sub-items) |
