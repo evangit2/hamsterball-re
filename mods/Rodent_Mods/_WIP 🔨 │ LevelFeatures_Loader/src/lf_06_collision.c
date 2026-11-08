@@ -95,7 +95,13 @@ static void LoadCollisionConfig(char *buf, DWORD bufSize) {
 }
 
 /* Collision handler function pointer types */
-typedef void (__thiscall *Sound_PlayChannel_t)(int channel);
+/* Native Sound_PlayChannel (0x4597B0): ECX=channel + pushed float volume
+ * (native pushes 0x3F800000), callee cleans 4 (RET 4). A 1-arg thiscall
+ * pushes nothing, so the callee's RET 4 shifts ESP+4 on return — every
+ * subsequent esp-relative read in the caller is off by 4 (proven Tower
+ * crash 0001:00008CD7 at the next flag check after a catapult touch).
+ * Always call with (channel, 1.0f). */
+typedef void (__thiscall *Sound_PlayChannel_t)(int channel, float volume);
 typedef void (__thiscall *Ball_DizzyImmunity_t)(int *ball, long time);
 typedef void (__fastcall *Ball_Grow_t)(int ball);
 typedef void (__fastcall *Ball_Shrink_t)(int ball);
@@ -363,7 +369,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                     if (g_CatapultLaunch) g_CatapultLaunch(item);
                     if (g_SoundPlayChannel && app) {
                         int ch = *(int *)(app + 0x464);
-                        if (ch) g_SoundPlayChannel(ch);
+                        if (ch) g_SoundPlayChannel(ch, 1.0f);
                     }
                 }
                 int next = *(int *)((char *)ext + catList + 8 + iter * 4);
@@ -815,7 +821,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         if (*(int *)((char *)ball + 0x7F8) == 0) {
             if (g_SoundPlayChannel && app) {
                 int ch = *(int *)(app + 0x4D8);
-                if (ch) g_SoundPlayChannel(ch);
+                if (ch) g_SoundPlayChannel(ch, 1.0f);
             }
         }
         *(int *)((char *)ball + 0x7F8) = 100;

@@ -433,7 +433,22 @@ static void* GetBoardExt(void* board) {
     for (i = 0; i < MAX_EXT_MAP; i++) {
         if (g_extMap[i].board == board && g_extMap[i].ext) {
             /* Validate ext is still a live HeapAlloc block, not freed */
-            if (HeapValidate(GetProcessHeap(), 0, g_extMap[i].ext)) return g_extMap[i].ext;
+            if (HeapValidate(GetProcessHeap(), 0, g_extMap[i].ext)) {
+                /* HeapValidate passes on freed-but-committed corpses (proven
+                 * Tower crash 0001:00008C77: ext+0xB956 faulted after earlier
+                 * flag reads hit committed garbage — tail page uncommitted).
+                 * Probe the full range; a dangling ext falls back to native
+                 * instead of faulting. Clear the stale entry so the next
+                 * EnsureBoardExt rebuilds fresh. */
+                if (IsBadReadPtr(g_extMap[i].ext, EXT_SIZE)) {
+                    HeapFree(GetProcessHeap(), 0, g_extMap[i].ext);
+                    g_extMap[i].board = NULL; g_extMap[i].ext = NULL;
+                    g_extMap[i].extSize = 0; g_extMap[i].feat = 0;
+                    g_extMap[i].boardSize = 0;
+                    return NULL;
+                }
+                return g_extMap[i].ext;
+            }
         }
     }
     /* NOTE: board+EXT_PTR (0xAB00) is BEYOND vanilla board alloc (~0x4400 for

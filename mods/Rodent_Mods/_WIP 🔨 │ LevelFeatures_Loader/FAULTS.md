@@ -9,7 +9,7 @@ mark them FIXED with the version instead.
 | 1 | Beginner | Crash touching bumpers 4/5/6 (`0001:00054176`, Draw op). Bumpers 1–3 bounce but never glow white. | FIXED v13.3 (crash) + v13.4 (glow), user-confirmed |
 | 2 | Intermediate | Bridge misplaced or absent. Sounds still work. | FIXED v13.9 (manual Rx carry + far-unmark), user-confirmed 2026-11-03 |
 | 3 | Dizzy | Spiral warps ball incorrectly. Tippers invisible. Gluebies don't slow ball. Waterwheel incorrectly warps ball. | FIXED — all four user-confirmed 2026-11-07 (waterwheel/looper/tippers 11-03; glue bubbles + spiral 11-07) |
-| 4 | Tower | Catapult crashes game (`BASS.dll 0001:000028B7`, Update op). Cannot test farther objects. | OPEN |
+| 4 | Tower | Catapult crashes game (`BASS.dll 0001:000028B7`, Update op). Cannot test farther objects. | FIXED 2026-11-08 — root cause was NOT the catapult: Sound_PlayChannel typedef took 1 arg but native callee cleans 4 (RET 4), shifting ESP+4 on every catapult-touch sound → next esp-relative read faulted (rig repro: 2 crashes at same cmpb, both on bottom touch). Now called with (ch, 1.0f) matching native push. Rig-verified: repeated bottom contact + full launch cycle, no crash |
 | 5 | Up | Smaller lifters absent. | OPEN |
 | 6 | Neon | Ball outline red instead of yellow. 8-ball doesn't glow. | OPEN |
 | 7 | Expert | Fans absent. Bridges are drawbridges (Intermediate type) instead of falling bridges (Expert type). | OPEN |
