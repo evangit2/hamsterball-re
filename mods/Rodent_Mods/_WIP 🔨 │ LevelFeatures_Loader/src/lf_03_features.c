@@ -322,12 +322,7 @@ static float my_cos_deg(float deg) {
     return my_sin_deg(deg + 90.0f);
 }
 
-/* RATE/PERSISTENCE DIAG (glue-weak): counts every frame the x0.95 scale
- * actually writes + last pre/post speeds. Printed by the 30f GLUEDIAG.
- * REMOVE before closing the gluebie fault. */
-static int g_scaledFrames = 0;
-static float g_lastPre = 0.0f;
-static float g_lastPost = 0.0f;
+/* (glue-weak diag counters retired 2026-11-07; block + increments removed) */
 
 static void Feature_SwirlZones(void *board, int level) {
     // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
@@ -431,68 +426,6 @@ static void Feature_SwirlZones(void *board, int level) {
     void *zoneBase = isDizzy ? board : ext;
     DWORD zoneOff = isDizzy ? 0x4378 : (DWORD)swirlListOfs;
 
-    /* TEMP DIAG (glue-weak): every 30th frame, log ball vs zones so one user
-     * run shows whether the ball enters fields and whether scale applies.
-     * REMOVE before closing the gluebie fault. */
-    if (isDizzy) {
-        static int glueDiagTick = 0;
-        if ((glueDiagTick++ % 30) == 0 && ballIdx && !IsBadReadPtr((void *)ballIdx, 0x300)) {
-            int zc = 0; float bestD = 1e30f; float bestR = 0.0f;
-            DWORD za = *(DWORD *)((char *)zoneBase + zoneOff + 0x40C);
-            zc = *(int *)((char *)zoneBase + zoneOff + 4);
-            if (zc > 0 && za && !IsBadReadPtr((void *)za, zc * 4)) {
-                int k; float bx = *(float *)(ballIdx + BALL_POS_X_OFS);
-                float by = *(float *)(ballIdx + BALL_POS_Y_OFS);
-                float bz = *(float *)(ballIdx + BALL_POS_Z_OFS);
-                for (k = 0; k < zc; k++) {
-                    int z = *(int *)(za + k * 4);
-                    if (!z || IsBadReadPtr((void *)z, 0x1108)) continue;
-                    float qx = *(float *)(z + 0x10E0);
-                    float qy = *(float *)(z + 0x10E4);
-                    float qz = *(float *)(z + 0x10E8);
-                    float dx, dy, dz;
-                    if (qx == 0.0f && qy == 0.0f && qz == 0.0f) {
-                        dx = *(float *)(z + 0x10D4) - bx;
-                        dy = *(float *)(z + 0x10D8) - by;
-                        dz = *(float *)(z + 0x10DC) - bz;
-                    } else { dx = qx - bx; dy = qy - by; dz = qz - bz; }
-                    float d = sqrtf(dx*dx + dy*dy + dz*dz);
-                    float r = *(float *)(z + 0x1100) * 60.0f;
-                    if (d < bestD) { bestD = d; bestR = r; }
-                }
-                {
-                    DWORD ph = *(DWORD *)(ballIdx + BALL_PHYS_PTR_OFS);
-                    int spi = 0;
-                    if (ph && !IsBadReadPtr((void *)ph, 0xCB0)) {
-                        float vx = *(float *)(ph + BALL_PHYS_VEL_X);
-                        float vy = *(float *)(ph + BALL_PHYS_VEL_Y);
-                        float vz = *(float *)(ph + BALL_PHYS_VEL_Z);
-                        spi = (int)(10.0f * sqrtf(vx*vx + vy*vy + vz*vz));
-                    }
-                    /* RATE CHECK: game tick (App+0x5E8) per 30 calls. If gt
-                     * advances ~60 per line, this driver runs at HALF the
-                     * native board-update rate (half the bites = half slow).
-                     * NOTE: wsprintfA (USER32) has NO float support — %f
-                     * crashes inside USER32 (0001:0004FE02). Ints only. */
-                    int gt = -1;
-                    if (app && !IsBadReadPtr((void *)app, 0x600))
-                        gt = *(int *)((char *)app + 0x5E8);
-                    char gb[220];
-                    wsprintfA(gb, "GLUEDIAG ball=(%d,%d,%d) spd10=%d zones=%d near=%d rad=%d %s scaled=%d pre10=%d post10=%d gt=%d",
-                        (int)*(float *)(ballIdx + BALL_POS_X_OFS), (int)*(float *)(ballIdx + BALL_POS_Y_OFS),
-                        (int)*(float *)(ballIdx + BALL_POS_Z_OFS), spi, zc, (int)bestD, (int)bestR,
-                        (bestD < bestR) ? "HIT" : "-",
-                        g_scaledFrames, (int)(10.0f * g_lastPre), (int)(10.0f * g_lastPost), gt);
-                    DebugLogForce(gb);
-                }
-            } else {
-                char gb2[96];
-                wsprintfA(gb2, "GLUEDIAG no zones: count=%d arr=0x%X nball=%d", zc, za, ballCount);
-                DebugLogForce(gb2);
-            }
-        }
-    }
-
     /* NATIVE PARITY (Dizzy 0x41D510 lines 92-107): clear every zone's +0x1104
      * at frame start, before the ball loop sets the hit ones. LFL set 1 on
      * hit but never cleared — first touch froze that gluebie's anim forever
@@ -592,11 +525,6 @@ static void Feature_SwirlZones(void *board, int level) {
                                 *(float *)(phys + BALL_PHYS_VEL_X) = vx;
                                 *(float *)(phys + BALL_PHYS_VEL_Y) = vy;
                                 *(float *)(phys + BALL_PHYS_VEL_Z) = vz;
-                                /* RATE DIAG: count every scaled frame + keep
-                                 * last pre/post speeds for the 30f print. */
-                                g_scaledFrames++;
-                                g_lastPre = speed;
-                                g_lastPost = speed * scale;
                             }
                             /* Play sound + spawn particles on first contact */
                             if (!*(char *)(ballIdx + BALL_TAR_SOUND_FLAG)) {

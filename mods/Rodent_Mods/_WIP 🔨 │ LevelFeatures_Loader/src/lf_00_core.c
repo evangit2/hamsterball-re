@@ -34,7 +34,6 @@ typedef unsigned long long QWORD;
  * Debug logging (forward declaration — defined later, used by hook functions)
  * ═══════════════════════════════════════════════════════════════════════════ */
 void DebugLog(const char *msg);
-void DebugLogForce(const char *msg);
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Game addresses (RVAs)

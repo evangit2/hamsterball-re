@@ -8,7 +8,7 @@ mark them FIXED with the version instead.
 |---|------|-------|--------|
 | 1 | Beginner | Crash touching bumpers 4/5/6 (`0001:00054176`, Draw op). Bumpers 1–3 bounce but never glow white. | FIXED v13.3 (crash) + v13.4 (glow), user-confirmed |
 | 2 | Intermediate | Bridge misplaced or absent. Sounds still work. | FIXED v13.9 (manual Rx carry + far-unmark), user-confirmed 2026-11-03 |
-| 3 | Dizzy | Spiral warps ball incorrectly. Tippers invisible. Gluebies don't slow ball. Waterwheel incorrectly warps ball. | IN PROGRESS — waterwheel + looper + tippers FIXED (user-confirmed 2026-11-03); spiral/gluebies OPEN |
+| 3 | Dizzy | Spiral warps ball incorrectly. Tippers invisible. Gluebies don't slow ball. Waterwheel incorrectly warps ball. | FIXED — waterwheel/looper/tippers (user-confirmed 2026-11-03); gluebies FIXED (bubble dword 1→6 restores stacking drag, user-confirmed 2026-11-07); spiral OPEN |
 | 4 | Tower | Catapult crashes game (`BASS.dll 0001:000028B7`, Update op). Cannot test farther objects. | OPEN |
 | 5 | Up | Smaller lifters absent. | OPEN |
 | 6 | Neon | Ball outline red instead of yellow. 8-ball doesn't glow. | OPEN |
