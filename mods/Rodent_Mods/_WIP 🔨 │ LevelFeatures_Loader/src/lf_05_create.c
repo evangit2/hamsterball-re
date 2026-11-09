@@ -989,12 +989,13 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     }
 
     /* ── LIFTER (Up tubes) ──
-     * S1: LIFTER, LIFTER2, LIFTER3... — Up only, level-gate removed (name-driven).
-     * Native Up create prefix-matches "LIFTER" (6 chars) and atol()s the
-     * suffix (bare LIFTER -> 0 -> +0x10EC default 150). Bare LIFTER belongs
-     * to Odd (caught above on level 9); LIFTERFOO-style names must not
-     * build tubes. */
-    if (my_strnicmp(name, "LIFTER", 6) == 0 && (name[6] == '\0' || (name[6] >= '0' && name[6] <= '9'))) {
+     * S1: LIFTER2, LIFTER3... — Up only, level-gate removed (name-driven).
+     * Digits REQUIRED: bare LIFTER is dead (RodentRacer rename plan —
+     * stock Up's bare S1s get renamed to LIFTERn in the meshworld; bare
+     * LIFTER belongs to Odd, caught above on level 9). Native Up create
+     * prefix-matches "LIFTER" (6 chars) and atol()s the suffix, but LFL
+     * follows the rename scheme, not native. LIFTERFOO never builds. */
+    if (my_strnicmp(name, "LIFTER", 6) == 0 && (name[6] >= '0' && name[6] <= '9')) {
         S1EnsureMeshWorld(board, ext, UNI_LIFTER_MESH, "Levels\\LevelUp-Lifter");
         long num = atol(name + 6);
         int meshVal = *(int*)((char*)ext + UNI_LIFTER_MESH);
