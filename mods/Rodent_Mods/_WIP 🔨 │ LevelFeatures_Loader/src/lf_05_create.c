@@ -974,20 +974,6 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         return;
     }
 
-    /* ── LIFTER (Odd vanilla alias) ── — vanilla Odd S1 is bare LIFTER -> Odd_Lifter_ctor when level==9 ── */
-    if (my_strnicmp(name, "LIFTER", 6) == 0 && GetCurrentLevel(board) == 9 && my_strnicmp(name, "DROPPER", 7) != 0) {
-        void *mem = g_operatorNew(0x10FC);
-        if (mem) {
-            obj = g_OddLifterCtor(mem, (int)board, x, y, z);
-            g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            if (BoardHasOffset(board, 0x436C, 4)) *(void **)((char *)board + 0x436C) = obj;
-            *(void **)((char *)ext + UNI_BONK_STORE) = obj;
-            renderOut = ((DWORD*)obj)[0x435];
-        }
-        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
-        return;
-    }
-
     /* ── LIFTER (Up tubes) ──
      * S1: LIFTER2, LIFTER3... — Up only, level-gate removed (name-driven).
      * Digits REQUIRED: bare LIFTER is dead (RodentRacer rename plan —
