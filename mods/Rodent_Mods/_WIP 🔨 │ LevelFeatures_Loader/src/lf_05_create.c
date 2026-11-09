@@ -989,10 +989,12 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     }
 
     /* ── LIFTER (Up tubes) ──
-     * S1: LIFTER2, LIFTER3... — Up only, level-gate removed (name-driven).
-     * Require a digit suffix: bare LIFTER belongs to Odd (caught above on
-     * level 9); LIFTERFOO-style names must not build tubes. */
-    if (my_strnicmp(name, "LIFTER", 6) == 0 && name[6] >= '0' && name[6] <= '9') {
+     * S1: LIFTER, LIFTER2, LIFTER3... — Up only, level-gate removed (name-driven).
+     * Native Up create prefix-matches "LIFTER" (6 chars) and atol()s the
+     * suffix (bare LIFTER -> 0 -> +0x10EC default 150). Bare LIFTER belongs
+     * to Odd (caught above on level 9); LIFTERFOO-style names must not
+     * build tubes. */
+    if (my_strnicmp(name, "LIFTER", 6) == 0 && (name[6] == '\0' || (name[6] >= '0' && name[6] <= '9'))) {
         S1EnsureMeshWorld(board, ext, UNI_LIFTER_MESH, "Levels\\LevelUp-Lifter");
         long num = atol(name + 6);
         int meshVal = *(int*)((char*)ext + UNI_LIFTER_MESH);
@@ -1014,9 +1016,14 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
              * 0x43D400!) on each 0x436C member with a garbage flag, so
              * appending live lifters there deletes them and crashes.
              * Lifters are driven via the shared 0x2578 walk (vtable[11]). */
-            renderOut = ((DWORD*)obj)[0x438];
         }
-        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        /* Native Up create leaves out1/out2 UNTOUCHED for lifters (no
+         * stores in 0x4117B0-0x4119A9 — dispatcher-initialized 0). Returning
+         * out1=obj makes the native S1 dispatcher append the lifter to CD4
+         * + call v[0x58]/v[0x54] with garbage args, which parks the lifter
+         * platform visual at the origin (rig: all 3 sub-objs at (0,0,0)) —
+         * the "absent lifters". Zero both. */
+        *(int*)out1 = 0; *(int*)out2 = 0;
         return;
     }
 
