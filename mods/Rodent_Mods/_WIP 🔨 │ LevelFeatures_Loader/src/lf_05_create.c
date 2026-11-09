@@ -787,7 +787,11 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
                    }
                 if (obj && strstr(name, "1")) g_AthenaListAppend((void*)((char*)board + 0x4380), (int)obj);
         if (obj && strstr(name, "2")) g_AthenaListAppend((void*)((char*)board + 0x4798), (int)obj);
-        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        /* Native Expert create leaves out1/out2 UNTOUCHED for spinners
+         * (no out-param stores in 0x40E500-0x40E700 — appends only). Zero
+         * both so the S1 dispatcher doesn't append to CD4 + call v[0x58]/
+         * v[0x54] with garbage (same corruption as the Up lifter). */
+        *(int*)out1 = 0; *(int*)out2 = 0;
         return;
     }
 
@@ -840,7 +844,8 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             }
                         if (obj && strstr(name, "2")) g_AthenaListAppend((void*)((char*)board + 0x4798), (int)obj);
             else if (obj) g_AthenaListAppend((void*)((char*)board + 0x4380), (int)obj);
-            *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+            /* Native leaves out-params untouched for spinners (see above). */
+            *(int*)out1 = 0; *(int*)out2 = 0;
             return;
         }
         S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level2-Bridge");
