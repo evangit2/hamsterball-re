@@ -578,6 +578,20 @@ static void ScanS1ReferencedMeshesForCollisions(void *board, void *ext, void *me
                 }
                 f += pn + 1; { size_t ml = strlen(f); f += ml + 1; }
             }
+            /* Tower trapdoors: bare TRAPDOOR S1s load Levels\Level4-Trapdoor1/2
+             * (both carry the N:TRAPDOOR trigger plate), but the fallback above
+             * only scans the Sky file Levels\Level9-TrapDoor (zero N:/E:
+             * tokens) — so N:TRAPDOOR never entered the table, the flag stayed
+             * 0, and rolling over the door never fired Activate (rig: +0x10F4
+             * stuck at 0 under the ball). Scan the Tower files for any bare
+             * TRAPDOOR S1 regardless of slot — harmless elsewhere (no
+             * trapdoor objects exist to false-match outside Tower). */
+            if (my_strnicmp(name, "TRAPDOOR", 8) == 0) {
+                ScanFileForCollisions(board, ext, "Levels\\Level4-Trapdoor1");
+                ScanFileForCollisions(board, ext, "Levels\\Level4-Trapdoor1.MESHWORLD");
+                ScanFileForCollisions(board, ext, "Levels\\Level4-Trapdoor2");
+                ScanFileForCollisions(board, ext, "Levels\\Level4-Trapdoor2.MESHWORLD");
+            }
             continue;
         }
         // name is like "Levels\\Level3-WaterWheel" or "Meshes\\Chomper" etc. Scan that file.
