@@ -53,3 +53,14 @@ mark them FIXED with the version instead.
 - Next: user retests Tower. BADNAME + crash = theory confirmed (then gate
   needs pointer-validity, not just content). E:MACETRIGGER + crash = theory
   wrong, new data.
+
+## 2026-11-10 — Tower crash: dispatcher does ZERO file I/O now (0xF6AA was diag WriteFile)
+- 0xF6AA mapped (debug-line info) to the last_touch WriteFile in the
+  dispatcher, not a collision branch. Name was valid (E:MACETRIGGER, probe
+  passed), so the write itself was attempted and faulted there.
+- Fix: dispatcher records touches to globals only (pure memcpy); the file
+  is flushed from UniversalBoardUpdate on a clean stack. Rig-verified the
+  flush works (E:TRAJECTORY logged, game alive, boot crash-clean).
+- Next: user retests Tower. No crash = file-I/O-in-dispatcher was guilty.
+  Crash + new address = look past the diag (native chain on mod-built
+  Tower state is the remaining suspect).

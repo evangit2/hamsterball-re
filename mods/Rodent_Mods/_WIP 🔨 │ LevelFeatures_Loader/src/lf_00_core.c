@@ -1245,6 +1245,10 @@ static char g_configPath[MAX_PATH] = "";
 static char g_raceFilesPath[MAX_PATH] = "";
 static char g_raceFiles[16][MAX_PATH] = {{0}}; // 1..15, each holds mesh path like "levels\\level1"
 static char g_levelDir[MAX_PATH] = ""; // fallback dir for textures/sounds/sub-meshworlds (e.g. "levels\\MyLevel\\")
+/* Tower crash forensics: dispatcher records the last touch here (memory
+ * only, no I/O); UniversalBoardUpdate flushes it to last_touch.txt. */
+static char g_touchName[64] = {0};
+static int g_touchDirty = 0;
 
 /* Pending race index for board constructor thunks */
 /* Must be non-static for asm reference */

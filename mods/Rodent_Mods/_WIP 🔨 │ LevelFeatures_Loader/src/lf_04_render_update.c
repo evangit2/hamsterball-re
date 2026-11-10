@@ -473,6 +473,21 @@ __attribute__((naked)) void UniversalRender(void) {
 void __fastcall UniversalBoardUpdate(void *board) {
     if (!g_SceneUpdate || !board) return;
 
+    /* Flush pending touch record (dispatcher never does file I/O). */
+    if (g_touchDirty) {
+        g_touchDirty = 0;
+        if (!IsBadReadPtr(g_touchName, 64) && g_touchName[0]) {
+            HANDLE hf = CreateFileA("last_touch.txt", GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (hf != INVALID_HANDLE_VALUE) {
+                DWORD bw = 0;
+                size_t nl = 0; while (nl < 63 && g_touchName[nl]) nl++;
+                WriteFile(hf, g_touchName, (DWORD)nl, &bw, NULL);
+                WriteFile(hf, "\r\n", 2, &bw, NULL);
+                CloseHandle(hf);
+            }
+        }
+    }
+
     g_SceneUpdate(board);
 
     /* Get level and dispatch features */

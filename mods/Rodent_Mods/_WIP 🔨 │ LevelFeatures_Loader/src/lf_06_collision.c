@@ -249,12 +249,8 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         if (IsBadReadPtr(name, 64)) nn = -1;
         else { while (nn < 63 && name[nn]) nn++; if (nn >= 63) nn = -1; }
         if (nn < 0) {
-            HANDLE hf = CreateFileA("last_touch.txt", GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-            if (hf != INVALID_HANDLE_VALUE) {
-                DWORD bw = 0;
-                WriteFile(hf, "BADNAME\r\n", 9, &bw, NULL);
-                CloseHandle(hf);
-            }
+            memcpy(g_touchName, "BADNAME", 8);
+            g_touchDirty = 1;
             goto call_global;
         }
     }
@@ -268,15 +264,11 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         if (!IsBadReadPtr(name, 64) && my_stricmp(name, s_lastTouch) != 0) {
             size_t nl = 0; while (nl < 63 && name[nl]) nl++;
             memcpy(s_lastTouch, name, nl); s_lastTouch[nl] = 0;
-            {
-                HANDLE hf = CreateFileA("last_touch.txt", GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-                if (hf != INVALID_HANDLE_VALUE) {
-                    DWORD bw = 0;
-                    WriteFile(hf, name, (DWORD)nl, &bw, NULL);
-                    WriteFile(hf, "\r\n", 2, &bw, NULL);
-                    CloseHandle(hf);
-                }
-            }
+            /* No file I/O here (Tower crash forensics): record to a global,
+             * UniversalBoardUpdate flushes it to last_touch.txt on a clean
+             * stack. Pure memcpy in the hot path cannot fault. */
+            memcpy(g_touchName, s_lastTouch, 64);
+            g_touchDirty = 1;
         }
     }
 
