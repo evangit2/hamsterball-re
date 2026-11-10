@@ -85,10 +85,13 @@ mark them FIXED with the version instead.
   with count<64 + IsBadReadPtr guards, identical per-item behavior.
 - last_touch stays memory-record + Update-flush (zero dispatcher file I/O).
 
-## 2026-11-10 — Tower windmill absent (missing mesh file, not code)
-- Windmill create is fine (native slot or ext-load). It needs
-  Levels\Level4-Windmill.MESHWORLD in the game dir; user never got it
-  (all 3 repo copies identical eeebab1c, 17KB — established file).
-  Resent 2026-11-10. If still absent with the file present, suspect load
-  failure (DebugLog off, can't confirm remotely).
+## 2026-11-10 — Tower windmill absent (user confirms file present — code suspect, NOT missing file)
+- User confirms Levels\Level4-Windmill.MESHWORLD is present; treat as mod-side
+  load failure, not setup error. Root cause found 2026-11-10 via objdump
+  (Tower 0x40D7C0): native WINDMILL returns out1=mesh (board+0x437C) for CD4
+  registration; mod zeroed out1 per the wrong "only TURRET sets out-params"
+  rule → dropped from CD4 = absent. Fixed: out1=mesh, out2=fresh render;
+  removed bogus early-return; corrected the OUT-PARAM RULE comment.
+- Rig crash-test clean (38s, no crash). Shipped 2026-11-10 — PARTIALLY FIXED,
+  awaiting user retest: does the windmill render + spin on Tower now?
 - Chomper ("purple chomping mouth") weirdness TBD — need a screenshot.

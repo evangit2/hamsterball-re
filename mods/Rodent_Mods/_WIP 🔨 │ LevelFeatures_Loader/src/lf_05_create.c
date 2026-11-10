@@ -99,11 +99,12 @@ static void* S1EnsureSprite(void* board, void* ext, DWORD offset, const char* pa
 }
 
 void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void *out1, void *out2, int *s1data) {
-    /* OUT-PARAM RULE (blank-world fix 2026-10-22): out1 must be 0 or a REAL
-     * game object — NEVER a mesh/render pointer. The native Setup caller
-     * appends out1 to an object list; a mesh there poisons the D3D device
-     * and blanks the whole frame. Native Tower create sets out params ONLY
-     * for TURRET (stands,render); every other S1 leaves them untouched. */
+    /* OUT-PARAM RULE (binary-verified 2026-11-10, objdump Tower 0x40D7C0):
+     * mirror the native create's tail stores verbatim. Tower sets out-params
+     * for CATAPULT/MACE/DRAWBRIDGE (out1=obj, out2=obj+0x10D4) and WINDMILL
+     * (out1=board+0x437C mesh, out2=render); only CHOMPER leaves them zero.
+     * Zeroing a native-set out-param drops the object from CD4 =
+     * invisible-but-audible (Up lifters, Tower windmill). */
     if (!name || !out1 || !out2 || !s1data) return;
     int level = GetCurrentLevel(board);
     if (level == 0 || level > 15) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
@@ -538,13 +539,16 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
      * pos → board+0x4380/84/88, RNG(0x168) → board+0x438c, out=(mesh,render). */
     if (my_strnicmp(name, "WINDMILL", 8) == 0) {
         /* BLANK-WORLD BISECT: windmill re-enabled (turret still skipped). */
-        /* Native Tower ctor owns +0x437C (render) — use it when valid.
-         * Never overwrite with our mesh (native update/render vtbl-calls it). */
-        {
-            int natR = BoardMeshOrZero(board, 0x437C);
-            if (natR) {
-                *(int*)out1 = 0; *(int*)out2 = natR; return;
-            }
+        /* Native Tower ctor owns +0x437C (mesh) — use it when valid.
+         * Native create returns (mesh, render) so the S1 dispatcher registers
+         * the mesh in CD4 (objdump 0x40DA30/0x40DCA3: out1=edi mesh). */
+        int natMesh = BoardMeshOrZero(board, 0x437C);
+        if (natMesh) {
+            /* Native preload present (native-ctor boards): build the fresh
+             * render from it like native does, don't early-return. */
+            int extMeshHad = *(int *)((char *)ext + UNI_WINDMILL_MESH);
+            if (!extMeshHad)
+                *(int *)((char *)ext + UNI_WINDMILL_MESH) = natMesh;
         }
         /* Native board+0x437C is filled by the static preload our Step 8
          * replaced — under the mod it holds garbage (0xFE...). Mirror our
@@ -577,8 +581,10 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             *(float *)((char *)board + 0x438C) = ra;
             *(float *)((char *)ext + UNI_WINDMILL_ANGLE) = ra;
         }
-        /* Native returns (mesh, render) — the NULL out1 was our invention. */
-        *(int*)out1 = 0; *(int*)out2 = renderOut;
+        /* Native returns (mesh, render): out1=mesh for CD4 registration,
+         * out2=fresh render (objdump 0x40DA30 mov ebp + 0x40DCA3 stores).
+         * Zeroing out1 dropped the windmill from CD4 = absent. */
+        *(int*)out1 = mesh; *(int*)out2 = renderOut;
         return;
     }
 
