@@ -31,6 +31,8 @@ static void UniversalTowerInit(void *mem, int app) {
     *(DWORD *)((char *)mem + 0x43A4) = 0;
     *(DWORD *)((char *)mem + 0x43A0) = 0;
     *(DWORD *)((char *)mem + 0x43A8) = 0;
+    *(DWORD *)((char *)mem + 0x43AC) = 0;
+    *(DWORD *)((char *)mem + 0x43B0) = 0;
     { int diff = *(int *)(app + 0x23C);
       DWORD prof = *(DWORD *)(app + 0x220);
       if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&

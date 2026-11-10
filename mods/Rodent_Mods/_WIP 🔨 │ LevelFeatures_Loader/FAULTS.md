@@ -93,5 +93,13 @@ mark them FIXED with the version instead.
   rule → dropped from CD4 = absent. Fixed: out1=mesh, out2=fresh render;
   removed bogus early-return; corrected the OUT-PARAM RULE comment.
 - Rig crash-test clean (38s, no crash). Shipped 2026-11-10 — PARTIALLY FIXED,
-  awaiting user retest: does the windmill render + spin on Tower now?
+  awaiting user retest: does the windmill render + spin now?
+- Chomper bite FIXED 2026-11-10 (objdump Tower 0x41E861+/0x40DFA0): the content-5
+  early-return skipped the chomper state machine (jaw frozen shut → only lower
+  jaw, never bites, no sound) and render read chompState from UNI_WINDMILL_SPEED
+  instead of board+0x43A0. Added Feature_ChomperStates (0x43A0/0x43A8/0x43AC/0x43B0
+  + bite sound app+0x4A8, exact native constants), render now reads board+0x43A0,
+  init zeroes 0x43AC/0x43B0, windmill easy rate corrected 0.25→0.5 (native 0x4CF3F0).
+  Rig crash-test clean (38s). Shipped — PARTIALLY FIXED, awaiting user retest:
+  upper jaw + bite anim + chomp sound?
 - Chomper ("purple chomping mouth") weirdness TBD — need a screenshot.

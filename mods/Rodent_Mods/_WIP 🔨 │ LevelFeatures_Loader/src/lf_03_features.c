@@ -855,6 +855,73 @@ static void Feature_SwirlZones(void *board, int level) {
  * Replicates FUN_0041E760 (Tower Board_Update)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* Chomper bite state machine (native Tower 0x41E861+, objdump 2026-11-10).
+ * Drives board+0x43A0 (jaw open 0..25), 0x43A8 (state 0..3), 0x43AC
+ * (counter), 0x43B0 (liftY). The content-5 early-return skipped this
+ * entirely → jaw frozen shut (only lower jaw), never bites, no sound. */
+static void Feature_ChomperStates(void *board, DWORD app) {
+    if (!board) return;
+    *(float *)((char *)board + 0x43A4) += 3.0f; /* bob timer, native 0x41E861 */
+    int state = *(int *)((char *)board + 0x43A8);
+    if (state < 0 || state > 3) { *(int *)((char *)board + 0x43A8) = 0; state = 0; }
+    switch (state) {
+    case 0: {
+        float cs = *(float *)((char *)board + 0x43A0);
+        if (!(cs >= 0.0f)) cs = 0.25f; /* native: <0 or NaN → 0.25 */
+        cs *= 1.2f; /* native double 0x4D0A98 */
+        *(float *)((char *)board + 0x43A0) = cs;
+        if (cs >= 25.0f) { /* native fcomps 0x4CFECC */
+            *(float *)((char *)board + 0x43A0) = 25.0f;
+            *(int *)((char *)board + 0x43A8) = 1;
+            *(int *)((char *)board + 0x43AC) = 0x19;
+            *(float *)((char *)board + 0x43B0) = 50.0f;
+        }
+        break;
+    }
+    case 1: {
+        int c = *(int *)((char *)board + 0x43AC) - 1;
+        *(int *)((char *)board + 0x43AC) = c;
+        if (c <= 0) {
+            *(int *)((char *)board + 0x43A8) = 2;
+            if (g_SoundPlay3D) { /* native bite sound, app+0x4A8 at 0x41E954 */
+                DWORD snd = (app && !IsBadReadPtr((void *)app, 0x500)) ? *(DWORD *)(app + 0x4A8) : 0;
+                if (snd) g_SoundPlay3D((void *)snd,
+                    *(float *)((char *)board + 0x4394),
+                    *(float *)((char *)board + 0x4398),
+                    *(float *)((char *)board + 0x439C), 1.0f);
+            }
+        }
+        break;
+    }
+    case 2: {
+        float cs = *(float *)((char *)board + 0x43A0) * 0.5f; /* native fmuls 0x4CF3F0 */
+        *(float *)((char *)board + 0x43A0) = cs;
+        if (cs <= 1.0f) { /* native fcomps 0x4CF310 */
+            *(float *)((char *)board + 0x43A0) = 0.0f;
+            if (g_RNG) {
+                int rng = RNG_call((void *)0x4F7360, 0, 2, 0);
+                if (rng == 0) *(int *)((char *)board + 0x43A8) = 0;
+                else {
+                    *(int *)((char *)board + 0x43A8) = 3;
+                    int rng2 = RNG_call((void *)0x4F7360, 0, 100, 0);
+                    *(int *)((char *)board + 0x43AC) = rng2 + 100;
+                }
+            }
+        }
+        break;
+    }
+    case 3: {
+        float ly = *(float *)((char *)board + 0x43B0) - 2.0f; /* native fsubs 0x4CF48C */
+        if (!(ly >= 0.0f)) ly = 0.0f;
+        *(float *)((char *)board + 0x43B0) = ly;
+        int c = *(int *)((char *)board + 0x43AC) - 1;
+        *(int *)((char *)board + 0x43AC) = c;
+        if (c <= 0) *(int *)((char *)board + 0x43A8) = 0;
+        break;
+    }
+    }
+}
+
 static void Feature_Windmill(void *board, int level) {
     // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
     if (*(BYTE*)((char*)board+0x874)) return;
@@ -871,7 +938,7 @@ static void Feature_Windmill(void *board, int level) {
         if (!app5) app5 = (DWORD)g_lastAppParam;
         if (!app5 || IsBadReadPtr((void *)app5, 0x500)) return;
         float *bAng = (float *)((char *)board + 0x438C);
-        float rate = (*(int *)(app5 + APP_DIFFICULTY) == 0) ? 0.25f : 1.0f;
+        float rate = (*(int *)(app5 + APP_DIFFICULTY) == 0) ? 0.5f : 1.0f;
         *bAng = *bAng + rate;
         {
             int ai = (int)*bAng;
@@ -909,6 +976,9 @@ static void Feature_Windmill(void *board, int level) {
             }
             g_TimerCleanup(timerBuf);
         }
+        /* Native 0x41E760 falls through to the chomper states — the old
+         * early-return skipped them (frozen jaw, no bite, no sound). */
+        Feature_ChomperStates(board, app5);
         return;
     }
     void* ext = GetBoardExt(board);
@@ -928,7 +998,7 @@ static void Feature_Windmill(void *board, int level) {
     renderPtr = (DWORD*)((char*)ext + REND_TOWER_WINDMILL);
     /* Fallback for legacy BONK_STORE alias during migration. */
     if (!*renderPtr && *(DWORD*)((char*)ext+UNI_BONK_STORE)) *renderPtr = *(DWORD*)((char*)ext+UNI_BONK_STORE);
-    float rotSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 1.0f;
+    float rotSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.5f : 1.0f;
     *anglePtr = *anglePtr + rotSpeed;
     *(float*)((char*)ext + UNI_CHOMP_TIMER) += 3.0f; /* mirror board+0x43A4 (_DAT_004CF418) */
     {

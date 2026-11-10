@@ -179,7 +179,7 @@ void UniversalRenderImpl(void *board, int unk) {
                 scaleFn = (void (__thiscall *)(void *, float, float, float))timerVtbl[6];
                 posFn = (void (__thiscall *)(void *, float, float, float))timerVtbl[2];
             }
-            float chompState = *(float *)((char *)ext + UNI_WINDMILL_SPEED);
+            float chompState = *(float *)((char *)board + 0x43A0);
             float chompTimer = *(float *)((char *)ext + UNI_CHOMP_TIMER);
             float px = *(float *)((char *)board + 0x4394);
             float py = *(float *)((char *)board + 0x4398);
