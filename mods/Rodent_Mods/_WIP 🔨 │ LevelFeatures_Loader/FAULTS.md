@@ -64,3 +64,13 @@ mark them FIXED with the version instead.
 - Next: user retests Tower. No crash = file-I/O-in-dispatcher was guilty.
   Crash + new address = look past the diag (native chain on mod-built
   Tower state is the remaining suspect).
+
+## 2026-11-10 — Tower mace-trigger isolation (B/C builds, user testing)
+- 0xF6AA (badname) = diag WriteFile; 0xF74A (noio, zero dispatcher I/O) =
+  diag memcpy — both innocent instructions, so reported EIPs are not the
+  fault site. Three builds, three innocent EIPs, all in dispatcher.
+- Isolation: B = mod E:MACETRIGGER branch no-op'd (native still runs, maces
+  still swing); C = B + skip native dispatch for mace touches (maces stay
+  inert). If B clean = mod branch guilty; B crash + C clean = native/swing
+  guilty; both crash = entry/environment.
+- Repo stays at noio (B/C are throwaway, not committed).
