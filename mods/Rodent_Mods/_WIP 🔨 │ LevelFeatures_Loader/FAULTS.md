@@ -84,3 +84,11 @@ mark them FIXED with the version instead.
   E:SCORE — all six rewritten as bounded for-loops over DATA[0..count)
   with count<64 + IsBadReadPtr guards, identical per-item behavior.
 - last_touch stays memory-record + Update-flush (zero dispatcher file I/O).
+
+## 2026-11-10 — Tower windmill absent (missing mesh file, not code)
+- Windmill create is fine (native slot or ext-load). It needs
+  Levels\Level4-Windmill.MESHWORLD in the game dir; user never got it
+  (all 3 repo copies identical eeebab1c, 17KB — established file).
+  Resent 2026-11-10. If still absent with the file present, suspect load
+  failure (DebugLog off, can't confirm remotely).
+- Chomper ("purple chomping mouth") weirdness TBD — need a screenshot.
