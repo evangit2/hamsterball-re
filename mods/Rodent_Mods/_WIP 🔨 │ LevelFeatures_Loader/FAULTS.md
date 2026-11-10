@@ -20,3 +20,17 @@ mark them FIXED with the version instead.
 | 12 | Sky | Posts don't appear. Magnifying glass doesn't follow ball. Pegs don't pop up. Fun ball doesn't activate. | OPEN (4 sub-items) |
 | 13 | Master | Drawbridge doesn't move (but present). Chomper sounds (Tower) play instead of drawbridge sounds. Tippers work fine and are visible. Cannon doesn't work (cannot test farther). | OPEN (4 sub-items; tippers OK) |
 | 14 | Impossible | Rotator doesn't carry ball (looper and pendulum neither). Gears don't carry ball correctly. Help inertia doesn't help inertia. | OPEN (3 sub-items) |
+
+## 2026-11-10 — Tower Update crash at BASS.dll+0xA8EA (user report, UNDER INVESTIGATION)
+- Report: Tower, Update op, 26s runtime, user believed mace-trigger touch.
+  0xA8EA in every shipped build = UniversalDispatchCollision E:BRANCH
+  pipe-vector block (sprintf POS/VECTOR + float init). That block needs
+  COLL_FLAG_BRANCH + touched name "E:BRANCH*" — both absent on stock Tower
+  (rig live-table proof: 15 names, no BRANCH, flag 0; 200+ touch sweep,
+  no crash). Cause unreproduced on rig.
+- Diag shipped: bass.dll now writes last_touch.txt (game dir, rewritten
+  only when the touched name changes — no per-frame I/O) with the exact
+  last E:/N: touch. Rig-verified: logs E:TRAJECTORY then E:OPENSESAME on
+  the trapdoor fall path; trapdoor fix intact (f4 0->10). Ask user to
+  play normally, and after any crash send last_touch.txt — it names the
+  real touch.

@@ -237,6 +237,27 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
     if (!name) goto call_global;
 
+    /* Crash-forensics (diag): record the last touched trigger name. The
+     * tiny file is rewritten only when the name CHANGES (resting on a
+     * plane costs one write, never per-frame I/O). After a crash this
+     * file names the exact touch that preceded it. */
+    {
+        static char s_lastTouch[64] = {0};
+        if (!IsBadReadPtr(name, 64) && my_stricmp(name, s_lastTouch) != 0) {
+            size_t nl = 0; while (nl < 63 && name[nl]) nl++;
+            memcpy(s_lastTouch, name, nl); s_lastTouch[nl] = 0;
+            {
+                HANDLE hf = CreateFileA("last_touch.txt", GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                if (hf != INVALID_HANDLE_VALUE) {
+                    DWORD bw = 0;
+                    WriteFile(hf, name, (DWORD)nl, &bw, NULL);
+                    WriteFile(hf, "\r\n", 2, &bw, NULL);
+                    CloseHandle(hf);
+                }
+            }
+        }
+    }
+
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     int difficulty = (app && !IsBadReadPtr((void *)app, 0x800)) ? *(int *)(app + APP_DIFFICULTY) : 0;
     DWORD sceneObj = cp[0]; /* *collPair = scene object pointer */
