@@ -100,6 +100,13 @@ mark them FIXED with the version instead.
   instead of board+0x43A0. Added Feature_ChomperStates (0x43A0/0x43A8/0x43AC/0x43B0
   + bite sound app+0x4A8, exact native constants), render now reads board+0x43A0,
   init zeroes 0x43AC/0x43B0, windmill easy rate corrected 0.25→0.5 (native 0x4CF3F0).
-  Rig crash-test clean (38s). Shipped — PARTIALLY FIXED, awaiting user retest:
-  upper jaw + bite anim + chomp sound?
+  - Rig crash-test clean (38s). Shipped — PARTIALLY FIXED, awaiting user retest:
+    upper jaw + bite anim + chomp sound?
+  - Chomper still dead on user box with correct DLL (fully silent = states not
+    running OR mesh missing, not a render tweak). Diag shipped 2026-11-10
+    (CHOMP_DIAG_v1): unconditional board+0x4390 mirror (was conditional —
+    mapped garbage could block the real mesh) + chomper states on the ext path
+    too + throttled chomper_diag.txt (cf/lvl/feat/mesh/slots/snd/rng/pos).
+    Ask: play Tower ~30s, send back chomper_diag.txt. No blind fixes until
+    the file names the stage.
 - Chomper ("purple chomping mouth") weirdness TBD — need a screenshot.

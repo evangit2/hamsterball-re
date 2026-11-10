@@ -922,6 +922,54 @@ static void Feature_ChomperStates(void *board, DWORD app) {
     }
 }
 
+/* TEMP DIAG chomper v1 (remove once user confirms fix): proves which build
+ * ran + names the failing stage. Throttled 1/150 updates, appends one line
+ * per hit to chomper_diag.txt in the game dir. wsprintfA has NO float
+ * support — all values logged as int/bits. */
+static void DiagChomper(void *board, DWORD app) {
+    static int n = 0;
+    static int initDone = 0;
+    void *ext = GetBoardExt(board);
+    HANDLE hf;
+    DWORD bw = 0;
+    char dl[512];
+    int cf, lvl, feat;
+    DWORD chMesh, rCh, b390, bite;
+    int a0bits, a0i, a8, ac, b0bits, px, py, pz;
+    int hasSnd, hasRng;
+    if (++n < 150) return;
+    n = 0;
+    cf = ext ? ContentFileId(ext) : -999;
+    lvl = GetCurrentLevel(board);
+    feat = ext ? ((GetBoardFeat(board) & FEAT_WINDMILL) ? 1 : 0) : -999;
+    chMesh = ext ? *(DWORD *)((char *)ext + UNI_CHOMPER_MESH) : 0;
+    rCh = ext ? *(DWORD *)((char *)ext + REND_TOWER_CHOMPER) : 0;
+    b390 = *(DWORD *)((char *)board + 0x4390);
+    a0bits = *(int *)((char *)board + 0x43A0);
+    a0i = (int)(*(float *)((char *)board + 0x43A0));
+    a8 = *(int *)((char *)board + 0x43A8);
+    ac = *(int *)((char *)board + 0x43AC);
+    b0bits = *(int *)((char *)board + 0x43B0);
+    px = (int)(*(float *)((char *)board + 0x4394));
+    py = (int)(*(float *)((char *)board + 0x4398));
+    pz = (int)(*(float *)((char *)board + 0x439C));
+    hasSnd = (g_SoundPlay3D != 0) ? 1 : 0;
+    hasRng = (g_RNG != 0) ? 1 : 0;
+    bite = 0;
+    if (app && !IsBadReadPtr((void *)app, 0x500)) bite = (DWORD)(*(DWORD *)(app + 0x4A8));
+    hf = CreateFileA("chomper_diag.txt", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hf == INVALID_HANDLE_VALUE) return;
+    SetFilePointer(hf, 0, NULL, FILE_END);
+    if (!initDone) {
+        initDone = 1;
+        WriteFile(hf, "CHOMP_DIAG_v1 init\r\n", 20, &bw, NULL);
+    }
+    wsprintfA(dl, "cf=%d lvl=%d feat=%d chMesh=%d rCh=%d b390=%d a0bits=%d a0i=%d a8=%d ac=%d b0b=%d snd=%d rng=%d bite=%d px=%d py=%d pz=%d\r\n",
+        cf, lvl, feat, (int)chMesh, (int)rCh, (int)b390, a0bits, a0i, a8, ac, b0bits, hasSnd, hasRng, (int)bite, px, py, pz);
+    WriteFile(hf, dl, strlen(dl), &bw, NULL);
+    CloseHandle(hf);
+}
+
 static void Feature_Windmill(void *board, int level) {
     // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
     if (*(BYTE*)((char*)board+0x874)) return;
@@ -979,6 +1027,7 @@ static void Feature_Windmill(void *board, int level) {
         /* Native 0x41E760 falls through to the chomper states — the old
          * early-return skipped them (frozen jaw, no bite, no sound). */
         Feature_ChomperStates(board, app5);
+        DiagChomper(board, app5);
         return;
     }
     void* ext = GetBoardExt(board);
@@ -1039,6 +1088,10 @@ static void Feature_Windmill(void *board, int level) {
     case 2: { float speed = *speedPtr * 0.25f; *speedPtr = speed; if (speed < 1.0f) { *speedPtr = 0.0f; if (g_RNG) { int rng = RNG_call((void *)0x4F7360, 0, 2, 0); if (rng != 0) { *statePtr = 3; int rng2 = RNG_call((void *)0x4F7360, 0, 100, 0); *counterPtr = rng2 + 100; } else { *statePtr = 0; } } } } break;
     case 3: { float decay = *decayPtr - 2.0f; if (decay < 0.0f) decay = 0.0f; *decayPtr = decay; int c = *counterPtr - 1; *counterPtr = c; if (c < 1) *statePtr = 0; } break;
     }
+    /* Tower objects on non-Tower content: drive the native board chomper
+     * slots too, presence-gated on our loaded chomper mesh. */
+    if (*(DWORD *)((char *)ext + REND_TOWER_CHOMPER))
+        Feature_ChomperStates(board, app);
     // No board mirror — ext is source of truth
 }
 

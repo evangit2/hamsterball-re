@@ -626,12 +626,12 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         void *chomperMesh = *(void **)((char *)ext + UNI_CHOMPER_MESH);
         if (chomperMesh) *(DWORD *)((char *)ext + REND_TOWER_CHOMPER) = (DWORD)chomperMesh;
         /* Mirror the MeshNode into the native render slot — the clean-room
-         * Tower render draws board+0x4390 via vtbl[7] (native 0x40DFA0). */
-        if (chomperMesh && BoardHasOffset(board, 0x4390, 4)) {
-            int natC = *(int *)((char *)board + 0x4390);
-            if (!natC || IsBadReadPtr((void *)natC, 4))
-                *(DWORD *)((char *)board + 0x4390) = (DWORD)chomperMesh;
-        }
+         * Tower render draws board+0x4390 via vtbl[7] (native 0x40DFA0).
+         * Unconditional (TURRET precedent): universal boards never ran the
+         * native preload, so the slot is always allocator garbage — a
+         * mapped-garbage conditional skip leaves a wild mesh pointer. */
+        if (chomperMesh && BoardHasOffset(board, 0x4390, 4))
+            *(DWORD *)((char *)board + 0x4390) = (DWORD)chomperMesh;
         /* Native writes board+0x4394/98/9c (game reads these); ext mirrors for our driver. */
         *(float *)((char *)board + 0x4394) = x;
         *(float *)((char *)board + 0x4398) = y;
