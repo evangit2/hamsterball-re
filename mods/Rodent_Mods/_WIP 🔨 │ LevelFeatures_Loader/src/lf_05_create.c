@@ -787,11 +787,13 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
                    }
                 if (obj && strstr(name, "1")) g_AthenaListAppend((void*)((char*)board + 0x4380), (int)obj);
         if (obj && strstr(name, "2")) g_AthenaListAppend((void*)((char*)board + 0x4798), (int)obj);
-        /* Native Expert create leaves out1/out2 UNTOUCHED for spinners
-         * (no out-param stores in 0x40E500-0x40E700 — appends only). Zero
-         * both so the S1 dispatcher doesn't append to CD4 + call v[0x58]/
-         * v[0x54] with garbage (same corruption as the Up lifter). */
-        *(int*)out1 = 0; *(int*)out2 = 0;
+        /* Native Expert create stores out1=obj for spinners (0x40E686:
+         * mov [eax],edi; the "appends-only" reading was wrong — it missed
+         * the shared tail). The S1 dispatcher appends out1 to CD4 (the
+         * drawn list); out2=render follows the mod's working convention
+         * (native stores a stale frame slot the dispatcher tolerates). */
+        if (obj) { *(int*)out1 = (int)obj; *(int*)out2 = renderOut; }
+        else { *(int*)out1 = 0; *(int*)out2 = 0; }
         return;
     }
 
@@ -844,8 +846,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             }
                         if (obj && strstr(name, "2")) g_AthenaListAppend((void*)((char*)board + 0x4798), (int)obj);
             else if (obj) g_AthenaListAppend((void*)((char*)board + 0x4380), (int)obj);
-            /* Native leaves out-params untouched for spinners (see above). */
-            *(int*)out1 = 0; *(int*)out2 = 0;
+            /* Native stores out1=obj for spinners (0x40E686) — see SAWBRIDGE. */
+            if (obj) { *(int*)out1 = (int)obj; *(int*)out2 = renderOut; }
+            else { *(int*)out1 = 0; *(int*)out2 = 0; }
             return;
         }
         S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level2-Bridge");
@@ -1009,13 +1012,13 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
              * appending live lifters there deletes them and crashes.
              * Lifters are driven via the shared 0x2578 walk (vtable[11]). */
         }
-        /* Native Up create leaves out1/out2 UNTOUCHED for lifters (no
-         * stores in 0x4117B0-0x4119A9 — dispatcher-initialized 0). Returning
-         * out1=obj makes the native S1 dispatcher append the lifter to CD4
-         * + call v[0x58]/v[0x54] with garbage args, which parks the lifter
-         * platform visual at the origin (rig: all 3 sub-objs at (0,0,0)) —
-         * the "absent lifters". Zero both. */
-        *(int*)out1 = 0; *(int*)out2 = 0;
+        /* Native Up create stores out1=obj, out2=[obj+0x10E0] for lifters
+         * (0x41197D-0x411987: mov [eax],edi / mov [ecx],ebx with
+         * ebx=[obj+0x10E0]; the "no-store" reading was wrong). The S1
+         * dispatcher appends out1 to CD4 (the drawn list) — zeroing out1
+         * is what made lifters invisible-but-audible. Mirror native. */
+        if (obj) { *(int*)out1 = (int)obj; *(int*)out2 = *(int*)((char*)obj + 0x10E0); }
+        else { *(int*)out1 = 0; *(int*)out2 = 0; }
         return;
     }
 
