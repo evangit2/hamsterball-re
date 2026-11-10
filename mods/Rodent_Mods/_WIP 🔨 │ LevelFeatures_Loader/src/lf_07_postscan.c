@@ -556,12 +556,12 @@ static void ScanS1ReferencedMeshesForCollisions(void *board, void *ext, void *me
              * contain zero Levels\\ path strings). Fall back to the known owner file. */
             static const char *s_subMeshFallback =
                 "CATAPULT\0Levels\\Level4-Catapult\0" "MACE\0Levels\\Level4-Mace\0" "DRAWBRIDGE\0Levels\\Level4-Drawbridge\0" "WINDMILL\0Levels\\Level4-Windmill\0"
-                "TRAPDOOR\0Levels\\Level9-TrapDoor\0" "TURRET\0Levels\\Level4-Turret\0" "CHOMPER\0Meshes\\Chomper\0" "TIPPER\0Levels\\Level3-Tipper\0"
+                "TRAPDOOR\0Levels\\Level4-Trapdoor1\0" "TURRET\0Levels\\Level4-Turret\0" "CHOMPER\0Meshes\\Chomper\0" "TIPPER\0Levels\\Level3-Tipper\0"
                 "GLUEBIE\0Levels\\Level3-Gluebie\0" "SWIRL\0Levels\\Level3-Swirl\0" "WATERWHEEL\0Levels\\Level3-WaterWheel\0" "WHEELEMBED\0Levels\\Level3-WaterWheel\0"
                 "SAWBRIDGE\0Levels\\Level2-Bridge\0" "SAW\0Levels\\Level8-Saw\0" "BBRIDGE\0Levels\\Level10-Bridge1\0" "SPINNY\0Levels\\Level8-Spinny\0"
                 "SAW\0Levels\\Level8-Saw\0" "FALLOUT\0Levels\\Level8-Fallout\0" "BLOCKDAWG\0Levels\\Level8-BlockDawg1\0" "LIFTER\0Levels\\LevelUp-Lifter\0"
                 "DROPPER\0Levels\\LevelUp-Lifter\0" "SPEEDCYLINDER\0Levels\\LevelUp-SpeedCylinder\0" "TIMEBUTTON\0Levels\\LevelUp-Button\0" "NEONPLATFORM\0Levels\\LevelDark-NeonPlatform\0"
-                "DFLOOR\0Levels\\LevelDark-DFloor1\0" "TRODE\0Levels\\LevelDark-Trode\0" "POPCYLINDER\0Levels\\Level9-PopCylinder1\0" "POPDOOR\0Levels\\Level9-TrapDoor\0"
+                "DFLOOR\0Levels\\LevelDark-DFloor1\0" "TRODE\0Levels\\LevelDark-Trode\0" "POPCYLINDER\0Levels\\Level9-PopCylinder1\0"
                 "CLOUDSCAPE\0Levels\\Level9-PopCylinder1\0" "WOBBLY\0Levels\\Level7-Wobbly1\0" "WAVY\0Levels\\Level7-Wavy1\0" "LOOPER\0Levels\\LevelImpossible-Looper\0"
                 "GEAR\0Levels\\LevelImpossible-Gear\0" "BIGGEAR\0Levels\\LevelImpossible-BigGear\0" "ROTATOR\0Levels\\LevelImpossible-Rotator\0" "PENDULUM\0Levels\\LevelImpossible-Pendulum\0"
                 "BONK\0Levels\\Level2-Bridge\0" "FAN\0Levels\\Level2-Bridge\0" "BELL\0Levels\\Level2-Bridge\0" "JUDGE\0Levels\\Level2-Bridge\0";
@@ -579,14 +579,13 @@ static void ScanS1ReferencedMeshesForCollisions(void *board, void *ext, void *me
                 f += pn + 1; { size_t ml = strlen(f); f += ml + 1; }
             }
             /* Tower trapdoors: bare TRAPDOOR S1s load Levels\Level4-Trapdoor1/2
-             * (both carry the N:TRAPDOOR trigger plate), but the fallback above
-             * only scans the Sky file Levels\Level9-TrapDoor (zero N:/E:
-             * tokens) — so N:TRAPDOOR never entered the table, the flag stayed
-             * 0, and rolling over the door never fired Activate (rig: +0x10F4
-             * stuck at 0 under the ball). Scan the Tower files for any bare
-             * TRAPDOOR S1 regardless of slot — harmless elsewhere (no
+             * (both carry the N:TRAPDOOR trigger plate). The fallback above
+             * used to point at the Sky file Levels\Level9-TrapDoor (zero N:/E:
+             * tokens) — now points at Trapdoor1; this block adds Trapdoor2.
+             * Skipped on Sky (level 13: its door has no trigger plate, and the
+             * Sky file is deliberately not scanned). Harmless elsewhere (no
              * trapdoor objects exist to false-match outside Tower). */
-            if (my_strnicmp(name, "TRAPDOOR", 8) == 0) {
+            if (GetCurrentLevel(board) != 13 && my_strnicmp(name, "TRAPDOOR", 8) == 0) {
                 ScanFileForCollisions(board, ext, "Levels\\Level4-Trapdoor1");
                 ScanFileForCollisions(board, ext, "Levels\\Level4-Trapdoor1.MESHWORLD");
                 ScanFileForCollisions(board, ext, "Levels\\Level4-Trapdoor2");
