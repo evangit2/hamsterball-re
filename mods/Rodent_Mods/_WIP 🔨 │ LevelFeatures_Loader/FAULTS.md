@@ -74,3 +74,13 @@ mark them FIXED with the version instead.
   inert). If B clean = mod branch guilty; B crash + C clean = native/swing
   guilty; both crash = entry/environment.
 - Repo stays at noio (B/C are throwaway, not committed).
+
+## 2026-11-10 — Tower mace crash FIXED (unbounded GetIterator index)
+- B clean (mod mace branch off) proved the mod's E:MACETRIGGER branch
+  guilty. Root cause: GetIterator returns a stateful cursor that is NOT
+  bounded by the list count; `*(list+8+iter*4)` reads/writes OOB when the
+  cursor drifts (differs machine to machine — rig fine, user crashed).
+  Same pattern in N:MACE, E:CATAPULTBOTTOM, N:TRAPDOOR, E:ALERTJUDGES,
+  E:SCORE — all six rewritten as bounded for-loops over DATA[0..count)
+  with count<64 + IsBadReadPtr guards, identical per-item behavior.
+- last_touch stays memory-record + Update-flush (zero dispatcher file I/O).

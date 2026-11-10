@@ -390,27 +390,23 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             DWORD catList = UNI_CATAPULT_LIST;
             DWORD catCount = UNI_CATAPULT_COUNT;
             DWORD catData = UNI_CATAPULT_DATA;
-            int iter = g_AthenaListGetIterator((void *)((char *)ext + catList));
-            *(DWORD *)((char *)ext + catList + 8 + iter * 4) = 0;
+            /* Safe walk (no iterator scratch — see E:MACETRIGGER note). */
             int count = *(int *)((char *)ext + catCount);
-            int item = 0;
-            if (count > 0) {
-                item = **(int **)((char *)ext + catData);
-                *(DWORD *)((char *)ext + catList + 8 + iter * 4) = 1;
-            }
-            while (item) {
-                if (*(int *)(item + 0x10D4) == sceneObj) {
-                    *(int **)(item + 0x10EC) = ball;
-                    if (g_CatapultLaunch) g_CatapultLaunch(item);
-                    if (g_SoundPlayChannel && app) {
-                        int ch = *(int *)(app + 0x464);
-                        if (ch) g_SoundPlayChannel(ch, 1.0f);
+            int *data = (count >= 1 && count < 64) ? *(int **)((char *)ext + catData) : NULL;
+            if (data && !IsBadReadPtr(data, count * 4)) {
+                int ci;
+                for (ci = 0; ci < count; ci++) {
+                    int item = data[ci];
+                    if (!item || IsBadReadPtr((void *)item, 0x10F0)) continue;
+                    if (*(int *)(item + 0x10D4) == sceneObj) {
+                        *(int **)(item + 0x10EC) = ball;
+                        if (g_CatapultLaunch) g_CatapultLaunch(item);
+                        if (g_SoundPlayChannel && app) {
+                            int ch = *(int *)(app + 0x464);
+                            if (ch) g_SoundPlayChannel(ch, 1.0f);
+                        }
                     }
                 }
-                int next = *(int *)((char *)ext + catList + 8 + iter * 4);
-                if (*(int *)((char *)ext + catCount) <= next) break;
-                item = *(int *)(*(int **)((char *)ext + catData) + next * 4);
-                *(int *)((char *)ext + catList + 8 + iter * 4) = next + 1;
             }
         }
     }
@@ -425,24 +421,19 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         }
     }
 
-    /* ── Tower: N:TRAPDOOR ── */
+    /* ── Tower: N:TRAPDOOR ── (safe walk, no iterator scratch) */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_TRAPDOOR)) && my_stricmp(name, "N:TRAPDOOR") == 0) {
-        int iter = g_AthenaListGetIterator((void *)((char *)ext + UNI_TRAPDOOR_LIST));
-        *(DWORD *)((char *)ext + UNI_TRAPDOOR_LIST + 8 + iter * 4) = 0;
         int count = *(int *)((char *)ext + UNI_TRAPDOOR_COUNT);
-        int item = 0;
-        if (count >= 1) {
-            item = **(int **)((char *)ext + UNI_TRAPDOOR_DATA);
-            *(DWORD *)((char *)ext + UNI_TRAPDOOR_LIST + 8 + iter * 4) = 1;
-        }
-        while (item) {
-            if (*(int *)(item + 0x10D4) == sceneObj || *(int *)(item + 0x10DC) == sceneObj) {
-                if (g_TrapdoorActivate) g_TrapdoorActivate(item);
+        int *data = (count >= 1 && count < 64) ? *(int **)((char *)ext + UNI_TRAPDOOR_DATA) : NULL;
+        if (data && !IsBadReadPtr(data, count * 4)) {
+            int ti;
+            for (ti = 0; ti < count; ti++) {
+                int item = data[ti];
+                if (!item || IsBadReadPtr((void *)item, 0x10E0)) continue;
+                if (*(int *)(item + 0x10D4) == sceneObj || *(int *)(item + 0x10DC) == sceneObj) {
+                    if (g_TrapdoorActivate) g_TrapdoorActivate(item);
+                }
             }
-            int next = *(int *)((char *)ext + UNI_TRAPDOOR_LIST + 8 + iter * 4);
-            if (*(int *)((char *)ext + UNI_TRAPDOOR_COUNT) <= next) break;
-            item = *(int *)(*(int **)((char *)ext + UNI_TRAPDOOR_DATA) + next * 4);
-            *(int *)((char *)ext + UNI_TRAPDOOR_LIST + 8 + iter * 4) = next + 1;
         }
     }
 
@@ -452,50 +443,44 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         *(DWORD *)((char *)ext + UNI_BITE_SPEED) = 0x41C80000;
     }
 
-    /* ── Tower: E:MACETRIGGER ── */
+    /* ── Tower: E:MACETRIGGER ──
+     * Activate every mace (f0 = 1). Native does the same via call_global;
+     * this covers file-swapped/custom levels. No iterator scratch: the old
+     * GetIterator index is stateful and unbounded (OOB write crash on some
+     * machines), and nothing ever reads those slots back. */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_MACETRIGGER)) && my_stricmp(name, "E:MACETRIGGER") == 0) {
-        int iter = g_AthenaListGetIterator((void *)((char *)ext + UNI_MACE_LIST));
-        *(DWORD *)((char *)ext + UNI_MACE_LIST + 8 + iter * 4) = 0;
         int count = *(int *)((char *)ext + UNI_MACE_COUNT);
-        int item = 0;
-        if (count >= 1) {
-            item = **(int **)((char *)ext + UNI_MACE_DATA);
-            *(DWORD *)((char *)ext + UNI_MACE_LIST + 8 + iter * 4) = 1;
-        }
-        while (item) {
-            *(BYTE *)(item + 0x10F0) = 1;
-            int next = *(int *)((char *)ext + UNI_MACE_LIST + 8 + iter * 4);
-            if (*(int *)((char *)ext + UNI_MACE_COUNT) <= next) break;
-            item = *(int *)(*(int **)((char *)ext + UNI_MACE_DATA) + next * 4);
-            *(int *)((char *)ext + UNI_MACE_LIST + 8 + iter * 4) = next + 1;
+        int *data = (count >= 1 && count < 64) ? *(int **)((char *)ext + UNI_MACE_DATA) : NULL;
+        if (data && !IsBadReadPtr(data, count * 4)) {
+            int mi;
+            for (mi = 0; mi < count; mi++) {
+                int mitem = data[mi];
+                if (mitem && !IsBadReadPtr((void *)mitem, 0x10F4))
+                    *(BYTE *)(mitem + 0x10F0) = 1;
+            }
         }
     }
 
-    /* ── Tower: N:MACE ── */
+    /* ── Tower: N:MACE ── (same iterator-scratch removal as E:MACETRIGGER) */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_MACE)) && my_stricmp(name, "N:MACE") == 0) {
-        int iter = g_AthenaListGetIterator((void *)((char *)ext + UNI_MACE_LIST));
-        *(DWORD *)((char *)ext + UNI_MACE_LIST + 8 + iter * 4) = 0;
         int count = *(int *)((char *)ext + UNI_MACE_COUNT);
-        int item = 0;
-        if (count >= 1) {
-            item = **(int **)((char *)ext + UNI_MACE_DATA);
-            *(DWORD *)((char *)ext + UNI_MACE_LIST + 8 + iter * 4) = 1;
-        }
-        while (item) {
-            if (*(int *)(item + 0x10D4) == sceneObj &&
-                *(int *)(item + 0x10E8) != 0x42A00000 &&
-                *(int *)(item + 0x10F4) == 0) {
-                /* Call ball vtable[+0x20] (break) */
-                DWORD *vtbl = *(DWORD **)ball;
-                if (vtbl) {
-                    void (__thiscall *fn)(int *) = (void (__thiscall *)(int *))vtbl[8];
-                    if (fn) fn(ball);
+        int *data = (count >= 1 && count < 64) ? *(int **)((char *)ext + UNI_MACE_DATA) : NULL;
+        if (data && !IsBadReadPtr(data, count * 4)) {
+            int mi;
+            for (mi = 0; mi < count; mi++) {
+                int item = data[mi];
+                if (!item || IsBadReadPtr((void *)item, 0x10F8)) continue;
+                if (*(int *)(item + 0x10D4) == sceneObj &&
+                    *(int *)(item + 0x10E8) != 0x42A00000 &&
+                    *(int *)(item + 0x10F4) == 0) {
+                    /* Call ball vtable[+0x20] (break) */
+                    DWORD *vtbl = *(DWORD **)ball;
+                    if (vtbl) {
+                        void (__thiscall *fn)(int *) = (void (__thiscall *)(int *))vtbl[8];
+                        if (fn) fn(ball);
+                    }
                 }
             }
-            int next = *(int *)((char *)ext + UNI_MACE_LIST + 8 + iter * 4);
-            if (*(int *)((char *)ext + UNI_MACE_COUNT) <= next) break;
-            item = *(int *)(*(int **)((char *)ext + UNI_MACE_DATA) + next * 4);
-            *(int *)((char *)ext + UNI_MACE_LIST + 8 + iter * 4) = next + 1;
         }
     }
 
@@ -708,42 +693,32 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         }
     }
 
-    /* ── Expert: E:ALERTJUDGES ── */
+    /* ── Expert: E:ALERTJUDGES ── (safe walk, no iterator scratch) */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTJUDGES)) && my_stricmp(name, "E:ALERTJUDGES") == 0) {
-        int iter = g_AthenaListGetIterator((void *)((char *)ext + UNI_JUDGE_LIST));
-        *(DWORD *)((char *)ext + UNI_JUDGE_LIST + 8 + iter * 4) = 0;
         int count = *(int *)((char *)ext + UNI_JUDGE_COUNT);
-        int item = 0;
-        if (count >= 1) {
-            item = **(int **)((char *)ext + UNI_JUDGE_DATA);
-            *(DWORD *)((char *)ext + UNI_JUDGE_LIST + 8 + iter * 4) = 1;
-        }
-        while (item) {
-            if (g_JudgeReset) g_JudgeReset(item);
-            int next = *(int *)((char *)ext + UNI_JUDGE_LIST + 8 + iter * 4);
-            if (*(int *)((char *)ext + UNI_JUDGE_COUNT) <= next) break;
-            item = *(int *)(*(int **)((char *)ext + UNI_JUDGE_DATA) + next * 4);
-            *(int *)((char *)ext + UNI_JUDGE_LIST + 8 + iter * 4) = next + 1;
+        int *data = (count >= 1 && count < 64) ? *(int **)((char *)ext + UNI_JUDGE_DATA) : NULL;
+        if (data && !IsBadReadPtr(data, count * 4)) {
+            int ji;
+            for (ji = 0; ji < count; ji++) {
+                int item = data[ji];
+                if (!item || IsBadReadPtr((void *)item, 4)) continue;
+                if (g_JudgeReset) g_JudgeReset(item);
+            }
         }
     }
 
-    /* ── Expert: E:SCORE ── */
+    /* ── Expert: E:SCORE ── (safe walk, no iterator scratch) */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_SCORE)) && my_strnicmp(name, "E:SCORE", 7) == 0) {
-        int iter = g_AthenaListGetIterator((void *)((char *)ext + UNI_JUDGE_LIST));
-        *(DWORD *)((char *)ext + UNI_JUDGE_LIST + 8 + iter * 4) = 0;
         int count = *(int *)((char *)ext + UNI_JUDGE_COUNT);
-        void *item = NULL;
-        if (count >= 1) {
-            item = (void *)**(int **)((char *)ext + UNI_JUDGE_DATA);
-            *(DWORD *)((char *)ext + UNI_JUDGE_LIST + 8 + iter * 4) = 1;
-        }
-        while (item) {
-            long score = atol(name + 7);
-            if (g_ScoreDisplaySetTime) g_ScoreDisplaySetTime(item, score);
-            int next = *(int *)((char *)ext + UNI_JUDGE_LIST + 8 + iter * 4);
-            if (*(int *)((char *)ext + UNI_JUDGE_COUNT) <= next) break;
-            item = *(void **)(*(int **)((char *)ext + UNI_JUDGE_DATA) + next * 4);
-            *(int *)((char *)ext + UNI_JUDGE_LIST + 8 + iter * 4) = next + 1;
+        int *data = (count >= 1 && count < 64) ? *(int **)((char *)ext + UNI_JUDGE_DATA) : NULL;
+        if (data && !IsBadReadPtr(data, count * 4)) {
+            int ji;
+            for (ji = 0; ji < count; ji++) {
+                void *item = (void *)data[ji];
+                if (!item || IsBadReadPtr(item, 4)) continue;
+                long score = atol(name + 7);
+                if (g_ScoreDisplaySetTime) g_ScoreDisplaySetTime(item, score);
+            }
         }
     }
 
