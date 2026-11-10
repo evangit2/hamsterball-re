@@ -237,6 +237,28 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
     if (!name) goto call_global;
 
+    /* Name hardening (Tower 0xA8EA/0xAA4A crash): the gate below runs
+     * 60+ prefix compares + hash lookups on this pointer. A dangling or
+     * short name (readable first 4 bytes, garbage after) can pass a gate
+     * on recycled heap bytes and crash deep inside a block. Require the
+     * full 64-byte probe + NUL termination; anything less runs native
+     * collision only. A BADNAME line in last_touch.txt proves the touch
+     * that preceded a crash was garbage, not a real trigger. */
+    {
+        int nn = 0;
+        if (IsBadReadPtr(name, 64)) nn = -1;
+        else { while (nn < 63 && name[nn]) nn++; if (nn >= 63) nn = -1; }
+        if (nn < 0) {
+            HANDLE hf = CreateFileA("last_touch.txt", GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+            if (hf != INVALID_HANDLE_VALUE) {
+                DWORD bw = 0;
+                WriteFile(hf, "BADNAME\r\n", 9, &bw, NULL);
+                CloseHandle(hf);
+            }
+            goto call_global;
+        }
+    }
+
     /* Crash-forensics (diag): record the last touched trigger name. The
      * tiny file is rewritten only when the name CHANGES (resting on a
      * plane costs one write, never per-frame I/O). After a crash this

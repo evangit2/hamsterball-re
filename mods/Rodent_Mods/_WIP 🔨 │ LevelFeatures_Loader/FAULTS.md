@@ -34,3 +34,22 @@ mark them FIXED with the version instead.
   the trapdoor fall path; trapdoor fix intact (f4 0->10). Ask user to
   play normally, and after any crash send last_touch.txt — it names the
   real touch.
+
+## 2026-11-10 — Tower 0xAA4A crash = E:BRANCH block tail (entry-walk, lf_06:1025-1028)
+- User's touchlog-build crash at BASS.dll+0xAA4A. Debug-line mapping pins it
+  to the E:BRANCH block's entry-walk loop (lines 1012-1029), same block as
+  the earlier 0xA8EA (float-init). Both need COLL_FLAG_BRANCH + name
+  "E:BRANCH*" — absent on stock Tower (rig live-table proof, 36-E: file
+  census, no BRANCH anywhere). last_touch proves the crashing call's name
+  was "E:MACETRIGGER".
+- Working theory: the crashing touch carries a dangling/short name pointer
+  (readable first bytes, garbage after) that passes the entry check and the
+  gate on recycled heap bytes, then crashes in the block. The 4-byte entry
+  probe was insufficient; the diag only logged readable names, so the file
+  kept the previous valid touch.
+- Fix shipped: entry now requires full 64-byte probe + NUL termination;
+  failures write BADNAME to last_touch.txt and run native-only. Rig-verified:
+  valid E: touches still log (E:TRAJECTORY), boot crash-clean.
+- Next: user retests Tower. BADNAME + crash = theory confirmed (then gate
+  needs pointer-validity, not just content). E:MACETRIGGER + crash = theory
+  wrong, new data.
