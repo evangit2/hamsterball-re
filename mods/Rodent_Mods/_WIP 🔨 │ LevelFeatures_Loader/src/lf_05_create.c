@@ -30,7 +30,7 @@ static DWORD GetBoardApp(void *board) {
  *   board slots (+0x436C/+0x4370/+0x4374/+0x4FD4) crashes shared-code
  *   readers that expect WarmUp's occupants; WarmUp's values are safe.
  * All other Expert classes build unconditionally (presence-gated inits). */
-static int g_enableExpertFans = 0;
+static int g_enableExpertFans = 1;
 static int g_enableExpertMirrors = 0;
 static int BoardMeshOrZero(void *board, DWORD slotOff) {
     /* Tower objects (MACE/WINDMILL/DRAWBRIDGE/Catapult/TURRET/Trapdoor S1s,
@@ -756,7 +756,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
      * S1: SAWBRIDGE1 / SAWBRIDGE2 (+ NEG) — was BRIDGE1/2 on Expert
      * BRIDGE (drawbridge) is now Intermediate/Master only, level-gate removed */
     if (my_strnicmp(name, "SAWBRIDGE", 9) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level2-Bridge");
+        S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level5-Bridge");
         void* brMesh = *(void**)((char*)ext + UNI_BONK_STORE);
         /* Native Spinner_Level_ctor reads its mesh from board+0x4378
          * (preload gap under mod - mirror ours in, Tower pattern). */
@@ -814,7 +814,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         char brc6 = name[6];
         if (brc6 >= '0' && brc6 <= '9') {
                        /* Expert BRIDGEn spinner — same path as SAWBRIDGE */
-            S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level2-Bridge");
+            S1EnsureMeshWorld(board, ext, UNI_BONK_STORE, "Levels\\Level5-Bridge");
             void* brMesh2 = *(void**)((char*)ext + UNI_BONK_STORE);
             /* Native Spinner_Level_ctor reads its mesh from board+0x4378
              * (preload gap under mod - mirror ours in, Tower pattern).
