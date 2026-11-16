@@ -493,8 +493,8 @@ void __fastcall UniversalBoardUpdate(void *board) {
 
     /* Native-ctor fast path: native-built boards run their NATIVE slot-1
      * handler (orig), which drives level-specific machinery the shared base
-     * lacks — e.g. Wobbly 0x41F7E0 calls the 0x2578 object driver 0x41B130
-     * (wobbly platform updates); without it platforms never move. The 4 other
+     * lacks — e.g. content-10 Toob orig runs object setup the shared
+     * base lacks. (Most 10-15 origs ARE the base: no-op.) The 4 other
      * customs call the base internally first (single-chain safe, verified in
      * disasm); the 10 shared levels' orig IS the base. Additive LFL blocks
      * below (proximity + features) still run — ext-driven, S1-based. */

@@ -361,6 +361,7 @@ static void FireBranchTeleport(void *board, int *ball, const char *branchName, i
 }
 
 void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair) {
+
     if (!board || !ball || !collPair) goto call_global;
     void* ext = GetBoardExt(board);
     /* Get-only: an ext-less board is mid-teardown (ext freed on race close).
@@ -380,7 +381,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         int cslot = ContentFileId(ext);
         int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
         if (effSlot >= 1 && effSlot <= 15 && g_origDispatch[effSlot]) {
-            { char dl[96]; wsprintfA(dl, "NATIVE_DELEGATE content=%d slot=%d lvl=%d", cslot, effSlot, level); ToobDiag(dl); }
+
             typedef void (__thiscall *NativeCollide_t)(void *, int *, int *);
             ((NativeCollide_t)g_origDispatch[effSlot])(board, ball, collPair);
             return;
