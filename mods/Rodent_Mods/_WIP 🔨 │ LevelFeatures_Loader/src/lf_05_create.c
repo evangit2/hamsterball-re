@@ -30,7 +30,7 @@ static DWORD GetBoardApp(void *board) {
  *   board slots (+0x436C/+0x4370/+0x4374/+0x4FD4) crashes shared-code
  *   readers that expect WarmUp's occupants; WarmUp's values are safe.
  * All other Expert classes build unconditionally (presence-gated inits). */
-static int g_enableExpertFans = 0;
+static int g_enableExpertFans = 1;
 static int g_enableExpertMirrors = 0;
 static int BoardMeshOrZero(void *board, DWORD slotOff) {
     /* Tower objects (MACE/WINDMILL/DRAWBRIDGE/Catapult/TURRET/Trapdoor S1s,
