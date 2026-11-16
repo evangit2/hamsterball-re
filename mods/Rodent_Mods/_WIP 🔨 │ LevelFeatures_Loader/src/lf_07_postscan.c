@@ -500,6 +500,101 @@ static void ScanFileForCollisions(void *board, void *ext, const char *filePath) 
     HeapFree(GetProcessHeap(),0,buf);
     if (added) { char lg[320]; wsprintfA(lg, "FileScan: '%s' +%d N:/E:", filePath, added); DebugLog(lg); }
 }
+
+/* E:BRANCH(B) trigger-quad locator (proximity driver for boards whose
+ * dispatcher touches never arrive — native-ctor fast path bypass).
+ * Byte-scans the level file for the E:BRANCH(B) geom record, reads its
+ * strip vrefs, resolves world verts via the live S5 array, stores the
+ * AABB in ext. Runs once per level load; per-frame test is a cheap AABB. */
+static void ParseBranchQuad(void *board, void *ext, void *meshWorld, const char *meshPath) {
+    *(DWORD *)((char *)ext + OFF_BRANCH_QUAD_VALID) = 0;
+    if (!board || !ext || !meshWorld || !meshPath || !meshPath[0]) return;
+    if (!(*(BYTE *)((char *)ext + COLL_FLAG_BRANCH))) return;
+    /* resolve S5 vertex array: meshWorld+0x480 (objDb) -> +0x440 (verts) */
+    DWORD objDb = *(DWORD *)((char *)meshWorld + 0x480);
+    if (!objDb || IsBadReadPtr((void *)objDb, 0x444)) return;
+    float *verts = *(float **)(objDb + 0x440);
+    if (!verts || IsBadReadPtr(verts, 12)) return;
+    /* read file (try as-is, then + .MESHWORLD) */
+    char *buf = NULL; DWORD fsize = 0;
+    {
+        HANDLE h = CreateFileA(meshPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        char withExt[MAX_PATH];
+        if (h == INVALID_HANDLE_VALUE && strlen(meshPath) + 10 < MAX_PATH) {
+            strcpy(withExt, meshPath); strcat(withExt, ".MESHWORLD");
+            h = CreateFileA(withExt, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        }
+        if (h == INVALID_HANDLE_VALUE) return;
+        fsize = GetFileSize(h, NULL);
+        if (fsize == 0 || fsize == (DWORD)-1 || fsize > 0x500000) { CloseHandle(h); return; }
+        buf = (char *)HeapAlloc(GetProcessHeap(), 0, fsize);
+        if (!buf) { CloseHandle(h); return; }
+        DWORD br = 0;
+        if (!ReadFile(h, buf, fsize, &br, NULL) || br != fsize) { HeapFree(GetProcessHeap(), 0, buf); CloseHandle(h); return; }
+        CloseHandle(h);
+    }
+    /* scan for the E:BRANCH(B) record */
+    static const char tag[] = "E:BRANCH(B)";
+    DWORD i;
+    int found = 0;
+    float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
+    for (i = 0; i + 12 < fsize && !found; i++) {
+        int k;
+        for (k = 0; k < 11; k++) if (buf[i+k] != tag[k]) break;
+        if (k != 11 || buf[i+11] != 0) continue;
+        /* verify namelen prefix */
+        if (i < 4) continue;
+        int nlen = *(int *)(buf + i - 4);
+        if (nlen != 12) continue;
+        DWORD q = i + 12;
+        if (q + 80 > fsize) continue;
+        q += 72; /* material */
+        int has_tex = *(int *)(buf + q); q += 4;
+        if (has_tex != 0 && has_tex != 1) continue;
+        if (has_tex) {
+            if (q + 4 > fsize) continue;
+            int sl = *(int *)(buf + q); q += 4;
+            if (sl < 1 || sl > 256 || q + (DWORD)sl > fsize) continue;
+            q += sl;
+        }
+        if (q + 4 > fsize) continue;
+        int sc = *(int *)(buf + q); q += 4;
+        if (sc < 1 || sc > 8) continue;
+        if (q + (DWORD)sc * 8 > fsize) continue;
+        /* read strips -> verts -> AABB */
+        int s, ok = 0;
+        for (s = 0; s < sc; s++) {
+            int tri = *(int *)(buf + q); int vref = *(int *)(buf + q + 4); q += 8;
+            if (tri < 1 || tri > 10000 || vref < 0 || vref > 2000000) break;
+            int v;
+            for (v = 0; v < tri + 2; v++) {
+                float *vp;
+                if (IsBadReadPtr(verts + (vref + v) * 8, 32)) break;
+                vp = verts + (vref + v) * 8;
+                if (vp[0] != vp[0] || vp[1] != vp[1] || vp[2] != vp[2]) break;
+                if (vp[0] > 2e6f || vp[0] < -2e6f || vp[1] > 2e6f || vp[1] < -2e6f || vp[2] > 2e6f || vp[2] < -2e6f) break;
+                if (vp[0] < mn[0]) mn[0] = vp[0];
+                if (vp[1] < mn[1]) mn[1] = vp[1];
+                if (vp[2] < mn[2]) mn[2] = vp[2];
+                if (vp[0] > mx[0]) mx[0] = vp[0];
+                if (vp[1] > mx[1]) mx[1] = vp[1];
+                if (vp[2] > mx[2]) mx[2] = vp[2];
+                ok++;
+            }
+        }
+        if (ok >= 3 && mx[0]-mn[0] > 1 && mx[1]-mn[1] > 1) {
+            float *dmin = (float *)((char *)ext + OFF_BRANCH_QUAD_MIN);
+            float *dmax = (float *)((char *)ext + OFF_BRANCH_QUAD_MAX);
+            dmin[0]=mn[0]; dmin[1]=mn[1]; dmin[2]=mn[2];
+            dmax[0]=mx[0]; dmax[1]=mx[1]; dmax[2]=mx[2];
+            *(DWORD *)((char *)ext + OFF_BRANCH_QUAD_VALID) = 1;
+            found = 1;
+            { char lg[160]; wsprintfA(lg, "BRANCHQUAD min=(%d,%d,%d) max=(%d,%d,%d)",
+                (int)mn[0], (int)mn[1], (int)mn[2], (int)mx[0], (int)mx[1], (int)mx[2]); ToobDiag(lg); }
+        }
+    }
+    HeapFree(GetProcessHeap(), 0, buf);
+}
 // Targeted scan: only scan mesh files actually referenced by S1 (not whole folder wildcard).
 // Prevents hitch from scanning 30+ files every level load. Falls back to basePath file.
 static void ScanS1ReferencedMeshesForCollisions(void *board, void *ext, void *meshWorld, const char *basePath) {

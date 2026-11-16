@@ -1,3 +1,4 @@
+static void FireBranchTeleport(void *board, int *ball, const char *branchName, int isBranchB);
 /* Chapter 4 - UniversalRenderImpl + BoardUpdate + RaceState (LevelFeatures.c lines 2815-3417) */
 /* ═══════════════════════════════════════════════════════════════════════════
  * Universal Render (Slot 24) — replaces all 15 per-level render functions
@@ -489,6 +490,38 @@ void __fastcall UniversalBoardUpdate(void *board) {
     }
 
     g_SceneUpdate(board);
+
+    /* E:BRANCH(B) proximity driver — boards whose dispatcher touches
+     * never arrive (native-ctor fast path bypass) still teleport when
+     * the ball enters the trigger volume. C3C guard prevents double-fire
+     * with the dispatcher path; 0x2CD bit prevents per-frame refire. */
+    {
+        void *pex = GetBoardExt(board);
+        if (pex && *(int *)((char *)pex + OFF_BRANCH_QUAD_VALID) && !*(BYTE *)((char *)board + 0x874)) {
+            int bc = *(int *)((char *)board + 0x29D4 + 4);
+            int *bi = *(int **)((char *)board + 0x29D4 + 0x40C);
+            float *qmin = (float *)((char *)pex + OFF_BRANCH_QUAD_MIN);
+            float *qmax = (float *)((char *)pex + OFF_BRANCH_QUAD_MAX);
+            if (bc >= 1 && bc <= 4 && bi && !IsBadReadPtr(bi, (unsigned)bc * 4)) {
+                int k;
+                for (k = 0; k < bc; k++) {
+                    int b = bi[k];
+                    if (!b || IsBadReadPtr((void *)b, 0xD00)) continue;
+                    float bx = *(float *)(b + 0x164), by = *(float *)(b + 0x168), bz = *(float *)(b + 0x16C);
+                    int inside = (bx > qmin[0]-40 && bx < qmax[0]+40 &&
+                                  by > qmin[1]-40 && by < qmax[1]+40 &&
+                                  bz > qmin[2]-40 && bz < qmax[2]+40);
+                    int was = (*(BYTE *)(b + 0x2CD)) & 1;
+                    if (inside && !was && *(BYTE *)(b + 0xC3C) == 0) {
+                        FireBranchTeleport(board, (int *)b, "BRANCH(B)", 1);
+                        *(BYTE *)(b + 0x2CD) |= 1;
+                    } else if (!inside && was) {
+                        *(BYTE *)(b + 0x2CD) &= (BYTE)~1;
+                    }
+                }
+            }
+        }
+    }
 
     /* Get level and dispatch features */
     int level = GetCurrentLevel(board);

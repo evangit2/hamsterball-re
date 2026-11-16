@@ -116,6 +116,8 @@ static void UniversalConstructor(void *board, int raceIndex) {
         if (ext) ScanS1ReferencedMeshesForCollisions(board, ext, meshWorld, meshPath);
         // Build per-board cached collision flags (once, not per-collision)
         if (ext) BuildCollisionFlags(board, ext);
+        /* E:BRANCH(B) trigger quad for the proximity driver (needs flags) */
+        if (ext) ParseBranchQuad(board, ext, meshWorld, meshPath);
         DebugLog("STEPMARK S1 scans done");
     }
 

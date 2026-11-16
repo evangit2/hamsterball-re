@@ -240,17 +240,153 @@ static CPUID_RNG_Fn_t              g_CPUIDRNG = NULL;
  * all 15 levels, then calls DispatchCollisionEvents for global events.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* E:BRANCH teleport driver — shared by the dispatcher touch path and the
+ * per-frame proximity path (native-ctor boards bypass dispatcher touches).
+ * Collects <branch>-POSxx/VECTORxx pairs, RNG-picks one, arms C3C/C40 and
+ * the phys launch velocity. Guarded by callers (C3C==0, prev-outside). */
+static void FireBranchTeleport(void *board, int *ball, const char *branchName, int isBranchB) {
+    if (!g_AthenaHashTableLookup || !g_Vec3NormalizeAndScale ||
+        !g_AthenaListInit || !g_AthenaListAppend || !g_AthenaListGetSize ||
+        !g_operatorNew)
+        return;
+    void *ht = *(void **)((char *)board + BOARD_MESHWORLD);
+    if (!ht) return;
+    /* Local AthenaList for position+vector pairs */
+    char listBuf[0x420]; /* AthenaList struct */
+    g_AthenaListInit(listBuf, 0);
+
+    /* Collect up to 5 POS/VECTOR pairs from hash table */
+    int i;
+    for (i = 1; i <= 5; i++) {
+        char posKey[64], vecKey[64];
+        sprintf(posKey, "%s-POS%.2d", branchName, i);
+        sprintf(vecKey, "%s-VECTOR%.2d", branchName, i);
+
+        float pos[3] = {0,0,0};
+        float vec[3] = {0,0,0};
+        char found1 = 0, found2 = 0;
+
+        g_AthenaHashTableLookup(ht, pos, posKey, &found1);
+        if (!found1) break;
+        g_AthenaHashTableLookup(ht, vec, vecKey, &found2);
+        if (!found2) break;
+
+        /* Allocate 0x18 bytes: pos[3] + vec[3] */
+        float *entry = (float *)g_operatorNew(0x18);
+        if (entry) {
+            entry[0] = pos[0]; entry[1] = pos[1]; entry[2] = pos[2];
+            entry[3] = vec[0]; entry[4] = vec[1]; entry[5] = vec[2];
+            g_AthenaListAppend(listBuf, (int)entry);
+        }
+    }
+
+    /* Pick a random entry and compute direction */
+    int count = g_AthenaListGetSize(listBuf);
+    if (count > 0) {
+        int rngIdx = RNG_call((void *)0x4F7360, 0, count, 0);
+        if (rngIdx < 0) rngIdx = 0;
+        if (rngIdx >= count) rngIdx = 0;
+
+        /* Get the entry at rngIdx — direct bounded index
+         * (the old stateful-iterator walk is the Tower-crash
+         * shape; a fresh local list needs no cursor). */
+        float *entry = NULL;
+        if (count >= 1 && rngIdx >= 0 && rngIdx < count) {
+            int *items = *(int **)(listBuf + 0x40C);
+            if (items && !IsBadReadPtr(items + rngIdx, 4))
+                entry = (float *)items[rngIdx];
+        }
+
+        if (entry) {
+            /* direction = vec - pos */
+            float dx = entry[3] - entry[0];
+            float dy = entry[4] - entry[1];
+            float dz = entry[5] - entry[2];
+            float dir[3] = {dx, dy, dz};
+            g_Vec3NormalizeAndScale(dir, 1.0f);
+
+            /* Double the direction */
+            dx = dir[0] + dir[0];
+            dy = dir[1] + dir[1];
+            dz = dir[2] + dir[2];
+
+            /* Set trajectory target = entry pos */
+            *(BYTE *)((char *)ball + 0xC3C) = 1;
+            *(float *)((char *)ball + 0xC40) = entry[0];
+            *(float *)((char *)ball + 0xC44) = entry[1] + *(float *)((char *)ball + 0x284) + 1.0f;
+            *(float *)((char *)ball + 0xC48) = entry[2];
+
+            /* For (B) branches, double direction again (4x total) */
+            if (isBranchB) {
+                dx += dx; dy += dy; dz += dz;
+            }
+
+            { char dl[192]; wsprintfA(dl, "BRANCH count=%d idx=%d dest=(%d,%d,%d) C3C=%d", count, rngIdx,
+                (int)entry[0], (int)(entry[1] + *(float *)((char *)ball + 0x284) + 1.0f),
+                (int)entry[2], (int)*(BYTE *)((char *)ball + 0xC3C)); ToobDiag(dl); }
+            /* Set ball velocity */
+            int phys = ball[0x69];
+            if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
+                *(float *)(phys + 0xCA4) = dx;
+                *(float *)(phys + 0xCA8) = dy;
+                *(float *)(phys + 0xCAC) = dz;
+            }
+        }
+    }
+
+    /* Free all allocated entries */
+    {
+        /* Bounded indexed free (no iterator cursor). */
+        typedef void (__cdecl *free_fn)(void *);
+        static free_fn g_free = NULL;
+        if (!g_free) g_free = (free_fn)(g_moduleBase + 0x000BA74D);
+        if (g_free) {
+            int n = g_AthenaListGetSize(listBuf);
+            int *items = *(int **)(listBuf + 0x40C);
+            if (n >= 1 && n <= 64 && items && !IsBadReadPtr(items, (unsigned)n * 4)) {
+                int fi;
+                for (fi = 0; fi < n; fi++) {
+                    void *p = (void *)items[fi];
+                    if (p && !IsBadReadPtr(p, 4)) g_free(p);
+                }
+            }
+        }
+    }
+    /* Vec3List_Free cleans up the AthenaList itself */
+    {
+        typedef void (__thiscall *Vec3List_Free_t)(void *list);
+        Vec3List_Free_t freeFn = (Vec3List_Free_t)g_Vec3ListFree;
+        if (freeFn) freeFn(listBuf);
+    }
+}
+
 void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair) {
     if (!board || !ball || !collPair) goto call_global;
     void* ext = GetBoardExt(board);
     /* Get-only: an ext-less board is mid-teardown (ext freed on race close).
      * Resurrecting one here would bind zombie state to a dying board. */
     if (!ext) goto call_global;
-    /* Native-ctor fast path: native-built boards run PURE native collision
-     * (our per-name custom handlers would double-fire against the native
-     * ones, e.g. E:BRANCH teleport). Additive update/render extras stay. */
-    if (*(int *)((char *)ext + UNI_NATIVE_CTOR)) goto call_global;
     int level = GetCurrentLevel(board);
+    /* Native-ctor fast path (contents 10-15): the board AND its S6
+     * collision were built by the native ctor, which owns E:BRANCH,
+     * N:SAWTEETH, E:ALERTSAW2, N:SPINNY, etc. natively. Run the NATIVE
+     * per-CONTENT slot-29 handler (orig by CONTENT, same pattern as
+     * render/create/racestate) instead of skipping to global — the old
+     * goto call_global silently dropped EVERY custom event on 10-15
+     * (branching, saws, teeth: the "can't play Toob" reports).
+     * The native handler falls through to global DispatchCollisionEvents
+     * itself, so return after (no call_global: avoids double globals). */
+    if (*(int *)((char *)ext + UNI_NATIVE_CTOR)) {
+        int cslot = ContentFileId(ext);
+        int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
+        if (effSlot >= 1 && effSlot <= 15 && g_origDispatch[effSlot]) {
+            { char dl[96]; wsprintfA(dl, "NATIVE_DELEGATE content=%d slot=%d lvl=%d", cslot, effSlot, level); ToobDiag(dl); }
+            typedef void (__thiscall *NativeCollide_t)(void *, int *, int *);
+            ((NativeCollide_t)g_origDispatch[effSlot])(board, ball, collPair);
+            return;
+        }
+        goto call_global;
+    }
     if (level == 0 || level > 15) goto call_global;
 
     DWORD *cp = (DWORD *)collPair;
@@ -1003,122 +1139,15 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             if (!sawObj) sawObj = *(int *)((char *)ext + UNI_SAW_TOOB_OBJ);
             if (sawObj) *(BYTE *)(sawObj + 0x110C) = 1;
         }
-        if (g_AthenaHashTableLookup && g_CPUIDRNG && g_Vec3NormalizeAndScale &&
-            g_AthenaListInit && g_AthenaListAppend && g_AthenaListGetSize &&
-            g_AthenaListGetIterator && g_operatorNew) {
-            void *ht = *(void **)((char *)board + BOARD_MESHWORLD);
-            if (ht) {
-                /* Local AthenaList for position+vector pairs */
-                char listBuf[0x420]; /* AthenaList struct */
-                g_AthenaListInit(listBuf, 0);
-
-                char *branchName = name + 2; /* skip "E:" prefix */
-                int isBranchB = (my_stricmp(name + 8, "(B)") == 0);
-
-                /* Collect up to 5 POS/VECTOR pairs from hash table */
-                int i;
-                for (i = 1; i <= 5; i++) {
-                    char posKey[64], vecKey[64];
-                    sprintf(posKey, "%s-POS%.2d", branchName, i);
-                    sprintf(vecKey, "%s-VECTOR%.2d", branchName, i);
-
-                    float pos[3] = {0,0,0};
-                    float vec[3] = {0,0,0};
-                    char found1 = 0, found2 = 0;
-
-                    g_AthenaHashTableLookup(ht, pos, posKey, &found1);
-                    if (!found1) break;
-                    g_AthenaHashTableLookup(ht, vec, vecKey, &found2);
-                    if (!found2) break;
-
-                    /* Allocate 0x18 bytes: pos[3] + vec[3] */
-                    float *entry = (float *)g_operatorNew(0x18);
-                    if (entry) {
-                        entry[0] = pos[0]; entry[1] = pos[1]; entry[2] = pos[2];
-                        entry[3] = vec[0]; entry[4] = vec[1]; entry[5] = vec[2];
-                        g_AthenaListAppend(listBuf, (int)entry);
-                    }
-                }
-
-                /* Pick a random entry and compute direction */
-                int count = g_AthenaListGetSize(listBuf);
-                if (count > 0) {
-                    int rngIdx = RNG_call((void *)0x4F7360, 0, count, 0);
-                    if (rngIdx < 0) rngIdx = 0;
-                    if (rngIdx >= count) rngIdx = 0;
-
-                    /* Get the entry at rngIdx — direct bounded index
-                     * (the old stateful-iterator walk is the Tower-crash
-                     * shape; a fresh local list needs no cursor). */
-                    float *entry = NULL;
-                    if (count >= 1 && rngIdx >= 0 && rngIdx < count) {
-                        int *items = *(int **)(listBuf + 0x40C);
-                        if (items && !IsBadReadPtr(items + rngIdx, 4))
-                            entry = (float *)items[rngIdx];
-                    }
-
-                    if (entry) {
-                        /* direction = vec - pos */
-                        float dx = entry[3] - entry[0];
-                        float dy = entry[4] - entry[1];
-                        float dz = entry[5] - entry[2];
-                        float dir[3] = {dx, dy, dz};
-                        g_Vec3NormalizeAndScale(dir, 1.0f);
-
-                        /* Double the direction */
-                        dx = dir[0] + dir[0];
-                        dy = dir[1] + dir[1];
-                        dz = dir[2] + dir[2];
-
-                        /* Set trajectory target = entry pos */
-                        *(BYTE *)((char *)ball + 0xC3C) = 1;
-                        *(float *)((char *)ball + 0xC40) = entry[0];
-                        *(float *)((char *)ball + 0xC44) = entry[1] + *(float *)((char *)ball + 0x284) + 1.0f;
-                        *(float *)((char *)ball + 0xC48) = entry[2];
-
-                        /* For (B) branches, double direction again (4x total) */
-                        if (isBranchB) {
-                            dx += dx; dy += dy; dz += dz;
-                        }
-
-                        { char dl[192]; wsprintfA(dl, "BRANCH count=%d idx=%d dest=(%d,%d,%d) C3C=%d", count, rngIdx,
-                            (int)entry[0], (int)(entry[1] + *(float *)((char *)ball + 0x284) + 1.0f),
-                            (int)entry[2], (int)*(BYTE *)((char *)ball + 0xC3C)); ToobDiag(dl); }
-                        /* Set ball velocity */
-                        int phys = ball[0x69];
-                        if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
-                            *(float *)(phys + 0xCA4) = dx;
-                            *(float *)(phys + 0xCA8) = dy;
-                            *(float *)(phys + 0xCAC) = dz;
-                        }
-                    }
-                }
-
-                /* Free all allocated entries */
-                {
-                    /* Bounded indexed free (no iterator cursor). */
-                    typedef void (__cdecl *free_fn)(void *);
-                    static free_fn g_free = NULL;
-                    if (!g_free) g_free = (free_fn)(g_moduleBase + 0x000BA74D);
-                    if (g_free) {
-                        int n = g_AthenaListGetSize(listBuf);
-                        int *items = *(int **)(listBuf + 0x40C);
-                        if (n >= 1 && n <= 64 && items && !IsBadReadPtr(items, (unsigned)n * 4)) {
-                            int fi;
-                            for (fi = 0; fi < n; fi++) {
-                                void *p = (void *)items[fi];
-                                if (p && !IsBadReadPtr(p, 4)) g_free(p);
-                            }
-                        }
-                    }
-                }
-                /* Vec3List_Free cleans up the AthenaList itself */
-                {
-                    typedef void (__thiscall *Vec3List_Free_t)(void *list);
-                    Vec3List_Free_t freeFn = (Vec3List_Free_t)g_Vec3ListFree;
-                    if (freeFn) freeFn(listBuf);
-                }
-            }
+        /* (B)-only teleport (the (A) touch arms the saw above; native
+         * (A) also teleports but LFL keeps arm-only to avoid double
+         * behavior changes on replicated boards). Shared driver with the
+         * proximity path; no-op when C3C already armed. */
+        if (*(BYTE *)((char *)ball + 0xC3C) == 0) {
+            char *branchName = name + 2; /* skip "E:" prefix */
+            int isBranchB = (my_stricmp(name + 8, "(B)") == 0);
+            if (isBranchB)
+                FireBranchTeleport(board, ball, branchName, 1);
         }
     }
 

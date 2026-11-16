@@ -1016,6 +1016,10 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 /* Next free: 0xBA08, tail to 0xC000 remaining */
 #define UNI_CONTENT_FILE  0xBA08  /* dword: stock-file content id 1..15 (0=custom/unknown), from level filename — NEVER slot */
 #define UNI_NATIVE_CTOR   0xBA0C  /* dword: 1 = board built by NATIVE level ctor (fast path); our create/collide/racestate delegate to native orig */
+/* proximity branch driver (native boards bypass dispatcher touches): */
+#define OFF_BRANCH_QUAD_VALID 0xBA10  /* dword: 1 = E:BRANCH(B) trigger quad parsed */
+#define OFF_BRANCH_QUAD_MIN   0xBA14  /* 3 floats: trigger AABB min */
+#define OFF_BRANCH_QUAD_MAX   0xBA20  /* 3 floats: trigger AABB max */  /* dword: 1 = board built by NATIVE level ctor (fast path); our create/collide/racestate delegate to native orig */
 /* Next free: 0xBA00, tail to 0xC000 = 0x600 bytes remaining */
 
 /* Sky popcyl array (16 × 4 = 64 bytes) */
