@@ -17,8 +17,33 @@ typedef struct {
     int enabled[16]; /* enabled[level] = 1 if active */
 } CollisionEventEntry;
 
+
 static CollisionEventEntry g_collisionEvents[MAX_COLLISION_EVENTS];
 static int g_collisionEventCount = 0;
+
+/* Toob branch self-diagnosis (temporary): touch-rate logging only, no
+ * per-frame I/O. One line per E:BRANCH, E:ALERTSAW2 or N:SAWTEETH touch plus
+ * one INIT line per process so the log proves which build produced it. */
+static int g_toobDiagInit = 0;
+static void ToobDiag(const char *line) {
+    HANDLE hf = CreateFileA("toob_branch_diag.log", GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hf == INVALID_HANDLE_VALUE) return;
+    SetFilePointer(hf, 0, NULL, FILE_END);
+    if (!g_toobDiagInit) {
+        g_toobDiagInit = 1;
+        const char *initLine = "TOOB_DIAG build=2026-11-16c ALERTSAW2-fix+bounded-pick init\r\n";
+        DWORD bw = 0;
+        WriteFile(hf, initLine, 57, &bw, NULL);
+    }
+    {
+        DWORD bw = 0, nl = (DWORD)strlen(line);
+        WriteFile(hf, line, nl, &bw, NULL);
+        WriteFile(hf, "\r\n", 2, &bw, NULL);
+    }
+    CloseHandle(hf);
+}
 
 /* Default collision event assignments (matching original game behavior).
  * These are set on startup, then overridden by [COLLISION] section if present. */
@@ -664,6 +689,8 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
      * obj (native derefs ECX+0x110D unconditionally = crash). Presence
      * rule: UNI_SAW2_TOOB_OBJ set means a Toob SAW2 was built here. */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW2)) && my_stricmp(name, "E:ALERTSAW2") == 0) {
+        { char dl[160]; wsprintfA(dl, "ALERTSAW2 blade=%d saw2=%d toob2=%d", (int)*(int *)((char *)ext + UNI_SAWBLADE2_OBJ),
+            (int)*(int *)((char *)ext + UNI_SAW2_OBJ), (int)*(int *)((char *)ext + UNI_SAW2_TOOB_OBJ)); ToobDiag(dl); }
         if (difficulty != 0 && g_SawAlertActivate && !*(int *)((char *)ext + UNI_SAW2_TOOB_OBJ)) {
             int saw2 = *(int *)((char *)ext + UNI_SAWBLADE2_OBJ);
             if (!saw2) saw2 = *(int *)((char *)ext + UNI_SAW2_OBJ);
@@ -965,6 +992,9 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
 
     /* ── Toob: E:BRANCH (pipe branching system) ── */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_BRANCH)) && my_strnicmp(name, "E:BRANCH", 8) == 0) {
+        { char dl[160]; wsprintfA(dl, "TOUCH name=%s ball=(%d,%d,%d) diff=%d", name,
+            (int)*(float *)((char *)ball + 0x164), (int)*(float *)((char *)ball + 0x168),
+            (int)*(float *)((char *)ball + 0x16C), difficulty); ToobDiag(dl); }
         /* Native (A)-arm (Ghidra-verified 0x410020): tourney-gated, sets the
          * SAW obj (board+0x4380) +0x110C=1. Native slot first (mirrored at
          * create), ext fallback. */
@@ -1051,6 +1081,9 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                             dx += dx; dy += dy; dz += dz;
                         }
 
+                        { char dl[192]; wsprintfA(dl, "BRANCH count=%d idx=%d dest=(%d,%d,%d) C3C=%d", count, rngIdx,
+                            (int)entry[0], (int)(entry[1] + *(float *)((char *)ball + 0x284) + 1.0f),
+                            (int)entry[2], (int)*(BYTE *)((char *)ball + 0xC3C)); ToobDiag(dl); }
                         /* Set ball velocity */
                         int phys = ball[0x69];
                         if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
@@ -1096,6 +1129,9 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
 
     /* ── Toob: N:SAWTEETH ── */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_SAWTEETH)) && my_strnicmp(name, "N:SAWTEETH", 10) == 0) {
+        { char dl[160]; wsprintfA(dl, "SAWTEETH meshObj=%d m10F4=%d b7DC=%d",
+            (int)meshObj, meshObj ? *(int *)(meshObj + 0x10F4) : -999,
+            *(int *)((char *)ball + 0x7DC)); ToobDiag(dl); }
         if (meshObj && *(int *)(meshObj + 0x10F4) == 0 && *(int *)((char *)ball + 0x7DC) < 1) {
             *(int *)((char *)ball + 0x7DC) = 0x32;
             float vx = *(float *)(meshObj + 0x1100);
