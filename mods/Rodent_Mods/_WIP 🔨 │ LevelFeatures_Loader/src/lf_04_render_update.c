@@ -464,6 +464,8 @@ __attribute__((naked)) void UniversalRender(void) {
     );
 }
 
+typedef void (__thiscall *BoardUpdate_t)(void *board); /* native slot-1 orig (ECX=board, no stack args) */
+
 /* ═══════════════════════════════════════════════════════════════════════════
  * Universal Board_Update — replaces all 15 per-level Board_Update functions
  *
@@ -489,8 +491,28 @@ void __fastcall UniversalBoardUpdate(void *board) {
         }
     }
 
+    /* Native-ctor fast path: native-built boards run their NATIVE slot-1
+     * handler (orig), which drives level-specific machinery the shared base
+     * lacks — e.g. Wobbly 0x41F7E0 calls the 0x2578 object driver 0x41B130
+     * (wobbly platform updates); without it platforms never move. The 4 other
+     * customs call the base internally first (single-chain safe, verified in
+     * disasm); the 10 shared levels' orig IS the base. Additive LFL blocks
+     * below (proximity + features) still run — ext-driven, S1-based. */
+    {
+        void *uext = GetBoardExt(board);
+        if (uext && *(int *)((char *)uext + UNI_NATIVE_CTOR)) {
+            int cslot = ContentFileId(uext);
+            int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : GetCurrentLevel(board);
+            BoardUpdate_t origU = NULL;
+            if (effSlot >= 1 && effSlot <= 15) origU = (BoardUpdate_t)g_origUpdate[effSlot];
+            if (origU) origU(board);
+            else g_SceneUpdate(board);
+            goto board_additive;
+        }
+    }
     g_SceneUpdate(board);
 
+board_additive:
     /* E:BRANCH(B) proximity driver — boards whose dispatcher touches
      * never arrive (native-ctor fast path bypass) still teleport when
      * the ball enters the trigger volume. C3C guard prevents double-fire
