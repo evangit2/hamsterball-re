@@ -914,6 +914,15 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             DWORD mgObj = *(DWORD *)((char *)ext + UNI_MAGNIFYING_GLASS);
             if (mgObj) g_AthenaListRemoveByValue((void *)(mgObj + 0x2C), (int)ball);
         }
+        /* Native Odd (0x40F206+) returns via its epilogue for E:LIMIT
+         * touches and NEVER calls global DispatchCollisionEvents, while
+         * the global E:LIMIT handler (0x40C74B) kills UNGATED
+         * (ball+0x768=0, +0x2E9=1, no gravity check). Falling through to
+         * call_global re-armed the plane in the wrong gravity — the
+         * reported wrong-gravity kill. Suppress global on Odd boards
+         * only (slot 9 or content 9, cf. postscan line 232); Sky keeps
+         * the global call for its magnifier scoring. */
+        if (level == 9 || ContentFileId(ext) == 9) return;
     }
     if ((*(BYTE*)((char*)ext + COLL_FLAG_LIMITX)) && my_stricmp(name, "E:LIMITX") == 0) {
         if (*(int *)((char *)ball + 0x748) == 1) {
