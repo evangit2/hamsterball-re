@@ -654,16 +654,20 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         if (difficulty != 0 && g_SawAlertActivate) {
             int saw1 = *(int *)((char *)ext + UNI_SAWBLADE1_OBJ);
             if (!saw1) saw1 = *(int *)((char *)ext + UNI_SAW1_OBJ);
-            g_SawAlertActivate(saw1);
+            if (saw1) g_SawAlertActivate(saw1);
         }
     }
 
-    /* ── Expert: E:ALERTSAW2 ── */
+    /* ── Expert: E:ALERTSAW2 ── (skipped when Toob owns the name:
+     * Toob stock files carry E:ALERTSAW2 for their own pipe saw; firing
+     * the Expert path as well called SawAlertActivate on a NULL/garbage
+     * obj (native derefs ECX+0x110D unconditionally = crash). Presence
+     * rule: UNI_SAW2_TOOB_OBJ set means a Toob SAW2 was built here. */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW2)) && my_stricmp(name, "E:ALERTSAW2") == 0) {
-        if (difficulty != 0 && g_SawAlertActivate) {
+        if (difficulty != 0 && g_SawAlertActivate && !*(int *)((char *)ext + UNI_SAW2_TOOB_OBJ)) {
             int saw2 = *(int *)((char *)ext + UNI_SAWBLADE2_OBJ);
             if (!saw2) saw2 = *(int *)((char *)ext + UNI_SAW2_OBJ);
-            g_SawAlertActivate(saw2);
+            if (saw2) g_SawAlertActivate(saw2);
         }
     }
 
@@ -680,16 +684,16 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         if (difficulty != 0 && g_SawActivate) {
             int saw1 = *(int *)((char *)ext + UNI_SAWBLADE1_OBJ);
             if (!saw1) saw1 = *(int *)((char *)ext + UNI_SAW1_OBJ);
-            g_SawActivate(saw1);
+            if (saw1) g_SawActivate(saw1);
         }
     }
 
     /* ── Expert: E:ACTIVATESAW2 ── */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_ACTIVATESAW2)) && my_stricmp(name, "E:ACTIVATESAW2") == 0) {
-        if (difficulty != 0 && g_SawActivate) {
+        if (difficulty != 0 && g_SawActivate && !*(int *)((char *)ext + UNI_SAW2_TOOB_OBJ)) {
             int saw2 = *(int *)((char *)ext + UNI_SAWBLADE2_OBJ);
             if (!saw2) saw2 = *(int *)((char *)ext + UNI_SAW2_OBJ);
-            g_SawActivate(saw2);
+            if (saw2) g_SawActivate(saw2);
         }
     }
 
@@ -1013,21 +1017,14 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                     if (rngIdx < 0) rngIdx = 0;
                     if (rngIdx >= count) rngIdx = 0;
 
-                    /* Get the entry at rngIdx */
-                    int iter = g_AthenaListGetIterator(listBuf);
-                    *(int *)(listBuf + 8 + iter * 4) = 0;
+                    /* Get the entry at rngIdx — direct bounded index
+                     * (the old stateful-iterator walk is the Tower-crash
+                     * shape; a fresh local list needs no cursor). */
                     float *entry = NULL;
-                    if (count >= 1) {
-                        entry = *(float **)(*(int **)(listBuf + 0x40C));
-                        *(int *)(listBuf + 8 + iter * 4) = 1;
-                    }
-                    /* Walk to the rngIdx-th entry */
-                    int idx;
-                    for (idx = 0; idx < rngIdx && entry; idx++) {
-                        int next = *(int *)(listBuf + 8 + iter * 4);
-                        if (count <= next) break;
-                        entry = *(float **)(*(int **)(listBuf + 0x40C) + next * 4);
-                        *(int *)(listBuf + 8 + iter * 4) = next + 1;
+                    if (count >= 1 && rngIdx >= 0 && rngIdx < count) {
+                        int *items = *(int **)(listBuf + 0x40C);
+                        if (items && !IsBadReadPtr(items + rngIdx, 4))
+                            entry = (float *)items[rngIdx];
                     }
 
                     if (entry) {
@@ -1046,7 +1043,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                         /* Set trajectory target = entry pos */
                         *(BYTE *)((char *)ball + 0xC3C) = 1;
                         *(float *)((char *)ball + 0xC40) = entry[0];
-                        *(float *)((char *)ball + 0xC44) = entry[1] + *(float *)((char *)ball + 0x284) + 0.0078125f;
+                        *(float *)((char *)ball + 0xC44) = entry[1] + *(float *)((char *)ball + 0x284) + 1.0f;
                         *(float *)((char *)ball + 0xC48) = entry[2];
 
                         /* For (B) branches, double direction again (4x total) */
@@ -1066,25 +1063,19 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
 
                 /* Free all allocated entries */
                 {
-                    int iter2 = g_AthenaListGetIterator(listBuf);
-                    int *iterSlot = (int *)(listBuf + 8 + iter2 * 4);
-                    *iterSlot = 0;
-                    if (g_AthenaListGetSize(listBuf) >= 1) {
-                        void *p = *(void **)(*(int **)(listBuf + 0x40C));
-                        *iterSlot = 1;
-                        while (p) {
-                            /* Free is at 0x4BA74D (free) — but we don't have a pointer.
-                             * The original game calls _free directly. We can use our
-                             * operator's free or just leak (the game does this too
-                             * if Vec3List_Free fails). For safety, use the game's free. */
-                            typedef void (__cdecl *free_fn)(void *);
-                            static free_fn g_free = NULL;
-                            if (!g_free) g_free = (free_fn)(g_moduleBase + 0x000BA74D);
-                            if (g_free) g_free(p);
-                            int next = *iterSlot;
-                            if (g_AthenaListGetSize(listBuf) <= next) break;
-                            p = *(void **)(*(int **)(listBuf + 0x40C) + next * 4);
-                            *iterSlot = next + 1;
+                    /* Bounded indexed free (no iterator cursor). */
+                    typedef void (__cdecl *free_fn)(void *);
+                    static free_fn g_free = NULL;
+                    if (!g_free) g_free = (free_fn)(g_moduleBase + 0x000BA74D);
+                    if (g_free) {
+                        int n = g_AthenaListGetSize(listBuf);
+                        int *items = *(int **)(listBuf + 0x40C);
+                        if (n >= 1 && n <= 64 && items && !IsBadReadPtr(items, (unsigned)n * 4)) {
+                            int fi;
+                            for (fi = 0; fi < n; fi++) {
+                                void *p = (void *)items[fi];
+                                if (p && !IsBadReadPtr(p, 4)) g_free(p);
+                            }
                         }
                     }
                 }
