@@ -919,10 +919,15 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
          * the global E:LIMIT handler (0x40C74B) kills UNGATED
          * (ball+0x768=0, +0x2E9=1, no gravity check). Falling through to
          * call_global re-armed the plane in the wrong gravity — the
-         * reported wrong-gravity kill. Suppress global on Odd boards
-         * only (slot 9 or content 9, cf. postscan line 232); Sky keeps
-         * the global call for its magnifier scoring. */
-        if (level == 9 || ContentFileId(ext) == 9) return;
+         * reported wrong-gravity kill. UNIVERSAL rule (file content,
+         * never slot): LFL's gravity-gated handling owns this touch on
+         * every board except Sky, so suppress the global call everywhere
+         * except Sky content (13), which needs it for magnifier scoring.
+         * Odd content (9), customs (0), and anything file-swapped into
+         * any slot all take the gated path; on boards without gravity
+         * ball+0x748 is always 0, so the gated kill is identical to the
+         * old global one. */
+        if (ContentFileId(ext) != 13) return;
     }
     if ((*(BYTE*)((char*)ext + COLL_FLAG_LIMITX)) && my_stricmp(name, "E:LIMITX") == 0) {
         if (*(int *)((char *)ball + 0x748) == 1) {
