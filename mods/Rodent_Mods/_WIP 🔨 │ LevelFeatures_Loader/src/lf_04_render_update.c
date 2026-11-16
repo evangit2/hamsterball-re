@@ -16,6 +16,7 @@ static void FireBranchTeleport(void *board, int *ball, const char *branchName, i
 /* UniversalRender implementation — does the actual rendering work.
  * Called by the naked thunk below which handles RET 4.
  * Must be non-static for asm reference from the naked thunk. */
+void ToobDiag(const char *line);
 void UniversalRenderImpl(void *board, int unk) {
     if (!board || !g_RenderDynamicObjects) return;
 
@@ -612,6 +613,7 @@ static ToobClampZoom_t g_ToobClampZoom = NULL;
 void __fastcall UniversalRaceState(void *board) {
     if (!g_BoardUpdateRaceState || !board) return;
 
+
     /* First-seen board log: reveals native-vs-universal construction paths
      * (a native board here means the ctor dispatch was bypassed). */
     {
@@ -685,17 +687,21 @@ void __fastcall UniversalRaceState(void *board) {
          * BISECT 2026-10-23: ClampZoom suspected in frame-1 crash; fall back
          * to base-only until the zoom words are proven initialized. */
         g_BoardUpdateRaceState(board);
-    } else if (level == 13 || ContentFileId(GetBoardExt(board)) == 13) {
-        /* Sky RaceState (0x41FC90) RNG-activates NATIVE-slot popcylinders.
-         * Universal objects live in ext slots via Feature_SkyPopcylinder;
-         * calling both double-activates (2x rate + doubled sounds) and runs
-         * orig on native slots the universal builder never filled. Skip orig
-         * when the ext feature will run; keep it as fallback otherwise. */
-        DWORD skyFeat = GetBoardFeat(board);
-        if (!(skyFeat & FEAT_SKY_POPCYL) && g_origRaceState[level]) {
-            g_origRaceState[level](board);
-        } else {
-            g_BoardUpdateRaceState(board);
+
+    } else if (level == 13 || ContentFileId(GetBoardExt(board)) == 13 ||
+               (board && !IsBadReadPtr(board, (void*)4) && *(DWORD *)board == 0x4D0FC8)) {
+        /* Sky RaceState (0x41FC90) drives native popcylinders (board+0x47B0)
+         * + native magnifier-follow (board+0x47AC). LFL builds no Sky
+         * objects (Sky uses custom S1 loop 0x410900, bypassing LFL's
+         * per-name builders), so skipping orig starves them (pegs never
+         * pop, magnifier never follows). Call native directly by RVA
+         * (bypasses orig-array indexing — always exact for Sky-class). */
+        {
+            typedef void (__thiscall *SkyRS_t)(void *board);
+            SkyRS_t skyRS = (SkyRS_t)(g_moduleBase + 0x1FC90);
+            if (skyRS) skyRS(board);
+            else if (g_origRaceState[level]) g_origRaceState[level](board);
+            else g_BoardUpdateRaceState(board);
         }
     } else if (level >= 1 && level <= 15 && g_origRaceState[level]) {
         /* Tower content: orig Tower RaceState is the shared base handler;

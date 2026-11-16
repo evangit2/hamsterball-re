@@ -179,6 +179,7 @@ static void Magnifier_Build(void *board, void *ext) {
     DebugLog("Sky: magnifier built");
 }
 
+static void Sky_LoaderReplica(void *board, void *ext);
 static void UniversalPostSetup(void *board) {
     void* ext = EnsureBoardExt(board);
     if (!ext) return;
@@ -260,6 +261,86 @@ static void UniversalPostSetup(void *board) {
      * above). Content-gated: no-op on levels without VAC-IN/MAGNIFYER S1s. */
     Vac_BuildTubes(board, ext);
     Magnifier_Build(board, ext);
+    /* Sky loader-tail replica (native 0x410900, content-13 only): hooks only
+     * (cloudscape lookup disabled 2026-11-16 — 0x4605E0 convention crashed
+     * postscan, aborting Sky load). Magnifier NOT replicated here
+     * (Magnifier_Build above covers it, mirrored to the native slot). */
+    if (ext && ContentFileId(ext) == 13) Sky_LoaderReplica(board, ext);
+}
+
+/* Sky loader-tail replica (native 0x410900, disasm-verified).
+ * Registers every non-PILLAR S1 ref into board+0x4394 via 0x453810 and loads
+ * the CLOUDSCAPE mesh ref to board+0x4378. Runs once per Sky board. */
+static void Sky_LoaderReplica(void *board, void *ext) {
+    MEMORY_BASIC_INFORMATION mbi;
+    DWORD meshWorld, objDb, listHdr;
+    int iter, count, idx;
+    DWORD *array;
+    DWORD savedIter;
+    (void)ext;
+    if (!board) return;
+    meshWorld = *(DWORD *)((char *)board + BOARD_MESHWORLD);
+    if (!meshWorld) return;
+    if (!VirtualQuery(meshWorld, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    objDb = *(DWORD *)((char *)meshWorld + 0x480);
+    if (!objDb) return;
+    if (!VirtualQuery((void*)objDb, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    if (!g_AthenaListGetIterator || !g_AthenaListGetSize) return;
+    if (!VirtualQuery((void*)(objDb + 0x894), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    /* Hook registry must exist (native ctor inits board+0x4394 header). */
+    listHdr = *(DWORD *)((char *)board + 0x4394);
+    if (!listHdr) return;
+    iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
+    if (iter <0 || iter>16) return;
+    if (!VirtualQuery((void*)(objDb + 0x89C + iter*4), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    savedIter = *(DWORD*)(objDb + 0x89C + iter*4);
+    *(DWORD *)(objDb + 0x89C + iter*4) = 0;
+    if (!VirtualQuery((void*)(objDb + 0x898), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
+    count = *(int *)(objDb + 0x898);
+    if (count <=0 || count>8192) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
+    if (!VirtualQuery((void*)(objDb + 0xCA0), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
+    array = *(DWORD **)(objDb + 0xCA0);
+    if (!array) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
+    if (!VirtualQuery(array, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
+    *(DWORD *)(objDb + 0x89C + iter*4) = 1;
+    {
+        typedef void (__thiscall *SkyHook_t)(void *list, void *ref);
+        SkyHook_t hook = (SkyHook_t)(g_moduleBase + 0x53810);
+        void *list = (void *)((char *)board + 0x4394);
+        for (idx=0; idx<count; idx++) {
+            DWORD *obj = (DWORD *)array[idx];
+            char *name;
+            if (!obj) continue;
+            if (!VirtualQuery(obj, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) continue;
+            name = *(char **)obj;
+            if (!name) continue;
+            if (!VirtualQuery(name, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) continue;
+            if (my_strnicmp(name, "PILLAR", 6) == 0) continue;
+            hook(list, (void *)obj);
+        }
+    }
+    *(DWORD*)(objDb + 0x89C + iter*4)=savedIter;
+    /* CLOUDSCAPE mesh ref (native 0x4109FE-0x410A2C): DISABLED 2026-11-16.
+     * The 0x4605E0 lookup call crashed postscan (convention mismatch),
+     * aborting Sky load. Clouds are pure skybox decor; hooks above are the
+     * load-bearing part (S1 visuals). Revisit with Ghidra-verified typedef. */
+#if 0
+    if (!BoardHasOffset(board, 0x4378, 12)) return;
+    if (*(DWORD *)((char *)board + 0x4378)) return;
+    {
+        typedef void *(__thiscall *MeshLookup_t)(void *mw, int zero, const char *name, void *out);
+        MeshLookup_t lookup = (MeshLookup_t)(g_moduleBase + 0x605E0);
+        char outbuf[32];
+        void *res = 0;
+        if (!VirtualQuery(meshWorld, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+        res = lookup((void *)meshWorld, 0, "CLOUDSCAPE", (void *)outbuf);
+        if (res && res != (void *)((char *)board + 0x4378)) {
+            if (!VirtualQuery(res, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+            *(DWORD *)((char *)board + 0x4378) = *(DWORD *)res;
+            *(DWORD *)((char *)board + 0x437C) = *(DWORD *)((char *)res + 4);
+            *(DWORD *)((char *)board + 0x4380) = *(DWORD *)((char *)res + 8);
+        }
+#endif
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

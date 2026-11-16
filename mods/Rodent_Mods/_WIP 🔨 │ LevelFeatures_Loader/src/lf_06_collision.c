@@ -25,7 +25,7 @@ static int g_collisionEventCount = 0;
  * per-frame I/O. One line per E:BRANCH, E:ALERTSAW2 or N:SAWTEETH touch plus
  * one INIT line per process so the log proves which build produced it. */
 static int g_toobDiagInit = 0;
-static void ToobDiag(const char *line) {
+void ToobDiag(const char *line) {
     HANDLE hf = CreateFileA("toob_branch_diag.log", GENERIC_WRITE,
         FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS,
         FILE_ATTRIBUTE_NORMAL, NULL);
