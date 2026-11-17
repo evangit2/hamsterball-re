@@ -491,7 +491,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Intermediate: N:BRIDGE ── */
-    if ((*(BYTE*)((char*)ext + COLL_FLAG_BRIDGE)) && my_stricmp(name, "N:BRIDGE") == 0) {
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_BRIDGE)) && my_stricmp(name, "N:BRIDGE") == 0 && ContentFileId(ext) != 14) {
         if (*(int *)((char *)ext + UNI_BRIDGE_STATE) == 3) {
             *(BYTE *)((char *)ball + 0x778) = 1;
         }

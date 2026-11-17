@@ -189,7 +189,8 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     /* ── TIPPER (Dizzy) ── */
     // S1 ensure for swapped files
 
-    if (my_strnicmp(name, "TIPPER", 6) == 0 && difficulty != 0) {
+    if (my_strnicmp(name, "TIPPER", 6) == 0 && difficulty != 0 && ContentFileId(ext) != 14) {
+        /* Master excluded (content 14): native Master owns its tippers. */
         S1EnsureMeshWorld(board, ext, UNI_TIPPER_MESH, "Levels\\Level3-Tipper");
         S1EnsureRender(board, ext, UNI_TIPPER_RENDER, UNI_TIPPER_MESH);
         int meshOff = UNI_TIPPER_MESH;
@@ -810,7 +811,8 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
      * never on slot: GetCurrentLevel reads 1 for file-swapped levels,
      * which misrouted Expert spinners into the drawbridge path (out1=NULL,
      * shared render, no 0x4380/0x4798 lists -> load crash). */
-    if (my_strnicmp(name, "BRIDGE", 6) == 0) {
+    if (my_strnicmp(name, "BRIDGE", 6) == 0 && ContentFileId(ext) != 14) {
+        /* Master excluded (content 14): native Master owns its drawbridge. */
         char brc6 = name[6];
         if (brc6 >= '0' && brc6 <= '9') {
                        /* Expert BRIDGEn spinner — same path as SAWBRIDGE */
@@ -1422,7 +1424,8 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     }
 
     /* ── BBRIDGE1/2 (Master) ── */
-    if (my_strnicmp(name, "BBRIDGE", 7) == 0 && name[7] >= '1' && name[7] <= '2') {
+    if (my_strnicmp(name, "BBRIDGE", 7) == 0 && name[7] >= '1' && name[7] <= '2' && ContentFileId(ext) != 14) {
+        /* Master excluded (content 14): native Master owns BBRIDGE pieces. */
         int bNum = name[7] - '0';
         int meshOff = (bNum == 1) ? UNI_BBRIDGE1_MESH : UNI_BBRIDGE2_MESH;
         int storeOff = (bNum == 1) ? UNI_BBRIDGE1_OBJ : UNI_BBRIDGE2_OBJ;
