@@ -201,8 +201,9 @@ static void Feature_BridgeAnimation(void *board, int level) {
     }
     /* Board mirror: native keeps angle/state/counter at board+0x4380/84/88
      * (the TipperVisual + game lists read BOARD fields). Mirror every frame
-     * so the posed mesh never reads stale values. */
-    if (BoardHasOffset(board, 0x4380, 12)) {
+     * so the posed mesh never reads stale values — except where native
+     * objects own those fields (Master: never clobber live slots). */
+    if (BoardHasOffset(board, 0x4380, 12) && !NativeOwnsBoardFields(board)) {
         *(float *)((char *)board + 0x4380) = *anglePtr;
         *(int *)((char *)board + 0x4384) = *statePtr;
         *(int *)((char *)board + 0x4388) = *counterPtr;

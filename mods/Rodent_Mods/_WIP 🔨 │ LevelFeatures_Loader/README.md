@@ -121,6 +121,16 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.16** — Drawbridge-at-origin fixed (user: bridge sat at world origin
+spinning). Root cause: the drawbridge mirror wrote S1 xyz floats into
+board+0x4374/0x4378, but Master's ctor builds live heap objects there
+(0x420870/0x4208A6) — the write orphaned the natives and fed float-bits
+to the native scene tail as pointers (junk rendered at the origin). Fix:
+NativeOwnsBoardFields() object-presence test — mirrors and the per-frame
+bridge board-mirror skip board+0x4374-0x4388 writes wherever live objects
+sit there. Intermediate unchanged (its slots are NULL → writes happen).
+Memory-proven on rig: Master board+0x4374/0x4378 hold live objects with
+the fix. Master 100s+ stable, no crash/duplicates; Intermediate loads.
 - **v13.15** — Master tippers/drawbridge owned by LFL mirrors (user: our
 code takes care of everything on Master, no palette matching). Tipper,
 drawbridge and BBRIDGE pieces now bypass native delegation and run the

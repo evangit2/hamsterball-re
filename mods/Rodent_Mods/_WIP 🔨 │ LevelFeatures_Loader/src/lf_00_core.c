@@ -1294,6 +1294,22 @@ static int S1KindFor(const char *name) {
     }
     return 0; /* K_UNKNOWN */
 }
+/* Native board-field ownership: some boards' ctors build live objects at
+ * +0x4374/+0x4378 (Master: 0x420870/0x4208A6 store heap objects). LFL
+ * mirrors must not overwrite those slots with xyz floats — that orphans
+ * the native objects AND feeds float-bits to the native scene tail as
+ * pointers (junk rendered at the origin). Boards with NULL/garbage there
+ * (Intermediate: ctor never touches them) keep the mirror xyz writes.
+ * Object-presence test, never a slot/content ID. */
+static int NativeOwnsBoardFields(void *board) {
+    if (!board || IsBadReadPtr(board, 0x4390)) return 0;
+    void *a = *(void **)((char *)board + 0x4374);
+    void *b = *(void **)((char *)board + 0x4378);
+    if (a && !IsBadReadPtr(a, 16)) return 1;
+    if (b && !IsBadReadPtr(b, 16)) return 1;
+    return 0;
+}
+
 static int my_stricmp(const char *a, const char *b) {
     while (*a && *b) {
         char ca = *a, cb = *b;

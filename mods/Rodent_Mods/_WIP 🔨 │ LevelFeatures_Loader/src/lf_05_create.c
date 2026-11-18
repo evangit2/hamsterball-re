@@ -887,8 +887,11 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
          * board+0x4374/78/7C, angle/state/counter at board+0x4380/84/88
          * (45.0/0/50). The TipperVisual + game lists read BOARD fields.
          * Init ext angle/state/counter once (InitBridge is dead code, ext
-         * starts zeroed = bridge would start flat instead of raised 45). */
-        if (BoardHasOffset(board, 0x4374, 12)) {
+         * starts zeroed = bridge would start flat instead of raised 45).
+         * Master exclusion: its ctor built live objects at 0x4374/0x4378 —
+         * overwriting them orphans the natives and feeds float-bits to
+         * the scene tail as pointers (junk at the origin). */
+        if (BoardHasOffset(board, 0x4374, 12) && !NativeOwnsBoardFields(board)) {
             *(float *)((char *)board + 0x4374) = x;
             *(float *)((char *)board + 0x4378) = y;
             *(float *)((char *)board + 0x437C) = z;
@@ -900,7 +903,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             *(int *)((char *)ext + UNI_BRIDGE_STATE) = 0;
             *(int *)((char *)ext + UNI_BRIDGE_COUNTER) = 50;
         }
-        if (BoardHasOffset(board, 0x4380, 12)) {
+        if (BoardHasOffset(board, 0x4380, 12) && !NativeOwnsBoardFields(board)) {
             *(float *)((char *)board + 0x4380) = *(float *)((char *)ext + UNI_BRIDGE_ANGLE);
             *(int *)((char *)board + 0x4384) = *(int *)((char *)ext + UNI_BRIDGE_STATE);
             *(int *)((char *)board + 0x4388) = *(int *)((char *)ext + UNI_BRIDGE_COUNTER);
