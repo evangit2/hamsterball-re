@@ -344,12 +344,15 @@ static void NopNativeBridgeTail(void) {
     for (i = 0; i < 4; i++) {
         unsigned char *site = (unsigned char *)addrs[i];
         DWORD oldProtect;
-        if (IsBadReadPtr(site, 5)) continue;
-        if (site[0] != 0xE8) continue;  /* verify CALL opcode */
+        char nbdbg[64];
+        if (IsBadReadPtr(site, 5)) { DebugLog("TAILNOP: site unreadable, skipped"); continue; }
+        if (site[0] != 0xE8) { DebugLog("TAILNOP: opcode mismatch, skipped"); continue; }
         VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &oldProtect);
         site[0] = 0x90; site[1] = 0x90; site[2] = 0x90; site[3] = 0x90; site[4] = 0x90;
         VirtualProtect(site, 5, oldProtect, &oldProtect);
         FlushInstructionCache(GetCurrentProcess(), site, 5);
+        wsprintfA(nbdbg, "TAILNOP: applied at 0x%X", addrs[i]);
+        DebugLog(nbdbg);
     }
 }
 

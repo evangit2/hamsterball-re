@@ -618,9 +618,9 @@ static void Feature_SwirlZones(void *board, int level) {
     }
     if (swirlDbg < 3) DebugLog("  [swirl] step2 done");
 
-    /* Dizzy-only: mesh rotation (Master doesn't rotate meshes) — content-keyed */
+    /* Swirl mesh rotation — shared path, runs wherever swirl data exists */
     if (swirlDbg < 3) DebugLog("  [swirl] step3: mesh rotation");
-    if (level != 14 && ContentFileId(ext) != 14 && g_TimerInit && g_TimerCleanup && g_GfxScaleY &&
+    if (g_TimerInit && g_TimerCleanup && g_GfxScaleY &&
         g_GfxSetPosition && g_Matrix44Zero && app) {
         void *gfx = *(void **)(app + 0x174);
         if (gfx) {
@@ -687,8 +687,8 @@ static void Feature_SwirlZones(void *board, int level) {
         DebugLog("  [swirl] step3a done (full)");
     }
 
-    /* Dizzy: secondary swirl mesh rotation (Gfx_ScaleX) — content-keyed, Master skips */
-    if (level != 14 && ContentFileId(ext) != 14 && g_TimerInit && g_TimerCleanup && g_GfxScaleX &&
+    /* Secondary swirl mesh rotation (Gfx_ScaleX) — shared path */
+    if (g_TimerInit && g_TimerCleanup && g_GfxScaleX &&
         g_GfxSetPosition && g_Matrix44Zero && app) {
         void *gfx = *(void **)(app + 0x174);
         if (gfx) {

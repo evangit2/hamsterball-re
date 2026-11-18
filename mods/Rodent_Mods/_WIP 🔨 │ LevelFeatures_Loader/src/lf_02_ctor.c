@@ -405,7 +405,11 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     else if (g_loadingContentId == 11) nativeCtor = (NativeLevelCtor_t)0x41F110;
     else if (g_loadingContentId == 12) nativeCtor = (NativeLevelCtor_t)0x424A90;
     else if (g_loadingContentId == 13) nativeCtor = (NativeLevelCtor_t)0x41F930;
-    else if (g_loadingContentId == 14) nativeCtor = (NativeLevelCtor_t)0x4206D0;
+    /* Content 14 (Master) deliberately NOT on the fast path (2026-11-18):
+     * Master builds via the universal path (g_BoardCtor + S1 mirrors) like
+     * the shared-scene races, so no Master-specific native board code runs
+     * (bridge pair, tipper pair, BreakBridge states). UNI_NATIVE_CTOR stays
+     * 0, so create/collide/racestate/render never delegate to native origs. */
     else if (g_loadingContentId == 15) nativeCtor = (NativeLevelCtor_t)0x424C20;
     int useNativeCtor = (nativeCtor != NULL);
     if (useNativeCtor) {

@@ -121,6 +121,24 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.20** — Master-specific code disabled per user direction (only the
+three keepers remain: popcylinder-special, cannon/Catapult, BBRIDGE — all
+shared paths, untouched). Removed: (1) native Master ctor fast path
+(0x4206D0) — Master now builds via g_BoardCtor + S1 mirrors like the
+shared-scene races, so no native Master board code runs at all (bridge
+pair, tipper pair, BreakBridge states never built); UNI_NATIVE_CTOR stays
+0 so create/collide/racestate/render never delegate to native origs.
+(2) Swirl mesh-rotation Master skips — uniform path (NULL-guarded no-op
+where no swirl meshes). (3) N:BRIDGE collision Master exclusion — shared
+deck collision now applies on Master. Kept deliberately: tail NOP (the
+native Scene_Load tail still runs and would list empty slots), tarbubble
+dynamic block (auto-adapts: ext list fed for manual update, no native
+consumer found on universal boards), bumper physics/count data (Master
+physically has 4 bumpers + own velocities — data, not code paths).
+Rig: universal-built Master loads + 60s+ stable, Intermediate loads;
+BBRIDGE halves use file meshes (native slots NULL at create, as on the
+user's build). New TAILNOP applied/skipped lines in lfdebug.log prove
+the exe patch state on any machine.
 - **v13.19** — Deck invisible root-caused (user: tilting deck absent, halves
 fine; diag log proved our deck path runs: inventory sees BRIDGE, mirror
 runs, pivot nonzero, render built, feature posing). Two-part fix: (1) the
