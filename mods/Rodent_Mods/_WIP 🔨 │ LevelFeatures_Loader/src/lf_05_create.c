@@ -389,12 +389,6 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
              * UNI_MESH_3 (0x85EC) is a mesh SLOT, not an AthenaList — appending to it
              * clobbers mesh pointers at 0x8620-0x862C via the iter array. */
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            /* Native Master create (0x41276C) appends board+0x6080 (proximity
-             * list its walkers scan for the slow) + board+0x2578. Missing
-             * 0x6080 membership = glue present but inert. Init once (9a-extra5
-             * covers fresh boards; native boards own theirs). */
-            if (BoardHasOffset(board, 0x6080, 4))
-                g_AthenaListAppend((void*)((char*)board + 0x6080), (int)obj);
             /* board+0x4378 is Dizzy's gluebie list (inited in 9a-extra2 for
              * Dizzy content). Native Dizzy create appends here AND 0x2578 —
              * the update walks 0x4378 for tar/swirl proximity. Gate on
@@ -428,17 +422,6 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             obj = g_CatapultCtor(mem, (int)board, meshVal);
             DWORD *o = (DWORD *)obj;
             memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
-            /* Native parity (Master create 0x4126D8): obj+0x1100 = 1 (armed
-             * flag the launch update reads) + append board+0x584C (2nd list
-             * the launcher walks). Without them the catapult never fires. */
-            *(BYTE *)((char *)obj + 0x1100) = 1;
-            /* Mirror the mesh into the native slot (native create reads
-             * board+0x5848 as the ctor mesh; the update re-reads it). */
-            if (BoardHasOffset(board, 0x5848, 4)) {
-                int natM = *(int *)((char *)board + 0x5848);
-                if (!natM || IsBadReadPtr((void *)natM, 4))
-                    *(int *)((char *)board + 0x5848) = meshVal;
-            }
             /* Dynamic fling power: CATAPULT<n> S1 suffix = percent of the
              * native 50 (e.g. CATAPULT150 = 75). Stashed here, applied after
              * Launch in E:CATAPULTBOTTOM (Launch always resets 0x10F4 to 50).
@@ -457,10 +440,6 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
                 OrBoardFeat(board, FEAT_TOWER_LISTS);
             }
             g_AthenaListAppend((void*)((char*)board + 0x43B8), (int)obj); /* native 2nd list (inited Step 9a-extra3) */
-            /* Master 2nd list (0x584C, inited 9a-extra5): native Master
-             * create appends here; the launcher walks it. */
-            if (BoardHasOffset(board, 0x584C, 4))
-                g_AthenaListAppend((void*)((char*)board + 0x584C), (int)obj);
             renderOut = o[0x435];
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
@@ -742,14 +721,8 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
              * E:CALLHAMMER/E:HAMMERCHASE). Expert slot-1 mirrors stay off
              * until the shared-code occupant issue is root-caused. */
             if (g_enableExpertMirrors && BoardHasOffset(board, 0x436C, 4)) *(void **)((char *)board + 0x436C) = obj;
-            /* Native Master create stores the bonk obj at board+0x540C
-             * (0x4123C7: mov %edi,0x540c(%esi), UNCONDITIONAL, no bounds
-             * check) — the hammer/break logic reads it there. Exact native
-             * parity: direct write (universal boards are 0x7000). */
-            *(void **)((char *)board + 0x540C) = obj;
-            /* Ext mirror: board+0x540C is observed cleared post-create on
-             * some loads (native never writes it after create; clearer
-             * unidentified) — the break feature reads this copy first. */
+            /* Bonk obj for the breakable-bridge feature: ext slot, set on
+             * any level with a Bonk S1 (presence, never slot/content). */
             { void *bExt2 = GetBoardExt(board); if (bExt2) *(void **)((char *)bExt2 + UNI_BONK_SAVE) = obj; }
             DWORD *o = (DWORD *)obj;
             renderOut = o[0x43E];
@@ -1305,27 +1278,19 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         long raw = atol(name + 11);
         long idx = (raw <= 0) ? 0 : raw - 1;
         if (idx >= 0 && idx < 16) {
-            /* Native mesh source: board+0x5420 (BreakBridge/pop meshes the
-             * native ctor loads). Prefer it; file fallback otherwise. */
-            int meshVal = BoardMeshOrZero(board, 0x5420);
-            int meshOff;
-            if (!meshVal) {
-                int meshIdx = idx & 1;
-                meshOff = UNI_POPCYL_MESH_BASE + meshIdx * 4;
-                { const char *_pcPath = (meshIdx==0) ? "Levels\\Level9-PopCylinder1" : "Levels\\Level9-PopCylinder2"; S1EnsureMeshWorld(board, ext, meshOff, _pcPath); }
-                void* pExt = GetBoardExt(board); if (!pExt) pExt = ext;
-                meshVal = pExt ? *(int*)((char*)pExt + meshOff) : *(int*)((char*)ext + meshOff);
-            }
+            /* Mesh exactly like every other level: file mesh by index parity
+             * (Level9-PopCylinder1/2) into ext. No native board slots. */
+            int meshIdx = idx & 1;
+            int meshOff = UNI_POPCYL_MESH_BASE + meshIdx * 4;
+            { const char *_pcPath = (meshIdx==0) ? "Levels\\Level9-PopCylinder1" : "Levels\\Level9-PopCylinder2"; S1EnsureMeshWorld(board, ext, meshOff, _pcPath); }
+            void* pExt = GetBoardExt(board); if (!pExt) pExt = ext;
+            int meshVal = pExt ? *(int*)((char*)pExt + meshOff) : *(int*)((char*)ext + meshOff);
             if (!meshVal) { DebugLog("POPCYLINDER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
             void *mem = g_operatorNew(0x10F4);
             if (mem) {
                 obj = g_PopcylinderCtor(mem, (int)board, x, y, z, meshVal);
                 *(void **)((char *)ext + UNI_SKY_POPCYL_BASE + idx * 4) = obj;
                 g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-                /* Native 2nd list (0x5428, inited 9a-extra5). Its walkers
-                 * drive the popcylinders' special uses. */
-                if (BoardHasOffset(board, 0x5428, 4))
-                    g_AthenaListAppend((void*)((char*)board + 0x5428), (int)obj);
                 renderOut = ((DWORD*)obj)[0x438];
             }
         }
@@ -1482,17 +1447,17 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
 
     /* ── BBRIDGE1/2 (any race carrying BBRIDGE S1s) ── */
     if (skind == K_BBRIDGE) {
+        /* Breakable bridge halves — generic presence-driven path (no slot,
+         * content, or native-board checks: any level with BBRIDGE1/2 S1s
+         * gets working halves). Mesh: file mesh into ext (same pattern as
+         * every other mirror). Objs: ext slots (never native 0x5418/0x541C).
+         * Listed in UNI_OBJ_LIST so the scene renders them. */
         int bNum = name[7] - '0';
         int meshOff = (bNum == 1) ? UNI_BBRIDGE1_MESH : UNI_BBRIDGE2_MESH;
         int storeOff = (bNum == 1) ? UNI_BBRIDGE1_OBJ : UNI_BBRIDGE2_OBJ;
-        int natMeshOff = (bNum == 1) ? 0x5410 : 0x5414;
-        int natObjOff = (bNum == 1) ? 0x5418 : 0x541C;
-        int meshVal = BoardMeshOrZero(board, natMeshOff);
-        if (!meshVal) {
-            S1EnsureMeshWorld(board, ext, meshOff, (bNum == 1) ? "Levels\\Level10-Bridge1" : "Levels\\Level10-Bridge2");
-            void* bbExt2 = GetBoardExt(board); if (!bbExt2) bbExt2 = ext;
-            meshVal = bbExt2 ? *(int*)((char*)bbExt2 + meshOff) : *(int*)((char*)ext + meshOff);
-        }
+        S1EnsureMeshWorld(board, ext, meshOff, (bNum == 1) ? "Levels\\Level10-Bridge1" : "Levels\\Level10-Bridge2");
+        void* bbExt2 = GetBoardExt(board); if (!bbExt2) bbExt2 = ext;
+        int meshVal = bbExt2 ? *(int*)((char*)bbExt2 + meshOff) : *(int*)((char*)ext + meshOff);
         if (!meshVal) { DebugLog("BBRIDGE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1100);
         if (mem) {
@@ -1500,9 +1465,6 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             void* bbExt = GetBoardExt(board); if(!bbExt) bbExt=ext;
             if(bbExt) *(void **)((char *)bbExt + storeOff) = obj;
-            /* Native drive reads board+0x5418/0x541C (Master create stores
-             * EDI there) — mirror it so the shared updater drives ours. */
-            if (BoardHasOffset(board, natObjOff, 4)) *(void **)((char *)board + natObjOff) = obj;
             renderOut = ((DWORD*)obj)[0x438];
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;

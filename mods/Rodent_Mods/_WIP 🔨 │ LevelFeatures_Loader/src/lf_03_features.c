@@ -54,17 +54,14 @@ static void InitBridge(void *board) {
     // OFF_* mirrors removed: UNI_* at ext+0x8634/38/3C is canonical inside ext heap.
 }
 
-static BreakHalf_t g_BreakGlass = NULL;
-
 /* ═══════════════════════════════════════════════════════════════════════════
- * Feature block: Breakable Bridge (BBRIDGE halves)
- * Native Master logic (0x412F80+) breaks the halves via 0x436E70 when the
- * BONKPOPUP/BONKBASH event state allows. That board-level driver is gone on
- * universal builds, so this replicates the break from our side: when a ball
- * touches the bonk (board+0x540C, stored by our Bonk mirror per native
- * create 0x4123C7), both halves (board+0x5418/0x541C) break exactly the way
- * native 0x436E70 breaks them (+0x10FC=1, +0x10F8=∓5, +0x10E8=(±5,20,0)).
- * Latch = native +0x10FC flag on half 1 (no new storage).
+ * Feature block: Breakable Bridge (BBRIDGE halves, generic)
+ * Presence-driven: runs on any level whose S1 inventory contains BBRIDGE
+ * kinds. When a ball touches the bonk (ext UNI_BONK_SAVE, set by the Bonk
+ * mirror on any level with a Bonk S1), both halves (ext UNI_BBRIDGE1/2_OBJ)
+ * break: +0x10FC=1 latch, +0x10F8=∓5, +0x10E8=(±5,20,0) — the same field
+ * values the native BreakBridge break writes, set inline (no native calls,
+ * no native board slots). Slam sound at the halves midpoint.
  * ═══════════════════════════════════════════════════════════════════════════ */
 static void Feature_BridgeBreak(void *board, int level) {
     void *ext = GetBoardExt(board);
@@ -76,18 +73,13 @@ static void Feature_BridgeBreak(void *board, int level) {
     (void)level;
     if (!ext) return;
     if (*(BYTE*)((char*)board+0x874)) return;
-    if (!BoardHasOffset(board, 0x5418, 8)) return;
-    if (!BoardHasOffset(board, 0x540C, 4)) return;
-    h1 = *(int *)((char *)board + 0x5418);
-    h2 = *(int *)((char *)board + 0x541C);
+    if (!BoardHasOffset(board, 0x29D4, 0x410)) return;
+    h1 = *(int *)((char *)ext + UNI_BBRIDGE1_OBJ);
+    h2 = *(int *)((char *)ext + UNI_BBRIDGE2_OBJ);
     if (!h1 || !h2) return;
     if (IsBadReadPtr((void *)h1, 0x1100) || IsBadReadPtr((void *)h2, 0x1100)) return;
     if (*(BYTE *)((char *)h1 + 0x10FC)) return; /* already broken */
-    bonk = *(int *)((char *)board + 0x540C);
-    if ((!bonk || IsBadReadPtr((void *)bonk, 0x10E0)) && ext) {
-        /* Board slot observed cleared post-create on some loads — ext copy. */
-        bonk = *(int *)((char *)ext + UNI_BONK_SAVE);
-    }
+    bonk = *(int *)((char *)ext + UNI_BONK_SAVE);
     if (!bonk || IsBadReadPtr((void *)bonk, 0x10E0)) return;
     bx = *(float *)(bonk + 0x10D4); by = *(float *)(bonk + 0x10D8); bz = *(float *)(bonk + 0x10DC);
     bc = *(int *)((char *)board + 0x29D4 + 4);
@@ -99,7 +91,17 @@ static void Feature_BridgeBreak(void *board, int level) {
         if (!b || IsBadReadPtr((void *)b, 0xD00)) continue;
         dx = *(float *)(b + 0x164) - bx; dy = *(float *)(b + 0x168) - by; dz = *(float *)(b + 0x16C) - bz;
         if (dx*dx + dy*dy + dz*dz > 90.0f*90.0f) continue;
-        if (g_BreakGlass) { g_BreakGlass((void *)h1, 0); g_BreakGlass((void *)h2, 1); }
+        /* Break both halves inline (native break field values, no call). */
+        *(BYTE *)((char *)h1 + 0x10FC) = 1;
+        *(float *)((char *)h1 + 0x10F8) = -5.0f;
+        *(float *)((char *)h1 + 0x10E8) = -5.0f;
+        *(float *)((char *)h1 + 0x10EC) = 20.0f;
+        *(float *)((char *)h1 + 0x10F0) = 0.0f;
+        *(BYTE *)((char *)h2 + 0x10FC) = 1;
+        *(float *)((char *)h2 + 0x10F8) = 5.0f;
+        *(float *)((char *)h2 + 0x10E8) = 5.0f;
+        *(float *)((char *)h2 + 0x10EC) = 20.0f;
+        *(float *)((char *)h2 + 0x10F0) = 0.0f;
         app = *(DWORD *)((char *)board + BOARD_APP_PTR);
         if (app && !IsBadReadPtr((void *)app, 0x800) && g_SoundPlay3D) {
             DWORD snd = *(DWORD *)((char *)app + APP_SOUNDFX_47C);

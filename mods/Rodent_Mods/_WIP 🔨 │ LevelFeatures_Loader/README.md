@@ -121,6 +121,21 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.22** — All Master-specific code removed per user direction. Master now
+loads everything through the exact same generic branches as every other level:
+deleted the BBRIDGE native-slot replication (0x5410/0x5414 mesh prefer +
+0x5418/0x541C obj mirror), bonk board+0x540C store, pop 0x5420-mesh/0x5428-list,
+gluebie 0x6080-list, catapult 0x1100/0x5848/0x584C, the 0x436E70 break call,
+the exe tail NOP, the 9a-extra5 native-list inits, and the tarbubble native
+feed + native dummy. Halves/bonk/break are now fully generic: file meshes
+into ext, objs in ext slots (UNI_BBRIDGE1/2_OBJ, UNI_BONK_SAVE), presence-gated
+(S1P_BBRIDGE from the S1 walk, no slot/content checks), break done with inline
+field writes + slam sound. Pops/glue/catapult/deck/bonk are the same
+name-matched branches every level uses (no content gates anywhere in create).
+Rig: Master loads, live timer runs, 60s+, CD4=32 identical composition
+(12 pops, halves, bonk, catapult, 7 gluebies). Two deliberate non-removals:
+the bumper render/decay `level == 14` ternaries are per-race DATA (4 vs 8,
+like mesh paths) inside shared features, not Master code paths.
 - **v13.21** — Four Master regressions fixed (user report), all root-caused
 to native state our universal build stopped providing: (1) Popcylinders:
 our mirror skipped numberless POPCYLINDER0 (atol=0→idx=-1, the 4 missing)

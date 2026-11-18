@@ -3,7 +3,6 @@
 void Pennant_PostSetup(void *board, void *ext, int raceIndex);
 static void InstallFlagRenderHook(void);
 static void S1Inventory(void *board, void *ext);
-static void NopNativeBridgeTail(void);
 /* Cross-chapter DETACH restores (defined in their own chapters). */
 void RestoreBoardCtorHooks(void);
 void RestoreAllocSizes(void);
@@ -163,7 +162,6 @@ static void UniversalConstructor(void *board, int raceIndex) {
      * slot, not per-name dispatch) drives all tipper/bridge routing —
      * create runs inside Board_Setup, so this must precede it. */
     S1Inventory(board, ext);
-    NopNativeBridgeTail();
 
     /* Step 5: Board_Setup via vtable[0x80] */
     DWORD vtable = *(DWORD *)board;
@@ -177,72 +175,19 @@ static void UniversalConstructor(void *board, int raceIndex) {
     }
 
     /* Step 6: TarBubble S1 feeds — fully universal, zero race/slot gates.
-     * Background: FUN_0044fa90(tar, app, list) picks a random TarBubble
-     * entry and reads entry+0x00/0x04/0x08/0x0C (name, X, Y, Z). On an
-     * EMPTY list it reads *(NULL+4) = crash at 0x4 (the crash dialog then
-     * shows a bogus SEH-resume EIP, e.g. 0001:0004EAFF on Master).
-     * Full-exe audit 2026-11-18: exactly TWO native updates call it —
-     * Dizzy's (0x41D510, list board+0x4790) and Master's (0x420DA0, list
-     * board+0x5C64). Every other race's update never calls it, so every
-     * other race is immune; custom files inherit whichever behavior their
-     * slot's native update has.
-     * The native consumer is detected dynamically, not databased: this
-     * scans the board's own saved native update (vtable → g_levelVtables
-     * → g_origUpdate) for a direct E8 call to FUN_0044fa90 and takes the
-     * list offset from the nearest disp32 LEA above the call. A race whose
-     * update never calls it gets no native append. A replicated
-     * (manual-update) board's dormant native list is filled harmlessly —
-     * its manual update never reads it.
-     * The ext feed (LFL's own bubble replica) follows the codebase
-     * capability flag, not a race ID: replicated boards (!UNI_NATIVE_CTOR)
-     * are fed because their manual update cannot run the native spawn;
-     * native-built boards are NOT fed because their native update already
-     * spawns (feeding both would double-spawn). */
-    {
-        DWORD bubbleFn = g_moduleBase + RVA_FUN_0044fa90;
-        DWORD nativeListOff = 0;
-        DWORD bvtable = *(DWORD *)board;
-        int extFeed = (ext && !*(int *)((char *)ext + UNI_NATIVE_CTOR));
-        int vi;
-        for (vi = 1; vi <= 15; vi++) {
-            if (bvtable == g_levelVtables[vi] && g_origUpdate[vi]) {
-                BYTE *ucode = (BYTE *)g_origUpdate[vi];
-                if (!IsBadReadPtr(ucode, 0x800)) {
-                    int uo;
-                    for (uo = 0; uo < 0x7FB; uo++) {
-                        if (ucode[uo] == 0xE8) {
-                            DWORD tgt = (DWORD)(ucode + uo + 5) +
-                                *(int *)(ucode + uo + 1);
-                            if (tgt == bubbleFn) {
-                                int lb;
-                                for (lb = uo - 2; lb >= 0 && lb >= uo - 48; lb--) {
-                                    if (ucode[lb] == 0x8D &&
-                                        ((ucode[lb + 1] & 0xC0) == 0x80)) {
-                                        DWORD disp = *(DWORD *)(ucode + lb + 2);
-                                        if (disp >= 0x400 && disp < 0x7000 &&
-                                            BoardHasOffset(board, disp, 0x410)) {
-                                            nativeListOff = disp;
-                                        }
-                                        break;
-                                    }
-                                }
-                                break;
-                            }
-                        }
-                    }
-                }
-                break;
-            }
-        }
-        if (nativeListOff) {
-            char detdbg[96];
-            wsprintfA(detdbg, "TarBubble: native consumer list at board+0x%X",
-                nativeListOff);
-            DebugLog(detdbg);
-        }
+     /* Tarbubble feed (ext only, generic): the S1 inventory walk below
+      * appends every TarBubble S1 to the ext list (UNI_TARBUBBLE_LIST) on
+      * replicated boards, whose manual update cannot run the native spawn.
+      * Native-built boards are NOT fed (their native update already spawns;
+      * feeding both would double-spawn). No native board lists are touched:
+      * native consumers are dead code on universal builds. An empty scan
+      * still gets an ext dummy so replica walkers never see an empty list. */
+     {
+         DWORD bvtable = *(DWORD *)board;
+         int extFeed = (ext && !*(int *)((char *)ext + UNI_NATIVE_CTOR));
+         (void)bvtable;
         {
             int scanCount = 0;
-            int natCount = 0;
             DWORD meshWorldPtr = *(DWORD *)((char *)board + BOARD_MESHWORLD);
             if (meshWorldPtr && !IsBadReadPtr((void *)meshWorldPtr, 0x500) &&
                 g_AthenaListAppend && g_AthenaListGetIterator && g_AthenaListGetSize) {
@@ -267,12 +212,6 @@ static void UniversalConstructor(void *board, int raceIndex) {
                                                     g_AthenaListAppend(
                                                         (void *)((char *)ext + UNI_TARBUBBLE_LIST),
                                                         (int)obj);
-                                                }
-                                                if (nativeListOff) {
-                                                    g_AthenaListAppend(
-                                                        (void *)((char *)board + nativeListOff),
-                                                        (int)obj);
-                                                    natCount++;
                                                 }
                                                 scanCount++;
                                             }
@@ -303,19 +242,6 @@ static void UniversalConstructor(void *board, int raceIndex) {
                         DebugLog("TarBubble scan: empty, added ext dummy entry");
                     }
                 }
-                if (nativeListOff && natCount == 0 &&
-                    BoardHasOffset(board, nativeListOff, 0x410)) {
-                    DWORD *ndummy = (DWORD *)g_operatorNew(0x10);
-                    if (ndummy) {
-                        memset(ndummy, 0, 0x10);
-                        static char natDummyName[] = "TarBubble";
-                        ndummy[0] = (DWORD)natDummyName;
-                        g_AthenaListAppend(
-                            (void *)((char *)board + nativeListOff),
-                            (int)ndummy);
-                        DebugLog("TarBubble scan: empty, added native dummy entry");
-                    }
-                }
             }
         }
     }
@@ -325,35 +251,6 @@ static void UniversalConstructor(void *board, int raceIndex) {
 
     /* Step 6c: Neon glow followers (see lf_10_neon.c) — S3-gap gated. */
     Neon_PostSetup(board, ext, raceIndex, meshPath);
-}
-
-/* Native bridge tail (load path 0x412158-0x4121BA): appends the ctor
- * drawbridge slots (board+0x4374/0x4378) to the scene/render lists, gated
- * on app+0x234. Our mirrors own the deck now — the native pair (never
- * given the S1 position, since native BRIDGE create is bypassed) rendered
- * at the origin with sounds/shake. NOP the 4 AthenaList_Append calls.
- * Verify-or-skip on the E8 opcode (a mismatched exe is left untouched);
- * idempotent; the native app+0x234 gate keeps it scoped to loads where the
- * tail would have fired. */
-static void NopNativeBridgeTail(void) {
-    static int done = 0;
-    DWORD addrs[4] = {0x412178, 0x412193, 0x4121A5, 0x4121BA};
-    int i;
-    if (done) return;
-    done = 1;
-    for (i = 0; i < 4; i++) {
-        unsigned char *site = (unsigned char *)addrs[i];
-        DWORD oldProtect;
-        char nbdbg[64];
-        if (IsBadReadPtr(site, 5)) { DebugLog("TAILNOP: site unreadable, skipped"); continue; }
-        if (site[0] != 0xE8) { DebugLog("TAILNOP: opcode mismatch, skipped"); continue; }
-        VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &oldProtect);
-        site[0] = 0x90; site[1] = 0x90; site[2] = 0x90; site[3] = 0x90; site[4] = 0x90;
-        VirtualProtect(site, 5, oldProtect, &oldProtect);
-        FlushInstructionCache(GetCurrentProcess(), site, 5);
-        wsprintfA(nbdbg, "TAILNOP: applied at 0x%X", addrs[i]);
-        DebugLog(nbdbg);
-    }
 }
 
 /* S1 inventory: one walk of the loaded MESHWORLD object database at load,
@@ -1036,7 +933,6 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     g_RotatorAddBall = (Rotator_AddBall_t)(g_moduleBase + RVA_Rotator_AddBall);
     g_CheckArenaUnlock = (CheckArenaUnlock_t)(g_moduleBase + RVA_CheckArenaUnlock);
     g_CatapultLaunch = (Catapult_Launch_t)(g_moduleBase + RVA_Catapult_Launch);
-    g_BreakGlass = (BreakHalf_t)(g_moduleBase + 0x436E70);
     g_TrapdoorOpen = (Trapdoor_Open_t)(g_moduleBase + RVA_Trapdoor_Open);
     g_TrapdoorActivate = (Trapdoor_Activate_t)(g_moduleBase + RVA_Trapdoor_Activate);
     g_SawAlertActivate = (Saw_AlertActivate_t)(g_moduleBase + RVA_Saw_AlertActivate);

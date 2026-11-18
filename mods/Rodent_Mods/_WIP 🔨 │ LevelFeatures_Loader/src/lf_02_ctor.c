@@ -670,20 +670,6 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         g_AthenaListInit((void *)((char *)mem + 0x5000), 0);
         DebugLog("Step 9a-extra3: Tower native lists 43B8/47D0/4BE8/5000");
     }
-    /* 9a-extra5: universal-board native lists. Native level ctors init
-     * board+0x5428 (popcylinder 2nd), +0x6080 (gluebie/proximity),
-     * +0x584C (catapult 2nd), +0x5C64 (tarbubble consumer) and their
-     * creates/updates append unconditionally. Base Board_ctor does not;
-     * on universal boards (no native ctor) our mirrors/scans would append
-     * to garbage → heap corruption. Native-built boards skip (their ctor
-     * owns the lists). */
-    if (!useNativeCtor && g_AthenaListInit) {
-        if (BoardHasOffset(mem, 0x5428, 4)) g_AthenaListInit((void *)((char *)mem + 0x5428), 0);
-        if (BoardHasOffset(mem, 0x6080, 4)) g_AthenaListInit((void *)((char *)mem + 0x6080), 0);
-        if (BoardHasOffset(mem, 0x584C, 4)) g_AthenaListInit((void *)((char *)mem + 0x584C), 0);
-        if (BoardHasOffset(mem, 0x5C64, 0x410)) g_AthenaListInit((void *)((char *)mem + 0x5C64), 0);
-        DebugLog("Step 9a-extra5: universal native lists 5428/6080/584C/5C64");
-    }
     /* Expert (level 8) spinner lists: board+0x4380 ("1") / +0x4798 ("2").
      * Base Board_ctor never inits them; native slot33 appended directly.
      * Init here or the spinner append corrupts the heap at load. */
