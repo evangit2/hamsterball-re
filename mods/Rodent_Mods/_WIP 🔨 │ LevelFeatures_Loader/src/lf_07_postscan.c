@@ -503,8 +503,11 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
         }
         // Phase1 full registry: every S1 prefix auto-enables its feat / ensures mesh
         /* Drawbridge-anim flag is presence-set by S1Inventory (digit suffix
-         * = spinner via the kind codec, never a slot check). */
-        if (S1KindFor(name) == K_BRIDGE || S1KindFor(name) == K_BBRIDGE) {
+         * = spinner via the kind codec, never a slot check). Deck-deck
+         * only: BBRIDGE halves are native-driven via board+0x5418/0x541C
+         * and must NOT arm the shared-deck feature (its pivot belongs to
+         * the S1 BRIDGE deck mirror, absent here). */
+        if (S1KindFor(name) == K_BRIDGE) {
             OrBoardFeat(board, FEAT_BRIDGE_ANIM);
         }
         if (my_strnicmp(name, "WATERWHEEL", 10)==0 || my_strnicmp(name, "WHEELEMBED", 10)==0 || my_strnicmp(name, "SWIRL", 5)==0 || my_strnicmp(name, "TarBubble", 9)==0 || my_strnicmp(name, "GLUEBIE", 7)==0 || my_strnicmp(name, "TIPPER", 6)==0) {

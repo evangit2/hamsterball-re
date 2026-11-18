@@ -367,10 +367,9 @@ static void S1Inventory(void *board, void *ext) {
             }
         }
         *(int *)((char *)ext + UNI_S1_PRESENT) = mask;
-        /* Presence-derived feature bits: mirrors/features key off FEAT,
-         * which is now set from inventory instead of per-name create. */
-        if (mask & S1P_TIPPER) OrBoardFeat(board, FEAT_TIPPER_VIS);
-        if (mask & (S1P_BRIDGE | S1P_BBRIDGE)) OrBoardFeat(board, FEAT_BRIDGE_ANIM);
+        /* FEAT bits are owned by the mirrors + postscan registry (ground
+         * truth = the S1 that needs them). Inventory sets no FEATs: e.g.
+         * BBRIDGE presence must NOT arm the drawbridge-deck feature. */
     }
 }
 

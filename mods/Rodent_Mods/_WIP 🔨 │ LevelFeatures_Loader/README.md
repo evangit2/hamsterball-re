@@ -121,6 +121,18 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.18** — Absent bridge + sounds-at-origin fixed (user: bridge gone but
+audible at the origin). Two defects, both Master-only consequences of
+universal code: (1) Master has BBRIDGE1/2 S1s but no plain BRIDGE S1, so
+the deck mirror never ran — yet BBRIDGE presence armed FEAT_BRIDGE_ANIM,
+and the feature posed the SAWBRIDGE-shared Level5-Bridge mesh at the zero
+pivot with bridge sounds. Fix: FEAT arms on deck S1 (K_BRIDGE) only, never
+BBRIDGE; inventory sets no FEATs (mirrors + postscan own them). (2) Our
+BBRIDGE halves ignored the native drive slots. Fix: mesh from native
+board+0x5410/0x5414 when valid (file fallback), obj mirrored to
+board+0x5418/0x541C (native create stores EDI there; the drive reads those
+slots), append stays native board+0x2578. Memory-proven on rig: native
+meshes live, our objs in 0x5418/0x541C, Master 60s+/87s+ stable.
 - **v13.17** — Drawbridge origin-spinner root-caused to OUR out1 (user: no
 natives at all). Native Master create returns out1 = board+0x436C which
 the ctor leaves NULL (xor-zeroed, never written) — the scene never gets a

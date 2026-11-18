@@ -1436,9 +1436,14 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         int bNum = name[7] - '0';
         int meshOff = (bNum == 1) ? UNI_BBRIDGE1_MESH : UNI_BBRIDGE2_MESH;
         int storeOff = (bNum == 1) ? UNI_BBRIDGE1_OBJ : UNI_BBRIDGE2_OBJ;
-        S1EnsureMeshWorld(board, ext, meshOff, (bNum == 1) ? "Levels\\Level10-Bridge1" : "Levels\\Level10-Bridge2");
-        void* bbExt2 = GetBoardExt(board); if (!bbExt2) bbExt2 = ext;
-        int meshVal = bbExt2 ? *(int*)((char*)bbExt2 + meshOff) : *(int*)((char*)ext + meshOff);
+        int natMeshOff = (bNum == 1) ? 0x5410 : 0x5414;
+        int natObjOff = (bNum == 1) ? 0x5418 : 0x541C;
+        int meshVal = BoardMeshOrZero(board, natMeshOff);
+        if (!meshVal) {
+            S1EnsureMeshWorld(board, ext, meshOff, (bNum == 1) ? "Levels\\Level10-Bridge1" : "Levels\\Level10-Bridge2");
+            void* bbExt2 = GetBoardExt(board); if (!bbExt2) bbExt2 = ext;
+            meshVal = bbExt2 ? *(int*)((char*)bbExt2 + meshOff) : *(int*)((char*)ext + meshOff);
+        }
         if (!meshVal) { DebugLog("BBRIDGE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1100);
         if (mem) {
@@ -1446,6 +1451,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             void* bbExt = GetBoardExt(board); if(!bbExt) bbExt=ext;
             if(bbExt) *(void **)((char *)bbExt + storeOff) = obj;
+            /* Native drive reads board+0x5418/0x541C (Master create stores
+             * EDI there) — mirror it so the shared updater drives ours. */
+            if (BoardHasOffset(board, natObjOff, 4)) *(void **)((char *)board + natObjOff) = obj;
             renderOut = ((DWORD*)obj)[0x438];
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
