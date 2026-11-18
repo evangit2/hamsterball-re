@@ -556,15 +556,17 @@ board_additive:
     if (!features) return;
 
     static int featDbg = 0;
-    /* Bridge animation (Intermediate bridge only — Master excluded, native owns it) */
-    if ((features & FEAT_BRIDGE_ANIM) && ContentFileId(GetBoardExt(board)) != 14) {
+    /* Bridge animation (presence-routed: runs wherever S1Inventory found
+     * drawbridge kinds — mirrors own them on every race now) */
+    if (features & FEAT_BRIDGE_ANIM) {
         if (featDbg < 3) DebugLog("  [update] Feature_BridgeAnimation...");
         Feature_BridgeAnimation(board, level);
         if (featDbg < 3) DebugLog("  [update] Feature_BridgeAnimation done");
     }
 
-    /* Tipper visuals (any universal board with tippers — Master excluded, native owns them) */
-    if ((features & FEAT_TIPPER_VIS) && ContentFileId(GetBoardExt(board)) != 14) {
+    /* Tipper visuals (presence-routed: runs wherever S1Inventory found
+     * TIPPER kinds — mirrors own them on every race now) */
+    if (features & FEAT_TIPPER_VIS) {
         Feature_TipperVisual(board, level);
     }
 

@@ -121,6 +121,18 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.15** — Master tippers/drawbridge owned by LFL mirrors (user: our
+code takes care of everything on Master, no palette matching). Tipper,
+drawbridge and BBRIDGE pieces now bypass native delegation and run the
+universal mirrors on every race carrying those S1s (Intermediate colors
+on Master by design). Routing is presence-based: one S1Inventory walk of
+the loaded object database at load records tipper/bridge kinds; delegate
+bypass, mirrors, features and postscan flags key off the kind enum and
+presence mask — no slot IDs, no per-name dispatch (single S1KindFor
+codec; S6 hook reserved, S1 covers every ref). Safe because mirrors build
+real native-class objects (native ctors) and native 0x4374/0x4378 slots
+are ctor-set, not create-set. Rig-verified: Master runs 100s+ with LFL
+tippers/drawbridge, no crash/duplicates; Intermediate + Dizzy clean.
 - **v13.14** — Dead content forks removed (same user request): the swirl/
 tar ext-list ternaries (==14 ? _M : base) were no-ops — both aliases are
 #defined to the same offsets — so they're now single defines. Sizing was

@@ -1274,6 +1274,26 @@ static int my_strnicmp(const char *a, const char *b, int n) {
     return 0;
 }
 
+/* S1 kind taxonomy — the single place S1 names are classified. All
+ * routing decisions (delegate bypass, mirrors, features) use the KIND
+ * enum and the per-board presence mask, never raw name compares in the
+ * dispatch path and never slot/content IDs. */
+typedef enum { K_UNKNOWN = 0, K_TIPPER = 1, K_BRIDGE = 2, K_BRIDGESPIN = 3, K_BBRIDGE = 4 } S1Kind;
+#define UNI_S1_PRESENT 0xBBC0  /* dword presence mask, see S1P_* below */
+#define S1P_TIPPER    (1 << 0)
+#define S1P_BRIDGE    (1 << 1)
+#define S1P_BRIDGESPIN (1 << 2)
+#define S1P_BBRIDGE   (1 << 3)
+static int S1KindFor(const char *name) {
+    if (!name || IsBadReadPtr((void *)name, 8)) return 0; /* K_UNKNOWN */
+    if (my_strnicmp(name, "TIPPER", 6) == 0) return 1; /* K_TIPPER */
+    if (my_strnicmp(name, "BBRIDGE", 7) == 0 && name[7] >= '1' && name[7] <= '2') return 4; /* K_BBRIDGE */
+    if (my_strnicmp(name, "BRIDGE", 6) == 0) {
+        if (name[6] >= '0' && name[6] <= '9') return 3; /* K_BRIDGESPIN (Expert spinners) */
+        return 2; /* K_BRIDGE (drawbridge, incl NOCOLLIDE variants) */
+    }
+    return 0; /* K_UNKNOWN */
+}
 static int my_stricmp(const char *a, const char *b) {
     while (*a && *b) {
         char ca = *a, cb = *b;

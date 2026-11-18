@@ -110,12 +110,20 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     if (level == 0 || level > 15) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
     void* ext = EnsureBoardExt(board);
     if (!ext) { *(int*)out1 = 0; *(int*)out2 = 0; return; }
+    /* Single classification per S1: all downstream routing uses KIND
+     * (delegate bypass, mirrors), never raw name compares. */
+    int skind = S1KindFor(name);
 
     /* Native-ctor fast path: native-built boards get NATIVE objects via the
      * saved orig create (our replicating handler misses engine fields).
      * Origs are looked up by CONTENT (native slot for that content), so
-     * cross-slot swaps delegate to the content's own native handler. */
-    if (*(int *)((char *)ext + UNI_NATIVE_CTOR)) {
+     * cross-slot swaps delegate to the content's own native handler.
+     * LFL-owned kinds (tipper/drawbridge) are NEVER delegated — the
+     * mirrors below own them on every race, presence-routed via
+     * S1Inventory, never slot-gated. */
+    int nativeOwned = *(int *)((char *)ext + UNI_NATIVE_CTOR) &&
+        skind != K_TIPPER && skind != K_BRIDGE && skind != K_BBRIDGE;
+    if (nativeOwned) {
         int cslot = ContentFileId(ext);
         int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
         if (effSlot >= 1 && effSlot <= 15 && g_origCreate[effSlot]) {
@@ -186,11 +194,10 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         return;
     }
 
-    /* ── TIPPER (Dizzy) ── */
+    /* ── TIPPER (any race carrying TIPPER S1s) ── */
     // S1 ensure for swapped files
 
-    if (my_strnicmp(name, "TIPPER", 6) == 0 && difficulty != 0 && ContentFileId(ext) != 14) {
-        /* Master excluded (content 14): native Master owns its tippers. */
+    if (skind == K_TIPPER && difficulty != 0) {
         S1EnsureMeshWorld(board, ext, UNI_TIPPER_MESH, "Levels\\Level3-Tipper");
         S1EnsureRender(board, ext, UNI_TIPPER_RENDER, UNI_TIPPER_MESH);
         int meshOff = UNI_TIPPER_MESH;
@@ -811,8 +818,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
      * never on slot: GetCurrentLevel reads 1 for file-swapped levels,
      * which misrouted Expert spinners into the drawbridge path (out1=NULL,
      * shared render, no 0x4380/0x4798 lists -> load crash). */
-    if (my_strnicmp(name, "BRIDGE", 6) == 0 && ContentFileId(ext) != 14) {
-        /* Master excluded (content 14): native Master owns its drawbridge. */
+    if (skind == K_BRIDGE || skind == K_BRIDGESPIN) {
         char brc6 = name[6];
         if (brc6 >= '0' && brc6 <= '9') {
                        /* Expert BRIDGEn spinner — same path as SAWBRIDGE */
@@ -1423,9 +1429,8 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         return;
     }
 
-    /* ── BBRIDGE1/2 (Master) ── */
-    if (my_strnicmp(name, "BBRIDGE", 7) == 0 && name[7] >= '1' && name[7] <= '2' && ContentFileId(ext) != 14) {
-        /* Master excluded (content 14): native Master owns BBRIDGE pieces. */
+    /* ── BBRIDGE1/2 (any race carrying BBRIDGE S1s) ── */
+    if (skind == K_BBRIDGE) {
         int bNum = name[7] - '0';
         int meshOff = (bNum == 1) ? UNI_BBRIDGE1_MESH : UNI_BBRIDGE2_MESH;
         int storeOff = (bNum == 1) ? UNI_BBRIDGE1_OBJ : UNI_BBRIDGE2_OBJ;

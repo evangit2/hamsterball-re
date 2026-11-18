@@ -2,6 +2,7 @@
 /* Chapter-9 pennants (lf_09_pennants.c, included after this file). */
 void Pennant_PostSetup(void *board, void *ext, int raceIndex);
 static void InstallFlagRenderHook(void);
+static void S1Inventory(void *board, void *ext);
 /* Cross-chapter DETACH restores (defined in their own chapters). */
 void RestoreBoardCtorHooks(void);
 void RestoreAllocSizes(void);
@@ -155,6 +156,12 @@ static void UniversalConstructor(void *board, int raceIndex) {
         wsprintfA(dbg, "Pre-Board_Setup mesh check: [0x8620]=0x%08X [0x862C]=0x%08X", mesh0x8620, mesh0x862C);
         DebugLog(dbg);
     }
+
+    /* S1 inventory BEFORE setup: one walk of the loaded object database,
+     * recording which LFL-mirrorable kinds are present. Presence (not
+     * slot, not per-name dispatch) drives all tipper/bridge routing —
+     * create runs inside Board_Setup, so this must precede it. */
+    S1Inventory(board, ext);
 
     /* Step 5: Board_Setup via vtable[0x80] */
     DWORD vtable = *(DWORD *)board;
@@ -316,6 +323,55 @@ static void UniversalConstructor(void *board, int raceIndex) {
 
     /* Step 6c: Neon glow followers (see lf_10_neon.c) — S3-gap gated. */
     Neon_PostSetup(board, ext, raceIndex, meshPath);
+}
+
+/* S1 inventory: one walk of the loaded MESHWORLD object database at load,
+ * recording which LFL-mirrorable kinds are present. Presence (not slot,
+ * not per-name dispatch) drives all tipper/bridge routing. S6 hook point
+ * reserved (not needed: S1 covers every tipper/bridge ref). */
+static void S1Inventory(void *board, void *ext) {
+    int mask = 0;
+    if (board && ext && !IsBadReadPtr(board, 0x900) && g_AthenaListGetIterator) {
+        DWORD meshWorldPtr = *(DWORD *)((char *)board + BOARD_MESHWORLD);
+        if (meshWorldPtr && !IsBadReadPtr((void *)meshWorldPtr, 0x500)) {
+            DWORD objDb = *(DWORD *)(meshWorldPtr + 0x480);
+            if (objDb && !IsBadReadPtr((void *)objDb, 0x20)) {
+                int iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
+                if (iter >= 0) {
+                    *(DWORD *)(objDb + 0x89C + iter * 4) = 0;
+                    int count = *(int *)(objDb + 0x898);
+                    if (count > 0 && count <= 8192) {
+                        DWORD *array = *(DWORD **)(objDb + 0xCA0);
+                        if (array && !IsBadReadPtr((void *)array, count * 4)) {
+                            *(DWORD *)(objDb + 0x89C + iter * 4) = 1;
+                            int idx = 0;
+                            while (idx < count) {
+                                DWORD *obj = (DWORD *)array[idx];
+                                if (obj && !IsBadReadPtr((void *)obj, 4)) {
+                                    char *name = *(char **)obj;
+                                    if (name && !IsBadReadPtr(name, 8)) {
+                                        int k = S1KindFor(name);
+                                        if (k == 1) mask |= S1P_TIPPER;
+                                        else if (k == 2) mask |= S1P_BRIDGE;
+                                        else if (k == 3) mask |= S1P_BRIDGESPIN;
+                                        else if (k == 4) mask |= S1P_BBRIDGE;
+                                    }
+                                }
+                                idx++;
+                                *(DWORD *)(objDb + 0x89C + iter * 4) = idx;
+                            }
+                        }
+                    }
+                    *(DWORD *)(objDb + 0x89C + iter * 4) = 0;
+                }
+            }
+        }
+        *(int *)((char *)ext + UNI_S1_PRESENT) = mask;
+        /* Presence-derived feature bits: mirrors/features key off FEAT,
+         * which is now set from inventory instead of per-name create. */
+        if (mask & S1P_TIPPER) OrBoardFeat(board, FEAT_TIPPER_VIS);
+        if (mask & (S1P_BRIDGE | S1P_BBRIDGE)) OrBoardFeat(board, FEAT_BRIDGE_ANIM);
+    }
 }
 
 /* Must be non-static for asm reference */
