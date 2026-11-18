@@ -121,6 +121,15 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.14** — Dead content forks removed (same user request): the swirl/
+tar ext-list ternaries (==14 ? _M : base) were no-ops — both aliases are
+#defined to the same offsets — so they're now single defines. Sizing was
+already dynamic: AthenaList_Append grows per entry (1 ref or 100), the
+only cap is the 8192 sanity bound. NATIVE lists (Dizzy 0x4790 / Master
+0x5C64) stay exe-side and cannot merge without patching native reads;
+the v13.13 detector covers both. One real fork left, untouched by design:
+Feature_SwirlZones reads Dizzy zones from native board+0x4378
+(isDizzy) vs ext elsewhere — unifying that changes Dizzy swirl sourcing.
 - **v13.13** — TarBubble fix gone universal (user: no per-race gates).
 Replaced the content-4/content-14 scan blocks with one gate-free block:
 it scans the board's own saved native update for a direct call to

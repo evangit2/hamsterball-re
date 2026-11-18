@@ -335,9 +335,11 @@ static void Feature_SwirlZones(void *board, int level) {
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (!app || IsBadReadPtr((void *)app, 0x600)) return;
 
-    /* Unified lists live in ext — content-keyed so swapped files behave identically */
-    int swirlListOfs = (level == 14 || ContentFileId(ext) == 14) ? BRD_SWIRL_LIST_M : BRD_SWIRL_LIST;
-    int tarListOfs = (level == 14 || ContentFileId(ext) == 14) ? BRD_TARBUBBLE_LIST_M : BRD_TARBUBBLE_LIST;
+    /* Unified lists live in ext — one address for every race. The old
+     * _M aliases are #defined to the same offsets (lf_00_core.c), so no
+     * content fork is needed here. */
+    int swirlListOfs = BRD_SWIRL_LIST;
+    int tarListOfs = BRD_TARBUBBLE_LIST;
     // swirlListOfs/tarListOfs are UNI offsets >=0x6500 — use ext
 
     /* Dizzy-class boards use NATIVE slots/list walks (native Dizzy update
