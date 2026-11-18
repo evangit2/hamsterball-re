@@ -121,6 +121,19 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.17** — Drawbridge origin-spinner root-caused to OUR out1 (user: no
+natives at all). Native Master create returns out1 = board+0x436C which
+the ctor leaves NULL (xor-zeroed, never written) — the scene never gets a
+raw mesh. The v13.15 mirror returned the Level2-Bridge mesh as out1 and
+the scene drew it unposed at the origin. Fix: mirror out1 = 0 (exact
+native parity, NULL-tolerated — vanilla does this every Master load).
+Audit findings: 0x436C/0x4370 = drawbridge pair, 0x4374/0x4378 =
+Level10-2PBridge render+controller, 0x4394/0x4398 = Level3-Tipper
+render+controller. Native create builds fresh per-S1 tippers/BBRIDGEs
+(bypassed by our mirrors) and returns the ctor drawbridge pair for BRIDGE
+(bypassed). With the bypass + out1=0, ctor natives are inert (update has
+zero slot refs, teardown NULL-safe) — functionally no natives. Rig:
+Master 60s+ stable, native slots intact, boot clean.
 - **v13.16** — Drawbridge-at-origin fixed (user: bridge sat at world origin
 spinning). Root cause: the drawbridge mirror wrote S1 xyz floats into
 board+0x4374/0x4378, but Master's ctor builds live heap objects there

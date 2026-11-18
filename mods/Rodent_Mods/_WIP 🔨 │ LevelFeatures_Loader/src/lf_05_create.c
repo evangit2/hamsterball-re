@@ -917,12 +917,11 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         if (brMesh) *(BYTE*)((char*)ext + COLL_FLAG_BRIDGE) = 1;
         OrBoardFeat(board, FEAT_BRIDGE_ANIM);
         /* Native parity (0x40A550 + Scene_CreateDynamicObjects 0x40C430):
-         * out1 = bridge MeshWorld, out2 = render (0 when NOCOLLIDE).
-         * Setup appends out1 to the object/scene lists and out2 to the
-         * render lists — NULL out1 drops the render (absent bridge).
-         * The 2026-10-21 kill is not reverted blindly: that build also
-         * ran a zeroed pivot + flat angle; both are initialized above. */
-        obj = brMesh;
+         * native out1 is board+0x436C which the Master ctor leaves NULL
+         * (xor-zeroed, never written) — out1 NULL, out2 = render. The
+         * v13.15 mirror returned the raw mesh as out1 and the scene drew
+         * that unposed mesh at the world origin (spinning). out1 = 0. */
+        obj = 0;
         if (!strstr(name, "(NOCOLLIDE)"))
             renderOut = *(int *)((char *)ext + UNI_SAW1_OBJ);
         else
