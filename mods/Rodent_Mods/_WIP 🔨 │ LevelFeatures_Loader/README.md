@@ -121,6 +121,29 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.21** — Four Master regressions fixed (user report), all root-caused
+to native state our universal build stopped providing: (1) Popcylinders:
+our mirror skipped numberless POPCYLINDER0 (atol=0→idx=-1, the 4 missing)
+while native matches the bare prefix — default variant now; mesh prefers
+native board+0x5420, file fallback; obj also appended to the native 2nd
+list board+0x5428 (its walkers drive the specials). (2) Gluebies inert:
+native Master create appends board+0x6080 (proximity list its walkers
+scan) + 0x2578 — we only appended 0x2578 (+0x4378 Dizzy-only). Now
+appending 0x6080 always. (3) Catapult never fires: missing obj+0x1100=1
+armed flag + board+0x584C 2nd-list membership + board+0x5848 mesh mirror
+(all in native create 0x4126D8). Plus dynamic fling power per user ask:
+CATAPULT<n> S1 suffix = percent of native 50 (CATAPULT150 = 75), applied
+after Launch (which resets 0x10F4); no suffix = native behavior.
+(4) Bridge never breaks: bonk obj now stored at board+0x540C (native
+create 0x4123C7 parity) + ext mirror (board slot observed cleared
+post-create; clearer unidentified, ext copy feeds the feature); new
+Feature_BridgeBreak replicates native 0x436E70 on both halves (+0x10FC=1,
++0x10F8=∓5, +0x10E8=(±5,20,0)) + slam sound when a ball touches the bonk.
+Also 9a-extra5 now inits +0x5C64 (tarbubble consumer was garbage → 53
+wild appends). Rig: Master loads + 60s+, CD4=32 (all 12 pops), live race
+timer runs. Deck circles: unchanged this build — still needs your
+log+screenshot (BRFEAT lines? pivot?) to separate "feature mis-posed"
+from "unlisted render".
 - **v13.20** — Master-specific code disabled per user direction (only the
 three keepers remain: popcylinder-special, cannon/Catapult, BBRIDGE — all
 shared paths, untouched). Removed: (1) native Master ctor fast path

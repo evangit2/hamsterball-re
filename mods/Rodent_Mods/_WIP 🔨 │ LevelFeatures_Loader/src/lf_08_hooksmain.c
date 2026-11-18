@@ -1036,6 +1036,7 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     g_RotatorAddBall = (Rotator_AddBall_t)(g_moduleBase + RVA_Rotator_AddBall);
     g_CheckArenaUnlock = (CheckArenaUnlock_t)(g_moduleBase + RVA_CheckArenaUnlock);
     g_CatapultLaunch = (Catapult_Launch_t)(g_moduleBase + RVA_Catapult_Launch);
+    g_BreakGlass = (BreakHalf_t)(g_moduleBase + 0x436E70);
     g_TrapdoorOpen = (Trapdoor_Open_t)(g_moduleBase + RVA_Trapdoor_Open);
     g_TrapdoorActivate = (Trapdoor_Activate_t)(g_moduleBase + RVA_Trapdoor_Activate);
     g_SawAlertActivate = (Saw_AlertActivate_t)(g_moduleBase + RVA_Saw_AlertActivate);

@@ -560,6 +560,26 @@ typedef void (__thiscall *RenderContext_Init_t)(void *out);
 typedef void (__thiscall *Matrix4_Identity_t)(void *out); /* native 0x457FD0: ECX-only (movl $0x4D8E68,(%ecx); ret) */
 typedef void (__thiscall *Gfx_ScaleFn_t)(void *gfx, float val);
 typedef void (__thiscall *Gfx_SetPosition_t)(void *gfx, float x, float y, float z);
+typedef void (__thiscall *BreakHalf_t)(void *half, int which); /* native 0x436E70: ECX=half, stack int, ret $4; +0x10FC=1, +0x10F8=∓5, +0x10E8=(±5,20,0) */
+
+/* Catapult per-instance fling power (percent, 100 = native 50). Set at
+ * create from the CATAPULT<n> S1 suffix; applied after Launch in the
+ * E:CATAPULTBOTTOM handler (Launch always resets 0x10F4 to 50). */
+#define CATAPULT_PWR_MAX 16
+static void *g_catPwrObj[CATAPULT_PWR_MAX];
+static int g_catPwrVal[CATAPULT_PWR_MAX];
+static int g_catPwrCount = 0;
+static void CatapultSetPower(void *obj, int pct) {
+    int i;
+    if (!obj || pct <= 0) return;
+    for (i = 0; i < g_catPwrCount; i++) if (g_catPwrObj[i] == obj) { g_catPwrVal[i] = pct; return; }
+    if (g_catPwrCount < CATAPULT_PWR_MAX) { g_catPwrObj[g_catPwrCount] = obj; g_catPwrVal[g_catPwrCount] = pct; g_catPwrCount++; }
+}
+static int CatapultGetPower(void *obj) {
+    int i;
+    for (i = 0; i < g_catPwrCount; i++) if (g_catPwrObj[i] == obj) return g_catPwrVal[i];
+    return 0;
+}
 typedef void (__fastcall *Timer_Init_t)(void *out);
 typedef void (__fastcall *Timer_Cleanup_t)(void *timer); /* native 0x457A40: ECX-only, re-stamps vtable */
 typedef void (__stdcall *Matrix_TransformVec3_t)(float *out, float *in);
@@ -1280,6 +1300,7 @@ static int my_strnicmp(const char *a, const char *b, int n) {
  * dispatch path and never slot/content IDs. */
 typedef enum { K_UNKNOWN = 0, K_TIPPER = 1, K_BRIDGE = 2, K_BRIDGESPIN = 3, K_BBRIDGE = 4 } S1Kind;
 #define UNI_S1_PRESENT 0xBBC0  /* dword presence mask, see S1P_* below */
+#define UNI_BONK_SAVE    0xBBC4  /* bonk obj mirror (board+0x540C gets cleared post-create on some loads; ext copy never is) */
 #define S1P_TIPPER    (1 << 0)
 #define S1P_BRIDGE    (1 << 1)
 #define S1P_BRIDGESPIN (1 << 2)

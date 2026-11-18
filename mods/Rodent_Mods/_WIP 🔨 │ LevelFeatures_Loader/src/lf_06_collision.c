@@ -563,6 +563,11 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                     if (*(int *)(item + 0x10D4) == sceneObj) {
                         *(int **)(item + 0x10EC) = ball;
                         if (g_CatapultLaunch) g_CatapultLaunch(item);
+                        /* Dynamic fling power: CATAPULT<n> suffix stashed at
+                         * create. Launch always resets 0x10F4 to 50, so
+                         * re-apply ours right after (native update flings
+                         * with whatever 0x10F4 holds). No suffix = native. */
+                        { int pw = CatapultGetPower((void*)item); if (pw > 0) *(int*)(item + 0x10F4) = 50 * pw / 100; }
                         if (g_SoundPlayChannel && app) {
                             int ch = *(int *)(app + 0x464);
                             if (ch) g_SoundPlayChannel(ch, 1.0f);
