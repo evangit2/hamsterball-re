@@ -919,9 +919,12 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         /* Native parity (0x40A550 + Scene_CreateDynamicObjects 0x40C430):
          * native out1 is board+0x436C which the Master ctor leaves NULL
          * (xor-zeroed, never written) — out1 NULL, out2 = render. The
-         * v13.15 mirror returned the raw mesh as out1 and the scene drew
-         * that unposed mesh at the world origin (spinning). out1 = 0. */
-        obj = 0;
+         * v13.17 set out1 = 0 for native parity, but the scene
+         * dispatcher (0x40C4A0) skips out2 registration when out1 is NULL,
+         * which made the deck invisible. out1 = mesh (non-NULL) so the
+         * shared render reaches the render lists; it is posed every frame
+         * by Feature_BridgeAnimation at the S1 pivot. */
+        obj = brMesh;
         if (!strstr(name, "(NOCOLLIDE)"))
             renderOut = *(int *)((char *)ext + UNI_SAW1_OBJ);
         else

@@ -3,6 +3,7 @@
 void Pennant_PostSetup(void *board, void *ext, int raceIndex);
 static void InstallFlagRenderHook(void);
 static void S1Inventory(void *board, void *ext);
+static void NopNativeBridgeTail(void);
 /* Cross-chapter DETACH restores (defined in their own chapters). */
 void RestoreBoardCtorHooks(void);
 void RestoreAllocSizes(void);
@@ -162,6 +163,7 @@ static void UniversalConstructor(void *board, int raceIndex) {
      * slot, not per-name dispatch) drives all tipper/bridge routing —
      * create runs inside Board_Setup, so this must precede it. */
     S1Inventory(board, ext);
+    NopNativeBridgeTail();
 
     /* Step 5: Board_Setup via vtable[0x80] */
     DWORD vtable = *(DWORD *)board;
@@ -323,6 +325,32 @@ static void UniversalConstructor(void *board, int raceIndex) {
 
     /* Step 6c: Neon glow followers (see lf_10_neon.c) — S3-gap gated. */
     Neon_PostSetup(board, ext, raceIndex, meshPath);
+}
+
+/* Native bridge tail (load path 0x412158-0x4121BA): appends the ctor
+ * drawbridge slots (board+0x4374/0x4378) to the scene/render lists, gated
+ * on app+0x234. Our mirrors own the deck now — the native pair (never
+ * given the S1 position, since native BRIDGE create is bypassed) rendered
+ * at the origin with sounds/shake. NOP the 4 AthenaList_Append calls.
+ * Verify-or-skip on the E8 opcode (a mismatched exe is left untouched);
+ * idempotent; the native app+0x234 gate keeps it scoped to loads where the
+ * tail would have fired. */
+static void NopNativeBridgeTail(void) {
+    static int done = 0;
+    DWORD addrs[4] = {0x412178, 0x412193, 0x4121A5, 0x4121BA};
+    int i;
+    if (done) return;
+    done = 1;
+    for (i = 0; i < 4; i++) {
+        unsigned char *site = (unsigned char *)addrs[i];
+        DWORD oldProtect;
+        if (IsBadReadPtr(site, 5)) continue;
+        if (site[0] != 0xE8) continue;  /* verify CALL opcode */
+        VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &oldProtect);
+        site[0] = 0x90; site[1] = 0x90; site[2] = 0x90; site[3] = 0x90; site[4] = 0x90;
+        VirtualProtect(site, 5, oldProtect, &oldProtect);
+        FlushInstructionCache(GetCurrentProcess(), site, 5);
+    }
 }
 
 /* S1 inventory: one walk of the loaded MESHWORLD object database at load,

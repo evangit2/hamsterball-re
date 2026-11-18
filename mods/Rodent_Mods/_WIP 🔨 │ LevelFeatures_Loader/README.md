@@ -121,10 +121,25 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.19** — Deck invisible root-caused (user: tilting deck absent, halves
+fine; diag log proved our deck path runs: inventory sees BRIDGE, mirror
+runs, pivot nonzero, render built, feature posing). Two-part fix: (1) the
+scene dispatcher (0x40C4A0) skips out2 registration when out1 is NULL —
+v13.17's out1 = 0 unlisted the deck render. Reverted to out1 = mesh.
+(Intermediate never complained because the same mechanism always worked
+there.) (2) The native bridge tail (0x412158-0x4121BA) lists the ctor
+2PBridge pair (never given the S1 position since native BRIDGE create is
+bypassed) — that unpositioned native pair is the origin ghost (sounds +
+shake at 0,0,0). NOP its 4 appends, verify-or-skip on the E8 opcode,
+idempotent, native app+0x234 gate keeps it scoped. Natives now fully out
+of the scene; deck = our Intermediate-colored build, posed + sounded at
+the S1 pivot. Rig: Master 60s+ stable, boot clean.
 - **v13.18** — Absent bridge + sounds-at-origin fixed (user: bridge gone but
 audible at the origin). Two defects, both Master-only consequences of
 universal code: (1) Master has BBRIDGE1/2 S1s but no plain BRIDGE S1, so
-the deck mirror never ran — yet BBRIDGE presence armed FEAT_BRIDGE_ANIM,
+the deck mirror never ran — yet BBRIDGE presence armed FEAT_BRIDGE_ANIM
+(CORRECTED v13.19: Master DOES have a BRIDGE S1 — the deck mirror runs
+fine per the diag log; the real defect was v13.17's out1 = 0),
 and the feature posed the SAWBRIDGE-shared Level5-Bridge mesh at the zero
 pivot with bridge sounds. Fix: FEAT arms on deck S1 (K_BRIDGE) only, never
 BBRIDGE; inventory sets no FEATs (mirrors + postscan own them). (2) Our
