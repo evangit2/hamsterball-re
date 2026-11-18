@@ -242,6 +242,72 @@ static void UniversalConstructor(void *board, int raceIndex) {
         }
     }
 
+    /* Master content (14): native Scene_Load (0x411F60) scans MESHWORLD
+     * section 3 for "TarBubble*" S1 refs and appends each to board+0x5C64
+     * (objdump 0x4120C9-0x41211F: match via 0x4C7677(name,"TarBubble",9)).
+     * Native Master update (0x420DA0) calls FUN_0044fa90(tar,app,0x5C64)
+     * whenever RNG(0,0x14)==10 (~1/20 per frame); on an empty list that fn
+     * reads *(NULL+4) = crash at 0x4 (same bug class as Dizzy's 0x11E4,
+     * fixed there with a dummy entry). Native Master create (0x4121D0)
+     * never appends to 0x5C64 (its 6 appends go to 0x2578/0x5428), so
+     * without this scan the list stays ctor-empty and Master crashes a
+     * few frames after load (rig: 0001:0004EAFF + bogus SEH EIPs).
+     * Runs post-Board_Setup like native (scan sits after *0x80 setup). */
+    if (ContentFileId(ext) == 14) {
+        int mastTarCount = 0;
+        DWORD mstMW = *(DWORD *)((char *)board + BOARD_MESHWORLD);
+        if (mstMW && !IsBadReadPtr((void *)mstMW, 0x500) &&
+            g_AthenaListAppend && g_AthenaListGetIterator && g_AthenaListGetSize &&
+            BoardHasOffset(board, 0x5C64, 0x410)) {
+            DWORD objDb = *(DWORD *)(mstMW + 0x480);
+            if (objDb && !IsBadReadPtr((void *)objDb, 0x20)) {
+                int iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
+                if (iter >= 0) {
+                    *(DWORD *)(objDb + 0x89C + iter * 4) = 0;
+                    int count = *(int *)(objDb + 0x898);
+                    if (count > 0 && count <= 8192) {
+                        DWORD *array = *(DWORD **)(objDb + 0xCA0);
+                        if (array && !IsBadReadPtr((void *)array, count * 4)) {
+                            *(DWORD *)(objDb + 0x89C + iter * 4) = 1;
+                            int idx = 0;
+                            while (idx < count) {
+                                DWORD *obj = (DWORD *)array[idx];
+                                if (obj && !IsBadReadPtr((void *)obj, 4)) {
+                                    char *name = *(char **)obj;
+                                    if (name && !IsBadReadPtr(name, 9)) {
+                                        if (my_strnicmp(name, "TarBubble", 9) == 0) {
+                                            g_AthenaListAppend(
+                                                (void *)((char *)board + 0x5C64),
+                                                (int)obj);
+                                            mastTarCount++;
+                                        }
+                                    }
+                                }
+                                idx++;
+                                *(DWORD *)(objDb + 0x89C + iter * 4) = idx;
+                            }
+                        }
+                    }
+                    *(DWORD *)(objDb + 0x89C + iter * 4) = 0;
+                }
+            }
+        }
+        /* No TarBubbles (custom file): dummy entry so FUN_0044fa90 reads
+         * harmless zeros instead of *(NULL+4). Same layout it reads:
+         * +0x00 name ptr, +0x04/0x08/0x0C float X/Y/Z. */
+        if (mastTarCount == 0 && g_AthenaListAppend && g_operatorNew &&
+            BoardHasOffset(board, 0x5C64, 0x410)) {
+            DWORD *dummy = (DWORD *)g_operatorNew(0x10);
+            if (dummy) {
+                memset(dummy, 0, 0x10);
+                static char mastDummyName[] = "TarBubble";
+                dummy[0] = (DWORD)mastDummyName;
+                g_AthenaListAppend((void *)((char *)board + 0x5C64), (int)dummy);
+                DebugLog("Master TarBubble scan: empty, added dummy entry");
+            }
+        }
+    }
+
     /* Step 6b: PENNANT* collection (see lf_09_pennants.c). */
     Pennant_PostSetup(board, ext, raceIndex);
 

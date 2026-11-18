@@ -121,6 +121,14 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.12** — Master open-crash FIXED (0001:0004EAFF a few frames after
+load). Root cause: native Master update (0x420DA0) calls FUN_0044fa90 on
+board+0x5C64 whenever RNG(0,0x14)==10; native Scene_Load (0x411F60)
+populates that list by scanning S1 TarBubble* refs, which LFL skipped
+(native create never appends there — its 6 appends go to 0x2578/0x5428).
+Replicated the scan post-Board_Setup (content-14 only) + dummy entry for
+TarBubble-less files (Dizzy-0x11E4 precedent). Rig-verified: Master loads,
+runs 2+ min to goal stars, Warm-Up clean, boot clean.
 - **v13.11** — Pose timer buffer zeroed (unzeroed buffer crashed Intermediate
 on open); state-transition lines + heartbeat in log.
 - **v13.10** — Dizzy wheel + swirl carries are manual pure-C (measured ScaleY/
