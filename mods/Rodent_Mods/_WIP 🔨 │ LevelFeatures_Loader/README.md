@@ -121,6 +121,13 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.13** — TarBubble fix gone universal (user: no per-race gates).
+Replaced the content-4/content-14 scan blocks with one gate-free block:
+it scans the board's own saved native update for a direct call to
+FUN_0044fa90 and takes the list offset from the nearest disp32 LEA above
+it (exe audit: only Dizzy 0x4790 + Master 0x5C64 call it; all others get
+no append). Ext feed follows the UNI_NATIVE_CTOR capability flag, not a
+race ID. Rig-verified: Master 73s+ gameplay, Dizzy loads+runs, boot clean.
 - **v13.12** — Master open-crash FIXED (0001:0004EAFF a few frames after
 load). Root cause: native Master update (0x420DA0) calls FUN_0044fa90 on
 board+0x5C64 whenever RNG(0,0x14)==10; native Scene_Load (0x411F60)

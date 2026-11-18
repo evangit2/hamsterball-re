@@ -167,143 +167,146 @@ static void UniversalConstructor(void *board, int raceIndex) {
         }
     }
 
-    /* Step 6: Per-level post-Board_Setup extras.
-     * Dizzy's scene loader (0x40D390) scans MESHWORLD section 3 for
-     * "TarBubble" objects and appends them to board+0x11E4. This feeds
-     * the TarBubble particle effect system in DizzyBoard_Update.
-     *
-     * ORIGINAL GAME BUG: FUN_0044fa90 (called from DizzyBoard_Update) picks
-     * a random TarBubble from the list. If the list is empty, it falls
-     * through to iVar1=0 (NULL), then dereferences *(NULL+4) = crash at
-     * address 0x4. This happens when a modded Dizzy level has no TarBubbles.
-     *
-     * FIX: If no TarBubbles are found, create a dummy object with a valid
-     * name pointer and zero position so FUN_0044fa90 reads harmless data
-     * instead of crashing. */
-    if (ContentFileId(ext) == 4) {
-        int tarBubbleCount = 0;
-        DWORD meshWorldPtr = *(DWORD *)((char *)board + BOARD_MESHWORLD);
-        if (meshWorldPtr && !IsBadReadPtr((void *)meshWorldPtr, 0x500) &&
-            g_AthenaListAppend && g_AthenaListGetIterator && g_AthenaListGetSize) {
-            /* Access the MESHWORLD's section 3 object list:
-             * meshWorld+0x480 = object database, +0x894 = iterator base,
-             * +0x898 = count, +0xCA0 = array pointer */
-            DWORD objDb = *(DWORD *)(meshWorldPtr + 0x480);
-            if (objDb && !IsBadReadPtr((void *)objDb, 0x20)) {
-                int iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
-                *(DWORD *)(objDb + 0x89C + iter * 4) = 0;
-                int count = *(int *)(objDb + 0x898);
-                if (count > 0) {
-                    DWORD *array = *(DWORD **)(objDb + 0xCA0);
-                    if (array && !IsBadReadPtr((void *)array, count * 4)) {
-                        *(DWORD *)(objDb + 0x89C + iter * 4) = 1;
-                        int idx = 0;
-                        while (idx < count) {
-                            DWORD *obj = (DWORD *)array[idx];
-                            if (obj && !IsBadReadPtr((void *)obj, 4)) {
-                                char *name = *(char **)obj;
-                                if (name && !IsBadReadPtr(name, 9)) {
-                                    if (my_strnicmp(name, "TarBubble", 9) == 0) {
-                                        g_AthenaListAppend(
-                                            (void *)((char *)ext + UNI_TARBUBBLE_LIST),
-                                            (int)obj);
-                                        tarBubbleCount++;
+    /* Step 6: TarBubble S1 feeds — fully universal, zero race/slot gates.
+     * Background: FUN_0044fa90(tar, app, list) picks a random TarBubble
+     * entry and reads entry+0x00/0x04/0x08/0x0C (name, X, Y, Z). On an
+     * EMPTY list it reads *(NULL+4) = crash at 0x4 (the crash dialog then
+     * shows a bogus SEH-resume EIP, e.g. 0001:0004EAFF on Master).
+     * Full-exe audit 2026-11-18: exactly TWO native updates call it —
+     * Dizzy's (0x41D510, list board+0x4790) and Master's (0x420DA0, list
+     * board+0x5C64). Every other race's update never calls it, so every
+     * other race is immune; custom files inherit whichever behavior their
+     * slot's native update has.
+     * The native consumer is detected dynamically, not databased: this
+     * scans the board's own saved native update (vtable → g_levelVtables
+     * → g_origUpdate) for a direct E8 call to FUN_0044fa90 and takes the
+     * list offset from the nearest disp32 LEA above the call. A race whose
+     * update never calls it gets no native append. A replicated
+     * (manual-update) board's dormant native list is filled harmlessly —
+     * its manual update never reads it.
+     * The ext feed (LFL's own bubble replica) follows the codebase
+     * capability flag, not a race ID: replicated boards (!UNI_NATIVE_CTOR)
+     * are fed because their manual update cannot run the native spawn;
+     * native-built boards are NOT fed because their native update already
+     * spawns (feeding both would double-spawn). */
+    {
+        DWORD bubbleFn = g_moduleBase + RVA_FUN_0044fa90;
+        DWORD nativeListOff = 0;
+        DWORD bvtable = *(DWORD *)board;
+        int extFeed = (ext && !*(int *)((char *)ext + UNI_NATIVE_CTOR));
+        int vi;
+        for (vi = 1; vi <= 15; vi++) {
+            if (bvtable == g_levelVtables[vi] && g_origUpdate[vi]) {
+                BYTE *ucode = (BYTE *)g_origUpdate[vi];
+                if (!IsBadReadPtr(ucode, 0x800)) {
+                    int uo;
+                    for (uo = 0; uo < 0x7FB; uo++) {
+                        if (ucode[uo] == 0xE8) {
+                            DWORD tgt = (DWORD)(ucode + uo + 5) +
+                                *(int *)(ucode + uo + 1);
+                            if (tgt == bubbleFn) {
+                                int lb;
+                                for (lb = uo - 2; lb >= 0 && lb >= uo - 48; lb--) {
+                                    if (ucode[lb] == 0x8D &&
+                                        ((ucode[lb + 1] & 0xC0) == 0x80)) {
+                                        DWORD disp = *(DWORD *)(ucode + lb + 2);
+                                        if (disp >= 0x400 && disp < 0x7000 &&
+                                            BoardHasOffset(board, disp, 0x410)) {
+                                            nativeListOff = disp;
+                                        }
+                                        break;
                                     }
                                 }
+                                break;
                             }
-                            idx++;
-                            *(DWORD *)(objDb + 0x89C + iter * 4) = idx;
                         }
                     }
                 }
+                break;
             }
         }
-        /* If no TarBubbles were found, create a dummy entry to prevent
-         * FUN_0044fa90 from crashing on an empty list. The dummy needs:
-         * +0x00 = char* name (points to a valid string)
-         * +0x04 = float X position
-         * +0x08 = float Y position
-         * +0x0C = float Z position
-         * FUN_0044fa90 reads these 4 fields when picking a random entry. */
-        if (tarBubbleCount == 0 && g_AthenaListAppend && g_operatorNew) {
-            /* Allocate a 0x10-byte dummy object */
-            DWORD *dummy = (DWORD *)g_operatorNew(0x10);
-            if (dummy) {
-                memset(dummy, 0, 0x10);
-                /* Set name pointer to a static string */
-                static char dummyName[] = "TarBubble";
-                dummy[0] = (DWORD)dummyName;
-                /* Positions at +4, +8, +0xC are already 0 (memset above) */
-                g_AthenaListAppend(
-                    (void *)((char *)ext + UNI_TARBUBBLE_LIST),
-                    (int)dummy);
-                DebugLog("TarBubble scan: no TarBubbles found, added dummy entry");
-            }
+        if (nativeListOff) {
+            char detdbg[96];
+            wsprintfA(detdbg, "TarBubble: native consumer list at board+0x%X",
+                nativeListOff);
+            DebugLog(detdbg);
         }
-    }
-
-    /* Master content (14): native Scene_Load (0x411F60) scans MESHWORLD
-     * section 3 for "TarBubble*" S1 refs and appends each to board+0x5C64
-     * (objdump 0x4120C9-0x41211F: match via 0x4C7677(name,"TarBubble",9)).
-     * Native Master update (0x420DA0) calls FUN_0044fa90(tar,app,0x5C64)
-     * whenever RNG(0,0x14)==10 (~1/20 per frame); on an empty list that fn
-     * reads *(NULL+4) = crash at 0x4 (same bug class as Dizzy's 0x11E4,
-     * fixed there with a dummy entry). Native Master create (0x4121D0)
-     * never appends to 0x5C64 (its 6 appends go to 0x2578/0x5428), so
-     * without this scan the list stays ctor-empty and Master crashes a
-     * few frames after load (rig: 0001:0004EAFF + bogus SEH EIPs).
-     * Runs post-Board_Setup like native (scan sits after *0x80 setup). */
-    if (ContentFileId(ext) == 14) {
-        int mastTarCount = 0;
-        DWORD mstMW = *(DWORD *)((char *)board + BOARD_MESHWORLD);
-        if (mstMW && !IsBadReadPtr((void *)mstMW, 0x500) &&
-            g_AthenaListAppend && g_AthenaListGetIterator && g_AthenaListGetSize &&
-            BoardHasOffset(board, 0x5C64, 0x410)) {
-            DWORD objDb = *(DWORD *)(mstMW + 0x480);
-            if (objDb && !IsBadReadPtr((void *)objDb, 0x20)) {
-                int iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
-                if (iter >= 0) {
-                    *(DWORD *)(objDb + 0x89C + iter * 4) = 0;
-                    int count = *(int *)(objDb + 0x898);
-                    if (count > 0 && count <= 8192) {
-                        DWORD *array = *(DWORD **)(objDb + 0xCA0);
-                        if (array && !IsBadReadPtr((void *)array, count * 4)) {
-                            *(DWORD *)(objDb + 0x89C + iter * 4) = 1;
-                            int idx = 0;
-                            while (idx < count) {
-                                DWORD *obj = (DWORD *)array[idx];
-                                if (obj && !IsBadReadPtr((void *)obj, 4)) {
-                                    char *name = *(char **)obj;
-                                    if (name && !IsBadReadPtr(name, 9)) {
-                                        if (my_strnicmp(name, "TarBubble", 9) == 0) {
-                                            g_AthenaListAppend(
-                                                (void *)((char *)board + 0x5C64),
-                                                (int)obj);
-                                            mastTarCount++;
+        {
+            int scanCount = 0;
+            int natCount = 0;
+            DWORD meshWorldPtr = *(DWORD *)((char *)board + BOARD_MESHWORLD);
+            if (meshWorldPtr && !IsBadReadPtr((void *)meshWorldPtr, 0x500) &&
+                g_AthenaListAppend && g_AthenaListGetIterator && g_AthenaListGetSize) {
+                DWORD objDb = *(DWORD *)(meshWorldPtr + 0x480);
+                if (objDb && !IsBadReadPtr((void *)objDb, 0x20)) {
+                    int iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
+                    if (iter >= 0) {
+                        *(DWORD *)(objDb + 0x89C + iter * 4) = 0;
+                        int count = *(int *)(objDb + 0x898);
+                        if (count > 0 && count <= 8192) {
+                            DWORD *array = *(DWORD **)(objDb + 0xCA0);
+                            if (array && !IsBadReadPtr((void *)array, count * 4)) {
+                                *(DWORD *)(objDb + 0x89C + iter * 4) = 1;
+                                int idx = 0;
+                                while (idx < count) {
+                                    DWORD *obj = (DWORD *)array[idx];
+                                    if (obj && !IsBadReadPtr((void *)obj, 4)) {
+                                        char *name = *(char **)obj;
+                                        if (name && !IsBadReadPtr(name, 9)) {
+                                            if (my_strnicmp(name, "TarBubble", 9) == 0) {
+                                                if (extFeed) {
+                                                    g_AthenaListAppend(
+                                                        (void *)((char *)ext + UNI_TARBUBBLE_LIST),
+                                                        (int)obj);
+                                                }
+                                                if (nativeListOff) {
+                                                    g_AthenaListAppend(
+                                                        (void *)((char *)board + nativeListOff),
+                                                        (int)obj);
+                                                    natCount++;
+                                                }
+                                                scanCount++;
+                                            }
                                         }
                                     }
+                                    idx++;
+                                    *(DWORD *)(objDb + 0x89C + iter * 4) = idx;
                                 }
-                                idx++;
-                                *(DWORD *)(objDb + 0x89C + iter * 4) = idx;
                             }
                         }
+                        *(DWORD *)(objDb + 0x89C + iter * 4) = 0;
                     }
-                    *(DWORD *)(objDb + 0x89C + iter * 4) = 0;
                 }
             }
-        }
-        /* No TarBubbles (custom file): dummy entry so FUN_0044fa90 reads
-         * harmless zeros instead of *(NULL+4). Same layout it reads:
-         * +0x00 name ptr, +0x04/0x08/0x0C float X/Y/Z. */
-        if (mastTarCount == 0 && g_AthenaListAppend && g_operatorNew &&
-            BoardHasOffset(board, 0x5C64, 0x410)) {
-            DWORD *dummy = (DWORD *)g_operatorNew(0x10);
-            if (dummy) {
-                memset(dummy, 0, 0x10);
-                static char mastDummyName[] = "TarBubble";
-                dummy[0] = (DWORD)mastDummyName;
-                g_AthenaListAppend((void *)((char *)board + 0x5C64), (int)dummy);
-                DebugLog("Master TarBubble scan: empty, added dummy entry");
+            /* No TarBubbles (custom file): dummy entries so FUN_0044fa90
+             * reads harmless zeros instead of *(NULL+4). Same layout it
+             * reads: +0x00 name ptr, +0x04/0x08/0x0C float X/Y/Z. */
+            if (scanCount == 0 && g_AthenaListAppend && g_operatorNew) {
+                if (extFeed) {
+                    DWORD *edummy = (DWORD *)g_operatorNew(0x10);
+                    if (edummy) {
+                        memset(edummy, 0, 0x10);
+                        static char extDummyName[] = "TarBubble";
+                        edummy[0] = (DWORD)extDummyName;
+                        g_AthenaListAppend(
+                            (void *)((char *)ext + UNI_TARBUBBLE_LIST),
+                            (int)edummy);
+                        DebugLog("TarBubble scan: empty, added ext dummy entry");
+                    }
+                }
+                if (nativeListOff && natCount == 0 &&
+                    BoardHasOffset(board, nativeListOff, 0x410)) {
+                    DWORD *ndummy = (DWORD *)g_operatorNew(0x10);
+                    if (ndummy) {
+                        memset(ndummy, 0, 0x10);
+                        static char natDummyName[] = "TarBubble";
+                        ndummy[0] = (DWORD)natDummyName;
+                        g_AthenaListAppend(
+                            (void *)((char *)board + nativeListOff),
+                            (int)ndummy);
+                        DebugLog("TarBubble scan: empty, added native dummy entry");
+                    }
+                }
             }
         }
     }
