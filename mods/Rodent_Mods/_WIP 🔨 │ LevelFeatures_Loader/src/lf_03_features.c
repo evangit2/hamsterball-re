@@ -250,6 +250,13 @@ static void Feature_BridgeAnimation(void *board, int level) {
         char timerBuf[256];
         { int zi; for (zi = 0; zi < 256; zi++) timerBuf[zi] = 0; }
         g_TimerInit(timerBuf);
+        /* Axis flag (binary-verified, Intermediate deck update): the dword
+         * at timer+0xC0 selects the rotation axis for 0x457CC0. Native sets
+         * 0 for the rider-carry call (0x41CF20, -0.5 deg) and 1 for the deck
+         * pose (0x41CFCA, -angle). TimerInit zeroes it, so without this the
+         * deck posed with the carry axis — spinning like a windmill
+         * instead of pitching on its hinge. */
+        *(int *)(timerBuf + 0xC0) = 1;
         g_GfxScaleZ(timerBuf, -*anglePtr);
         g_GfxSetPosition(timerBuf, *pivotX, *pivotY, *pivotZ);
         DWORD *renderVtbl = *(DWORD **)renderObj;

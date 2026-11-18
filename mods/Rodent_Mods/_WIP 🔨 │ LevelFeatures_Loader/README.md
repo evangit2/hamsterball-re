@@ -121,6 +121,15 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.23** — Windmill deck root-caused to a wrong rotation axis. Native
+Intermediate deck update poses via 0x457CC0 with the dword at timer+0xC0 = 1
+(0x41CFCA; the rider-carry call at 0x41CF20 uses 0). TimerInit zeroes it, so
+our shared pose ran with the carry axis — deck spinning instead of pitching.
+One-line fix: set timer+0xC0 = 1 before GfxScaleZ (fn/address/args already
+matched native: TimerInit = 0x457AD0, ScaleZ = 0x457CC0, SetPosition =
+0x457B50). Same fix applies to Intermediate automatically (shared feature).
+Rig: Master loads, live timer runs, 60s+, CD4=32. Needs your eyes to confirm
+the tilt (rig races stay frozen, can't render motion).
 - **v13.22** — All Master-specific code removed per user direction. Master now
 loads everything through the exact same generic branches as every other level:
 deleted the BBRIDGE native-slot replication (0x5410/0x5414 mesh prefer +
