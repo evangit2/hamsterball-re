@@ -327,16 +327,31 @@ static int NativeWalkPresent(void *board) {
     else if (level == 13 || content == 13 ||
              (*(DWORD *)board == 0x4D0FC8)) fn = (void *)(g_moduleBase + 0x1FC90);
     else if (level >= 1 && level <= 15 && g_origRaceState[level])
-        fn = (content == 5) ? (void *)g_BoardUpdateRaceState : (void *)g_origRaceState[level];
+        /* v13.29: mirror UniversalRaceState — slot-native orig runs only
+         * for the slot's own file; foreign files get base. */
+        fn = (content == 5) ? (void *)g_BoardUpdateRaceState :
+             (content == level) ? (void *)g_origRaceState[level] :
+             (void *)g_BoardUpdateRaceState;
     else fn = (void *)g_BoardUpdateRaceState;
     if (fn && !IsBadReadPtr((void *)fn, 0x1000)) {
         p = (unsigned char *)fn;
         for (i = 0; i < 0x1000 - 6; i++) {
-            /* lea 0x2578(%reg): 8D /r 78 25 00 00 */
+            /* lea 0x2578(%reg): 8D /r 78 25 00 00 — direct walk */
             if (p[i] == 0x8D && p[i+2] == 0x78 && p[i+3] == 0x25 &&
                 p[i+4] == 0x00 && p[i+5] == 0x00) {
                 *cache = 1;
                 return 1;
+            }
+            /* v13.29: call 0x41B130 (shared base): customs (Up 0x420660
+             * etc.) walk via the base — same drive, must also stand down.
+             * E8 rel32 at i targets fn+i+5+disp. */
+            if (p[i] == 0xE8) {
+                int disp;
+                memcpy(&disp, p + i + 1, 4);
+                if ((void *)(p + i + 5 + disp) == (void *)0x41B130) {
+                    *cache = 1;
+                    return 1;
+                }
             }
         }
     }

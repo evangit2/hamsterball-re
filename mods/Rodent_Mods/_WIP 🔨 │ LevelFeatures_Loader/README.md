@@ -121,6 +121,14 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.29** — We run the drive, native stands down on foreign files. Slot-native
+racestate now runs ONLY for the slot's own file (content == level); anything
+else gets shared base + our universal pump (every 0x2578 member via live
+slot-11, sole driver, 1x). Fixes the file-swap hazard (slot-native walks and
+touches objects a foreign file doesn't have) and the 2x tippers (pump + walk
+are now mutually exclusive by construction). Walk detector also catches
+customs that walk via calling the base (Up etc.). Rig: swapped Master file in
+Up slot and slot 3 both run base + skip with dynamics cycling 1x, no crash.
 - **v13.28** — Tippers back to 1x (were 2x on Master slot). Root cause: the
 native racestate (base 0x41B130) already walks board+0x2578 calling every
 member's slot-11 each frame, so native drives all dynamics 1x wherever that

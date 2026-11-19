@@ -714,10 +714,15 @@ void __fastcall UniversalRaceState(void *board) {
             else g_BoardUpdateRaceState(board);
         }
     } else if (level >= 1 && level <= 15 && g_origRaceState[level]) {
-        /* Tower content: orig Tower RaceState is the shared base handler;
-         * call base directly (verified identical, avoids double-drive). */
+        /* v13.29: slot-native orig runs ONLY when the loaded file IS the
+         * slot's own (content == level — objects it expects exist, proven
+         * safe). A foreign file gets base + our own drivers (universal
+         * pump) instead — slot-native on a foreign file walks/touches
+         * objects that aren't there. Tower content: orig IS the shared
+         * base handler; call base directly (verified identical). */
         if (ContentFileId(GetBoardExt(board)) == 5) g_BoardUpdateRaceState(board);
-        else g_origRaceState[level](board);
+        else if (ContentFileId(GetBoardExt(board)) == level) g_origRaceState[level](board);
+        else g_BoardUpdateRaceState(board);
         if (s_rsCount <= 4) DebugLog("  [raceState] orig/base call returned");
     } else {
         g_BoardUpdateRaceState(board);
