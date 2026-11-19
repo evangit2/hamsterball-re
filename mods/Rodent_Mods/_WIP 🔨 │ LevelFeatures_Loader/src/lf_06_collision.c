@@ -938,28 +938,26 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         }
     }
 
-    /* ── Odd: E:GRAVITY ── */
+    /* ── Odd: E:GRAVITY ── (direct tag parse; the SceneObject/MWParser
+     * round-trip per touch is suspected in the repeated-flip crash, so the
+     * type is read straight from the event name: E:GRAVITY<TYPE>X</TYPE>*.
+     * Same native fns, same latching semantics, zero parser objects.) */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_GRAVITY)) && my_strnicmp(name, "E:GRAVITY", 9) == 0) {
-        if (g_SceneObjectSub1Ctor && g_AthenaStringSet && g_MWParserReadTag && g_StreamReaderDtor) {
-            char strObj[64];
-            g_SceneObjectSub1Ctor(strObj);
-            g_AthenaStringSet(strObj, name);
-            DWORD *tag;
-            while ((tag = (DWORD *)g_MWParserReadTag(strObj)) != NULL) {
-                if (my_stricmp((char *)tag[1], "TYPE") == 0) {
-                    if (my_stricmp((char *)tag[2], "NORMAL") == 0 && g_NormalGravityReset)
-                        g_NormalGravityReset((int)ball);
-                    if (my_stricmp((char *)tag[2], "X") == 0 && g_BallSetTiltedGravity)
-                        g_BallSetTiltedGravity((int)ball);
-                    if (my_stricmp((char *)tag[2], "Z") == 0 && g_BallSetFlatGravity)
-                        g_BallSetFlatGravity((int)ball);
-                }
-                /* Native shape (Odd 0x40EE29): ECX=tag, push 1, call [tag0].
-                 * tag[0] is a pointer to a vtable; vtable[0] is the dtor. */
-                ((MWParser_TagDtor_t)(*(DWORD *)tag[0]))((void *)tag, 1);
+        const char *tp = name;
+        int gtype = -1, scanned = 0;
+        while (scanned < 64 && *tp) {
+            if (tp[0]=='<' && tp[1]=='T' && tp[2]=='Y' && tp[3]=='P' && tp[4]=='E' && tp[5]=='>') {
+                char c0 = tp[6], c1 = tp[7];
+                if (c0=='N') gtype = 0;                 /* NORMAL */
+                else if (c0=='X' && c1=='<') gtype = 1;
+                else if (c0=='Z' && c1=='<') gtype = 2;
+                break;
             }
-            g_StreamReaderDtor(strObj);
+            tp++; scanned++;
         }
+        if (gtype == 0 && g_NormalGravityReset) g_NormalGravityReset((int)ball);
+        else if (gtype == 1 && g_BallSetTiltedGravity) g_BallSetTiltedGravity((int)ball);
+        else if (gtype == 2 && g_BallSetFlatGravity) g_BallSetFlatGravity((int)ball);
     }
 
     /* ── Odd: N:JUMPFIRST / N:JUMPSECOND ── */

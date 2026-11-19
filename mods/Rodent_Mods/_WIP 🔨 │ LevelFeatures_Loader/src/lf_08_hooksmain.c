@@ -121,8 +121,10 @@ static void UniversalConstructor(void *board, int raceIndex) {
         if (ext) ParseBranchQuad(board, ext, meshWorld, meshPath);
         /* Master hammer triggers (E:CALLHAMMER/E:HAMMERCHASE) for the proximity driver */
         if (ext) ParseHammerQuads(board, ext, meshWorld, meshPath);
-        /* Odd gravity zones (E:GRAVITY) for the proximity driver */
-        if (ext) ParseGravityZones(board, ext, meshWorld, meshPath);
+        /* ParseGravityZones is DORMANT (v13.34): the E:GRAVITY touch path
+         * works, so no proximity driver is needed; the per-frame driver
+         * only multiplied native calls. Kept for custom files if the touch
+         * path ever proves unreliable on some level. */
         DebugLog("STEPMARK S1 scans done");
     }
 
