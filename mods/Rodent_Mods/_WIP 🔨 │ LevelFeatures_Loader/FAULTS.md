@@ -113,3 +113,21 @@ mark them FIXED with the version instead.
     Ask: play Tower ~30s, send back chomper_diag.txt. No blind fixes until
     the file names the stage.
 - Chomper ("purple chomping mouth") weirdness TBD — need a screenshot.
+
+## 2026-11-19 — Neon home BadBall renders black (no emission, no outline)
+- Rig screenshots: black disc at home instead of lit 8-ball. Binary-verified
+  root cause: BadBall render v[2] (0x402DE0) draws its emission + outline
+  sprites ONLY when ball+0xC80!=0; native Neon loader (0x41631D loop over
+  board+0x2DEC) sets +0xC80=1 + yellow colors on EVERY ball incl BadBall.
+  LFL only armed players (P1/P2 follower + glow quad) -> BadBall +0xC80=0
+  (verified live) -> mesh body unlit in 0-light LevelDark + no glow.
+- Fix: Neon_BadBallGlow (src/lf_10_neon.c, called from Neon_BuildLights):
+  walks board+0x29D4, sets +0xC80=1 + (r,g,b) on vtable-0x4CF3A0 balls only
+  (players untouched: +0xC80 is a live pointer for 0x4CF314 class).
+- Rig verified: gate=1 color=(1,1,0) live, no crash, Neon loads. Screenshot
+  shows BadBall now catches yellow light (lit crescent) but base still black:
+  the 0x453150-derived sprite params (+0x1EC..+0x1F8/+0x1C0..+0x1C8) also need
+  mirroring (native writes them in the same loop). NEXT: replicate the two
+  0x453150 calls per BadBall, then outline should return too.
+- Shipped 2026-11-19 (bass.dll + zip refreshed) — PARTIALLY FIXED, awaiting
+  user retest on real Windows.

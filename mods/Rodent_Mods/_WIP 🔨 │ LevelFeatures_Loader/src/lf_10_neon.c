@@ -395,6 +395,36 @@ static void *Neon_BuildOneLight(void *board, void *gfx, DWORD ball,
     return light;
 }
 
+/* BadBall glow gate (2026-11-19): native Neon scene loader (0x41631D loop
+ * over board+0x2DEC) sets ball+0xC80=1 on EVERY ball incl the home BadBall;
+ * BadBall render v[2] (0x402DE0) draws its emission + outline sprites ONLY
+ * when +0xC80!=0. LFL only armed players, so the BadBall renders black.
+ * Mirror native for BadBall-class balls (vtable 0x4CF3A0; never touch
+ * player-class balls — +0xC80 is a live pointer for 0x4CF314). */
+#define BADBALL_VTABLE 0x4CF3A0
+static void Neon_BadBallGlow(void *board, float r, float g, float b) {
+    int n, i;
+    DWORD *items;
+    if (!board || !g_AthenaListGetSize) return;
+    n = g_AthenaListGetSize((void *)((char *)board + UNI_BALL_LIST));
+    if (n <= 0 || n > 64) return;
+    items = *(DWORD **)((char *)board + UNI_BALL_LIST + 0x40C);
+    if (!items || IsBadReadPtr(items, n * 4)) return;
+    for (i = 0; i < n; i++) {
+        DWORD bb = items[i];
+        DWORD vt;
+        if (!bb || IsBadReadPtr((void *)bb, 0xD00)) continue;
+        vt = *(DWORD *)bb;
+        if (vt != BADBALL_VTABLE) continue;
+        if (*(BYTE *)(bb + 0xC80)) continue;  /* already armed */
+        *(float *)(bb + 0xC88) = r;
+        *(float *)(bb + 0xC8C) = g;
+        *(float *)(bb + 0xC90) = b;
+        *(BYTE *)(bb + 0xC80) = 1;
+        DebugLog("Neon: BadBall glow armed");
+    }
+}
+
 static void Neon_BuildLights(void *board, void *ext,
                              float r, float g, float b) {
     DWORD app, ball1;
@@ -420,6 +450,9 @@ static void Neon_BuildLights(void *board, void *ext,
             *(DWORD *)((char *)board + 0x4370) = 0;
         DebugLog("Neon: single-player, P2 light skipped");
     }
+    /* Arm pre-placed BadBalls (Neon home BadBall): native lights every
+     * ball, LFL only did players. Vtable-gated, players untouched. */
+    Neon_BadBallGlow(board, r, g, b);
     if (l1) {
         if (ExtHasOffset(ext, UNI_NEON_GLOW_ACTIVE, 1))
             *(BYTE *)((char *)ext + UNI_NEON_GLOW_ACTIVE) = 1;
