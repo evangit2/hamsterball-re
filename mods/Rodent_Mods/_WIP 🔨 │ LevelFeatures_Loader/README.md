@@ -121,6 +121,16 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.28** — Tippers back to 1x (were 2x on Master slot). Root cause: the
+native racestate (base 0x41B130) already walks board+0x2578 calling every
+member's slot-11 each frame, so native drives all dynamics 1x wherever that
+walk runs. Our v13.27 pump added a second drive on top. Fix: before pumping,
+scan the exact racestate fn UniversalRaceState will call (same level/content
+chain) for the walk's byte shape (lea 0x2578) and stand down when present;
+no-walk slots (Intermediate custom) keep the pump as sole driver. Gated on
+which code runs, never on slot — cached per board. Rig: no-walk slot pumps
+1 call/tick, no dupes; walk-slot skip verified by construction (vtable slot
+19 + walk bytes + dispatch chain all proven).
 - **v13.27** — Master dynamics (bonk, halves, pops) get their native per-frame
 drive back. On universal boards nothing calls object slot-11 updates, so every
 native dynamic froze after creation. Fix: the tipper scan now also pumps

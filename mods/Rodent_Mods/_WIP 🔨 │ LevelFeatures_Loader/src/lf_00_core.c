@@ -969,6 +969,7 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_GLUEBIE_MESH     0x86D4  /* Gluebie mesh (Dizzy) */
 #define UNI_TIPPER_POSES     0xBB00  /* 8 tipper poses x,y,z,yaw (16B each) */
 #define UNI_TIPPER_POSE_N    0xBB80  /* tipper pose count */
+#define UNI_PUMP_SKIP        0xBBA8  /* v13.28: 0=unscanned 1=skip(native walks) 2=pump */
 #define UNI_LOOPER_MESH      0x86D8  /* Looper mesh (Impossible) */
 #define UNI_GEAR_MESH        0x86DC  /* Gear mesh (Impossible) */
 #define UNI_BIGGEAR_MESH     0x86E0  /* BigGear mesh (Impossible) */

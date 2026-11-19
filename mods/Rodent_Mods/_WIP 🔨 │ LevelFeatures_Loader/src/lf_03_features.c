@@ -298,7 +298,58 @@ static void Feature_BridgeAnimation(void *board, int level) {
  * every board -- appending crashed/hung twice), no object walks (poses
  * stored at create). Per tipper: TimerInit + ScaleY(yaw) + SetPosition +
  * v[0x58] + v[0x54] + Cleanup. Static yaw for now; deflection later. */
+/* v13.28: does the racestate that WILL run for this board already walk
+ * board+0x2578 calling v[11] (native 0x41B130 shape: lea 0x2578 + call
+ * *0x2c)? If yes, every 0x2578 member (tippers, bonk, pops, halves) is
+ * natively driven and our pump must STAND DOWN (it double-drives: Master
+ * slot tippers ran 2x). If no (Intermediate custom 0x41CC90 has no walk),
+ * the pump is the sole driver. Mirrors UniversalRaceState's dispatch
+ * exactly (same level/content chain) so the scanned fn is the one that
+ * runs — behavior-gated, never slot-gated. Result cached per board. */
+static int NativeWalkPresent(void *board) {
+    void *ext = GetBoardExt(board);
+    int *cache;
+    int level, content;
+    void *fn = NULL;
+    unsigned char *p;
+    int i;
+    if (!ext) return 0;
+    cache = (int *)((char *)ext + UNI_PUMP_SKIP);
+    if (*cache == 1) return 1;
+    if (*cache == 2) return 0;
+    level = GetCurrentLevel(board);
+    content = ContentFileId(ext);
+    if (level == 2 || content == 2) fn = (void *)g_BoardUpdateRaceState;
+    else if (level == 7 || content == 7)
+        fn = (Neon_IsActive(board) && level >= 1 && level <= 15 && g_origRaceState[level])
+             ? (void *)g_origRaceState[level] : (void *)g_BoardUpdateRaceState;
+    else if (content == 10) fn = (void *)g_BoardUpdateRaceState;
+    else if (level == 13 || content == 13 ||
+             (*(DWORD *)board == 0x4D0FC8)) fn = (void *)(g_moduleBase + 0x1FC90);
+    else if (level >= 1 && level <= 15 && g_origRaceState[level])
+        fn = (content == 5) ? (void *)g_BoardUpdateRaceState : (void *)g_origRaceState[level];
+    else fn = (void *)g_BoardUpdateRaceState;
+    if (fn && !IsBadReadPtr((void *)fn, 0x1000)) {
+        p = (unsigned char *)fn;
+        for (i = 0; i < 0x1000 - 6; i++) {
+            /* lea 0x2578(%reg): 8D /r 78 25 00 00 */
+            if (p[i] == 0x8D && p[i+2] == 0x78 && p[i+3] == 0x25 &&
+                p[i+4] == 0x00 && p[i+5] == 0x00) {
+                *cache = 1;
+                return 1;
+            }
+        }
+    }
+    *cache = 2;
+    return 0;
+}
+
 static void Feature_TipperVisual(void *board, int level) {
+    /* v13.28: STAND DOWN when the native racestate already walks 0x2578
+     * (base 0x41B130 shape). Native drives every member 1x/frame; our pump
+     * on top made Master-slot tippers run 2x. No-walk slots (Intermediate
+     * custom) still need the pump as sole driver. Behavior-gated, cached. */
+    if (NativeWalkPresent(board)) return;
     /* Plan A (2026-11-03): drive native slot-11 update 0x437A40 per tipper.
      * Native owns the 0-3 fire/hold/blink machine, the Append/Remove of vis
      * on board+0x8B0+0x18, the Play3D fire sound, and the pose tail. Same
