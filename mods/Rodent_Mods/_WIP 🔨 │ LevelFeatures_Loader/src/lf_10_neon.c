@@ -495,13 +495,22 @@ static void Neon_BuildLights(void *board, void *ext,
  * what glow color LFL computed on the user's box (no log file available). */
 static void Neon_VerdictDiag(const char *meshPath, int has, int marker,
                              float r, float g, float b) {
-    char tmp[260], fp[300], line[512];
-    DWORD n;
+    char exe[MAX_PATH], fp[300], line[512];
+    DWORD elen = 0, i;
     HANDLE hf;
+    const char *nm;
+    int k;
     if (!meshPath) meshPath = "(null)";
-    n = GetTempPathA((DWORD)sizeof(tmp), tmp);
-    if (!n || n >= sizeof(tmp)) return;
-    wsprintfA(fp, "%slfl_neon_verdict.txt", tmp);
+    /* Game folder (where bass.dll lives), not %TEMP%: user can't find temp. */
+    GetModuleFileNameA(NULL, exe, MAX_PATH);
+    exe[MAX_PATH-1] = '\0';
+    elen = 0; while (exe[elen]) elen++;
+    while (elen > 0 && exe[elen-1] != '\\' && exe[elen-1] != '/') elen--;
+    if (!elen || elen >= sizeof(fp) - 24) return;
+    for (i = 0; i < elen; i++) fp[i] = exe[i];
+    nm = "lfl_neon_verdict.txt"; k = 0;
+    while (nm[k] && i < sizeof(fp) - 1) fp[i++] = nm[k++];
+    fp[i] = '\0';
     /* NOTE: wsprintfA has NO float support — print rgb as int hundredths. */
     wsprintfA(line, "path='%s' has=%d marker=%d rgb=(%d,%d,%d)",
               meshPath, has, marker,
