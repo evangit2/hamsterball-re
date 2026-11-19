@@ -207,21 +207,22 @@ static int Neon_ScanMarker(const unsigned char *buf, unsigned int len,
     return 0;
 }
 
-/* Sprite-ball tint (8-ball fix, 2026-11-19): helper 0x4011C0 draws every
- * scaled-sprite ball (all 3 callers pass a ball; 754>=3 end-state included)
- * with a hardcoded white triple feeding 0x453150 — no ball field consulted.
- * LFL rewrites the three push-imm32s to the glow color while active and
- * restores white when a native-light level takes over. Exe .text never
- * persists (fresh image each launch), so PostSetup apply/restore covers
- * every cross-level transition. Idempotent + verify-or-skip (version drift
- * leaves stock white instead of corrupting code). */
+/* Ball tint (8-ball fix 2026-11-19, channel fix same day): helper 0x4011C0
+ * builds the ball color struct via 0x453150 from its three push-imm32s plus
+ * the caller's 4th arg (ball+0x2FC/0xC60 alpha). The pushes fill the struct
+ * in REVERSE: last push (0x4011D5) -> +0x7B0, middle (0x4011D0) -> +0x7B4,
+ * first (0x4011C9) -> +0x7B8 — and the mesh reads +0x7B0 as RED. Writing
+ * (r,g,b) in push order put b=0 into +0x7B0 for yellow = green hamster on
+ * real Windows (user-proven). Correct order: C9=b, D0=g, D5=r. Exe .text
+ * never persists (fresh image each launch), so PostSetup apply/restore
+ * covers every cross-level transition. Idempotent + verify-or-skip. */
 static void Neon_PatchSpriteColor(float r, float g, float b) {
     static const DWORD kImm[3] = { 0x4011CA, 0x4011D1, 0x4011D6 };
     int i, need = 0, ok = 1;
     char dbg[128];
     for (i = 0; i < 3; i++) {
         DWORD cur;
-        float tf = (i == 0) ? r : (i == 1) ? g : b;
+        float tf = (i == 0) ? b : (i == 1) ? g : r;
         if (IsBadReadPtr((void *)kImm[i], 4)) return;
         cur = *(DWORD *)kImm[i];
         if (cur != 0x3F800000) {
@@ -233,7 +234,7 @@ static void Neon_PatchSpriteColor(float r, float g, float b) {
         return;
     }
     for (i = 0; i < 3; i++) {
-        float tf = (i == 0) ? r : (i == 1) ? g : b;
+        float tf = (i == 0) ? b : (i == 1) ? g : r;
         DWORD bits = *(DWORD *)&tf;
         DWORD old;
         SIZE_T wr = 0;

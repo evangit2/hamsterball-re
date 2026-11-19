@@ -159,5 +159,6 @@ mark them FIXED with the version instead.
   +0x1BC, quadB +0x1CC, quadC +0x1EC. Render draws the quadA sprite
   (lea 0x1B8 -> 0x45D660 at 0x4042AE). LFL's Neon_BallGlow wrote ONLY quadB,
   leaving quadA at universal-ctor defaults (red missing) = green hamster.
-  Fix: Neon_BallGlow now writes all three sets, native-identical. Shipped
+  Fix: Neon_BallGlow now writes all three sets, native-identical. (Kept: hamster still green, ball+ring yellow - quads exonerated by user description.)
+- ROOT CAUSE #2, 2026-11-19 via objdump: Neon_PatchSpriteColor (v13.37 8-ball fix) wrote (r,g,b) in push order, but 0x453150 fills the ball struct REVERSED: last push 0x4011D5 -> +0x7B0, first 0x4011C9 -> +0x7B8. Mesh reads +0x7B0 as RED. Yellow (b=0) zeroed +0x7B0 = green hamster; ball shell+ring (quads) stayed yellow. Ball_Render calls 0x4011C0 unconditionally (0x4044EB), so the mesh path was always hit. Fix: write C9=b, D0=g, D5=r. Shipped
   2026-11-19 (bass.dll + zip refreshed) - needs Windows eye-confirm.
