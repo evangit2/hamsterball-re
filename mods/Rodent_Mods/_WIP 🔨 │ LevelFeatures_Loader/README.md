@@ -121,6 +121,14 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.37** — 8-ball glow fix. Sprite-balls (754>=3, incl. 8-ball end-state)
+render through helper 0x4011C0 with a hardcoded white triple (three push
+1.0 at 0x4011C9/D0/D5 into 0x453150) — native never tints it anywhere.
+LFL now rewrites those three immediates to the glow color while active,
+restores white for native-light levels (PostSetup both ways, idempotent +
+verify-or-skip; .text never persists so no exit restore needed).
+Rig-verified: pushes read back (0,1,0) on the green-marker file, no crash.
+8-ball visuals still need Windows eye-confirm.
 - **v13.36** — S3 marker-light glow color (user spec). Any type-0 S3 light
 with pos=(0,0,0) AND target=(0,0,0) is a marker: the glow builds and the
 marker's up-triple is the color (0.0-1.0 each, clamped; emitter = color

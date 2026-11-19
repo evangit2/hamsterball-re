@@ -207,6 +207,47 @@ static int Neon_ScanMarker(const unsigned char *buf, unsigned int len,
     return 0;
 }
 
+/* Sprite-ball tint (8-ball fix, 2026-11-19): helper 0x4011C0 draws every
+ * scaled-sprite ball (all 3 callers pass a ball; 754>=3 end-state included)
+ * with a hardcoded white triple feeding 0x453150 — no ball field consulted.
+ * LFL rewrites the three push-imm32s to the glow color while active and
+ * restores white when a native-light level takes over. Exe .text never
+ * persists (fresh image each launch), so PostSetup apply/restore covers
+ * every cross-level transition. Idempotent + verify-or-skip (version drift
+ * leaves stock white instead of corrupting code). */
+static void Neon_PatchSpriteColor(float r, float g, float b) {
+    static const DWORD kImm[3] = { 0x4011CA, 0x4011D1, 0x4011D6 };
+    int i, need = 0, ok = 1;
+    char dbg[128];
+    for (i = 0; i < 3; i++) {
+        DWORD cur;
+        float tf = (i == 0) ? r : (i == 1) ? g : b;
+        if (IsBadReadPtr((void *)kImm[i], 4)) return;
+        cur = *(DWORD *)kImm[i];
+        if (cur != 0x3F800000) {
+            if (cur != *(DWORD *)&tf) { ok = 0; break; }
+        } else need = 1;
+    }
+    if (!ok) {
+        DebugLog("Neon: sprite-color site unexpected, leaving stock white");
+        return;
+    }
+    for (i = 0; i < 3; i++) {
+        float tf = (i == 0) ? r : (i == 1) ? g : b;
+        DWORD bits = *(DWORD *)&tf;
+        DWORD old;
+        SIZE_T wr = 0;
+        if (*(DWORD *)kImm[i] == bits) continue;
+        VirtualProtect((void *)(kImm[i]), 4, PAGE_EXECUTE_READWRITE, &old);
+        WriteProcessMemory(GetCurrentProcess(), (void *)(kImm[i]),
+                           &bits, 4, &wr);
+        VirtualProtect((void *)(kImm[i]), 4, old, &old);
+    }
+    wsprintfA(dbg, "Neon: sprite-ball color -> (%.2f,%.2f,%.2f)%s",
+              r, g, b, need ? "" : " (already set)");
+    DebugLog(dbg);
+}
+
 /* Returns 1 = file has >=1 S3 light (or unreadable/malformed: conservative
  * skip). Marker out: 1 = S3 marker light found (glow color in mr/mg/mb),
  * 0 = none, -1 = malformed/unreadable (treated as native). */
@@ -409,6 +450,7 @@ static void Neon_PostSetup(void *board, void *ext, int raceIndex, const char *me
                   meshPath, mr, mg, mb);
         DebugLog(dbg);
         Neon_BuildLights(board, ext, mr, mg, mb);
+        Neon_PatchSpriteColor(mr, mg, mb);
         return;
     }
     if (has) {
@@ -421,9 +463,11 @@ static void Neon_PostSetup(void *board, void *ext, int raceIndex, const char *me
         }
         wsprintfA(dbg, "Neon: '%s' has native S3 light(s), glow skipped", meshPath);
         DebugLog(dbg);
+        Neon_PatchSpriteColor(1.0f, 1.0f, 1.0f);
         return;
     }
     wsprintfA(dbg, "Neon: '%s' has no S3 lights, building followers", meshPath);
     DebugLog(dbg);
     Neon_BuildLights(board, ext, 1.0f, 1.0f, 0.0f);
+    Neon_PatchSpriteColor(1.0f, 1.0f, 0.0f);
 }
