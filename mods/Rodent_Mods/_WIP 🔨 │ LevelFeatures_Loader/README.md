@@ -121,6 +121,16 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.25** — Constant-velocity deck propeller + swoop on Master file
+root-caused to the windmill fall-through, not the deck code. Postscan arms
+FEAT_WINDMILL for CATAPULT/DRAWBRIDGE/TRAPDOOR/MACE/TURRET/CHOMPER S1s, so
+Master (Catapult S1) enters Feature_Windmill; content != 5 skips the native
+path but the fall-through posed REND_TOWER_WINDMILL with a BONK_STORE
+fallback — and BONK_STORE holds the tilting deck mesh. Unbounded angle at
+constant velocity + 45-mod-90 swoop on the deck = the reported propeller.
+Fix: fallback removed, early return when no real windmill render (chomper
+tail keeps its own gate). Rig proof on Master file: windmill angle frozen
+0.0, deck still cycling, live timer.
 - **v13.24** — Static deck in Master slot root-caused to a one-field data bug,
 not a code gate. The Master row of g_levelData set bridgeParamOffset =
 UNI_BRIDGE_COUNTER instead of UNI_BRIDGE_ANGLE, so ctor step 9f wrote

@@ -1118,8 +1118,16 @@ static void Feature_Windmill(void *board, int level) {
     posY = (float*)((char*)ext + UNI_WINDMILL_Y);
     posZ = (float*)((char*)ext + UNI_WINDMILL_Z);
     renderPtr = (DWORD*)((char*)ext + REND_TOWER_WINDMILL);
-    /* Fallback for legacy BONK_STORE alias during migration. */
-    if (!*renderPtr && *(DWORD*)((char*)ext+UNI_BONK_STORE)) *renderPtr = *(DWORD*)((char*)ext+UNI_BONK_STORE);
+    /* No BONK_STORE fallback here (v13.25): on drawbridge levels BONK_STORE
+     * holds the TILTING DECK mesh, and posing it with the unbounded windmill
+     * angle propellers the whole deck at constant velocity + swoop sound.
+     * Windmill-less levels (Catapult-only etc.) exit here; the chomper tail
+     * below keeps its own presence gate. */
+    if (!*renderPtr) {
+        if (*(DWORD *)((char *)ext + REND_TOWER_CHOMPER))
+            Feature_ChomperStates(board, app);
+        return;
+    }
     float rotSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.5f : 1.0f;
     *anglePtr = *anglePtr + rotSpeed;
     *(float*)((char*)ext + UNI_CHOMP_TIMER) += 3.0f; /* mirror board+0x43A4 (_DAT_004CF418) */
