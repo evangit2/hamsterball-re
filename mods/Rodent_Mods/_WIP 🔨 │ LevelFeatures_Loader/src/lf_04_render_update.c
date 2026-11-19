@@ -650,6 +650,50 @@ board_additive:
         }
     }
 
+    /* Odd gravity zones (E:GRAVITY volumes) proximity driver.
+     * Same dead-touch disease: per-frame AABB test applies the zone's
+     * gravity directly (latching + idempotent like the native touch, so
+     * no edge state). First matching zone wins. Own guards (no difficulty
+     * gate — the native touch handler has none). */
+    {
+        typedef void (__fastcall *NormalGravityReset_t)(int ball);
+        typedef void (__fastcall *Ball_SetTiltedGravity_t)(int ball);
+        typedef void (__fastcall *Ball_SetFlatGravity_t)(int ball);
+        void *gpex = GetBoardExt(board);
+        if (gpex && (*(int *)((char *)gpex + OFF_GRAV_ZONE_COUNT)) && !*(BYTE *)((char *)board + 0x874)) {
+            int gbc = *(int *)((char *)board + 0x29D4 + 4);
+            int *gbi = *(int **)((char *)board + 0x29D4 + 0x40C);
+            if (gbc >= 1 && gbc <= 4 && gbi && !IsBadReadPtr(gbi, (unsigned)gbc * 4)) {
+                int gk;
+                for (gk = 0; gk < gbc; gk++) {
+                    int gb = gbi[gk];
+                    if (!gb || IsBadReadPtr((void *)gb, 0xD00)) continue;
+                    float gbx = *(float *)(gb + 0x164), gby = *(float *)(gb + 0x168), gbz = *(float *)(gb + 0x16C);
+                    int nz = *(int *)((char *)gpex + OFF_GRAV_ZONE_COUNT);
+                    if (nz > 16) nz = 16;
+                    int zi;
+                    for (zi = 0; zi < nz; zi++) {
+                        char *slot = (char *)gpex + OFF_GRAV_ZONES + zi * 28;
+                        float *qmin = (float *)slot;
+                        float *qmax = (float *)(slot + 12);
+                        if (gbx > qmin[0]-16 && gbx < qmax[0]+16 &&
+                            gby > qmin[1]-16 && gby < qmax[1]+16 &&
+                            gbz > qmin[2]-16 && gbz < qmax[2]+16) {
+                            int gtype = *(int *)(slot + 24);
+                            if (gtype == 0)
+                                ((NormalGravityReset_t)(g_moduleBase + RVA_NormalGravityReset))(gb);
+                            else if (gtype == 1)
+                                ((Ball_SetTiltedGravity_t)(g_moduleBase + RVA_Ball_SetTiltedGravity))(gb);
+                            else if (gtype == 2)
+                                ((Ball_SetFlatGravity_t)(g_moduleBase + RVA_Ball_SetFlatGravity))(gb);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /* Get level and dispatch features */
     int level = GetCurrentLevel(board);
     if (level == 0) return;

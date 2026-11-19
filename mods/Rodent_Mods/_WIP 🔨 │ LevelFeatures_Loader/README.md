@@ -121,6 +121,15 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.33** — Odd gravity zones work (user: "move on to something like odd
+gravity"). Same dead-touch disease as the hammer triggers, same cure:
+ParseGravityZones resolves every E:GRAVITY* record (any suffix) to a live
+AABB + inline <TYPE> (0=NORMAL,1=X,2=Z, up to 16 zones) at load; the
+per-frame driver applies the zone's gravity directly (latching +
+idempotent, first match wins, no edge state, no difficulty gate — mirrors
+the native touch). Rig-verified live on Level6 content: X zone latches
+tilted (-1,0,0), NORMAL zone resets (0,-1,0). Confirm flips feel right on
+Windows (zone margins are ball-center ±16).
 - **v13.32** — Master hammer triggers work (user report: bonk absent +
 nonfunctional, bridge never breaks, no sounds — "as if the trigger doesn't
 exist"). Root cause, rig-proven: S6 trigger-volume touches never arrive

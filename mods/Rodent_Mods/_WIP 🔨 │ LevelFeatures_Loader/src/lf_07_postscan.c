@@ -792,6 +792,118 @@ static void ParseHammerQuads(void *board, void *ext, void *meshWorld, const char
     }
     HeapFree(GetProcessHeap(), 0, buf);
 }
+/* Odd gravity zones (E:GRAVITY<TYPE>X</TYPE> volumes, any suffix) for the
+ * proximity driver. Same dead-touch disease as the hammer triggers: S6
+ * volume touches never arrive post-load, so gravity never flips. Parses
+ * every E:GRAVITY* record (up to 16): AABB via strips + live S5, type from
+ * the inline <TYPE> tag. Per-frame apply is idempotent (latching, like
+ * the native touch), so no edge state needed. */
+static void ParseGravityZones(void *board, void *ext, void *meshWorld, const char *meshPath) {
+    *(DWORD *)((char *)ext + OFF_GRAV_ZONE_COUNT) = 0;
+    if (!board || !ext || !meshWorld || !meshPath || !meshPath[0]) return;
+    if (!(*(BYTE *)((char *)ext + COLL_FLAG_GRAVITY))) return;
+    DWORD objDb = *(DWORD *)((char *)meshWorld + 0x480);
+    if (!objDb || IsBadReadPtr((void *)objDb, 0x444)) return;
+    float *verts = *(float **)(objDb + 0x440);
+    if (!verts || IsBadReadPtr(verts, 12)) return;
+    char *buf = NULL; DWORD fsize = 0;
+    {
+        HANDLE h = CreateFileA(meshPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        char withExt[MAX_PATH];
+        if (h == INVALID_HANDLE_VALUE && strlen(meshPath) + 10 < MAX_PATH) {
+            strcpy(withExt, meshPath); strcat(withExt, ".MESHWORLD");
+            h = CreateFileA(withExt, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        }
+        if (h == INVALID_HANDLE_VALUE) return;
+        fsize = GetFileSize(h, NULL);
+        if (fsize == 0 || fsize == (DWORD)-1 || fsize > 0x500000) { CloseHandle(h); return; }
+        buf = (char *)HeapAlloc(GetProcessHeap(), 0, fsize);
+        if (!buf) { CloseHandle(h); return; }
+        DWORD br = 0;
+        if (!ReadFile(h, buf, fsize, &br, NULL) || br != fsize) { HeapFree(GetProcessHeap(), 0, buf); CloseHandle(h); return; }
+        CloseHandle(h);
+    }
+    {
+        static const char prefix[] = "E:GRAVITY";
+        DWORD i;
+        int count = 0;
+        for (i = 0; i + 10 < fsize && count < 16; i++) {
+            int k;
+            for (k = 0; k < 9; k++) if (buf[i+k] != prefix[k]) break;
+            if (k != 9) continue;
+            /* record name runs to NUL (bounded, in-file); verify file nlen */
+            int nl = 0;
+            while (nl < 64 && i + (DWORD)nl < fsize && buf[i+nl]) nl++;
+            if (nl < 10 || nl > 63 || i + (DWORD)nl >= fsize || buf[i+nl] != 0) continue;
+            if (i < 4) continue;
+            if (*(int *)(buf + i - 4) != nl + 1) continue;
+            /* type from inline <TYPE> tag */
+            int type = -1, t;
+            for (t = 9; t + 8 < nl; t++) {
+                if (buf[i+t]=='<' && buf[i+t+1]=='T' && buf[i+t+2]=='Y' && buf[i+t+3]=='P' &&
+                    buf[i+t+4]=='E' && buf[i+t+5]=='>') {
+                    char *tv = buf + i + t + 6;
+                    if (tv[0]=='N') type = 0;        /* NORMAL */
+                    else if (tv[0]=='X' && tv[1]=='<') type = 1;
+                    else if (tv[0]=='Z' && tv[1]=='<') type = 2;
+                    break;
+                }
+            }
+            if (type < 0) continue;
+            DWORD q = i + (DWORD)(nl + 1);
+            if (q + 80 > fsize) continue;
+            q += 72; /* material */
+            int has_tex = *(int *)(buf + q); q += 4;
+            if (has_tex != 0 && has_tex != 1) continue;
+            if (has_tex) {
+                if (q + 4 > fsize) continue;
+                int sl = *(int *)(buf + q); q += 4;
+                if (sl < 1 || sl > 256 || q + (DWORD)sl > fsize) continue;
+                q += sl;
+            }
+            if (q + 4 > fsize) continue;
+            int sc = *(int *)(buf + q); q += 4;
+            if (sc < 1 || sc > 8) continue;
+            if (q + (DWORD)sc * 8 > fsize) continue;
+            float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
+            int s, ok = 0, bad = 0;
+            for (s = 0; s < sc && !bad; s++) {
+                int tri = *(int *)(buf + q); int vref = *(int *)(buf + q + 4); q += 8;
+                if (tri < 1 || tri > 10000 || vref < 0 || vref > 2000000) { bad = 1; break; }
+                int v;
+                for (v = 0; v < tri + 2; v++) {
+                    float *vp;
+                    if (IsBadReadPtr(verts + (vref + v) * 8, 32)) { bad = 1; break; }
+                    vp = verts + (vref + v) * 8;
+                    if (vp[0] != vp[0] || vp[1] != vp[1] || vp[2] != vp[2]) { bad = 1; break; }
+                    if (vp[0] > 2e6f || vp[0] < -2e6f || vp[1] > 2e6f || vp[1] < -2e6f || vp[2] > 2e6f || vp[2] < -2e6f) { bad = 1; break; }
+                    if (vp[0] < mn[0]) mn[0] = vp[0];
+                    if (vp[1] < mn[1]) mn[1] = vp[1];
+                    if (vp[2] < mn[2]) mn[2] = vp[2];
+                    if (vp[0] > mx[0]) mx[0] = vp[0];
+                    if (vp[1] > mx[1]) mx[1] = vp[1];
+                    if (vp[2] > mx[2]) mx[2] = vp[2];
+                    ok++;
+                }
+            }
+            if (!bad && ok >= 3) {
+                int dx = (mx[0]-mn[0] > 1), dy = (mx[1]-mn[1] > 1), dz = (mx[2]-mn[2] > 1);
+                if (dx+dy+dz >= 2) {
+                    char *slot = (char *)ext + OFF_GRAV_ZONES + count * 28;
+                    ((float *)slot)[0]=mn[0]; ((float *)slot)[1]=mn[1]; ((float *)slot)[2]=mn[2];
+                    ((float *)slot)[3]=mx[0]; ((float *)slot)[4]=mx[1]; ((float *)slot)[5]=mx[2];
+                    *(int *)(slot + 24) = type;
+                    count++;
+                    { char lg[160]; wsprintfA(lg, "GRAVZONE t=%d min=(%d,%d,%d)",
+                        type, (int)mn[0], (int)mn[1], (int)mn[2]); ToobDiag(lg); }
+                }
+            }
+            i += (DWORD)nl; /* skip past this record */
+        }
+        *(DWORD *)((char *)ext + OFF_GRAV_ZONE_COUNT) = count;
+    }
+    HeapFree(GetProcessHeap(), 0, buf);
+}
 // Targeted scan: only scan mesh files actually referenced by S1 (not whole folder wildcard).
 // Prevents hitch from scanning 30+ files every level load. Falls back to basePath file.
 static void ScanS1ReferencedMeshesForCollisions(void *board, void *ext, void *meshWorld, const char *basePath) {

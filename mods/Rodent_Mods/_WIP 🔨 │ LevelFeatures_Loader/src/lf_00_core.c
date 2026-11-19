@@ -1052,6 +1052,9 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define OFF_HAMMER_TRIG_STATE 0xBBFC  /* dword bits: bit0=CALLHAMMER armed, bit1=CHASE#1 armed, bit2=CHASE#2 armed */
 #define OFF_HAMMERCHASE2_MIN  0xBC00  /* 3 floats: 2nd E:HAMMERCHASE AABB min */
 #define OFF_HAMMERCHASE2_MAX  0xBC0C  /* 3 floats: 2nd E:HAMMERCHASE AABB max */
+/* Odd gravity zones (E:GRAVITY volumes, same dead-touch disease): */
+#define OFF_GRAV_ZONE_COUNT   0xBC18  /* dword: parsed E:GRAVITY zone count (max 16) */
+#define OFF_GRAV_ZONES        0xBC1C  /* 16 x {min[3], max[3], type} 28B each; type 0=NORMAL,1=X,2=Z */
 /* Next free: 0xBA00, tail to 0xC000 = 0x600 bytes remaining */
 
 /* Sky popcyl array (16 × 4 = 64 bytes) */
