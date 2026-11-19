@@ -307,7 +307,10 @@ static void Feature_TipperVisual(void *board, int level) {
      * (old manual static-yaw draw kept below under #if 0). */
     if (*(BYTE*)((char*)board+0x874)) return;
     if (!g_TipperUpdate) return;
-    if (*(int *)((char *)board + 0x3A44) == 0) return;
+    /* v13.27: the old board+0x3A44 live-flag gate is removed — Setup zeroes
+     * 0x3A44 and nothing ever sets it, so the gate fired on every universal
+     * board and the whole driver (tippers + native pump) never ran. Pause
+     * byte above is the real liveness gate. */
     void* ext = GetBoardExt(board);
     if (!ext) return;
     if (*(int *)((char *)ext + UNI_NATIVE_CTOR)) return;
@@ -317,11 +320,29 @@ static void Feature_TipperVisual(void *board, int level) {
     DWORD *items = *(DWORD **)((char *)board + UNI_OBJ_LIST + 0x40C);
     if (!items || IsBadReadPtr((void *)items, ni * 4)) return;
     int i;
+    /* v13.27: same scan also pumps native slot-11 updates for our other
+     * dynamics (bonk bob 0x43F930, pop reposition 0x43DED0, halves fall).
+     * Native calls these every frame; on universal boards nothing does, so
+     * they freeze. vtbl read live per object (no hardcoded update addrs);
+     * all slot-11s are __thiscall ECX-only by native convention. Halves are
+     * static until BreakBridge sets +0x10FC (their update no-ops before). */
+    DWORD halfVtbl = 0;
+    {
+        void *h1 = *(void **)((char *)ext + UNI_BBRIDGE1_OBJ);
+        if (h1 && !IsBadReadPtr((void *)h1, 0x10FC) && *(DWORD *)h1 && !IsBadReadPtr(*(void **)h1, 0x30))
+            halfVtbl = *(DWORD *)h1;
+    }
     for (i = 0; i < ni; i++) {
         DWORD obj = items[i];
+        DWORD vt;
+        void (__thiscall *upd)(void *);
         if (!obj || IsBadReadPtr((void *)obj, 0x1104)) continue;
-        if (*(DWORD *)obj != 0x4D4ED8) continue;
-        g_TipperUpdate((void *)obj);
+        vt = *(DWORD *)obj;
+        if (vt == 0x4D4ED8) { g_TipperUpdate((void *)obj); continue; }
+        if (vt != 0x4D58F0 && vt != 0x4D5120 && vt != halfVtbl) continue;
+        if (IsBadReadPtr((void *)vt, 0x30)) continue;
+        upd = (void (__thiscall *)(void *))((DWORD *)vt)[11];
+        if (upd) upd((void *)obj);
     }
     return;
 #if 0

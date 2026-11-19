@@ -630,6 +630,13 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     }
     DebugLog("Step 9a (AthenaList_Init) done");
 
+    /* v13.27: init board+0x2578 (object list) unconditionally. Base
+     * Board_ctor does this natively, but universal boards skip it — live
+     * reads show 0x4D875C garbage there, so every mirror append to 0x2578
+     * went into the void and every 0x2578 scan (tippers, native pump) found
+     * nothing. Same class as the 0x5C64/0x436C/0x4378 missing inits. */
+    if (g_AthenaListInit) g_AthenaListInit((void *)((char *)mem + 0x2578), 0);
+
     /* 9a-extra: Up race (level 6) needs a legacy AthenaList at board+0x436C.
      * The original Up RaceState (0x00420660) iterates this list and calls
      * each Lifter's Update() every frame.  Without it, vacuum tubes never

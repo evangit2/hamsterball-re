@@ -121,6 +121,16 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.27** — Master dynamics (bonk, halves, pops) get their native per-frame
+drive back. On universal boards nothing calls object slot-11 updates, so every
+native dynamic froze after creation. Fix: the tipper scan now also pumps
+native v[11] for pop (0x4D58F0), bonk (0x4D5120) and halves (live vtable)
+objects — same __thiscall ECX-only shape native uses, no per-class RE.
+Two dead gates removed along the way: board+0x3A44 is always 0 (Setup zeroes
+it, single writer) so it killed the whole driver, and board+0x2578 gets an
+explicit AthenaList_Init (same missing-init class as 0x5C64/0x436C/0x4378).
+Rig: 5+ min stable, no crash; motion is ball-proximity-gated so the parked
+rig ball can't confirm it — needs live play to verify bob/fall/pop.
 - **v13.26** — Windmill feat armed only by actual windmills. The postscan
 grouped TURRET/CATAPULT/MACE/DRAWBRIDGE/TRAPDOOR with WINDMILL/CHOMPER (legacy
 Tower-family lump), so Catapult levels entered the windmill feature — the
