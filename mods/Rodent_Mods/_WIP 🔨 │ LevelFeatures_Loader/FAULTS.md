@@ -131,3 +131,15 @@ mark them FIXED with the version instead.
   0x453150 calls per BadBall, then outline should return too.
 - Shipped 2026-11-19 (bass.dll + zip refreshed) — PARTIALLY FIXED, awaiting
   user retest on real Windows.
+- Border follow-up (same day): vanilla-vs-LFL live comparison isolated it.
+  Vanilla home BadBall carries baked RenderQuad params from the native
+  loader loop: +0x1BC/+0x1C0/+0x1C4/+0x1C8=(1,1,0,1),
+  +0x1EC/+0x1F0/+0x1F4/+0x1F8=(1,1,0,1), +0x204=0 (recorded live; border
+  sprite material dif=(1,0,0,0) is STOCK in both, not LFL-caused).
+  LFL wrote none of these -> border/glow sprites drew degenerate.
+  Neon_BadBallGlow now writes the full stock set (hardcoded; marker-colored
+  levels would need the 0x453150-call version). Rig: all values verified
+  live, no crash; adjacent-balls screenshot shows a thin continuous yellow
+  rim on the eastern ball, but rig resolution can't prove which ball it is.
+  Shipped 2026-11-19 (bass.dll + zip refreshed) — PARTIALLY FIXED, awaiting
+  user retest on real Windows: BadBall should show the yellow ring border.

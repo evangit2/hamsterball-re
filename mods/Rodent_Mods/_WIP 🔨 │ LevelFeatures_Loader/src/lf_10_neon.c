@@ -421,6 +421,21 @@ static void Neon_BadBallGlow(void *board, float r, float g, float b) {
         *(float *)(bb + 0xC8C) = g;
         *(float *)(bb + 0xC90) = b;
         *(BYTE *)(bb + 0xC80) = 1;
+        /* Native loader (0x416353+) bakes RenderQuad params via two
+         * 0x453150 calls; stock-Neon outputs recorded live from vanilla
+         * (quadA +0x1BC..+0x1C8, quadB +0x1EC..+0x1F8, flag +0x204).
+         * Without these the glow/border sprites draw degenerate
+         * (invisible) even with the gate set. Hardcoded = stock derivation;
+         * marker-colored levels need the call version if ever reported. */
+        *(float *)(bb + 0x1BC) = 1.0f;
+        *(float *)(bb + 0x1C0) = 1.0f;
+        *(float *)(bb + 0x1C4) = 0.0f;
+        *(float *)(bb + 0x1C8) = 1.0f;
+        *(float *)(bb + 0x1EC) = 1.0f;
+        *(float *)(bb + 0x1F0) = 1.0f;
+        *(float *)(bb + 0x1F4) = 0.0f;
+        *(float *)(bb + 0x1F8) = 1.0f;
+        *(BYTE *)(bb + 0x204) = 0;
         DebugLog("Neon: BadBall glow armed");
     }
 }
