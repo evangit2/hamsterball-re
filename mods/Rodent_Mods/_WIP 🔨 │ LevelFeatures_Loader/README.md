@@ -121,6 +121,14 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.36** — S3 marker-light glow color (user spec). Any type-0 S3 light
+with pos=(0,0,0) AND target=(0,0,0) is a marker: the glow builds and the
+marker's up-triple is the color (0.0-1.0 each, clamped; emitter = color
+x10, ball quad = RGBA). Zero-light files keep the native yellow default;
+real-light files without a marker stay native. Rig-verified on a marker
+file (up 0.2/0.5/1.0): quad reads (0.2,0.5,1.0,1.0), emitter (2,5,10,1),
+no crash from the game's own zero-light. Note: ball quad is RGBA in field
+order (+0x1CC=R,+0x1D0=G,+0x1D4=B,+0x1D8=A=1) — single-sample derivation.
 - **v13.35** — Neon red outline root-caused (user guess confirmed). Native
 Neon scene loader (0x416556+) writes a (1,1,0,1) yellow quad at ball+0x1CC
 (+0x1D0=1.0, +0x1D4=0.0, +0x1CC=1.0, +0x1D8=1.0; RGBA pushes on the stack

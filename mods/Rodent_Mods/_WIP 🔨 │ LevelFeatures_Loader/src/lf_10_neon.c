@@ -9,11 +9,14 @@
  * LIGHTSOFF/ON dispatch toggles vtable[4](0/1) on board+0x436C[playerIdx].
  * Disasm-verified via objdump 2026-09-10 (see README v13.1).
  *
- * RODENTRACER RULE (2026-09-10): ALL of this neon code runs ONLY when the
- * level MESHWORLD has NO S3 light object of its own. Stock Neon
- * (LevelDark.MESHWORLD, S3 count 0) gets followers; every other stock race
- * (S3 count 1, Odd has 2) keeps its native file lights with zero
- * double-lighting. Custom authors opt out by adding any S3 light.
+ * RODENTRACER RULE (2026-11-10, marker 2026-11-19): the glow builds when the
+ * level MESHWORLD has NO S3 light of its own (stock Neon/LevelDark, count 0
+ * → native yellow default), OR when any type-0 S3 light has pos=(0,0,0) AND
+ * target=(0,0,0) — a MARKER, not a real light: the glow builds and the
+ * marker's up-triple becomes the glow color (0.0-1.0 each, clamped).
+ * Files with real S3 lights and no marker keep native lighting untouched.
+ * Custom authors opt in either by shipping zero S3 lights (yellow) or by
+ * adding one marker light (any color).
  * Gate flag lives per-board at ext+UNI_NEON_GLOW_ACTIVE; the S3 verdict is
  * cached at ext+UNI_NEON_HAS_NATIVE.
  */
@@ -105,8 +108,110 @@ static int Neon_CountS3Lights(const unsigned char *buf, unsigned int len) {
     return (int)lc;
 }
 
-/* 1 = file has >=1 S3 light (or unreadable/malformed: conservative skip). */
-static int Neon_FileHasLights(const char *meshPath) {
+/* RODENTRACER RULE (2026-11-19): the S3 marker light. A type-0 S3 light with
+ * pos=(0,0,0) AND target=(0,0,0) is NOT a real light — it is a glow marker:
+ * LFL builds its followers and takes the MARKER's up-triple as the glow
+ * color (0.0-1.0 each, clamped). Stock zero-light files keep the native
+ * yellow default. Files with real S3 lights and no marker keep native.
+ * Marker + real lights: marker wins for the glow (author opted in).
+ */
+/* 1 = marker found (color out, clamped 0..1), 0 = none, -1 = malformed. */
+static int Neon_ScanMarker(const unsigned char *buf, unsigned int len,
+                           float *pr, float *pg, float *pb) {
+    unsigned int pos = 0, i;
+    unsigned int rpc, sc, lc;
+    if (!buf || len < 4) return -1;
+    rpc = (unsigned int)buf[0] | ((unsigned int)buf[1] << 8) |
+          ((unsigned int)buf[2] << 16) | ((unsigned int)buf[3] << 24);
+    pos = 4;
+    if (rpc > 65536) return -1;
+    for (i = 0; i < rpc; i++) {
+        unsigned int slen, has_mat, has_tex;
+        if (pos + 4 > len) return -1;
+        slen = (unsigned int)buf[pos] | ((unsigned int)buf[pos+1] << 8) |
+               ((unsigned int)buf[pos+2] << 16) | ((unsigned int)buf[pos+3] << 24);
+        if (slen < 1 || slen > 512) return -1;
+        pos += 4;
+        if (pos + slen > len) return -1;
+        pos += slen;
+        if (pos + 24 + 4 > len) return -1;
+        pos += 24;
+        has_mat = (unsigned int)buf[pos] | ((unsigned int)buf[pos+1] << 8) |
+                  ((unsigned int)buf[pos+2] << 16) | ((unsigned int)buf[pos+3] << 24);
+        pos += 4;
+        if (has_mat & 0xFF) {
+            if (pos + 64 + 4 + 4 + 4 > len) return -1;
+            pos += 64 + 4 + 4;
+            has_tex = (unsigned int)buf[pos] | ((unsigned int)buf[pos+1] << 8) |
+                      ((unsigned int)buf[pos+2] << 16) | ((unsigned int)buf[pos+3] << 24);
+            pos += 4;
+            if (has_tex) {
+                if (pos + 4 > len) return -1;
+                slen = (unsigned int)buf[pos] | ((unsigned int)buf[pos+1] << 8) |
+                       ((unsigned int)buf[pos+2] << 16) | ((unsigned int)buf[pos+3] << 24);
+                if (slen < 1 || slen > 512) return -1;
+                pos += 4;
+                if (pos + slen > len) return -1;
+                pos += slen;
+            }
+        }
+    }
+    if (pos + 4 > len) return -1;
+    sc = (unsigned int)buf[pos] | ((unsigned int)buf[pos+1] << 8) |
+         ((unsigned int)buf[pos+2] << 16) | ((unsigned int)buf[pos+3] << 24);
+    pos += 4;
+    if (sc > 4096) return -1;
+    for (i = 0; i < sc; i++) {
+        unsigned int slen, pc;
+        if (pos + 4 > len) return -1;
+        slen = (unsigned int)buf[pos] | ((unsigned int)buf[pos+1] << 8) |
+               ((unsigned int)buf[pos+2] << 16) | ((unsigned int)buf[pos+3] << 24);
+        if (slen < 1 || slen > 512) return -1;
+        pos += 4;
+        if (pos + slen + 4 > len) return -1;
+        pos += slen;
+        pc = (unsigned int)buf[pos] | ((unsigned int)buf[pos+1] << 8) |
+             ((unsigned int)buf[pos+2] << 16) | ((unsigned int)buf[pos+3] << 24);
+        pos += 4;
+        if (pc > 65536) return -1;
+        if (pos + pc * 12 > len) return -1;
+        pos += pc * 12;
+    }
+    if (pos + 4 > len) return -1;
+    lc = (unsigned int)buf[pos] | ((unsigned int)buf[pos+1] << 8) |
+         ((unsigned int)buf[pos+2] << 16) | ((unsigned int)buf[pos+3] << 24);
+    pos += 4;
+    if (lc > 4096) return -1;
+    for (i = 0; i < lc; i++) {
+        int ltype;
+        float px, py, pz, tx, ty, tz, ux, uy, uz;
+        if (pos + 4 > len) return -1;
+        ltype = (int)((unsigned int)buf[pos] | ((unsigned int)buf[pos+1] << 8) |
+                ((unsigned int)buf[pos+2] << 16) | ((unsigned int)buf[pos+3] << 24));
+        pos += 4;
+        if (ltype != 0) continue;
+        if (pos + 36 > len) return -1;
+        px = *(float *)(buf + pos); py = *(float *)(buf + pos + 4); pz = *(float *)(buf + pos + 8);
+        tx = *(float *)(buf + pos + 12); ty = *(float *)(buf + pos + 16); tz = *(float *)(buf + pos + 20);
+        ux = *(float *)(buf + pos + 24); uy = *(float *)(buf + pos + 28); uz = *(float *)(buf + pos + 32);
+        pos += 36;
+        if (px == 0.0f && py == 0.0f && pz == 0.0f &&
+            tx == 0.0f && ty == 0.0f && tz == 0.0f) {
+            if (ux != ux || uy != uy || uz != uz) continue; /* NaN: not a marker */
+            *pr = ux < 0.0f ? 0.0f : (ux > 1.0f ? 1.0f : ux);
+            *pg = uy < 0.0f ? 0.0f : (uy > 1.0f ? 1.0f : uy);
+            *pb = uz < 0.0f ? 0.0f : (uz > 1.0f ? 1.0f : uz);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Returns 1 = file has >=1 S3 light (or unreadable/malformed: conservative
+ * skip). Marker out: 1 = S3 marker light found (glow color in mr/mg/mb),
+ * 0 = none, -1 = malformed/unreadable (treated as native). */
+static int Neon_FileHasLights(const char *meshPath, int *marker,
+                              float *mr, float *mg, float *mb) {
     char exe[MAX_PATH], cand[MAX_PATH];
     int elen = 0, i;
     HANDLE h;
@@ -146,17 +251,30 @@ static int Neon_FileHasLights(const char *meshPath) {
         }
         CloseHandle(h);
         lc = Neon_CountS3Lights((unsigned char *)buf, fsize);
+        if (lc >= 0) {
+            int mk = Neon_ScanMarker((unsigned char *)buf, fsize, mr, mg, mb);
+            if (marker) *marker = mk;
+            HeapFree(GetProcessHeap(), 0, buf);
+            if (mk == 1) {
+                wsprintfA(dbg, "Neon S3 scan: '%s' MARKER glow=(%.2f,%.2f,%.2f)",
+                          cand, *mr, *mg, *mb);
+                DebugLog(dbg);
+                return 0;
+            }
+            wsprintfA(dbg, "Neon S3 scan: '%s' lights=%d -> %s",
+                      cand, lc, lc > 0 ? "native (glow skipped)" : "none (glow builds)");
+            DebugLog(dbg);
+            return lc > 0 ? 1 : 0;
+        }
+        if (marker) *marker = -1;
         HeapFree(GetProcessHeap(), 0, buf);
-        if (lc < 0) {
+        {
             wsprintfA(dbg, "Neon S3 scan: '%s' malformed, conservative skip", cand);
             DebugLog(dbg);
             return 1;
         }
-        wsprintfA(dbg, "Neon S3 scan: '%s' lights=%d -> %s",
-                  cand, lc, lc > 0 ? "native (glow skipped)" : "none (glow builds)");
-        DebugLog(dbg);
-        return lc > 0 ? 1 : 0;
     }
+    if (marker) *marker = -1;
     wsprintfA(dbg, "Neon S3 scan: '%s' unreadable, conservative skip", meshPath);
     DebugLog(dbg);
     return 1;
@@ -168,12 +286,14 @@ static int Neon_FileHasLights(const char *meshPath) {
  * ball+0x1CC. LFL used to write +0x1D0=0/+0x1C0=0/+0x1F0=0 (killing yellow
  * and clobbering the native 0.25 border default) = red outline. Mirror
  * native exactly; leave +0x1C0/+0x1F0/+0x204 at native defaults. */
-static void Neon_BallGlow(DWORD ball, int pnum) {
+/* Ball quad is RGBA in order: +0x1CC=R, +0x1D0=G, +0x1D4=B, +0x1D8=A(1.0).
+ * Single-sample derivation (yellow (1,1,0,1)); alpha kept at native 1.0. */
+static void Neon_BallGlow(DWORD ball, int pnum, float r, float g, float b) {
     char dbg[96];
     if (!ball || IsBadReadPtr((void *)ball, 0x210)) return;
-    *(float *)(ball + 0x1CC) = 1.0f;
-    *(float *)(ball + 0x1D0) = 1.0f;
-    *(float *)(ball + 0x1D4) = 0.0f;
+    *(float *)(ball + 0x1CC) = r;
+    *(float *)(ball + 0x1D0) = g;
+    *(float *)(ball + 0x1D4) = b;
     *(float *)(ball + 0x1D8) = 1.0f;
     wsprintfA(dbg, "Neon: ball glow written (P%d ball=0x%08X)", pnum, ball);
     DebugLog(dbg);
@@ -181,7 +301,8 @@ static void Neon_BallGlow(DWORD ball, int pnum) {
 
 /* Build ONE follower light. Native values: emitter (10,10,0,1), Range 400. */
 static void *Neon_BuildOneLight(void *board, void *gfx, DWORD ball,
-                                int slot, DWORD boardOff) {
+                                int slot, DWORD boardOff,
+                                float r, float g, float b) {
     void *mem, *light;
     float bx, by, bz;
     char dbg[128];
@@ -206,9 +327,9 @@ static void *Neon_BuildOneLight(void *board, void *gfx, DWORD ball,
     }
     *(DWORD *)((char *)board + boardOff) = (DWORD)light;
     *(int *)((char *)light + 0xD0) = 1;            /* TYPE POINT */
-    *(float *)((char *)light + 0x94) = 10.0f;     /* emitter */
-    *(float *)((char *)light + 0x98) = 10.0f;
-    *(float *)((char *)light + 0x9C) = 0.0f;
+    *(float *)((char *)light + 0x94) = r * 10.0f;  /* emitter = color x10 */
+    *(float *)((char *)light + 0x98) = g * 10.0f;
+    *(float *)((char *)light + 0x9C) = b * 10.0f;
     *(float *)((char *)light + 0xA0) = 1.0f;
     bx = *(float *)((char *)ball + 0x164);
     by = *(float *)((char *)ball + 0x168);
@@ -233,7 +354,8 @@ static void *Neon_BuildOneLight(void *board, void *gfx, DWORD ball,
     return light;
 }
 
-static void Neon_BuildLights(void *board, void *ext) {
+static void Neon_BuildLights(void *board, void *ext,
+                             float r, float g, float b) {
     DWORD app, ball1;
     void *gfx;
     void *l1;
@@ -246,12 +368,12 @@ static void Neon_BuildLights(void *board, void *ext) {
     gfx = *(void **)((char *)app + 0x174);
     if (!gfx) { DebugLog("Neon: no gfx, build skipped"); return; }
     ball1 = *(DWORD *)(app + APP_BALL_PTR);
-    l1 = Neon_BuildOneLight(board, gfx, ball1, 0, 0x436C);
-    if (l1) Neon_BallGlow(ball1, 1);
+    l1 = Neon_BuildOneLight(board, gfx, ball1, 0, 0x436C, r, g, b);
+    if (l1) Neon_BallGlow(ball1, 1, r, g, b);
     if (!*(char *)(app + 0x677)) {
         DWORD b2 = *(DWORD *)(app + 0x67C);
-        if (Neon_BuildOneLight(board, gfx, b2, 1, 0x4370))
-            Neon_BallGlow(b2, 2);
+        if (Neon_BuildOneLight(board, gfx, b2, 1, 0x4370, r, g, b))
+            Neon_BallGlow(b2, 2, r, g, b);
     } else {
         if (BoardHasOffset(board, 0x4370, 4))
             *(DWORD *)((char *)board + 0x4370) = 0;
@@ -269,7 +391,8 @@ static void Neon_BuildLights(void *board, void *ext) {
 
 /* Step 6c entry — called from UniversalConstructor after Pennant_PostSetup. */
 static void Neon_PostSetup(void *board, void *ext, int raceIndex, const char *meshPath) {
-    int has;
+    int has, marker = 0;
+    float mr = 1.0f, mg = 1.0f, mb = 0.0f;
     char dbg[384];
     if (!board || !ext || !meshPath || !meshPath[0]) return;
     /* Every load starts inactive: ext can be a stale heap-reused entry from
@@ -277,9 +400,17 @@ static void Neon_PostSetup(void *board, void *ext, int raceIndex, const char *me
      * would aim per-frame code at garbage board slots. Build sets it below. */
     if (ExtHasOffset(ext, UNI_NEON_GLOW_ACTIVE, 1))
         *(BYTE *)((char *)ext + UNI_NEON_GLOW_ACTIVE) = 0;
-    has = Neon_FileHasLights(meshPath);
+    has = Neon_FileHasLights(meshPath, &marker, &mr, &mg, &mb);
     if (ExtHasOffset(ext, UNI_NEON_HAS_NATIVE, 1))
         *(BYTE *)((char *)ext + UNI_NEON_HAS_NATIVE) = has ? 1 : 0;
+    if (marker == 1) {
+        /* S3 marker light: glow with the marker's up-triple as color. */
+        wsprintfA(dbg, "Neon: '%s' MARKER glow=(%.2f,%.2f,%.2f), building followers",
+                  meshPath, mr, mg, mb);
+        DebugLog(dbg);
+        Neon_BuildLights(board, ext, mr, mg, mb);
+        return;
+    }
     if (has) {
         /* Native lights win. On the Neon slot only, NULL the follower slots
          * so no reader derefs stale garbage (other slots: Dizzy tipper at
@@ -294,5 +425,5 @@ static void Neon_PostSetup(void *board, void *ext, int raceIndex, const char *me
     }
     wsprintfA(dbg, "Neon: '%s' has no S3 lights, building followers", meshPath);
     DebugLog(dbg);
-    Neon_BuildLights(board, ext);
+    Neon_BuildLights(board, ext, 1.0f, 1.0f, 0.0f);
 }
