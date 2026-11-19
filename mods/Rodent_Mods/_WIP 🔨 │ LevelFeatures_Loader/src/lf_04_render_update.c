@@ -546,6 +546,110 @@ board_additive:
         }
     }
 
+    /* Master hammer triggers (E:CALLHAMMER/E:HAMMERCHASE) proximity driver —
+     * S6 trigger-volume touches never arrive post-load (only the load-time
+     * initial sweep dispatches), so the touch handlers in lf_06 never run:
+     * no bonk popup/chase, no sound, bridge never breaks. Per-frame AABB
+     * entry test runs the same native calls instead. 0x2CD bits 1/2/4
+     * edge-trigger per ball; STATE bits re-arm on exit. Double-fire with
+     * the dispatcher path is benign (popup/chase natives are idempotent). */
+    {
+        typedef void (__fastcall *CreateBonkPopup_t)(int obj);
+        typedef void (__fastcall *Hammer_ChaseStart_t)(int obj);
+        typedef void (__thiscall *BreakBridge_Break_t)(void *obj, int dir);
+        void *pex = GetBoardExt(board);
+        if (pex && (*(int *)((char *)pex + OFF_HAMMER_TRIG_VALID)) && !*(BYTE *)((char *)board + 0x874)) {
+            DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+            int difficulty = (app && !IsBadReadPtr((void *)app, 0x800)) ? *(int *)(app + APP_DIFFICULTY) : 0;
+            if (difficulty != 0) {
+                int bc = *(int *)((char *)board + 0x29D4 + 4);
+                int *bi = *(int **)((char *)board + 0x29D4 + 0x40C);
+                if (bc >= 1 && bc <= 4 && bi && !IsBadReadPtr(bi, (unsigned)bc * 4)) {
+                    int k;
+                    for (k = 0; k < bc; k++) {
+                        int b = bi[k];
+                        if (!b || IsBadReadPtr((void *)b, 0xD00)) continue;
+                        float bx = *(float *)(b + 0x164), by = *(float *)(b + 0x168), bz = *(float *)(b + 0x16C);
+                        int st = *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE);
+                        /* E:CALLHAMMER: bit0 valid, bit0 armed, 0x2CD bit1 edge */
+                        if ((*(int *)((char *)pex + OFF_HAMMER_TRIG_VALID)) & 1) {
+                            float *qmin = (float *)((char *)pex + OFF_CALLHAMMER_MIN);
+                            float *qmax = (float *)((char *)pex + OFF_CALLHAMMER_MAX);
+                            int inside = (bx > qmin[0]-40 && bx < qmax[0]+40 &&
+                                          by > qmin[1]-40 && by < qmax[1]+40 &&
+                                          bz > qmin[2]-40 && bz < qmax[2]+40);
+                            int was = (*(BYTE *)(b + 0x2CD)) & 2;
+                            if (inside && !was && (st & 1)) {
+                                int bonkObj = BoardHasOffset(board, 0x540C, 4) ? *(int *)((char *)board + 0x540C) : 0;
+                                if (!bonkObj) bonkObj = *(int *)((char *)pex + UNI_BONK_MESH);
+                                if (bonkObj && !IsBadReadPtr((void *)bonkObj, 0x1108))
+                                    ((CreateBonkPopup_t)(g_moduleBase + RVA_CreateBonkPopup))(bonkObj);
+                                *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE) &= (DWORD)~1;
+                                *(BYTE *)(b + 0x2CD) |= 2;
+                            } else if (!inside && was) {
+                                *(BYTE *)(b + 0x2CD) &= (BYTE)~2;
+                                *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE) |= 1;
+                            }
+                        }
+                        /* E:HAMMERCHASE (2 quads): bit1/bit2 valid+armed, 0x2CD bit2 edge */
+                        {
+                            int qi;
+                            for (qi = 0; qi < 2; qi++) {
+                                DWORD vbit = (DWORD)(2 << qi);
+                                DWORD minOff = (qi == 0) ? OFF_HAMMERCHASE_MIN : OFF_HAMMERCHASE2_MIN;
+                                DWORD maxOff = (qi == 0) ? OFF_HAMMERCHASE_MAX : OFF_HAMMERCHASE2_MAX;
+                                if (!((*(int *)((char *)pex + OFF_HAMMER_TRIG_VALID)) & (int)vbit)) continue;
+                                float *qmin = (float *)((char *)pex + minOff);
+                                float *qmax = (float *)((char *)pex + maxOff);
+                                int inside = (bx > qmin[0]-40 && bx < qmax[0]+40 &&
+                                              by > qmin[1]-40 && by < qmax[1]+40 &&
+                                              bz > qmin[2]-40 && bz < qmax[2]+40);
+                                int was = (*(BYTE *)(b + 0x2CD)) & 4;
+                                st = *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE);
+                                if (inside && !was && (st & (int)vbit)) {
+                                    int b2 = BoardHasOffset(board, 0x436C, 4) ? *(int *)((char *)board + 0x436C) : 0;
+                                    if (!b2) b2 = *(int *)((char *)pex + UNI_BONK_MESH);
+                                    if (!b2) b2 = *(int *)((char *)pex + UNI_BONK_STORE);
+                                    if (b2 && !IsBadReadPtr((void *)b2, 0x1108))
+                                        ((Hammer_ChaseStart_t)(g_moduleBase + RVA_Hammer_ChaseStart))(b2);
+                                    *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE) &= (DWORD)~vbit;
+                                    *(BYTE *)(b + 0x2CD) |= 4;
+                                } else if (!inside && was) {
+                                    *(BYTE *)(b + 0x2CD) &= (BYTE)~4;
+                                    *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE) |= vbit;
+                                }
+                            }
+                        }
+                        /* Stage 2: break the halves once the popup is up.
+                         * The BONKPOPUP touch never arrives (same dead
+                         * volume-touch path), so when the popup is active
+                         * (bonk +0x10FC==0) and the ball reaches the bonk,
+                         * run the native break directly (idempotent: halves
+                         * latch +0x10FC, skip once broken). */
+                        {
+                            int bonkObj = BoardHasOffset(board, 0x540C, 4) ? *(int *)((char *)board + 0x540C) : 0;
+                            if (!bonkObj) bonkObj = *(int *)((char *)pex + UNI_BONK_MESH);
+                            if (bonkObj && !IsBadReadPtr((void *)bonkObj, 0x1108) && *(int *)(bonkObj + 0x10FC) == 0) {
+                                float hx = *(float *)(bonkObj + 0x10D4), hy = *(float *)(bonkObj + 0x10D8), hz = *(float *)(bonkObj + 0x10DC);
+                                float ddx = bx-hx, ddy = by-hy, ddz = bz-hz;
+                                if (ddx*ddx + ddy*ddy + ddz*ddz < 100.0f*100.0f) {
+                                    int h1 = BoardHasOffset(board, 0x5418, 4) ? *(int *)((char *)board + 0x5418) : 0;
+                                    int h2 = BoardHasOffset(board, 0x541C, 4) ? *(int *)((char *)board + 0x541C) : 0;
+                                    if (!h1) h1 = *(int *)((char *)pex + UNI_BBRIDGE1_OBJ);
+                                    if (!h2) h2 = *(int *)((char *)pex + UNI_BBRIDGE2_OBJ);
+                                    if (h1 && !IsBadReadPtr((void *)h1, 0x1100) && *(int *)(h1 + 0x10FC) == 0)
+                                        ((BreakBridge_Break_t)(g_moduleBase + RVA_BreakBridge_break))((void *)h1, 0);
+                                    if (h2 && !IsBadReadPtr((void *)h2, 0x1100) && *(int *)(h2 + 0x10FC) == 0)
+                                        ((BreakBridge_Break_t)(g_moduleBase + RVA_BreakBridge_break))((void *)h2, 1);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /* Get level and dispatch features */
     int level = GetCurrentLevel(board);
     if (level == 0) return;

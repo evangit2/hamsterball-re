@@ -1041,6 +1041,17 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define OFF_BRANCH_QUAD_VALID 0xBA10  /* dword: 1 = E:BRANCH(B) trigger quad parsed */
 #define OFF_BRANCH_QUAD_MIN   0xBA14  /* 3 floats: trigger AABB min */
 #define OFF_BRANCH_QUAD_MAX   0xBA20  /* 3 floats: trigger AABB max */  /* dword: 1 = board built by NATIVE level ctor (fast path); our create/collide/racestate delegate to native orig */
+/* proximity hammer drivers (S6 trigger-volume touches never arrive
+ * post-load — only the load-time sweep dispatches — so E:CALLHAMMER /
+ * E:HAMMERCHASE would never fire; per-frame AABB entry runs the natives) */
+#define OFF_HAMMER_TRIG_VALID 0xBBC8  /* dword bits: bit0=CALLHAMMER quad, bit1=HAMMERCHASE quad */
+#define OFF_CALLHAMMER_MIN    0xBBCC  /* 3 floats: E:CALLHAMMER AABB min */
+#define OFF_CALLHAMMER_MAX    0xBBD8  /* 3 floats: E:CALLHAMMER AABB max */
+#define OFF_HAMMERCHASE_MIN   0xBBE4  /* 3 floats: E:HAMMERCHASE AABB min */
+#define OFF_HAMMERCHASE_MAX   0xBBF0  /* 3 floats: E:HAMMERCHASE AABB max */
+#define OFF_HAMMER_TRIG_STATE 0xBBFC  /* dword bits: bit0=CALLHAMMER armed, bit1=CHASE#1 armed, bit2=CHASE#2 armed */
+#define OFF_HAMMERCHASE2_MIN  0xBC00  /* 3 floats: 2nd E:HAMMERCHASE AABB min */
+#define OFF_HAMMERCHASE2_MAX  0xBC0C  /* 3 floats: 2nd E:HAMMERCHASE AABB max */
 /* Next free: 0xBA00, tail to 0xC000 = 0x600 bytes remaining */
 
 /* Sky popcyl array (16 × 4 = 64 bytes) */

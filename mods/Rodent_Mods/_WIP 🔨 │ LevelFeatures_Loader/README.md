@@ -121,6 +121,23 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.32** — Master hammer triggers work (user report: bonk absent +
+nonfunctional, bridge never breaks, no sounds — "as if the trigger doesn't
+exist"). Root cause, rig-proven: S6 trigger-volume touches never arrive
+post-load (only the load-time initial sweep dispatches; 30s of resting
+contact + 12 center-inside teleports produced zero dispatches), so the
+E:CALLHAMMER/E:HAMMERCHASE touch handlers never run. Fix follows the
+E:BRANCH precedent: per-frame AABB proximity drivers. ParseHammerQuads
+resolves E:CALLHAMMER + both E:HAMMERCHASE geoms to live AABBs at load
+(record walk + vrefs + live S5, any-orientation extent check); the driver
+fires CreateBonkPopup on CALLHAMMER entry and HammerChaseStart on
+HAMMERCHASE entry (0x2CD edge bits, re-arm on exit, benign double-fire
+with the touch path). Stage 2: BONKPOPUP touch is the same dead path, so
+once the popup is up (bonk +0x10FC==0) and the ball reaches the bonk
+(100u), the driver runs the native 0x436e70 break on both halves (latched,
+skip once broken). Rig-verified live: trigger entry clears +0x10FC,
+ball-at-bonk sets both halves +0x10FC=1. Confirm popup/chase/break timing
+on Windows.
 - **v13.31** — Master pops renamed BONKCYLINDER (user direction). The adjusted
 Master file carries BONKCYLINDER S1s; the mod builds the Master class
 (0x36ee0) for that name on any board, no content gate (the name alone is

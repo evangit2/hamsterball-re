@@ -683,6 +683,115 @@ static void ParseBranchQuad(void *board, void *ext, void *meshWorld, const char 
     }
     HeapFree(GetProcessHeap(), 0, buf);
 }
+/* Master hammer triggers (E:CALLHAMMER/E:HAMMERCHASE) quad parser for the
+ * proximity driver. Same record walk as ParseBranchQuad (S6 geom record ->
+ * strips -> vrefs -> live S5 verts -> AABB). The dispatcher touch path for
+ * S6 trigger volumes never arrives post-load (only the load-time initial
+ * sweep dispatches), so without this the bonk popup/chase never fires and
+ * the bridge never breaks. Runs once per level load; per-frame test is a
+ * cheap AABB entry check. */
+static void ParseOneHammerQuad(void *board, void *ext, float *verts, char *buf, DWORD fsize,
+                               const char *tag, int taglen, int nlen, int occur,
+                               DWORD minOff, DWORD maxOff, DWORD validBit, const char *diagTag) {
+    DWORD i;
+    int found = 0, seen = 0;
+    float mn[3] = {1e30f, 1e30f, 1e30f}, mx[3] = {-1e30f, -1e30f, -1e30f};
+    for (i = 0; i + (DWORD)taglen + 1 < fsize && !found; i++) {
+        int k;
+        for (k = 0; k < taglen; k++) if (buf[i+k] != tag[k]) break;
+        if (k != taglen || buf[i+taglen] != 0) continue;
+        if (i < 4) continue;
+        int rnlen = *(int *)(buf + i - 4);
+        if (rnlen != nlen) continue;
+        mn[0]=mn[1]=mn[2]=1e30f; mx[0]=mx[1]=mx[2]=-1e30f; /* per-record reset */
+        DWORD q = i + (DWORD)nlen;
+        if (q + 80 > fsize) continue;
+        q += 72; /* material */
+        int has_tex = *(int *)(buf + q); q += 4;
+        if (has_tex != 0 && has_tex != 1) continue;
+        if (has_tex) {
+            if (q + 4 > fsize) continue;
+            int sl = *(int *)(buf + q); q += 4;
+            if (sl < 1 || sl > 256 || q + (DWORD)sl > fsize) continue;
+            q += sl;
+        }
+        if (q + 4 > fsize) continue;
+        int sc = *(int *)(buf + q); q += 4;
+        if (sc < 1 || sc > 8) continue;
+        if (q + (DWORD)sc * 8 > fsize) continue;
+        int s, ok = 0;
+        for (s = 0; s < sc; s++) {
+            int tri = *(int *)(buf + q); int vref = *(int *)(buf + q + 4); q += 8;
+            if (tri < 1 || tri > 10000 || vref < 0 || vref > 2000000) break;
+            int v;
+            for (v = 0; v < tri + 2; v++) {
+                float *vp;
+                if (IsBadReadPtr(verts + (vref + v) * 8, 32)) break;
+                vp = verts + (vref + v) * 8;
+                if (vp[0] != vp[0] || vp[1] != vp[1] || vp[2] != vp[2]) break;
+                if (vp[0] > 2e6f || vp[0] < -2e6f || vp[1] > 2e6f || vp[1] < -2e6f || vp[2] > 2e6f || vp[2] < -2e6f) break;
+                if (vp[0] < mn[0]) mn[0] = vp[0];
+                if (vp[1] < mn[1]) mn[1] = vp[1];
+                if (vp[2] < mn[2]) mn[2] = vp[2];
+                if (vp[0] > mx[0]) mx[0] = vp[0];
+                if (vp[1] > mx[1]) mx[1] = vp[1];
+                if (vp[2] > mx[2]) mx[2] = vp[2];
+                ok++;
+            }
+        }
+        if (ok >= 3) {
+            int dx = (mx[0]-mn[0] > 1), dy = (mx[1]-mn[1] > 1), dz = (mx[2]-mn[2] > 1);
+            if (dx+dy+dz < 2) continue; /* need a real plane/volume, any orientation */
+            if (seen < occur) { seen++; continue; } /* not the Nth occurrence yet */
+            float *dmin = (float *)((char *)ext + minOff);
+            float *dmax = (float *)((char *)ext + maxOff);
+            dmin[0]=mn[0]; dmin[1]=mn[1]; dmin[2]=mn[2];
+            dmax[0]=mx[0]; dmax[1]=mx[1]; dmax[2]=mx[2];
+            *(DWORD *)((char *)ext + OFF_HAMMER_TRIG_VALID) |= validBit;
+            *(DWORD *)((char *)ext + OFF_HAMMER_TRIG_STATE) |= validBit; /* armed */
+            found = 1;
+            { char lg[160]; wsprintfA(lg, "%s min=(%d,%d,%d) max=(%d,%d,%d)",
+                diagTag, (int)mn[0], (int)mn[1], (int)mn[2], (int)mx[0], (int)mx[1], (int)mx[2]); ToobDiag(lg); }
+        }
+    }
+}
+static void ParseHammerQuads(void *board, void *ext, void *meshWorld, const char *meshPath) {
+    *(DWORD *)((char *)ext + OFF_HAMMER_TRIG_VALID) = 0;
+    *(DWORD *)((char *)ext + OFF_HAMMER_TRIG_STATE) = 0;
+    if (!board || !ext || !meshWorld || !meshPath || !meshPath[0]) return;
+    if (!(*(BYTE *)((char *)ext + COLL_FLAG_CALLHAMMER)) && !(*(BYTE *)((char *)ext + COLL_FLAG_HAMMERCHASE))) return;
+    DWORD objDb = *(DWORD *)((char *)meshWorld + 0x480);
+    if (!objDb || IsBadReadPtr((void *)objDb, 0x444)) return;
+    float *verts = *(float **)(objDb + 0x440);
+    if (!verts || IsBadReadPtr(verts, 12)) return;
+    char *buf = NULL; DWORD fsize = 0;
+    {
+        HANDLE h = CreateFileA(meshPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        char withExt[MAX_PATH];
+        if (h == INVALID_HANDLE_VALUE && strlen(meshPath) + 10 < MAX_PATH) {
+            strcpy(withExt, meshPath); strcat(withExt, ".MESHWORLD");
+            h = CreateFileA(withExt, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        }
+        if (h == INVALID_HANDLE_VALUE) return;
+        fsize = GetFileSize(h, NULL);
+        if (fsize == 0 || fsize == (DWORD)-1 || fsize > 0x500000) { CloseHandle(h); return; }
+        buf = (char *)HeapAlloc(GetProcessHeap(), 0, fsize);
+        if (!buf) { CloseHandle(h); return; }
+        DWORD br = 0;
+        if (!ReadFile(h, buf, fsize, &br, NULL) || br != fsize) { HeapFree(GetProcessHeap(), 0, buf); CloseHandle(h); return; }
+        CloseHandle(h);
+    }
+    if (*(BYTE *)((char *)ext + COLL_FLAG_CALLHAMMER))
+        ParseOneHammerQuad(board, ext, verts, buf, fsize, "E:CALLHAMMER", 12, 13, 0,
+                           OFF_CALLHAMMER_MIN, OFF_CALLHAMMER_MAX, 1, "HAMMERQUAD-CALL");
+    if (*(BYTE *)((char *)ext + COLL_FLAG_HAMMERCHASE)) {
+        ParseOneHammerQuad(board, ext, verts, buf, fsize, "E:HAMMERCHASE", 13, 14, 0,
+                           OFF_HAMMERCHASE_MIN, OFF_HAMMERCHASE_MAX, 2, "HAMMERQUAD-CHASE");
+        ParseOneHammerQuad(board, ext, verts, buf, fsize, "E:HAMMERCHASE", 13, 14, 1,
+                           OFF_HAMMERCHASE2_MIN, OFF_HAMMERCHASE2_MAX, 4, "HAMMERQUAD-CHASE2");
+    }
+    HeapFree(GetProcessHeap(), 0, buf);
+}
 // Targeted scan: only scan mesh files actually referenced by S1 (not whole folder wildcard).
 // Prevents hitch from scanning 30+ files every level load. Falls back to basePath file.
 static void ScanS1ReferencedMeshesForCollisions(void *board, void *ext, void *meshWorld, const char *basePath) {
