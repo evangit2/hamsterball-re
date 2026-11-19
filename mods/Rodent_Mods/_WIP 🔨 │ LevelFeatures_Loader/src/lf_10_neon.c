@@ -478,6 +478,35 @@ static void Neon_BuildLights(void *board, void *ext,
     }
 }
 
+/* TEMP DIAG green-hamster 2026-11-19 (remove once user confirms cause):
+ * writes the Neon S3 verdict to %TEMP%\lfl_neon_verdict.txt so we can see
+ * what glow color LFL computed on the user's box (no log file available). */
+static void Neon_VerdictDiag(const char *meshPath, int has, int marker,
+                             float r, float g, float b) {
+    char tmp[260], fp[300], line[512];
+    DWORD n;
+    HANDLE hf;
+    if (!meshPath) meshPath = "(null)";
+    n = GetTempPathA((DWORD)sizeof(tmp), tmp);
+    if (!n || n >= sizeof(tmp)) return;
+    wsprintfA(fp, "%slfl_neon_verdict.txt", tmp);
+    /* NOTE: wsprintfA has NO float support — print rgb as int hundredths. */
+    wsprintfA(line, "path='%s' has=%d marker=%d rgb=(%d,%d,%d)",
+              meshPath, has, marker,
+              (int)(r * 100.0f + 0.5f),
+              (int)(g * 100.0f + 0.5f),
+              (int)(b * 100.0f + 0.5f));
+    hf = CreateFileA(fp, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS,
+                     FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hf == INVALID_HANDLE_VALUE) return;
+    {
+        DWORD w = 0, len = 0;
+        while (line[len]) len++;
+        WriteFile(hf, line, len, &w, NULL);
+    }
+    CloseHandle(hf);
+}
+
 /* Step 6c entry — called from UniversalConstructor after Pennant_PostSetup. */
 static void Neon_PostSetup(void *board, void *ext, int raceIndex, const char *meshPath) {
     int has, marker = 0;
@@ -490,6 +519,7 @@ static void Neon_PostSetup(void *board, void *ext, int raceIndex, const char *me
     if (ExtHasOffset(ext, UNI_NEON_GLOW_ACTIVE, 1))
         *(BYTE *)((char *)ext + UNI_NEON_GLOW_ACTIVE) = 0;
     has = Neon_FileHasLights(meshPath, &marker, &mr, &mg, &mb);
+    Neon_VerdictDiag(meshPath, has, marker, mr, mg, mb);  /* TEMP DIAG */
     if (ExtHasOffset(ext, UNI_NEON_HAS_NATIVE, 1))
         *(BYTE *)((char *)ext + UNI_NEON_HAS_NATIVE) = has ? 1 : 0;
     if (marker == 1) {

@@ -143,3 +143,14 @@ mark them FIXED with the version instead.
   rim on the eastern ball, but rig resolution can't prove which ball it is.
   Shipped 2026-11-19 (bass.dll + zip refreshed) — PARTIALLY FIXED, awaiting
   user retest on real Windows: BadBall should show the yellow ring border.
+
+## 2026-11-19 — player hamster renders pure green (selective tint)
+- User (real Windows): entire hamster green, everything else yellow-correct.
+- Rig cannot reproduce at useful res; eliminated: +0x1CC quad (vanilla player
+  has it too = stock), marker (can't fire on 0-light stock file), sprite
+  triple (never runs for the player: slot[7] gated by +0x2FC=1.0, sprite
+  path only, third caller dead vtable), gate/params (vanilla-identical).
+- Only remaining per-frame variable is the follower light color. Probe build
+  2026-11-19 writes %TEMP%\lfl_neon_verdict.txt (path/has/marker/rgb) so we
+  can see what LFL computed on the user's box. TEMP DIAG, remove after.
+- Rig verdict: path='levels\leveldark' has=0 marker=0 rgb=(100,100,0).
