@@ -353,9 +353,6 @@ static void Neon_BallGlow(DWORD ball, int pnum, float r, float g, float b) {
     DebugLog(dbg);
 }
 
-/* TEMP DIAG fwd (defined below Neon_BuildLights). */
-static char s_neon_buildrep[256];
-static void Neon_AppendBuildRep(void);
 /* Build ONE follower light. Native values: emitter (10,10,0), Range 400. */
 static void *Neon_BuildOneLight(void *board, void *gfx, DWORD ball,
                                 int slot, DWORD boardOff,
@@ -484,25 +481,6 @@ static void Neon_BuildLights(void *board, void *ext,
     /* Arm pre-placed BadBalls (Neon home BadBall): native lights every
      * ball, LFL only did players. Vtable-gated, players untouched. */
     Neon_BadBallGlow(board, r, g, b);
-    /* TEMP DIAG: snapshot live state (app/gfx/ball/light/emitter/slot/quadA)
-     * for the game-folder verdict file. */
-    s_neon_buildrep[0] = 0;
-    {
-        int er = -1, eg = -1, eb = -1, slot = -2;
-        DWORD qR = 0;
-        DWORD lb = (DWORD)l1;
-        if (lb && !IsBadReadPtr((void *)lb, 0x100)) {
-            er = (int)(*(float *)((char *)lb + 0x94) * 100.0f + 0.5f);
-            eg = (int)(*(float *)((char *)lb + 0x98) * 100.0f + 0.5f);
-            eb = (int)(*(float *)((char *)lb + 0x9C) * 100.0f + 0.5f);
-            slot = *(int *)((char *)lb + 0x8C);
-        }
-        if (ball1 && !IsBadReadPtr((void *)ball1, 0x210))
-            qR = *(DWORD *)((char *)ball1 + 0x1BC);
-        wsprintfA(s_neon_buildrep, "build=[app=%08X gfx=%08X ball=%08X light=%08X emit=(%d,%d,%d) slot=%d quadA_R=%08X]",
-                  app, (DWORD)gfx, ball1, (DWORD)l1, er, eg, eb, slot, qR);
-    }
-    Neon_AppendBuildRep();
     if (l1) {
         if (ExtHasOffset(ext, UNI_NEON_GLOW_ACTIVE, 1))
             *(BYTE *)((char *)ext + UNI_NEON_GLOW_ACTIVE) = 1;
@@ -511,72 +489,6 @@ static void Neon_BuildLights(void *board, void *ext,
     } else {
         DebugLog("Neon: P1 build failed, staying inactive");
     }
-}
-
-/* TEMP DIAG green-hamster 2026-11-19 (remove once user confirms cause):
- * writes the Neon S3 verdict to %TEMP%\lfl_neon_verdict.txt so we can see
- * what glow color LFL computed on the user's box (no log file available). */
-/* TEMP DIAG green-hamster 2026-11-19 (remove once user confirms cause):
- * build-stage report filled by Neon_BuildLights, appended to the verdict
- * file by Neon_VerdictDiag. All ints/hex (wsprintfA has no float). */
-static void Neon_AppendBuildRep(void) {
-    HANDLE hf;
-    char exe[MAX_PATH], fp[300];
-    DWORD elen = 0, i, w = 0, len = 0;
-    const char *nm;
-    int k;
-    if (!s_neon_buildrep[0]) return;
-    GetModuleFileNameA(NULL, exe, MAX_PATH);
-    exe[MAX_PATH-1] = 0;
-    elen = 0; while (exe[elen]) elen++;
-    while (elen > 0 && exe[elen-1] != 92 && exe[elen-1] != 47) elen--;
-    if (!elen || elen >= sizeof(fp) - 24) return;
-    for (i = 0; i < elen; i++) fp[i] = exe[i];
-    nm = "lfl_neon_verdict.txt"; k = 0;
-    while (nm[k] && i < sizeof(fp) - 1) fp[i++] = nm[k++];
-    fp[i] = 0;
-    while (s_neon_buildrep[len]) len++;
-    hf = CreateFileA(fp, GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS,
-                     FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hf == INVALID_HANDLE_VALUE) return;
-    SetFilePointer(hf, 0, NULL, FILE_END);
-    WriteFile(hf, " ", 1, &w, NULL);
-    WriteFile(hf, s_neon_buildrep, len, &w, NULL);
-    CloseHandle(hf);
-}
-static void Neon_VerdictDiag(const char *meshPath, int has, int marker,
-                             float r, float g, float b) {
-    char exe[MAX_PATH], fp[300], line[512];
-    DWORD elen = 0, i;
-    HANDLE hf;
-    const char *nm;
-    int k;
-    if (!meshPath) meshPath = "(null)";
-    /* Game folder (where bass.dll lives), not %TEMP%: user can't find temp. */
-    GetModuleFileNameA(NULL, exe, MAX_PATH);
-    exe[MAX_PATH-1] = '\0';
-    elen = 0; while (exe[elen]) elen++;
-    while (elen > 0 && exe[elen-1] != '\\' && exe[elen-1] != '/') elen--;
-    if (!elen || elen >= sizeof(fp) - 24) return;
-    for (i = 0; i < elen; i++) fp[i] = exe[i];
-    nm = "lfl_neon_verdict.txt"; k = 0;
-    while (nm[k] && i < sizeof(fp) - 1) fp[i++] = nm[k++];
-    fp[i] = '\0';
-    /* NOTE: wsprintfA has NO float support — print rgb as int hundredths. */
-    wsprintfA(line, "path='%s' has=%d marker=%d rgb=(%d,%d,%d)",
-              meshPath, has, marker,
-              (int)(r * 100.0f + 0.5f),
-              (int)(g * 100.0f + 0.5f),
-              (int)(b * 100.0f + 0.5f));
-    hf = CreateFileA(fp, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS,
-                     FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hf == INVALID_HANDLE_VALUE) return;
-    {
-        DWORD w = 0, len = 0;
-        while (line[len]) len++;
-        WriteFile(hf, line, len, &w, NULL);
-    }
-    CloseHandle(hf);
 }
 
 /* Step 6c entry — called from UniversalConstructor after Pennant_PostSetup. */
@@ -591,7 +503,6 @@ static void Neon_PostSetup(void *board, void *ext, int raceIndex, const char *me
     if (ExtHasOffset(ext, UNI_NEON_GLOW_ACTIVE, 1))
         *(BYTE *)((char *)ext + UNI_NEON_GLOW_ACTIVE) = 0;
     has = Neon_FileHasLights(meshPath, &marker, &mr, &mg, &mb);
-    Neon_VerdictDiag(meshPath, has, marker, mr, mg, mb);  /* TEMP DIAG */
     if (ExtHasOffset(ext, UNI_NEON_HAS_NATIVE, 1))
         *(BYTE *)((char *)ext + UNI_NEON_HAS_NATIVE) = has ? 1 : 0;
     if (marker == 1) {
