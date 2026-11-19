@@ -162,15 +162,19 @@ static int Neon_FileHasLights(const char *meshPath) {
     return 1;
 }
 
-/* Minimal ball glow (mkn_level_system v6.7-proven values, real-Windows). */
+/* Native Neon ball setup (scene loader 0x416556+, disasm-verified 2026-11-19):
+ * pushes RGBA (1.0,1.0,0,1.0), then ball+0x1D0=1.0, ball+0x1D4=0.0,
+ * ball+0x1CC=1.0(bits), ball+0x1D8=1.0 — i.e. a (1,1,0,1) yellow quad at
+ * ball+0x1CC. LFL used to write +0x1D0=0/+0x1C0=0/+0x1F0=0 (killing yellow
+ * and clobbering the native 0.25 border default) = red outline. Mirror
+ * native exactly; leave +0x1C0/+0x1F0/+0x204 at native defaults. */
 static void Neon_BallGlow(DWORD ball, int pnum) {
     char dbg[96];
     if (!ball || IsBadReadPtr((void *)ball, 0x210)) return;
-    *(float *)(ball + 0x1D0) = 0.0f;
+    *(float *)(ball + 0x1CC) = 1.0f;
+    *(float *)(ball + 0x1D0) = 1.0f;
+    *(float *)(ball + 0x1D4) = 0.0f;
     *(float *)(ball + 0x1D8) = 1.0f;
-    *(float *)(ball + 0x1C0) = 0.0f;
-    *(float *)(ball + 0x1F0) = 0.0f;
-    *(BYTE *)(ball + 0x204) = 1;
     wsprintfA(dbg, "Neon: ball glow written (P%d ball=0x%08X)", pnum, ball);
     DebugLog(dbg);
 }

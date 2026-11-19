@@ -121,6 +121,16 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.35** — Neon red outline root-caused (user guess confirmed). Native
+Neon scene loader (0x416556+) writes a (1,1,0,1) yellow quad at ball+0x1CC
+(+0x1D0=1.0, +0x1D4=0.0, +0x1CC=1.0, +0x1D8=1.0; RGBA pushes on the stack
+before it). LFL wrote +0x1D0=0/+0x1C0=0/+0x1F0=0 instead — killing yellow
+and clobbering the native 0.25 border default. Neon_BallGlow now mirrors
+native exactly; +0x1C0/+0x1F0/+0x204 left at native defaults. Follow-light
+emitter stays (10,10,0,1) yellow, Range 400 — hardcoded on both paths, was
+never the culprit. Rig-verified live on LevelDark: quad reads (1,1,0,1),
+border (0.25 gray), emitter (10,10,0,1), light class 0x4D934C. Needs
+Windows eye-confirm: outline yellow now?
 - **v13.34** — Odd gravity repeated-flip crash (user: flips worked, game
 crashed "after changing gravity a number of times and a number of
 different ways"). Suspect: the E:GRAVITY touch handler built + destroyed
