@@ -121,6 +121,14 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.31** — Master pops renamed BONKCYLINDER (user direction). The adjusted
+Master file carries BONKCYLINDER S1s; the mod builds the Master class
+(0x36ee0) for that name on any board, no content gate (the name alone is
+unambiguous — POPCYLINDER keeps its content-14 rule). Excluded from the
+BONK prefix branch (it starts with BONK). Banked by suffix with the Sky
+idx mapping + peg gate seeded, so the shared RNG activator cycles them
+with Sky timing — Master pops now behave like Sky pops. POPCYLINDER S1s
+keep working (stock file compatible).
 - **v13.30** — Master bonk/halves/pops re-wired (user report: bonk + pops
 invisible, halves shatter early — his DLL still had the pre-v13.22 wiring).
 Root causes, all objdump-verified: (1) Pops built with the Sky ctor

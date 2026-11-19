@@ -713,8 +713,10 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         return;
     }
 
-    /* ── BONK (Expert) ── */
-    if (my_strnicmp(name, "BONK", 4) == 0 && difficulty != 0) {
+    /* ── BONK (Expert) ──
+     * BONKCYLINDER excluded: it starts with BONK but is the Master-race
+     * popcylinder (handled in the POPCYLINDER branch below). */
+    if (my_strnicmp(name, "BONK", 4) == 0 && my_strnicmp(name, "BONKCYLINDER", 12) != 0 && difficulty != 0) {
         void *mem = g_operatorNew(0x1200);
         if (mem) {
             obj = g_BonkCtor(mem, (int)board, x, y, z);
@@ -1277,17 +1279,28 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         return;
     }
 
-    /* ── POPCYLINDER (Sky) ── */
-    if (my_strnicmp(name, "POPCYLINDER", 11) == 0) {
+    /* ── POPCYLINDER (Sky) / BONKCYLINDER (Master rename) ── */
+    if (my_strnicmp(name, "POPCYLINDER", 11) == 0 || my_strnicmp(name, "BONKCYLINDER", 12) == 0) {
+        /* BONKCYLINDER = the Master-race popcylinder under its own name
+         * (adjusted Master file carries these instead of POPCYLINDER S1s).
+         * The name alone selects the Master class — unambiguous anywhere,
+         * so no content gate. POPCYLINDER keeps the content-14 rule below
+         * (same S1 name, two native classes; presence alone cannot
+         * disambiguate those). On native-ctor boards neither fires: the
+         * bypass delegates to orig create, which returns zeros for both
+         * names (exact native parity — unknown S1 builds nothing). */
+        int isBonkCyl = (my_strnicmp(name, "BONKCYLINDER", 12) == 0);
         /* Master content (14) uses a different native class: Master create
          * (0x4124E7+) calls PopCylinder_ctor (0x36ee0, 0x10E8), feeds it the
          * native mesh slot 0x5420, and appends BOTH 0x2578 and 0x5428. The
          * Sky path below (0x363f0) is a virtually different object — it
-         * never appears on Master. Content-gated (same S1 name, two native
-         * classes; presence alone cannot disambiguate). Safe: Master
-         * content always builds universal (0x7000), never native-ctor, so
-         * the 0x5420/0x5428 slots are ours to use. */
-        if (ContentFileId(ext) == 14) {
+         * never appears on Master. Safe: Master content always builds
+         * universal (0x7000), never native-ctor, so the 0x5420/0x5428
+         * slots are ours to use. */
+        if (ContentFileId(ext) == 14 || isBonkCyl) {
+            long rawB = atol(name + (isBonkCyl ? 12 : 11));
+            long idxB = (rawB <= 0) ? 0 : rawB - 1;
+            if (idxB < 0) idxB = 0; if (idxB > 15) idxB = 15;
             int meshVal = BoardMeshOrZero(board, 0x5420);
             if (!meshVal) {
                 S1EnsureMeshWorld(board, ext, UNI_POPCYL_MESH_BASE, "Levels\\Level9-PopCylinder1");
@@ -1305,6 +1318,12 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
                 g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
                 if (BoardHasOffset(board, 0x5428, 4))
                     g_AthenaListAppend((void*)((char*)board + 0x5428), (int)obj);
+                /* Sky-parity behavior: bank by suffix (same mapping as the
+                 * Sky path) so the shared RNG activator cycles them with
+                 * Sky timing. Seed the peg gate — Master files carry no
+                 * PEGS S1s, and the activator stands down at peg count 0. */
+                *(void **)((char *)ext + UNI_SKY_POPCYL_BASE + idxB * 4) = obj;
+                if (!*(int *)((char *)ext + UNI_PEG_COUNT)) *(int *)((char *)ext + UNI_PEG_COUNT) = 1;
                 /* Native out2 = *(obj+0x10E0) (0x41254B), not the o[0x438]
                  * render slot the Sky class uses. */
                 if (obj && !IsBadReadPtr(obj, 0x10E4)) renderOut = *(int*)((char*)obj + 0x10E0);

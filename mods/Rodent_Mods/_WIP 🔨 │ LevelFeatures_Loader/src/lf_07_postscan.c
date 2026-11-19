@@ -525,7 +525,7 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
         if (my_strnicmp(name, "WOBBLY", 6)==0 || my_strnicmp(name, "WAVY", 4)==0) {
             // Wobbly family — no feat flag but S1 presence proves level intent
         }
-        if (my_strnicmp(name, "POPCYLINDER", 11)==0 || my_strnicmp(name, "POPDOOR", 7)==0 || my_strnicmp(name, "CLOUDSCAPE", 10)==0) {
+        if (my_strnicmp(name, "POPCYLINDER", 11)==0 || my_strnicmp(name, "BONKCYLINDER", 12)==0 || my_strnicmp(name, "POPDOOR", 7)==0 || my_strnicmp(name, "CLOUDSCAPE", 10)==0) {
             OrBoardFeat(board, FEAT_SKY_POPCYL);
         }
         if (my_strnicmp(name, "BONK", 4)==0 || my_strnicmp(name, "FAN", 3)==0 || my_strnicmp(name, "SAWBLADE", 8)==0 || my_strnicmp(name, "BELL", 4)==0 || my_strnicmp(name, "JUDGE", 5)==0 || my_strnicmp(name, "SPINNER", 7)==0 || my_strnicmp(name, "LOOPER", 6)==0 || my_strnicmp(name, "GEAR", 4)==0 || my_strnicmp(name, "PENDULUM", 8)==0 || my_strnicmp(name, "ROTATOR", 7)==0) {
@@ -744,7 +744,7 @@ static void ScanS1ReferencedMeshesForCollisions(void *board, void *ext, void *me
                 "SAWBRIDGE\0Levels\\Level2-Bridge\0" "SAW\0Levels\\Level8-Saw\0" "BBRIDGE\0Levels\\Level10-Bridge1\0" "SPINNY\0Levels\\Level8-Spinny\0"
                 "SAW\0Levels\\Level8-Saw\0" "FALLOUT\0Levels\\Level8-Fallout\0" "BLOCKDAWG\0Levels\\Level8-BlockDawg1\0" "LIFTER\0Levels\\LevelUp-Lifter\0"
                 "DROPPER\0Levels\\LevelUp-Lifter\0" "SPEEDCYLINDER\0Levels\\LevelUp-SpeedCylinder\0" "TIMEBUTTON\0Levels\\LevelUp-Button\0" "NEONPLATFORM\0Levels\\LevelDark-NeonPlatform\0"
-                "DFLOOR\0Levels\\LevelDark-DFloor1\0" "TRODE\0Levels\\LevelDark-Trode\0" "POPCYLINDER\0Levels\\Level9-PopCylinder1\0"
+                "DFLOOR\0Levels\\LevelDark-DFloor1\0" "TRODE\0Levels\\LevelDark-Trode\0" "POPCYLINDER\0Levels\\Level9-PopCylinder1\0" "BONKCYLINDER\0Levels\\Level9-PopCylinder1\0"
                 "CLOUDSCAPE\0Levels\\Level9-PopCylinder1\0" "WOBBLY\0Levels\\Level7-Wobbly1\0" "WAVY\0Levels\\Level7-Wavy1\0" "LOOPER\0Levels\\LevelImpossible-Looper\0"
                 "GEAR\0Levels\\LevelImpossible-Gear\0" "BIGGEAR\0Levels\\LevelImpossible-BigGear\0" "ROTATOR\0Levels\\LevelImpossible-Rotator\0" "PENDULUM\0Levels\\LevelImpossible-Pendulum\0"
                 "BONK\0Levels\\Level2-Bridge\0" "FAN\0Levels\\Level2-Bridge\0" "BELL\0Levels\\Level2-Bridge\0" "JUDGE\0Levels\\Level2-Bridge\0";
