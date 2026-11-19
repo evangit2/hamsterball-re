@@ -33,13 +33,15 @@ static DWORD GetBoardApp(void *board) {
 static int g_enableExpertFans = 1;
 static int g_enableExpertMirrors = 0;
 static int BoardMeshOrZero(void *board, DWORD slotOff) {
-    /* Tower objects (MACE/WINDMILL/DRAWBRIDGE/Catapult/TURRET/Trapdoor S1s,
-     * FEAT_WINDMILL set in the S1 scan) never trust board preload slots:
-     * replicated boards never ran the static preload, so the slots hold
-     * allocator garbage that can pass IsBadReadPtr — always ext-load there
-     * (CATAPULT pattern). The old content==5 gate missed file-swapped Tower
+    /* v13.26: universal (replicated) boards never ran the native static
+     * preload, so their slots hold allocator garbage that can pass
+     * IsBadReadPtr — always ext-load there (CATAPULT pattern). Keyed on the
+     * native-ctor flag, not on FEAT_WINDMILL (which is now armed only by
+     * actual WINDMILL/CHOMPER S1s). Native-built boards keep trusting
+     * their preloads. The old content==5 gate missed file-swapped Tower
      * (content reads 1), trusting Warm-Up-replicated garbage. */
-    if (GetBoardFeat(board) & FEAT_WINDMILL) return 0;
+    { void *be = GetBoardExt(board);
+      if (!be || !*(int *)((char *)be + UNI_NATIVE_CTOR)) return 0; }
     int v = *(int *)((char *)board + slotOff);
     if (!v || IsBadReadPtr((void *)v, 4)) return 0;
     { int vt = *(int *)v;

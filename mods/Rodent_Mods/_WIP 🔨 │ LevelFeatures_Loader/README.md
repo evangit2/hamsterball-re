@@ -121,6 +121,14 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.26** — Windmill feat armed only by actual windmills. The postscan
+grouped TURRET/CATAPULT/MACE/DRAWBRIDGE/TRAPDOOR with WINDMILL/CHOMPER (legacy
+Tower-family lump), so Catapult levels entered the windmill feature — the
+v13.25 propeller. Trimmed to WINDMILL + CHOMPER (the only objects the
+function reads). Load-path safety moved to BoardMeshOrZero keyed on the
+native-ctor flag (universal boards never ran the preload → ext-load; native
+boards keep trusting slots). Rig: Tower windmill spinning (angle 3234),
+Master windmill angle 0.0, deck cycling, feat bit clean.
 - **v13.25** — Constant-velocity deck propeller + swoop on Master file
 root-caused to the windmill fall-through, not the deck code. Postscan arms
 FEAT_WINDMILL for CATAPULT/DRAWBRIDGE/TRAPDOOR/MACE/TURRET/CHOMPER S1s, so

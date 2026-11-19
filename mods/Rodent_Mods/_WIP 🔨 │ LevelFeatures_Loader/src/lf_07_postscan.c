@@ -513,7 +513,13 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
         if (my_strnicmp(name, "WATERWHEEL", 10)==0 || my_strnicmp(name, "WHEELEMBED", 10)==0 || my_strnicmp(name, "SWIRL", 5)==0 || my_strnicmp(name, "TarBubble", 9)==0 || my_strnicmp(name, "GLUEBIE", 7)==0 || my_strnicmp(name, "TIPPER", 6)==0) {
             OrBoardFeat(board, FEAT_SWIRL);
         }
-        if (my_strnicmp(name, "WINDMILL", 8)==0 || my_strnicmp(name, "CHOMPER", 7)==0 || my_strnicmp(name, "TURRET", 6)==0 || my_strnicmp(name, "CATAPULT", 8)==0 || my_strnicmp(name, "MACE", 4)==0 || my_strnicmp(name, "DRAWBRIDGE", 10)==0 || my_strnicmp(name, "TRAPDOOR", 8)==0) {
+        if (my_strnicmp(name, "WINDMILL", 8)==0 || my_strnicmp(name, "CHOMPER", 7)==0) {
+            /* v13.26: ONLY the objects Feature_Windmill actually drives.
+             * TURRET/CATAPULT/MACE/DRAWBRIDGE/TRAPDOOR were legacy Tower-family
+             * lump-ins — the function reads nothing they own, and arming the
+             * feat on Catapult levels fed the windmill fall-through (v13.25).
+             * Load-path safety for the whole family lives in BoardMeshOrZero
+             * (native-ctor check), not in this bit. */
             OrBoardFeat(board, FEAT_WINDMILL);
         }
         if (my_strnicmp(name, "WOBBLY", 6)==0 || my_strnicmp(name, "WAVY", 4)==0) {
