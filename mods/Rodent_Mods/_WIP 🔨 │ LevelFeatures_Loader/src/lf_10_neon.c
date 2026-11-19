@@ -322,20 +322,32 @@ static int Neon_FileHasLights(const char *meshPath, int *marker,
 }
 
 /* Native Neon ball setup (scene loader 0x416556+, disasm-verified 2026-11-19):
- * pushes RGBA (1.0,1.0,0,1.0), then ball+0x1D0=1.0, ball+0x1D4=0.0,
+ * pushes RGBA (1,1,0,1.0), then ball+0x1D0=1.0, ball+0x1D4=0.0,
  * ball+0x1CC=1.0(bits), ball+0x1D8=1.0 — i.e. a (1,1,0,1) yellow quad at
- * ball+0x1CC. LFL used to write +0x1D0=0/+0x1C0=0/+0x1F0=0 (killing yellow
- * and clobbering the native 0.25 border default) = red outline. Mirror
- * native exactly; leave +0x1C0/+0x1F0/+0x204 at native defaults. */
-/* Ball quad is RGBA in order: +0x1CC=R, +0x1D0=G, +0x1D4=B, +0x1D8=A(1.0).
- * Single-sample derivation (yellow (1,1,0,1)); alpha kept at native 1.0. */
+ * ball+0x1CC — plus the same (1,1,0,1) at ball+0x1BC (0x4165C8 block) and
+ * ball+0x1EC (0x416632 block): three quads total, all yellow. Render draws
+ * the +0x1B8-based (quadA) sprite, so all three must be written. */
+/* Ball quads are RGBA in order: +0x1CC=R, +0x1D0=G, +0x1D4=B, +0x1D8=A(1.0).
+ * Native Neon loader writes ALL THREE ball quads (1,1,0,1): quadA +0x1BC,
+ * quadB +0x1CC, quadC +0x1EC (objdump 0x41655B/0x4165C8/0x416632). Render
+ * draws the quadA sprite (lea 0x1B8 -> 0x45D660 at 0x4042AE) — writing only
+ * quadB left quadA at universal-ctor defaults = green hamster (red lost).
+ * Mirror all three, exactly like native. */
 static void Neon_BallGlow(DWORD ball, int pnum, float r, float g, float b) {
     char dbg[96];
     if (!ball || IsBadReadPtr((void *)ball, 0x210)) return;
+    *(float *)(ball + 0x1BC) = r;
+    *(float *)(ball + 0x1C0) = g;
+    *(float *)(ball + 0x1C4) = b;
+    *(float *)(ball + 0x1C8) = 1.0f;
     *(float *)(ball + 0x1CC) = r;
     *(float *)(ball + 0x1D0) = g;
     *(float *)(ball + 0x1D4) = b;
     *(float *)(ball + 0x1D8) = 1.0f;
+    *(float *)(ball + 0x1EC) = r;
+    *(float *)(ball + 0x1F0) = g;
+    *(float *)(ball + 0x1F4) = b;
+    *(float *)(ball + 0x1F8) = 1.0f;
     wsprintfA(dbg, "Neon: ball glow written (P%d ball=0x%08X)", pnum, ball);
     DebugLog(dbg);
 }

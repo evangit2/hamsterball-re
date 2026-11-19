@@ -154,3 +154,10 @@ mark them FIXED with the version instead.
   2026-11-19 writes %TEMP%\lfl_neon_verdict.txt (path/has/marker/rgb) so we
   can see what LFL computed on the user's box. TEMP DIAG, remove after.
 - Rig verdict: path='levels\leveldark' has=0 marker=0 rgb=(100,100,0).
+- ROOT CAUSE FOUND 2026-11-19 via objdump: native Neon loader (0x41655B/
+  0x4165C8/0x416632) writes ALL THREE player ball quads (1,1,0,1): quadA
+  +0x1BC, quadB +0x1CC, quadC +0x1EC. Render draws the quadA sprite
+  (lea 0x1B8 -> 0x45D660 at 0x4042AE). LFL's Neon_BallGlow wrote ONLY quadB,
+  leaving quadA at universal-ctor defaults (red missing) = green hamster.
+  Fix: Neon_BallGlow now writes all three sets, native-identical. Shipped
+  2026-11-19 (bass.dll + zip refreshed) - needs Windows eye-confirm.
