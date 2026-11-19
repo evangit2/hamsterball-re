@@ -1237,7 +1237,7 @@ static LevelData g_levelData[16] = {
      * are handled by their standard level implementations, not Master special cases.
      * BBRIDGE1/2 are the Master-specific breaking bridge pieces. */
     {"Master",0x004D12B0,"Board (Master)","MASTER RACE","MASTERRACE","Master Theme",{0.5f,0.5f,0.5f},"levels\\level10",{"0x8620:Levels\\Level2-Bridge","0x8628:RENDER","0xB948:Levels\\Level10-Bridge1","0xB94C:Levels\\Level10-Bridge2"},4,0x859,
-     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,UNI_BRIDGE_COUNTER,0,0,0x29C0,0x449C4000},
+     {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,UNI_BRIDGE_ANGLE,0,0,0x29C0,0x449C4000},
     /* 15=Impossible */
     {"Impossible",0x004D21C0,"Board (Impossible)","IMPOSSIBLE RACE","IMPOSSIBLERACE","Impossible Theme",{1.0f,0.0f,0.0f},"levels\\levelimpossible",{"0x86D8:Levels\\LevelImpossible-Looper","0x86DC:Levels\\LevelImpossible-Gear","0x86E0:Levels\\LevelImpossible-BigGear","0xB90C:Levels\\LevelImpossible-Rotator","0xB9DC:Levels\\LevelImpossible-Pendulum"},5,0,
      {UNI_LIST_0,UNI_LIST_1,UNI_LIST_2,UNI_LIST_3,UNI_LIST_4,UNI_LIST_5,UNI_LIST_6,UNI_LIST_7},UNI_EHVECTOR,8,0x418,{0},{0},0,0,0x4348,1,0,0},

@@ -121,6 +121,17 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.24** — Static deck in Master slot root-caused to a one-field data bug,
+not a code gate. The Master row of g_levelData set bridgeParamOffset =
+UNI_BRIDGE_COUNTER instead of UNI_BRIDGE_ANGLE, so ctor step 9f wrote
+(45.0, 0, 50) at ext+0x863C/40/44 instead of +0x8634/38/3C. The create-mirror
+init saw counter = 45.0f-bits (1110682897, not 0) and skipped, leaving
+angle/state/counter = 0/0/1110682897 — state 0 needs 1.1B decrements, so the
+deck sat static essentially forever. Every other slot uses its own row
+(Intermediate's correctly says UNI_BRIDGE_ANGLE), which is exactly why only
+the Master slot froze. One-field fix; rig proof on Intermediate-in-slot-14
+(ext angle/state/counter now live, machine cycling) and normal Master
+(angle 18.5, state 3/rising, live timer, CD4=32).
 - **v13.23** — Windmill deck root-caused to a wrong rotation axis. Native
 Intermediate deck update poses via 0x457CC0 with the dword at timer+0xC0 = 1
 (0x41CFCA; the rider-carry call at 0x41CF20 uses 0). TimerInit zeroes it, so
