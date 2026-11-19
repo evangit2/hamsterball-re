@@ -104,6 +104,7 @@ void DebugLog(const char *msg);
 #define RVA_Gear_ctor                0x00037590
 #define RVA_Pendulum_ctor            0x00037700
 #define RVA_BreakBridge_ctor         0x00036d70
+#define RVA_BreakBridge_break        0x00036e70
 #define RVA_Level_FindObjectByName   0x00060530
 #define RVA_Sound_InitChannels       0x00034580
 
@@ -345,6 +346,7 @@ typedef enum {
                                      4380/4798 may be inited first by the
                                      spinner branch, which must NOT mark 4BBC
                                      done order-independently) */
+    FEAT_POP_LISTS     = 1 << 11, /* Master pop list 5428 inited (own bit) */
 } UpdateFeature;
 
 /* Render feature flags — separate from update features.

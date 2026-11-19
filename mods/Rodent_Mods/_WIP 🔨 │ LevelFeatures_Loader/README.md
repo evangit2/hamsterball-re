@@ -121,6 +121,21 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.30** — Master bonk/halves/pops re-wired (user report: bonk + pops
+invisible, halves shatter early — his DLL still had the pre-v13.22 wiring).
+Root causes, all objdump-verified: (1) Pops built with the Sky ctor
+(0x363f0); Master native uses PopCylinder_ctor (0x36ee0) — content-14 now
+builds the Master class (0x10E8) with native-mesh preference (board+0x5420,
+file fallback) + both native lists (0x2578 and 0x5428, own FEAT_POP_LISTS
+init bit). Sky path untouched. (2) Halves never saw the native break:
+v13.22 dropped the board+0x5418/0x541C mirrors, so the BONKPOPUP path was
+dead and the proximity-to-Bonk fallback fired early — mirrors restored
+(native-mesh preference 0x5410/0x5414 + file fallback), proximity retired,
+BONKPOPUP touch now calls native 0x436e70 on both halves (args 0/1, exact
+Master-0x412f80 parity; ext slots as fallback). (3) Bonk hammer dead:
+board+0x540C store restored (native 0x4123C7 parity, guarded). Scoped
+restore only — glue/catapult 0x6080/0x584C wiring stays out per v13.22.
+Rig: boot crash-test clean; Master gameplay confirm needed on Windows.
 - **v13.29** — We run the drive, native stands down on foreign files. Slot-native
 racestate now runs ONLY for the slot's own file (content == level); anything
 else gets shared base + our universal pump (every 0x2578 member via live

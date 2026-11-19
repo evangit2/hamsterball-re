@@ -816,6 +816,26 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         }
     }
 
+    /* ── Master: BONKPOPUP breaks the halves (native 0x412f80) ──
+     * Native matches the bare name (strcmp-style, no E: prefix) and calls
+     * the BreakBridge break on board+0x5418 (arg 0) + board+0x541C (arg 1).
+     * Stock Level10 carries no BONKPOPUP S6 event — the popup spawned by
+     * E:CALLHAMMER carries the name at runtime. This replaces the old
+     * proximity-to-Bonk break (90u radius fired early); the popup touch is
+     * the native-correct timing. Ext slots are fallback where the board
+     * does not extend to the native slots. */
+    if (my_stricmp(name, "BONKPOPUP") == 0 || my_stricmp(name, "E:BONKPOPUP") == 0) {
+        if (difficulty != 0 && g_BreakBridgeBreak) {
+            void *be3 = GetBoardExt(board); if (!be3) be3 = ext;
+            int h1 = BoardHasOffset(board, 0x5418, 4) ? *(int*)((char*)board + 0x5418) : 0;
+            int h2 = BoardHasOffset(board, 0x541C, 4) ? *(int*)((char*)board + 0x541C) : 0;
+            if (!h1 && be3) h1 = *(int*)((char*)be3 + UNI_BBRIDGE1_OBJ);
+            if (!h2 && be3) h2 = *(int*)((char*)be3 + UNI_BBRIDGE2_OBJ);
+            if (h1 && !IsBadReadPtr((void *)h1, 0x1100)) g_BreakBridgeBreak((void *)h1, 0);
+            if (h2 && !IsBadReadPtr((void *)h2, 0x1100)) g_BreakBridgeBreak((void *)h2, 1);
+        }
+    }
+
     /* ── Expert: E:ALERTSAW1 ── */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW1)) && my_stricmp(name, "E:ALERTSAW1") == 0) {
         if (difficulty != 0 && g_SawAlertActivate) {

@@ -723,6 +723,11 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
              * E:CALLHAMMER/E:HAMMERCHASE). Expert slot-1 mirrors stay off
              * until the shared-code occupant issue is root-caused. */
             if (g_enableExpertMirrors && BoardHasOffset(board, 0x436C, 4)) *(void **)((char *)board + 0x436C) = obj;
+            /* Native Master create stores the bonk obj at board+0x540C
+             * (0x4123C7, unconditional) — the hammer/popup/break readers.
+             * Restored 2026-11-19: v13.22 dropped it, Master hammer went
+             * dead. Guarded: only fires where the board really extends. */
+            if (BoardHasOffset(board, 0x540C, 4)) *(void **)((char *)board + 0x540C) = obj;
             /* Bonk obj for the breakable-bridge feature: ext slot, set on
              * any level with a Bonk S1 (presence, never slot/content). */
             { void *bExt2 = GetBoardExt(board); if (bExt2) *(void **)((char *)bExt2 + UNI_BONK_SAVE) = obj; }
@@ -1274,6 +1279,39 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
 
     /* ── POPCYLINDER (Sky) ── */
     if (my_strnicmp(name, "POPCYLINDER", 11) == 0) {
+        /* Master content (14) uses a different native class: Master create
+         * (0x4124E7+) calls PopCylinder_ctor (0x36ee0, 0x10E8), feeds it the
+         * native mesh slot 0x5420, and appends BOTH 0x2578 and 0x5428. The
+         * Sky path below (0x363f0) is a virtually different object — it
+         * never appears on Master. Content-gated (same S1 name, two native
+         * classes; presence alone cannot disambiguate). Safe: Master
+         * content always builds universal (0x7000), never native-ctor, so
+         * the 0x5420/0x5428 slots are ours to use. */
+        if (ContentFileId(ext) == 14) {
+            int meshVal = BoardMeshOrZero(board, 0x5420);
+            if (!meshVal) {
+                S1EnsureMeshWorld(board, ext, UNI_POPCYL_MESH_BASE, "Levels\\Level9-PopCylinder1");
+                void* pExtM = GetBoardExt(board); if (!pExtM) pExtM = ext;
+                meshVal = pExtM ? *(int*)((char*)pExtM + UNI_POPCYL_MESH_BASE) : *(int*)((char*)ext + UNI_POPCYL_MESH_BASE);
+            }
+            if (!meshVal) { DebugLog("POPCYLINDER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+            if (!(GetBoardFeat(board) & FEAT_POP_LISTS)) {
+                if (g_AthenaListInit && BoardHasOffset(board, 0x5428, 4)) g_AthenaListInit((void*)((char*)board + 0x5428), 0);
+                OrBoardFeat(board, FEAT_POP_LISTS);
+            }
+            void *mem = g_operatorNew(0x10E8);
+            if (mem) {
+                obj = g_PopCylinderCtor(mem, (int)board, x, y, z, meshVal);
+                g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+                if (BoardHasOffset(board, 0x5428, 4))
+                    g_AthenaListAppend((void*)((char*)board + 0x5428), (int)obj);
+                /* Native out2 = *(obj+0x10E0) (0x41254B), not the o[0x438]
+                 * render slot the Sky class uses. */
+                if (obj && !IsBadReadPtr(obj, 0x10E4)) renderOut = *(int*)((char*)obj + 0x10E0);
+            }
+            *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+            return;
+        }
         /* Native Master create (0x4124E7) matches the bare prefix (len 11,
          * no digits needed): POPCYLINDER0 and bare POPCYLINDER build the
          * default variant. Suffix digits select 1..16 (06-11 = specials). */
@@ -1451,15 +1489,24 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     if (skind == K_BBRIDGE) {
         /* Breakable bridge halves — generic presence-driven path (no slot,
          * content, or native-board checks: any level with BBRIDGE1/2 S1s
-         * gets working halves). Mesh: file mesh into ext (same pattern as
-         * every other mirror). Objs: ext slots (never native 0x5418/0x541C).
-         * Listed in UNI_OBJ_LIST so the scene renders them. */
+         * gets working halves). Mesh: prefer the native board mesh slots
+         * (0x5410/0x5414, where Master create reads them), file mesh into
+         * ext otherwise. Objs: ext slots + native 0x5418/0x541C mirrors
+         * (the native BONKPOPUP break reads them there). Restored
+         * 2026-11-19: v13.22 dropped both mirrors and the custom proximity
+         * break fired early instead. Listed in UNI_OBJ_LIST so the scene
+         * renders them. */
         int bNum = name[7] - '0';
         int meshOff = (bNum == 1) ? UNI_BBRIDGE1_MESH : UNI_BBRIDGE2_MESH;
         int storeOff = (bNum == 1) ? UNI_BBRIDGE1_OBJ : UNI_BBRIDGE2_OBJ;
-        S1EnsureMeshWorld(board, ext, meshOff, (bNum == 1) ? "Levels\\Level10-Bridge1" : "Levels\\Level10-Bridge2");
-        void* bbExt2 = GetBoardExt(board); if (!bbExt2) bbExt2 = ext;
-        int meshVal = bbExt2 ? *(int*)((char*)bbExt2 + meshOff) : *(int*)((char*)ext + meshOff);
+        int natMeshOff = (bNum == 1) ? 0x5410 : 0x5414;
+        int natObjOff = (bNum == 1) ? 0x5418 : 0x541C;
+        int meshVal = BoardMeshOrZero(board, natMeshOff);
+        if (!meshVal) {
+            S1EnsureMeshWorld(board, ext, meshOff, (bNum == 1) ? "Levels\\Level10-Bridge1" : "Levels\\Level10-Bridge2");
+            void* bbExt2 = GetBoardExt(board); if (!bbExt2) bbExt2 = ext;
+            meshVal = bbExt2 ? *(int*)((char*)bbExt2 + meshOff) : *(int*)((char*)ext + meshOff);
+        }
         if (!meshVal) { DebugLog("BBRIDGE: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1100);
         if (mem) {
@@ -1467,6 +1514,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
             void* bbExt = GetBoardExt(board); if(!bbExt) bbExt=ext;
             if(bbExt) *(void **)((char *)bbExt + storeOff) = obj;
+            /* Native drive reads board+0x5418/0x541C (Master create stores
+             * EDI there) — mirror it so the native break path finds ours. */
+            if (BoardHasOffset(board, natObjOff, 4)) *(void **)((char *)board + natObjOff) = obj;
             renderOut = ((DWORD*)obj)[0x438];
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;

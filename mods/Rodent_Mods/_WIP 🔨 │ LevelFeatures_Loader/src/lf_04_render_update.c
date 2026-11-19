@@ -564,13 +564,10 @@ board_additive:
         if (featDbg < 3) DebugLog("  [update] Feature_BridgeAnimation done");
     }
 
-    /* Breakable bridge (presence-routed: runs wherever S1Inventory found
-     * BBRIDGE kinds). Ball-bonk touch breaks the halves (native 0x436E70). */
-    {
-        void *bext = GetBoardExt(board);
-        if (bext && (*(int*)((char*)bext + UNI_S1_PRESENT) & S1P_BBRIDGE))
-            Feature_BridgeBreak(board, level);
-    }
+    /* NOTE 2026-11-19: the old per-frame ball-near-Bonk proximity break
+     * (Feature_BridgeBreak) is retired — it shattered the halves early.
+     * Breaks now fire only on the native BONKPOPUP touch (lf_06), which is
+     * the exact native timing (Master 0x412f80). */
 
     /* Tipper visuals (presence-routed: runs wherever S1Inventory found
      * TIPPER kinds — mirrors own them on every race now) */

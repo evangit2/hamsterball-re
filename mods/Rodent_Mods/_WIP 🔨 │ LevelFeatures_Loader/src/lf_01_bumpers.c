@@ -120,6 +120,10 @@ static Ctor3f_t g_LooperCtor = NULL;
 static Ctor7f_t g_GearCtor = NULL;
 static Ctor3f_t g_PendulumCtor = NULL;
 static Ctor3f_t g_BreakBridgeCtor = NULL;
+/* Native BreakBridge break (0x436e70, __thiscall ECX=obj, dir selects
+ * (+5,20,0) for 0 / (-5,20,0) for 1 — Master calls halves with 0/1). */
+typedef void (__thiscall *BreakBridge_Break_t)(void *obj, int dir);
+static BreakBridge_Break_t g_BreakBridgeBreak = NULL;
 static Level_FindObjectByName_t g_LevelFindObjectByName = NULL;
 static Sound_InitChannels_t g_SoundInitChannels = NULL;
 

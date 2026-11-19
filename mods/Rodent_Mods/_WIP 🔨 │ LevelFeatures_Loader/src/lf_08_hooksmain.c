@@ -873,6 +873,7 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     g_GearCtor = (Ctor7f_t)(g_moduleBase + RVA_Gear_ctor);
     g_PendulumCtor = (Ctor3f_t)(g_moduleBase + RVA_Pendulum_ctor);
     g_BreakBridgeCtor = (Ctor3f_t)(g_moduleBase + RVA_BreakBridge_ctor);
+    g_BreakBridgeBreak = (BreakBridge_Break_t)(g_moduleBase + RVA_BreakBridge_break);
     g_LevelFindObjectByName = (Level_FindObjectByName_t)(g_moduleBase + RVA_Level_FindObjectByName);
     g_SoundInitChannels = (Sound_InitChannels_t)(g_moduleBase + RVA_Sound_InitChannels);
 
