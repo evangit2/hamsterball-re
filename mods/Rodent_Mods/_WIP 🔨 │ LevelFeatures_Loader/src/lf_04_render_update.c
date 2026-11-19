@@ -477,21 +477,6 @@ typedef void (__thiscall *BoardUpdate_t)(void *board); /* native slot-1 orig (EC
 void __fastcall UniversalBoardUpdate(void *board) {
     if (!g_SceneUpdate || !board) return;
 
-    /* Flush pending touch record (dispatcher never does file I/O). */
-    if (g_touchDirty) {
-        g_touchDirty = 0;
-        if (!IsBadReadPtr(g_touchName, 64) && g_touchName[0]) {
-            HANDLE hf = CreateFileA("last_touch.txt", GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-            if (hf != INVALID_HANDLE_VALUE) {
-                DWORD bw = 0;
-                size_t nl = 0; while (nl < 63 && g_touchName[nl]) nl++;
-                WriteFile(hf, g_touchName, (DWORD)nl, &bw, NULL);
-                WriteFile(hf, "\r\n", 2, &bw, NULL);
-                CloseHandle(hf);
-            }
-        }
-    }
-
     /* Native-ctor fast path: native-built boards run their NATIVE slot-1
      * handler (orig), which drives level-specific machinery the shared base
      * lacks — e.g. content-10 Toob orig runs object setup the shared
