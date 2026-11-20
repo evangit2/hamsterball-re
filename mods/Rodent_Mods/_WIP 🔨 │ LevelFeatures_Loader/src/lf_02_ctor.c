@@ -247,7 +247,6 @@ static void UniversalToobInit(void *mem, int app) {
  * 0x40FA20-0x40FB26): fog/init, level-mesh + render build, N:BUMPER1..8
  * link loop (mesh ptr per 0x438C slot, lit 0), then board setup v[0x80].
  * No native scene code runs for Toob. */
-static DWORD s_toobSceneVtbl[256];
 static int s_toobSceneVtblInit = 0;
 void __thiscall UniversalToobScene(void *board) {
     /* No entry guard: the native scene (0x40FA20) runs unguarded on the
@@ -498,18 +497,18 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     } else if (g_loadingContentId == 10) {
         DebugLog("Calling UniversalToobInit...");
         UniversalToobInit(mem, app);
-        /* Universal scene: own vtable copy with slot 18 (scene) replaced.
-         * No native scene code runs for Toob. */
+        /* Universal scene: patch slot 18 (scene) IN PLACE on the shared
+         * Toob table. A private vtable copy breaks board identity
+         * (GetCurrentLevel matches vptr -> level 0 -> every S1 bails). */
         if (!s_toobSceneVtblInit) {
-            DWORD nt = *(DWORD *)mem;
-            if (nt && !IsBadReadPtr((void *)nt, 0x400)) {
-                memcpy(s_toobSceneVtbl, (void *)nt, 0x400);
-                s_toobSceneVtbl[18] = (DWORD)UniversalToobScene;
+            DWORD prot = 0;
+            DWORD *tbl = (DWORD *)0x4D0E78;
+            if (VirtualProtect(tbl, 0x400, PAGE_READWRITE, &prot)) {
+                tbl[18] = (DWORD)UniversalToobScene;
+                VirtualProtect(tbl, 0x400, prot, &prot);
             }
             s_toobSceneVtblInit = 1;
         }
-        if (s_toobSceneVtbl[18] == (DWORD)UniversalToobScene)
-            *(DWORD *)mem = (DWORD)s_toobSceneVtbl;
     } else if (g_loadingContentId == 11) {
         DebugLog("Calling UniversalWobblyInit...");
         UniversalWobblyInit(mem, app);
