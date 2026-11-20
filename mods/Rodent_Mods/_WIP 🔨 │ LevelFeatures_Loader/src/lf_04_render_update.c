@@ -306,6 +306,24 @@ void UniversalRenderImpl(void *board, int unk) {
                 if (fAD0 && fC60) {
                     int k; for (k = 0; k < 72; k++) bufA[k] = 0;
                     for (k = 0; k < 12; k++) dummy12[k] = 0;
+                    /* EXPERIMENT 2026-11-20: native v[2] gets ECX = stale
+                     * stack (contents unknown); feed it the live ball xyz
+                     * in case the reflection is computed ball-relative. */
+                    {
+                        DWORD bl = *(DWORD *)((char *)board + 0x29D4);
+                        if (bl && !IsBadReadPtr((void *)bl, 0x410)) {
+                            DWORD cnt = *(DWORD *)(bl + 4);
+                            DWORD items = *(DWORD *)(bl + 0x40C);
+                            if (cnt > 0 && items && !IsBadReadPtr((void *)items, 4)) {
+                                DWORD ball0 = *(DWORD *)items;
+                                if (ball0 && !IsBadReadPtr((void *)ball0, 0x170)) {
+                                    *(float *)(dummy12 + 0) = *(float *)(ball0 + 0x164);
+                                    *(float *)(dummy12 + 4) = *(float *)(ball0 + 0x168);
+                                    *(float *)(dummy12 + 8) = *(float *)(ball0 + 0x16C);
+                                }
+                            }
+                        }
+                    }
                     fAD0(bufA);
                     fC60(bufA + 4, pr);
                     prodObj = (DWORD)(bufA + 4);
