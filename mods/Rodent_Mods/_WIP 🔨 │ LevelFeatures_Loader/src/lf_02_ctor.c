@@ -484,9 +484,16 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         } else g_loadingContentId = 0;
         *(int *)((char *)ext + UNI_CONTENT_FILE) = g_loadingContentId;
         { char cd[160]; wsprintfA(cd, "ContentId=%d path='%s' mem=0x%08X slot=%d", g_loadingContentId, rsl, (DWORD)mem, raceIndex); DebugLog(cd); }
-        /* Native-ctor fast path flag: our create/collide/racestate handlers
-         * delegate to native orig for these boards (replication skipped). */
+        /* Native-ctor fast path flag: native-built boards exist (objects/slots).
+         * Handler delegation is separate: content-10 runs UNIVERSAL handlers
+         * on its native build (universal Toob) — bumper objects come from the
+         * native ctor, glow/decay/render from the universal blocks. */
         *(int *)((char *)ext + UNI_NATIVE_CTOR) = useNativeCtor ? 1 : 0;
+        *(int *)((char *)ext + UNI_NATIVE_HANDLERS) = useNativeCtor ? 1 : 0;
+        if (g_loadingContentId == 10 && useNativeCtor) {
+            *(int *)((char *)ext + UNI_NATIVE_HANDLERS) = 0;
+            DebugLog("UNI_NATIVE_HANDLERS=0 (universal Toob: native build, universal handlers)");
+        }
         if (useNativeCtor) DebugLog("UNI_NATIVE_CTOR=1 (native-built board)");
     }
 

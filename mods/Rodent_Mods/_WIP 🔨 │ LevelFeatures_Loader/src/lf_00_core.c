@@ -1036,7 +1036,8 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_NEON_HAS_NATIVE  0xBA04  /* byte: cached S3 scan — 1 = file has its own light(s) */
 /* Next free: 0xBA08, tail to 0xC000 remaining */
 #define UNI_CONTENT_FILE  0xBA08  /* dword: stock-file content id 1..15 (0=custom/unknown), from level filename — NEVER slot */
-#define UNI_NATIVE_CTOR   0xBA0C  /* dword: 1 = board built by NATIVE level ctor (fast path); our create/collide/racestate delegate to native orig */
+#define UNI_NATIVE_CTOR   0xBA0C  /* dword: 1 = board built by NATIVE level ctor (fast path: native objects/slots exist). Handler delegation is UNI_NATIVE_HANDLERS below. */
+#define UNI_NATIVE_HANDLERS 0xBA2C /* dword: 1 = create/collide/racestate/update/render delegate to native orig; 0 = universal handlers. Follows CTOR except content-10 (universal Toob: native build, universal handlers). */
 /* proximity branch driver (native boards bypass dispatcher touches): */
 #define OFF_BRANCH_QUAD_VALID 0xBA10  /* dword: 1 = E:BRANCH(B) trigger quad parsed */
 #define OFF_BRANCH_QUAD_MIN   0xBA14  /* 3 floats: trigger AABB min */

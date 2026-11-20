@@ -28,7 +28,7 @@ void UniversalRenderImpl(void *board, int unk) {
      * HeapAlloc ret). Skip additive extras — native scene is complete.
      * Origs by CONTENT (g_origRender[15] is NULL — 15 uses 1-param render
      * and is never patched; cross-slot 15 falls back to base render). */
-    if (ext && *(int *)((char *)ext + UNI_NATIVE_CTOR)) {
+    if (ext && *(int *)((char *)ext + UNI_NATIVE_HANDLERS)) {
         int cslot = ContentFileId(ext);
         int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
         if (effSlot >= 1 && effSlot <= 15 && g_origRender[effSlot]) {
@@ -63,8 +63,11 @@ void UniversalRenderImpl(void *board, int unk) {
      * level as long as the required objects/events are present. */
     DWORD features = 0;
 
-    /* REND_BUMPER: active when N:BUMPER collision event is enabled for this level */
-    if ((*(BYTE*)((char*)ext + COLL_FLAG_BUMPER)))
+    /* REND_BUMPER: active when N:BUMPER collision event is enabled for this level.
+     * Universal Toob (native-built content-10) has no bumper S1s — its slots
+     * are native-built — so the render runs on native-built content-10 too. */
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_BUMPER)) ||
+        (ContentFileId(ext) == 10 && *(int *)((char *)ext + UNI_NATIVE_CTOR)))
         features |= REND_BUMPER;
 
     /* REND_WINDMILL/CHOMPER/TURRET: each tower segment gated on its own S1 / render pointer.
@@ -109,6 +112,12 @@ void UniversalRenderImpl(void *board, int unk) {
          ContentFileId(ext) == 14)) {
         int bumperCount = (level == 14 || ContentFileId(ext) == 14) ? 4 : 8;
         float *litPtr = (float *)((char *)ext + UNI_BUMPER_LIT);
+        /* Universal Toob: stock Toob has no bumper meshes, so the postscan
+         * collect finds nothing — but the bumper slot structs ARE native-built
+         * at board+0x438C (0x418 stride, same structs the native render passes
+         * to vtbl[0x14]). Render those instead of the empty ext slots. */
+        int useNativeSlots = (ContentFileId(ext) == 10 && *(int *)((char *)ext + UNI_NATIVE_CTOR) &&
+            BoardHasOffset(board, 0x438C + 7 * 0x418 + 0x410, 4));
         int i;
         for (i = 0; i < bumperCount; i++) {
             if (litPtr[i] != 0.0f) {
@@ -116,10 +125,14 @@ void UniversalRenderImpl(void *board, int unk) {
                  * AthenaLists (count + readable items). Skip anything
                  * else rather than rendering a hollow/garbage slot. */
                 char *slotPtr = (char *)ext + UNI_EHVECTOR + i * 0x418;
-                if (IsBadReadPtr(slotPtr, 0x410)) continue;
-                if (*(int *)(slotPtr + 0x04) <= 0) continue;
-                { DWORD itArr = *(DWORD *)(slotPtr + 0x40C);
-                  if (!itArr || IsBadReadPtr((void *)itArr, 4)) continue; }
+                if (useNativeSlots) {
+                    slotPtr = (char *)board + 0x438C + i * 0x418;
+                } else {
+                    if (IsBadReadPtr(slotPtr, 0x410)) continue;
+                    if (*(int *)(slotPtr + 0x04) <= 0) continue;
+                    { DWORD itArr = *(DWORD *)(slotPtr + 0x40C);
+                      if (!itArr || IsBadReadPtr((void *)itArr, 4)) continue; }
+                }
                 /* Native ctx is 0x4E bytes (Init writes vtable+17 dwords+
                  * 2 bytes); 64-byte buffer smashed the stack. */
                 char renderCtx[0x60];
@@ -486,7 +499,7 @@ void __fastcall UniversalBoardUpdate(void *board) {
      * below (proximity + features) still run — ext-driven, S1-based. */
     {
         void *uext = GetBoardExt(board);
-        if (uext && *(int *)((char *)uext + UNI_NATIVE_CTOR)) {
+        if (uext && *(int *)((char *)uext + UNI_NATIVE_HANDLERS)) {
             int cslot = ContentFileId(uext);
             int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : GetCurrentLevel(board);
             BoardUpdate_t origU = NULL;
@@ -494,6 +507,30 @@ void __fastcall UniversalBoardUpdate(void *board) {
             if (origU) origU(board);
             else g_SceneUpdate(board);
             goto board_additive;
+        }
+    }
+    /* Universal Toob (native-built): replicate the native update orig's
+     * per-object anims (0x41F750: update(1) on non-NULL board+0x4370/74/78/7C,
+     * NULL-guarded exactly like native). Runs BEFORE the shared base update
+     * (native order: objects, then Scene_Update). The orig's per-frame bumper
+     * slot rebuild is skipped on purpose — slots stay ctor-built and lit is
+     * ext-driven now, so there is nothing to rebuild. */
+    {
+        void *uext2 = GetBoardExt(board);
+        if (uext2 && ContentFileId(uext2) == 10 && *(int *)((char *)uext2 + UNI_NATIVE_CTOR) &&
+            BoardHasOffset(board, 0x4370 + 3 * 4 + 4, 4)) {
+            int oi;
+            typedef void (__thiscall *ObjUpdate1_t)(void *o, int a);
+            for (oi = 0; oi < 4; oi++) {
+                void *o = *(void **)((char *)board + 0x4370 + oi * 4);
+                if (o && !IsBadReadPtr(o, 4)) {
+                    DWORD vt = *(DWORD *)o;
+                    if (vt && !IsBadReadPtr((void *)vt, 4)) {
+                        ObjUpdate1_t fn = *(ObjUpdate1_t *)vt; /* vtable[0], thiscall (obj, 1) */
+                        if (fn) fn(o, 1);
+                    }
+                }
+            }
         }
     }
     g_SceneUpdate(board);
@@ -755,7 +792,7 @@ void __fastcall UniversalRaceState(void *board) {
      * (racestate_features) still run — ext-driven, S1-based. */
     {
         void *rsext = GetBoardExt(board);
-        if (rsext && *(int *)((char *)rsext + UNI_NATIVE_CTOR)) {
+        if (rsext && *(int *)((char *)rsext + UNI_NATIVE_HANDLERS)) {
             int cslot = ContentFileId(rsext);
             int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
             if (effSlot >= 1 && effSlot <= 15 && g_origRaceState[effSlot]) {

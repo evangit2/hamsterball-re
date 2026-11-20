@@ -316,7 +316,7 @@ static void Feature_TipperVisual(void *board, int level) {
      * byte above is the real liveness gate. */
     void* ext = GetBoardExt(board);
     if (!ext) return;
-    if (*(int *)((char *)ext + UNI_NATIVE_CTOR)) return;
+    if (*(int *)((char *)ext + UNI_NATIVE_HANDLERS)) return;
     if (!g_AthenaListGetSize) return;
     int ni = g_AthenaListGetSize((void *)((char *)board + UNI_OBJ_LIST));
     if (ni <= 0) return;
