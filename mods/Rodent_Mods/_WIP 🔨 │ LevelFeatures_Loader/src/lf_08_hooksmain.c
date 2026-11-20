@@ -177,6 +177,55 @@ static void UniversalConstructor(void *board, int raceIndex) {
             DebugLog("Calling Board_Setup (vtable+0x80)...");
             boardSetup(board);
             DebugLog("Board_Setup done");
+            /* TEMP DIAG Toob universal move (remove once slots replicated):
+             * dump the 8 native bumper slot structs + lit + render hook
+             * state to the game folder. One load of Toob answers what the
+             * native ctor actually built. All hex (wsprintfA has no float). */
+            if (ext && *(int *)((char *)ext + UNI_NATIVE_CTOR) && ContentFileId(ext) == 10) {
+                char dexe[MAX_PATH], dfp[300];
+                DWORD delen = 0, di = 0;
+                const char *dnm;
+                int dk;
+                HANDLE dhf;
+                GetModuleFileNameA(NULL, dexe, MAX_PATH);
+                dexe[MAX_PATH-1] = 0;
+                delen = 0; while (dexe[delen]) delen++;
+                while (delen > 0 && dexe[delen-1] != 92 && dexe[delen-1] != 47) delen--;
+                if (delen && delen < sizeof(dfp) - 24) {
+                    for (di = 0; di < delen; di++) dfp[di] = dexe[di];
+                    dnm = "lfl_toob_slots.txt"; dk = 0;
+                    while (dnm[dk] && di < sizeof(dfp) - 1) dfp[di++] = dnm[dk++];
+                    dfp[di] = 0;
+                    dhf = CreateFileA(dfp, GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS,
+                                     FILE_ATTRIBUTE_NORMAL, NULL);
+                    if (dhf != INVALID_HANDLE_VALUE) {
+                        char dline[2048];
+                        int dp = 0, si;
+                        DWORD vt = *(DWORD *)board;
+                        DWORD rs24 = (vt && !IsBadReadPtr((void *)vt, 0x64)) ? *(DWORD *)(vt + 0x60) : 0;
+                        dp += wsprintfA(dline + dp, "render24=%08X origRender10=%08X ",
+                                        rs24, (DWORD)g_origRender[10]);
+                        for (si = 0; si < 8 && dp < 1500; si++) {
+                            DWORD *sl = (DWORD *)((char *)board + 0x438C + si * 0x418);
+                            float lf = 0.0f;
+                            if (!IsBadReadPtr((void *)((char *)board + 0x644C + si * 4), 4))
+                                lf = *(float *)((char *)board + 0x644C + si * 4);
+                            if (IsBadReadPtr((void *)sl, 0x20)) {
+                                dp += wsprintfA(dline + dp, "[%d]BAD ", si);
+                            } else {
+                                dp += wsprintfA(dline + dp, "[%d]%08X %08X %08X %08X %08X %08X %08X %08X lit=%08X ",
+                                    si, sl[0], sl[1], sl[2], sl[3], sl[4], sl[5], sl[6], sl[7],
+                                    *(DWORD *)&lf);
+                            }
+                        }
+                        if (dp > 0) {
+                            DWORD bw2 = 0;
+                            WriteFile(dhf, dline, dp, &bw2, NULL);
+                        }
+                        CloseHandle(dhf);
+                    }
+                }
+            }
         }
     }
 
