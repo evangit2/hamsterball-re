@@ -1321,14 +1321,6 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
      * +0x4380/7C ch +0x4378 for TB2); ext copies kept for render. */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_TENBONUS1)) && my_strnicmp(name, "N:TENBONUS1", 11) == 0) {
         int phys = ball[0x69];
-        /* TEMP DIAG 2026-11-20: wrong-sound report. */
-        {
-            char dl[128];
-            DWORD c1 = app ? *(DWORD *)(app + 0x52C) : 0;
-            DWORD c2 = app ? *(DWORD *)(app + 0x4D0) : 0;
-            wsprintfA(dl, "TENB1 snd ch52C=0x%08X ch4D0=0x%08X", c1, c2);
-            ToobDiag(dl);
-        }
         if (phys && !IsBadReadPtr((void *)phys, 0xCB0) &&
             BoardHasOffset(board, 0x436C, 16)) {
             if (*(char *)((char *)board + 0x438C) == 0) {
@@ -1364,7 +1356,10 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
                 *(BYTE *)((char *)board + 0x438D) = 1;
                 *(BYTE *)((char *)ext + REND_GLASS_FLAG2) = 1;
                 if (g_SoundPlay3D && app) {
-                    DWORD snd = *(DWORD *)(app + 0x4D0);
+                    /* Both panes play the GlassBonus smash (0x52C). Native
+                     * TB2 uses 0x4D0 (whose head is "ting"), but the smash
+                     * effect is the GlassBonus crash — user-confirmed. */
+                    DWORD snd = *(DWORD *)(app + 0x52C);
                     if (snd) g_SoundPlay3D((void *)snd, *(float *)((char *)board + 0x4378), *(float *)((char *)board + 0x437C), *(float *)((char *)board + 0x4380), 1.0f);
                 }
                 if (app) {
