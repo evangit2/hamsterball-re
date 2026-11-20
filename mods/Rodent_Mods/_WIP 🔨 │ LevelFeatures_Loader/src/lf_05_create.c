@@ -128,6 +128,13 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
      * S1Inventory, never slot-gated. */
     int nativeOwned = *(int *)((char *)ext + UNI_NATIVE_CTOR) &&
         skind != K_TIPPER && skind != K_BRIDGE && skind != K_BBRIDGE;
+    /* Glass render-gap bisect (2026-11-20): universal board, NATIVE S1
+     * objects. If Draw stops crashing, a mirror is the gap; if it still
+     * crashes, the gap is board-level. */
+    if (level == 12 && !nativeOwned && g_origCreate[12]) {
+        g_origCreate[12](board, name, out1, out2, s1data);
+        return;
+    }
     if (nativeOwned) {
         int cslot = ContentFileId(ext);
         int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
