@@ -601,7 +601,9 @@ static void ScanFileForCollisions(void *board, void *ext, const char *filePath) 
 static void ParseBranchQuad(void *board, void *ext, void *meshWorld, const char *meshPath) {
     *(DWORD *)((char *)ext + OFF_BRANCH_QUAD_VALID) = 0;
     if (!board || !ext || !meshWorld || !meshPath || !meshPath[0]) return;
-    if (!(*(BYTE *)((char *)ext + COLL_FLAG_BRANCH))) return;
+    /* No S1 gate: stock Toob carries E:BRANCH(B) as S6 geometry with no S1,
+     * so an S1-derived flag would stay 0 forever. S6 presence IS the feature
+     * presence — set COLL_FLAG_BRANCH when the record is found below. */
     /* resolve S5 vertex array: meshWorld+0x480 (objDb) -> +0x440 (verts) */
     DWORD objDb = *(DWORD *)((char *)meshWorld + 0x480);
     if (!objDb || IsBadReadPtr((void *)objDb, 0x444)) return;
@@ -680,6 +682,7 @@ static void ParseBranchQuad(void *board, void *ext, void *meshWorld, const char 
             dmin[0]=mn[0]; dmin[1]=mn[1]; dmin[2]=mn[2];
             dmax[0]=mx[0]; dmax[1]=mx[1]; dmax[2]=mx[2];
             *(DWORD *)((char *)ext + OFF_BRANCH_QUAD_VALID) = 1;
+            *(BYTE *)((char *)ext + COLL_FLAG_BRANCH) = 1;
             found = 1;
             { char lg[160]; wsprintfA(lg, "BRANCHQUAD min=(%d,%d,%d) max=(%d,%d,%d)",
                 (int)mn[0], (int)mn[1], (int)mn[2], (int)mx[0], (int)mx[1], (int)mx[2]); ToobDiag(lg); }
