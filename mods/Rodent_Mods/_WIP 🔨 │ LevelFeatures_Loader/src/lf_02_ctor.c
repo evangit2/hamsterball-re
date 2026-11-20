@@ -477,15 +477,17 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     typedef void (__thiscall *NativeLevelCtor_t)(void *mem, int app);
     NativeLevelCtor_t nativeCtor = NULL;
     /* Content-driven (any slot): native-ctor fast path for custom-scene
-     * contents (13/15). Contents 10/11/12 build via the universal path
-     * (2026-11-20: no native builder for any race that has one —
-     * Universal*Init + S1 mirrors own them). Shared-scene contents (1-9,
+     * contents (12/13/15). Contents 10/11 build via the universal path
+     * (2026-11-20: no native builder — Universal*Init + S1 mirrors own
+     * them). Glass is back on native until its universal render gap
+     * (NULL+0x154 at 0x46F160, triage-era) is mapped. Shared-scene contents (1-9,
      * incl. Tower) keep the hand-replicated Universal*Init path. (Tower
      * was trialed on the fast path 2026-10-24: native ctor + scene
      * rebuild hangs/crashes on this rig in every config — needs
      * dispatch-tail RE; vanilla loads it fine so this is mod-side,
      * rig-visible.) */
-    if (g_loadingContentId == 13) nativeCtor = (NativeLevelCtor_t)0x41F930;
+    if (g_loadingContentId == 12) nativeCtor = (NativeLevelCtor_t)0x424A90;
+    else if (g_loadingContentId == 13) nativeCtor = (NativeLevelCtor_t)0x41F930;
     /* Content 14 (Master) deliberately NOT on the fast path (2026-11-18):
      * Master builds via the universal path (g_BoardCtor + S1 mirrors) like
      * the shared-scene races, so no Master-specific native board code runs
