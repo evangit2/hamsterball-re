@@ -467,6 +467,10 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
      * 0, so create/collide/racestate/render never delegate to native origs. */
     else if (g_loadingContentId == 15) nativeCtor = (NativeLevelCtor_t)0x424C20;
     int useNativeCtor = (nativeCtor != NULL);
+    if (g_loadingContentId >= 10) {
+        char cd2[128]; wsprintfA(cd2, "CTORDECISION content=%d nativeCtor=0x%08X use=%d",
+            g_loadingContentId, (DWORD)nativeCtor, useNativeCtor); ToobDiag(cd2);
+    }
     if (useNativeCtor) {
         DebugLog("NativeCtor fast path: calling native level ctor...");
         nativeCtor(mem, app);

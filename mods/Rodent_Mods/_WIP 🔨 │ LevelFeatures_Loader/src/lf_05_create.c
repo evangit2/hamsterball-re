@@ -115,6 +115,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     /* Single classification per S1: all downstream routing uses KIND
      * (delegate bypass, mirrors), never raw name compares. */
     int skind = S1KindFor(name);
+    if (my_stricmp(name, "SAW") == 0 || my_stricmp(name, "SAW2") == 0) {
+        char md[128]; wsprintfA(md, "SAWSEE name=%s level=%d", name, level); ToobDiag(md);
+    }
 
     /* Native-ctor fast path: native-built boards get NATIVE objects via the
      * saved orig create (our replicating handler misses engine fields).
