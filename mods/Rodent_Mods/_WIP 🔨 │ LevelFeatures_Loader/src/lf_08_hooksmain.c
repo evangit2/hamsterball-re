@@ -203,27 +203,53 @@ static void UniversalConstructor(void *board, int raceIndex) {
                     for (si = 0; si < 2; si++) {
                         int so = saws[si];
                         int li;
+                        float sx = 0, sy = 0, sz = 0;
                         if (!so || IsBadReadPtr((void *)so, 0x1110)) continue;
+                        if (!IsBadReadPtr((void *)(so + 0x10D4), 12)) {
+                            sx = *(float *)(so + 0x10D4);
+                            sy = *(float *)(so + 0x10D8);
+                            sz = *(float *)(so + 0x10DC);
+                        }
+                        { char pdbg[160]; wsprintfA(pdbg, "SAWPOS idx=%d obj=0x%08X pos=(%d,%d,%d)",
+                            si, so, (int)sx, (int)sy, (int)sz); ToobDiag(pdbg); }
                         for (li = 0; li < 2; li++) {
                             void *lst = NULL;
+                            int preskip = 0;
                             if (li == 0) {
-                                if (!BoardHasOffset(board, 0x10EC + 0x410, 4)) continue;
-                                lst = (void *)((char *)board + 0x10EC);
+                                if (!BoardHasOffset(board, 0x10EC + 0x410, 4)) preskip = 4;
+                                else lst = (void *)((char *)board + 0x10EC);
                             } else {
                                 int b8 = 0;
-                                if (!BoardHasOffset(board, 0x8B0 + 4, 4)) continue;
-                                b8 = *(int *)((char *)board + 0x8B0);
-                                if (!b8 || IsBadReadPtr((void *)b8, 0x1C)) continue;
-                                lst = (void *)(b8 + 0x18);
-                                if (IsBadReadPtr(lst, 0x410)) continue;
+                                if (!BoardHasOffset(board, 0x8B0 + 4, 4)) preskip = 5;
+                                else {
+                                    b8 = *(int *)((char *)board + 0x8B0);
+                                    if (!b8 || IsBadReadPtr((void *)b8, 0x1C)) preskip = 6;
+                                    else {
+                                        lst = (void *)(b8 + 0x18);
+                                        if (IsBadReadPtr(lst, 0x410)) preskip = 7;
+                                    }
+                                }
                             }
                             {
-                                int cnt = *(int *)((char *)lst + 4);
-                                int *items = *(int **)((char *)lst + 0x40C);
+                                int cnt = -1;
+                                int *items = NULL;
                                 int found = 0, ii;
-                                if (cnt < 0 || cnt > 512 || !items || IsBadReadPtr((void *)items, (unsigned)cnt * 4)) continue;
-                                for (ii = 0; ii < cnt; ii++) if (items[ii] == so) { found = 1; break; }
-                                if (!found && g_AthenaListAppend) g_AthenaListAppend(lst, so);
+                                int skipped = preskip;
+                                if (!skipped && lst) {
+                                    if (IsBadReadPtr(lst, 0x410)) skipped = 1;
+                                    else {
+                                        cnt = *(int *)((char *)lst + 4);
+                                        items = *(int **)((char *)lst + 0x40C);
+                                        if (cnt < 0 || cnt > 512 || !items ||
+                                            IsBadReadPtr((void *)items, (unsigned)cnt * 4)) skipped = 2;
+                                    }
+                                } else skipped = 3;
+                                if (!skipped) {
+                                    for (ii = 0; ii < cnt; ii++) if (items[ii] == so) { found = 1; break; }
+                                    if (!found && g_AthenaListAppend) g_AthenaListAppend(lst, so);
+                                }
+                                { char ldbg[160]; wsprintfA(ldbg, "SAWREG idx=%d list=%d cnt=%d found=%d appended=%d skipped=%d",
+                                    si, li, cnt, found, (!skipped && !found) ? 1 : 0, skipped); ToobDiag(ldbg); }
                             }
                         }
                     }
