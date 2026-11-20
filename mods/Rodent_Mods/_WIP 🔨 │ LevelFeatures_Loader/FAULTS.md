@@ -173,3 +173,11 @@ mark them FIXED with the version instead.
 - Fix: fixup in UniversalDispatchCollision for content-10 - bumper touches
   identified by buffer address (0x438C range), exact native lit set.
 - Shipped 2026-11-20 (bass.dll + zip refreshed) - awaiting user retest.
+
+## 2026-11-20 - Toob flipped to universal handlers (native build kept)
+- Split UNI_NATIVE_CTOR (native-built) from new UNI_NATIVE_HANDLERS
+  (delegate to native origs); content-10 runs universal handlers on its
+  native build. Bumper lit is address-identified in the universal collide
+  path (ext + native lit), decay/replica render wired for native-built
+  content-10, native update's 4 object anims replicated, slot rebuild
+  skipped by design. Awaiting user retest (flash + regressions).
