@@ -121,6 +121,8 @@ static void UniversalConstructor(void *board, int raceIndex) {
         if (ext) ParseBranchQuad(board, ext, meshWorld, meshPath);
         /* E:ALERTSAW3 presence (S6-driven pipe-saw flag, no S1 needed) */
         if (ext) ParseAlertSaw3Presence(board, ext, meshPath);
+        /* Glass triggers (S6-driven N:GLASS + N:TENBONUS1/2, no S1s) */
+        if (ext) ParseGlassPresence(board, ext, meshPath);
         /* Master hammer triggers (E:CALLHAMMER/E:HAMMERCHASE) for the proximity driver */
         if (ext) ParseHammerQuads(board, ext, meshWorld, meshPath);
         /* ParseGravityZones is DORMANT (v13.34): the E:GRAVITY touch path
