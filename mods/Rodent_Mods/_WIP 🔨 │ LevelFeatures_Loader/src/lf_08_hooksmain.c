@@ -212,12 +212,18 @@ static void UniversalConstructor(void *board, int raceIndex) {
                         }
                         { char pdbg[160]; wsprintfA(pdbg, "SAWPOS idx=%d obj=0x%08X pos=(%d,%d,%d)",
                             si, so, (int)sx, (int)sy, (int)sz); ToobDiag(pdbg); }
-                        for (li = 0; li < 2; li++) {
+                        for (li = 0; li < 3; li++) {
                             void *lst = NULL;
                             int preskip = 0;
                             if (li == 0) {
                                 if (!BoardHasOffset(board, 0x10EC + 0x410, 4)) preskip = 4;
                                 else lst = (void *)((char *)board + 0x10EC);
+                            } else if (li == 2) {
+                                /* 0x2578: the v[11] update pump (0x41B130, runs in
+                                 * base RS). Setup-built saws are never appended
+                                 * here on the fast path (native scene did it). */
+                                if (!BoardHasOffset(board, 0x2578 + 0x410, 4)) preskip = 8;
+                                else lst = (void *)((char *)board + 0x2578);
                             } else {
                                 int b8 = 0;
                                 if (!BoardHasOffset(board, 0x8B0 + 4, 4)) preskip = 5;
