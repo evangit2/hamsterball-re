@@ -380,6 +380,27 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     if (*(int *)((char *)ext + UNI_NATIVE_CTOR)) {
         int cslot = ContentFileId(ext);
         int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
+        /* Toob bumper-name fixup: the native Toob scene (0x40FA20) links
+         * "N:BUMPER%d" names to its 8 bumper slot structs (board+0x438C,
+         * 0x418 stride) via 0x4602F0, then zeroes lit (board+0x644C). The
+         * fast path skips that scene, so touches arrive with a garbage
+         * +0x864 name: native 0x410020 skips its lit write (bounce still
+         * arrives via the global handler it falls through to). Identify
+         * bumper touches by buffer address and set the exact native lit
+         * the Toob render (0x410670) reads. Idempotent (re-setting 1.0
+         * after a named hit changes nothing) and side-effect-free
+         * (0x644C is only read by the Toob reflective render). */
+        if (cslot == 10) {
+            DWORD mbuf = ((DWORD *)collPair)[1];
+            DWORD bsl = (DWORD)board + 0x438C;
+            if (mbuf >= bsl && mbuf < bsl + 8 * 0x418 &&
+                BoardHasOffset(board, 0x438C + 7 * 0x418 + 0x410, 4) &&
+                BoardHasOffset(board, 0x644C + 7 * 4, 4)) {
+                int bidx = (int)((mbuf - bsl) / 0x418);
+                if (bidx >= 0 && bidx < 8)
+                    *(float *)((char *)board + 0x644C + bidx * 4) = 1.0f;
+            }
+        }
         if (effSlot >= 1 && effSlot <= 15 && g_origDispatch[effSlot]) {
 
             typedef void (__thiscall *NativeCollide_t)(void *, int *, int *);

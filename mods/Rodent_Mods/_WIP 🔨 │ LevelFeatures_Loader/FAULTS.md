@@ -162,3 +162,14 @@ mark them FIXED with the version instead.
   Fix: Neon_BallGlow now writes all three sets, native-identical. (Kept: hamster still green, ball+ring yellow - quads exonerated by user description.)
 - ROOT CAUSE #2, 2026-11-19 via objdump: Neon_PatchSpriteColor (v13.37 8-ball fix) wrote (r,g,b) in push order, but 0x453150 fills the ball struct REVERSED: last push 0x4011D5 -> +0x7B0, first 0x4011C9 -> +0x7B8. Mesh reads +0x7B0 as RED. Yellow (b=0) zeroed +0x7B0 = green hamster; ball shell+ring (quads) stayed yellow. Ball_Render calls 0x4011C0 unconditionally (0x4044EB), so the mesh path was always hit. Fix: write C9=b, D0=g, D5=r. USER-CONFIRMED WORKING 2026-11-19 (hamster yellow, diag code removed same day).
   2026-11-19 (bass.dll + zip refreshed) - needs Windows eye-confirm.
+## 2026-11-20 - Toob bumpers bounce but never flash white (user report)
+- File-driven: Beginner file glows in any slot, Toob file dark in any slot.
+- Root cause (objdump): native Toob render (0x410670) reads bumper slots at
+  board+0x438C (0x418 stride) + lit at board+0x644C, both native-filled. LFL
+  replica reads ext slots (empty: stock Toob has no bumper S1s) + ext lit
+  (never set: native-ctor delegates to native 0x410020 first). The native
+  scene 0x40FA20 that links N:BUMPER names never runs on the fast path,
+  so native 0x410020 skips its own lit write (bounce via global fallthrough).
+- Fix: fixup in UniversalDispatchCollision for content-10 - bumper touches
+  identified by buffer address (0x438C range), exact native lit set.
+- Shipped 2026-11-20 (bass.dll + zip refreshed) - awaiting user retest.
