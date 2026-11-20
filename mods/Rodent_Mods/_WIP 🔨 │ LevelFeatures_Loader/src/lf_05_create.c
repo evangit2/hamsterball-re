@@ -1074,6 +1074,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     }
 
     /* ── SAW (Toob) ── */
+    if (my_stricmp(name, "SAW") == 0 || my_stricmp(name, "SAW2") == 0) {
+        char md[128]; wsprintfA(md, "SAWSEE name=%s diff=%d owned=%d", name, difficulty, nativeOwned); ToobDiag(md);
+    }
     if (my_stricmp(name, "SAW") == 0 && difficulty != 0) {
         int pathObj = meshWorld ? g_LevelFindObjectByName(meshWorld, "SAWPATH") : 0;
         S1EnsureMeshWorld(board, ext, UNI_SAW_MESH, "Levels\\Level8-Saw");
