@@ -1183,15 +1183,14 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             if (!sawObj) sawObj = *(int *)((char *)ext + UNI_SAW_TOOB_OBJ);
             if (sawObj) *(BYTE *)(sawObj + 0x110C) = 1;
         }
-        /* (B)-only teleport (the (A) touch arms the saw above; native
-         * (A) also teleports but LFL keeps arm-only to avoid double
-         * behavior changes on replicated boards). Shared driver with the
-         * proximity path; no-op when C3C already armed. */
+        /* Native teleports on BOTH (A) and (B) touches (0x410020: the suffix
+         * compare only selects the (A) saw-arm above; both suffixes fall
+         * into the shared POS/VECTOR teleport, keyed by the touched name).
+         * Shared driver with the proximity path; no-op when C3C armed. */
         if (*(BYTE *)((char *)ball + 0xC3C) == 0) {
             char *branchName = name + 2; /* skip "E:" prefix */
             int isBranchB = (my_stricmp(name + 8, "(B)") == 0);
-            if (isBranchB)
-                FireBranchTeleport(board, ball, branchName, 1);
+            FireBranchTeleport(board, ball, branchName, isBranchB);
         }
     }
 
