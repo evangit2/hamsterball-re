@@ -272,7 +272,6 @@ void UniversalRenderImpl(void *board, int unk) {
             }
         }
 
-        char timerBuf[68];
         /* Render-gap fix (2026-11-20): native timer sequence replica. The
          * block's old Timer Scale/Position API corrupted Draw state; native
          * 0x417C00 uses 0x457AD0/0x457C60 + product-pos + device-select.
@@ -318,76 +317,6 @@ void UniversalRenderImpl(void *board, int unk) {
                 (void)prod;
             }
         }
-#if 0
-        if (g_TimerInit && g_TimerCleanup) {
-            g_TimerInit(timerBuf);
-
-            /* Smasher 1: scale the FRESH timer matrix (native pattern: Scale/
-             * Position always target a per-frame buffer, never the persistent
-             * gfx object — scaling gfx accumulates across frames). */
-            float transp1 = *(float *)((char *)ext + REND_GLASS_TRANSP1);
-            if (g_GfxScaleX) g_GfxScaleX(timerBuf, transp1);
-            DWORD *timerVtbl = *(DWORD **)timerBuf;
-            if (timerVtbl) {
-                void (__thiscall *fn8)(DWORD, float, float, float) = (void (__thiscall *)(DWORD, float, float, float))timerVtbl[2];
-                if (fn8) {
-                    fn8((DWORD)timerBuf,
-                        *(float *)((char *)ext + REND_GLASS_S1_X),
-                        *(float *)((char *)ext + REND_GLASS_S1_Y),
-                        *(float *)((char *)ext + REND_GLASS_S1_Z));
-                }
-            }
-
-            /* Select render device based on flag */
-            BYTE flag1 = *(BYTE *)((char *)ext + REND_GLASS_FLAG1);
-            DWORD renderDev;
-            if (flag1 == 0) {
-                renderDev = *(DWORD *)(app + 0x584);
-            } else {
-                renderDev = *(DWORD *)(app + 0x588);
-            }
-            if (renderDev && !IsBadReadPtr((void *)renderDev, 0x1C)) {
-                DWORD *vtbl = *(DWORD **)renderDev;
-                if (vtbl) {
-                    void (__thiscall *fn1C)(DWORD) = (void (__thiscall *)(DWORD))vtbl[7];
-                    if (fn1C) fn1C(renderDev);
-                }
-            }
-
-            /* Smasher 2: same fresh-buffer pattern (never scale persistent gfx). */
-            char timerBuf2[68];
-            g_TimerInit(timerBuf2);
-            float transp2 = *(float *)((char *)ext + REND_GLASS_TRANSP2);
-            if (g_GfxScaleX) g_GfxScaleX(timerBuf2, transp2);
-            DWORD *timerVtbl2 = *(DWORD **)timerBuf2;
-            if (timerVtbl2) {
-                void (__thiscall *fn8)(DWORD, float, float, float) = (void (__thiscall *)(DWORD, float, float, float))timerVtbl2[2];
-                if (fn8) {
-                    fn8((DWORD)timerBuf2,
-                        *(float *)((char *)ext + REND_GLASS_S2_X),
-                        *(float *)((char *)ext + REND_GLASS_S2_Y),
-                        *(float *)((char *)ext + REND_GLASS_S2_Z));
-                }
-            }
-
-            BYTE flag2 = *(BYTE *)((char *)ext + REND_GLASS_FLAG2);
-            if (flag2 == 0) {
-                renderDev = *(DWORD *)(app + 0x584);
-            } else {
-                renderDev = *(DWORD *)(app + 0x588);
-            }
-            if (renderDev && !IsBadReadPtr((void *)renderDev, 0x1C)) {
-                DWORD *vtbl = *(DWORD **)renderDev;
-                if (vtbl) {
-                    void (__thiscall *fn1C)(DWORD) = (void (__thiscall *)(DWORD))vtbl[7];
-                    if (fn1C) fn1C(renderDev);
-                }
-            }
-
-            g_TimerCleanup(timerBuf2);
-            g_TimerCleanup(timerBuf);
-        }
-#endif
     }
 
     sky_render:
