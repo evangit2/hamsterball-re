@@ -1416,11 +1416,9 @@ static void Feature_SkyPopcylinder(void *board, int level) {
     if (!g_RNG || !g_SceneSetRaceActive) return;
     void* ext = GetBoardExt(board);
     if (!ext) return;
-    /* Content-13 stand-down: native Sky builds popcylinders/magnifier into
-     * native slots, and native RaceState (always called for 13) drives
-     * them. LFL builds nothing for Sky (custom S1 loop bypasses LFL
-     * builders), so driving empty ext slots here only double-runs RNG. */
-    if (ContentFileId(ext) == 13) return;
+    /* 2026-11-20: Sky runs the universal path (UniversalSkyInit + S1
+     * mirrors), so this replica drives the ext popcylinder bank +
+     * magnifier. Native 0x41FC90 no longer runs for Sky. */
 
     DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
     if (!app || IsBadReadPtr((void *)app, 0x600)) return;

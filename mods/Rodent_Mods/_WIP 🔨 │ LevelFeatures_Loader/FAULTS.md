@@ -187,3 +187,15 @@ mark them FIXED with the version instead.
   set from S6 find. (A) is teleport+arm like native (was arm-only);
   suffix only selects saw-arm, both fall into shared POS/VECTOR teleport.
   Log confirms: (A) touch -> BRANCH count=2 dest + C3C=1, (B) fires too.
+
+## 2026-11-20 - Sky flipped to universal board constructor
+- UniversalSkyInit replicates native 0x41F930 (objdump-verified): Board_ctor,
+  vtable 0x4D0FC8, "Board (Sky)"/"SKY RACE", app+0x858 diff flag,
+  LoadRaceData("SKYRACE"), music "Bucky Break", meshes (skypillar +
+  magnifyingglass via MeshNode_ctor; popcylinder1/2 + trapdoor via
+  Level_MeshWorldCtor; clouds.png sprite -> +0x4374), zero +0x47AC/+0x47F0/+0x47F4.
+- Native fast path for content-13 removed; create/collide/racestate/render run
+  universal (UNI_NATIVE_CTOR=0). Racestate 13-branch now calls base +
+  Feature_SkyPopcylinder (stand-down removed); TRAPDOOR create gate is
+  content-driven. Boot crash-test clean (48s). Awaiting user retest on Windows:
+  posts, magnifier follow, pegs pop, fun ball + lfdebug.log if anything is off.

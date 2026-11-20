@@ -1366,9 +1366,10 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         return;
     }
 
-    /* ── POPDOOR/TRAPDOOR (Sky Rotator, level==13) ──
-     * S1 vanilla name is TRAPDOOR (Sky_CreateDynamicObjects 0x410AD0 line 79); POPDOOR accepted for new files */
-    if ((my_strnicmp(name, "POPDOOR", 7) == 0) || (my_strnicmp(name, "TRAPDOOR", 8) == 0 && GetCurrentLevel(board) == 13)) {
+    /* ── POPDOOR/TRAPDOOR (Sky Rotator, content-13) ──
+     * S1 vanilla name is TRAPDOOR (Sky_CreateDynamicObjects 0x410AD0 line 79); POPDOOR accepted for new files.
+     * Content-gated (not slot): file-swapped Sky in any slot still builds. */
+    if ((my_strnicmp(name, "POPDOOR", 7) == 0) || (my_strnicmp(name, "TRAPDOOR", 8) == 0 && (GetCurrentLevel(board) == 13 || ContentFileId(ext) == 13))) {
         float dat = *(float *)(g_moduleBase + 0xCF44C);
         S1EnsureMeshWorld(board, ext, UNI_SKY_TRAPDOOR, "Levels\\Level9-TrapDoor");
         int meshVal = *(int*)((char*)ext + UNI_SKY_TRAPDOOR);

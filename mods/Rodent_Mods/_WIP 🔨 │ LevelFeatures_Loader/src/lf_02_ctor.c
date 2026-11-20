@@ -383,6 +383,68 @@ static void UniversalGlassInit(void *mem, int app) {
     DebugLog("UniversalGlassInit done (no native ctor)");
 }
 
+/* UniversalSkyInit — content-driven Sky board setup, no native code.
+ * Replicates Sky native ctor (0x41F930, objdump-verified 2026-11-20):
+ * base Board_ctor, Sky vtable 0x4D0FC8, name strings, difficulty flag
+ * (app+0x858, like Tower), LoadRaceData("SKYRACE"), music "Bucky Break",
+ * meshes: skypillar + magnifyingglass via MeshNode_ctor (0x18),
+ * popcylinder1/2 + trapdoor via Level_MeshWorldCtor (0x10D0),
+ * clouds.png via Sprite_ctor (0xD4 -> +0x4374). Zeroes timer slots
+ * +0x47AC/+0x47F0/+0x47F4. +0x870/+0x1508 come from Steps 4/5.
+ * S1 mirrors own popcylinders/posts/magnifier at create/postscan;
+ * racestate runs base + Feature_SkyPopcylinder (no native 0x41FC90). */
+static void UniversalSkyInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D0FC8; /* Sky board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Sky)";
+    *(char **)((char *)mem + 0x29B4) = "SKY RACE";
+    *(char **)((char *)mem + 0x4344) = "Bucky Break";
+    { int diff = *(int *)(app + 0x23C);
+      DWORD prof = *(DWORD *)(app + 0x220);
+      if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&
+          *(char *)(prof + 0x10) == 0)
+          *(BYTE *)(app + 0x858) = 1; }
+    g_LoadRaceData(mem, "SKYRACE");
+    /* Meshes (native ctor loads; create mirrors refresh them). */
+    if (g_operatorNew && g_MeshNodeCtor) {
+        void *sm = g_operatorNew(0x18);
+        if (sm && BoardHasOffset(mem, 0x436C, 4))
+            *(void **)((char *)mem + 0x436C) =
+                g_MeshNodeCtor(sm, *(void **)(app + 0x174), "meshes\\skypillar");
+        void *mm = g_operatorNew(0x18);
+        if (mm && BoardHasOffset(mem, 0x4370, 4))
+            *(void **)((char *)mem + 0x4370) =
+                g_MeshNodeCtor(mm, *(void **)(app + 0x174), "meshes\\magnifyingglass");
+    }
+    if (g_operatorNew && g_LevelMeshWorldCtor) {
+        void *p1 = g_operatorNew(0x10D0);
+        if (p1 && BoardHasOffset(mem, 0x4384, 4))
+            *(void **)((char *)mem + 0x4384) =
+                g_LevelMeshWorldCtor(p1, *(void **)(app + 0x174), "levels\\level9-popcylinder1");
+        void *p2 = g_operatorNew(0x10D0);
+        if (p2 && BoardHasOffset(mem, 0x4388, 4))
+            *(void **)((char *)mem + 0x4388) =
+                g_LevelMeshWorldCtor(p2, *(void **)(app + 0x174), "levels\\level9-popcylinder2");
+        void *td = g_operatorNew(0x10D0);
+        if (td && BoardHasOffset(mem, 0x438C, 4))
+            *(void **)((char *)mem + 0x438C) =
+                g_LevelMeshWorldCtor(td, *(void **)(app + 0x174), "levels\\level9-trapdoor");
+    }
+    if (g_operatorNew && g_SpriteCtor && BoardHasOffset(mem, 0x4374, 4)) {
+        void *cs = g_operatorNew(0xD4);
+        if (cs)
+            *(void **)((char *)mem + 0x4374) =
+                g_SpriteCtor(cs, *(void **)(app + 0x174), "textures\\clouds.png");
+    }
+    if (BoardHasOffset(mem, 0x47AC, 4))
+        *(DWORD *)((char *)mem + 0x47AC) = 0;
+    if (BoardHasOffset(mem, 0x47F0, 4))
+        *(DWORD *)((char *)mem + 0x47F0) = 0;
+    if (BoardHasOffset(mem, 0x47F4, 4))
+        *(DWORD *)((char *)mem + 0x47F4) = 0;
+    DebugLog("UniversalSkyInit done (no native ctor)");
+}
+
 /* Fail-closed size tracking: bit i = level i+1 alloc patched to 0x7000.
  * g_nativeBoardSize holds the stock operator_new size per slot (captured
  * before rewrite); g_nativeLevelCtors holds the slot's genuine native ctor
@@ -477,7 +539,9 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     typedef void (__thiscall *NativeLevelCtor_t)(void *mem, int app);
     NativeLevelCtor_t nativeCtor = NULL;
     /* Content-driven (any slot): native-ctor fast path for custom-scene
-     * contents (13/15). Contents 10/11/12 build via the universal path
+     * content 15 only (2026-11-20: Sky joins the universal path —
+     * UniversalSkyInit + S1 mirrors own it, like 10/11/12).
+     * Contents 10/11/12/13 build via the universal path
      * (2026-11-20: no native builder — Universal*Init + S1 mirrors own
      * them; Glass S1s force-delegated to orig until the render gap
      * NULL+0x154 at 0x46F160 is bisected). Shared-scene
@@ -486,7 +550,12 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
      * rebuild hangs/crashes on this rig in every config — needs
      * dispatch-tail RE; vanilla loads it fine so this is mod-side,
      * rig-visible.) */
-    if (g_loadingContentId == 13) nativeCtor = (NativeLevelCtor_t)0x41F930;
+    /* Content 13 (Sky) deliberately NOT on the fast path (2026-11-20):
+     * Sky builds via the universal path (UniversalSkyInit + S1 mirrors)
+     * like 10/11/12, so no Sky-specific native board code runs.
+     * UNI_NATIVE_CTOR stays 0, so create/collide/racestate/render never
+     * delegate to native origs. */
+    if (0) nativeCtor = (NativeLevelCtor_t)0x41F930;
     /* Content 14 (Master) deliberately NOT on the fast path (2026-11-18):
      * Master builds via the universal path (g_BoardCtor + S1 mirrors) like
      * the shared-scene races, so no Master-specific native board code runs
@@ -543,6 +612,9 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     } else if (g_loadingContentId == 12) {
         DebugLog("Calling UniversalGlassInit...");
         UniversalGlassInit(mem, app);
+    } else if (g_loadingContentId == 13) {
+        DebugLog("Calling UniversalSkyInit...");
+        UniversalSkyInit(mem, app);
     } else {
         DebugLog("Calling Board_ctor...");
         g_BoardCtor(mem, app);

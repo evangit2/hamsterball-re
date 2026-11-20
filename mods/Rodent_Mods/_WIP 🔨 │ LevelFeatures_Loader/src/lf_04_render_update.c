@@ -879,19 +879,11 @@ void __fastcall UniversalRaceState(void *board) {
 
     } else if (level == 13 || ContentFileId(GetBoardExt(board)) == 13 ||
                (board && !IsBadReadPtr(board, (void*)4) && *(DWORD *)board == 0x4D0FC8)) {
-        /* Sky RaceState (0x41FC90) drives native popcylinders (board+0x47B0)
-         * + native magnifier-follow (board+0x47AC). LFL builds no Sky
-         * objects (Sky uses custom S1 loop 0x410900, bypassing LFL's
-         * per-name builders), so skipping orig starves them (pegs never
-         * pop, magnifier never follows). Call native directly by RVA
-         * (bypasses orig-array indexing — always exact for Sky-class). */
-        {
-            typedef void (__thiscall *SkyRS_t)(void *board);
-            SkyRS_t skyRS = (SkyRS_t)(g_moduleBase + 0x1FC90);
-            if (skyRS) skyRS(board);
-            else if (g_origRaceState[level]) g_origRaceState[level](board);
-            else g_BoardUpdateRaceState(board);
-        }
+        /* 2026-11-20: Sky runs the universal path (UniversalSkyInit +
+         * S1 mirrors). Base drives the shared scene; Feature_SkyPopcylinder
+         * (racestate_features below) drives the ext popcylinder bank +
+         * magnifier. Native 0x41FC90 no longer runs. */
+        g_BoardUpdateRaceState(board);
     } else if (level >= 1 && level <= 15 && g_origRaceState[level]) {
         /* v13.29: slot-native orig runs ONLY when the loaded file IS the
          * slot's own (content == level — objects it expects exist, proven
