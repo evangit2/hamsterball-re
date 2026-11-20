@@ -1320,6 +1320,20 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
      * for TB2); ext copies kept for the render path. */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_TENBONUS1)) && my_strnicmp(name, "N:TENBONUS1", 11) == 0) {
         int phys = ball[0x69];
+        /* TEMP DIAG 2026-11-20: smasher no-smash report. */
+        {
+            char dl[160];
+            float dx = 0, dy = 0, dz = 0;
+            if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
+                dx = *(float *)(phys + 0xCA4);
+                dy = *(float *)(phys + 0xCA8);
+                dz = *(float *)(phys + 0xCAC);
+            }
+            wsprintfA(dl, "TENB1 touch phys=0x%X p=(%d,%d,%d) flag438C=%d",
+                (unsigned)phys, (int)dx, (int)dy, (int)dz,
+                (int)*(char *)((char *)board + 0x438C));
+            ToobDiag(dl);
+        }
         if (phys && !IsBadReadPtr((void *)phys, 0xCB0) &&
             BoardHasOffset(board, 0x436C, 16)) {
             float px = *(float *)(phys + 0xCA4);
