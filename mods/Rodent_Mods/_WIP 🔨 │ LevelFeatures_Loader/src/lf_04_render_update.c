@@ -283,6 +283,13 @@ void UniversalRenderImpl(void *board, int unk) {
             typedef DWORD (__thiscall *T57C60)(void *, float);
             T57AD0 fAD0 = (T57AD0)(g_moduleBase + 0x57AD0);
             T57C60 fC60 = (T57C60)(g_moduleBase + 0x57C60);
+            /* Native 0x417C00 does Timer_Init(buf) BEFORE AD0 (Ghidra-verified):
+             * Timer_Init writes ONLY buf[0] = timer vtable 0x4CF338. AD0 never
+             * writes [0], so without init buf[0] is stack garbage and the
+             * vtable-driven v[2]/dev-v[7] below guard out — pane finish never
+             * draws (panes visible via base, no reflection). */
+            typedef void (__thiscall *T57A40)(void *);
+            T57A40 fInit = (T57A40)(g_moduleBase + 0x57A40);
             int i;
             for (i = 0; i < 2; i++) {
                 float px = *(float *)((char *)board + (i ? 0x4378 : 0x436C));
@@ -293,6 +300,7 @@ void UniversalRenderImpl(void *board, int unk) {
                 char bufA[68];
                 DWORD prod = 0;
                 if (fAD0 && fC60) {
+                    if (fInit) fInit(bufA);
                     fAD0(bufA);
                     prod = fC60(bufA, pr);
                 }
