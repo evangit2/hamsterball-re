@@ -729,6 +729,55 @@ static void ParseAlertSaw3Presence(void *board, void *ext, const char *meshPath)
         }
     }
 }
+/* Glass smasher DAT floats (native create 0x40AD80 replica at load).
+ * Native S1 create for SMASHER1/2 copies the S1 DAT pos to board+0x436C
+ * (+0x4378) and zeroes +0x4384/+0x438C (-90.0f/+0x4388 for smasher2) — the
+ * pane render (slot-24) positions the reflective finish from these. The
+ * universal S1-SMASHER mirror never fires (the native scene consumes the
+ * SMASHER S1s itself via its 2 op_news), so the board kept the init zeros
+ * and the finish drew degenerate at the origin: panes visible, no
+ * reflection. Fill from the file S1 here (load-time, after init zeroing).
+ * REND_GLASS ext offsets filled too (mirror parity). */
+static void FillGlassSmasherDat(void *board, void *ext, void *meshWorld) {
+    float p[3];
+    if (!board || !ext || !meshWorld) return;
+    if (FindS1Position(meshWorld, "SMASHER1", p)) {
+        if (BoardHasOffset(board, 0x436C, 16)) {
+            *(float *)((char *)board + 0x436C) = p[0];
+            *(float *)((char *)board + 0x4370) = p[1];
+            *(float *)((char *)board + 0x4374) = p[2];
+            *(DWORD *)((char *)board + 0x4384) = 0;
+        }
+        if (BoardHasOffset(board, 0x438C, 1)) *(BYTE *)((char *)board + 0x438C) = 0;
+        if (ExtHasOffset(ext, REND_GLASS_S1_X, 12)) {
+            *(float *)((char *)ext + REND_GLASS_S1_X) = p[0];
+            *(float *)((char *)ext + REND_GLASS_S1_Y) = p[1];
+            *(float *)((char *)ext + REND_GLASS_S1_Z) = p[2];
+        }
+        if (ExtHasOffset(ext, REND_GLASS_TRANSP1, 4))
+            *(DWORD *)((char *)ext + REND_GLASS_TRANSP1) = 0;
+        if (ExtHasOffset(ext, REND_GLASS_FLAG1, 1))
+            *(char *)((char *)ext + REND_GLASS_FLAG1) = 0;
+    }
+    if (FindS1Position(meshWorld, "SMASHER2", p)) {
+        if (BoardHasOffset(board, 0x4378, 16)) {
+            *(float *)((char *)board + 0x4378) = p[0];
+            *(float *)((char *)board + 0x437C) = p[1];
+            *(float *)((char *)board + 0x4380) = p[2];
+            *(float *)((char *)board + 0x4388) = -90.0f;
+        }
+        if (BoardHasOffset(board, 0x438D, 1)) *(BYTE *)((char *)board + 0x438D) = 0;
+        if (ExtHasOffset(ext, REND_GLASS_S2_X, 12)) {
+            *(float *)((char *)ext + REND_GLASS_S2_X) = p[0];
+            *(float *)((char *)ext + REND_GLASS_S2_Y) = p[1];
+            *(float *)((char *)ext + REND_GLASS_S2_Z) = p[2];
+        }
+        if (ExtHasOffset(ext, REND_GLASS_TRANSP2, 4))
+            *(DWORD *)((char *)ext + REND_GLASS_TRANSP2) = 0xC2B40000;
+        if (ExtHasOffset(ext, REND_GLASS_FLAG2, 1))
+            *(char *)((char *)ext + REND_GLASS_FLAG2) = 0;
+    }
+}
 /* Glass triggers presence (S6-driven, no S1 needed): stock Glass carries
  * N:GLASS + N:TENBONUS1/2 as S6 quads with SMASHER1/2 S1s only, so the
  * S1-derived flags stay 0 forever and the smashers never smash (same

@@ -123,6 +123,9 @@ static void UniversalConstructor(void *board, int raceIndex) {
         if (ext) ParseAlertSaw3Presence(board, ext, meshPath);
         /* Glass triggers (S6-driven N:GLASS + N:TENBONUS1/2, no S1s) */
         if (ext) ParseGlassPresence(board, ext, meshPath);
+        /* Glass smasher DAT floats (native create replica — the S1
+         * SMASHER mirror never fires, so the pane finish drew at origin). */
+        if (ext && meshWorld) FillGlassSmasherDat(board, ext, meshWorld);
         /* Master hammer triggers (E:CALLHAMMER/E:HAMMERCHASE) for the proximity driver */
         if (ext) ParseHammerQuads(board, ext, meshWorld, meshPath);
         /* ParseGravityZones is DORMANT (v13.34): the E:GRAVITY touch path
