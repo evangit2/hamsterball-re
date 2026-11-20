@@ -326,6 +326,27 @@ void UniversalRenderImpl(void *board, int unk) {
                 (void)prod;
             }
         }
+        /* Native 0x417C00 tail (Ghidra-verified, was missing): after the pane
+         * timer draws it restores RS(0x0E)=1 + 0x70C=1 (+0x7C8 tick). Without
+         * this, RS(0x0E)=0 from the head persists into subsequent frames and
+         * kills alpha blending for the fin draws (opaque fins, no glass). */
+        {
+            DWORD runk = (DWORD)unk;
+            if (runk && !IsBadReadPtr((void *)runk, 0x800) &&
+                *(BYTE *)(runk + 0x70C) != 1) {
+                DWORD dev = *(DWORD *)(runk + 0x154);
+                if (dev && !IsBadReadPtr((void *)dev, 0xCC)) {
+                    DWORD *dv = *(DWORD **)dev;
+                    if (dv && !IsBadReadPtr((void *)dv, 0xD0)) {
+                        void (__thiscall *rs)(DWORD, DWORD, DWORD, DWORD) =
+                            (void (__thiscall *)(DWORD, DWORD, DWORD, DWORD))dv[50];
+                        if (rs) rs(dv, dev, 0x0E, 1);
+                    }
+                }
+                *(BYTE *)(runk + 0x70C) = 1;
+                *(DWORD *)(runk + 0x7C8) = *(DWORD *)(runk + 0x7C8) + 1;
+            }
+        }
     }
 
     sky_render:
