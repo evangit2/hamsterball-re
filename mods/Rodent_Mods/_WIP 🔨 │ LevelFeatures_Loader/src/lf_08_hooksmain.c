@@ -212,7 +212,7 @@ static void UniversalConstructor(void *board, int raceIndex) {
                         }
                         { char pdbg[160]; wsprintfA(pdbg, "SAWPOS idx=%d obj=0x%08X pos=(%d,%d,%d)",
                             si, so, (int)sx, (int)sy, (int)sz); ToobDiag(pdbg); }
-                        for (li = 0; li < 4; li++) {
+                        for (li = 0; li < 3; li++) {
                             void *lst = NULL;
                             int preskip = 0;
                             if (li == 0) {
@@ -224,12 +224,6 @@ static void UniversalConstructor(void *board, int raceIndex) {
                                  * here on the fast path (native scene did it). */
                                 if (!BoardHasOffset(board, 0x2578 + 0x410, 4)) preskip = 8;
                                 else lst = (void *)((char *)board + 0x2578);
-                            } else if (li == 3) {
-                                /* 0x2160: the DYNAMIC RENDER list (base 0x40B420
-                                 * walks it after the level mesh). Appends here
-                                 * are what make driven objects VISIBLE. */
-                                if (!BoardHasOffset(board, 0x2160 + 0x410, 4)) preskip = 9;
-                                else lst = (void *)((char *)board + 0x2160);
                             } else {
                                 int b8 = 0;
                                 if (!BoardHasOffset(board, 0x8B0 + 4, 4)) preskip = 5;
