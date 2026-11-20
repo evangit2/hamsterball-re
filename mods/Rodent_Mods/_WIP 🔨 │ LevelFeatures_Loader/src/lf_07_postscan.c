@@ -690,6 +690,45 @@ static void ParseBranchQuad(void *board, void *ext, void *meshWorld, const char 
     }
     HeapFree(GetProcessHeap(), 0, buf);
 }
+/* E:ALERTSAW3 presence (S6-driven, no S1 needed): stock/custom files carry
+ * saw triggers as S6 geometry without S1s (same disease as E:BRANCH(B)).
+ * Sets COLL_FLAG_ALERTSAW3 when the record exists; absence leaves the
+ * S1-derived flag untouched. Tag-only scan (no verts needed). */
+static void ParseAlertSaw3Presence(void *board, void *ext, const char *meshPath) {
+    if (!board || !ext || !meshPath || !meshPath[0]) return;
+    if (*(BYTE *)((char *)ext + COLL_FLAG_ALERTSAW3)) return;
+    {
+        char withExt[MAX_PATH];
+        HANDLE h = CreateFileA(meshPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (h == INVALID_HANDLE_VALUE && strlen(meshPath) + 10 < MAX_PATH) {
+            strcpy(withExt, meshPath); strcat(withExt, ".MESHWORLD");
+            h = CreateFileA(withExt, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        }
+        if (h != INVALID_HANDLE_VALUE) {
+            DWORD fsize = GetFileSize(h, NULL);
+            if (fsize != 0 && fsize != (DWORD)-1 && fsize <= 0x500000) {
+                char *buf = (char *)HeapAlloc(GetProcessHeap(), 0, fsize);
+                if (buf) {
+                    DWORD br = 0;
+                    if (ReadFile(h, buf, fsize, &br, NULL) && br == fsize) {
+                        static const char tag[] = "E:ALERTSAW3";
+                        DWORD i;
+                        for (i = 0; i + 12 < fsize; i++) {
+                            int k;
+                            for (k = 0; k < 11; k++) if (buf[i+k] != tag[k]) break;
+                            if (k == 11 && buf[i+11] == 0) {
+                                *(BYTE *)((char *)ext + COLL_FLAG_ALERTSAW3) = 1;
+                                break;
+                            }
+                        }
+                    }
+                    HeapFree(GetProcessHeap(), 0, buf);
+                }
+            }
+            CloseHandle(h);
+        }
+    }
+}
 /* Master hammer triggers (E:CALLHAMMER/E:HAMMERCHASE) quad parser for the
  * proximity driver. Same record walk as ParseBranchQuad (S6 geom record ->
  * strips -> vrefs -> live S5 verts -> AABB). The dispatcher touch path for

@@ -119,6 +119,8 @@ static void UniversalConstructor(void *board, int raceIndex) {
         if (ext) BuildCollisionFlags(board, ext);
         /* E:BRANCH(B) trigger quad for the proximity driver (needs flags) */
         if (ext) ParseBranchQuad(board, ext, meshWorld, meshPath);
+        /* E:ALERTSAW3 presence (S6-driven pipe-saw flag, no S1 needed) */
+        if (ext) ParseAlertSaw3Presence(board, ext, meshPath);
         /* Master hammer triggers (E:CALLHAMMER/E:HAMMERCHASE) for the proximity driver */
         if (ext) ParseHammerQuads(board, ext, meshWorld, meshPath);
         /* ParseGravityZones is DORMANT (v13.34): the E:GRAVITY touch path
@@ -177,6 +179,19 @@ static void UniversalConstructor(void *board, int raceIndex) {
             DebugLog("Calling Board_Setup (vtable+0x80)...");
             boardSetup(board);
             DebugLog("Board_Setup done");
+            /* Universal Toob saw fill: native create owns the pipe saws
+             * (board+0x4380 branch saw, +0x4384 alert saw — Ghidra-verified
+             * 0x410020 arms +0x110C on both), so the LFL create mirrors never
+             * run and the ext mirrors stay NULL — alert blocks no-op and the
+             * blades never show. Mirror the native slots into ext once
+             * (validated objects only; garbage fails safe to skip). */
+            if (ext && *(int *)((char *)ext + UNI_NATIVE_CTOR) && ContentFileId(ext) == 10 &&
+                BoardHasOffset(board, 0x4384 + 4, 4)) {
+                int sA = *(int *)((char *)board + 0x4380);
+                int sB = *(int *)((char *)board + 0x4384);
+                if (sA && !IsBadReadPtr((void *)sA, 0x1110)) *(int *)((char *)ext + UNI_SAW_TOOB_OBJ) = sA;
+                if (sB && !IsBadReadPtr((void *)sB, 0x1110)) *(int *)((char *)ext + UNI_SAW2_TOOB_OBJ) = sB;
+            }
         }
     }
 

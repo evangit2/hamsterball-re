@@ -865,26 +865,30 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         }
     }
 
-    /* ── Expert: E:ALERTSAW2 ── (skipped when Toob owns the name:
-     * Toob stock files carry E:ALERTSAW2 for their own pipe saw; firing
-     * the Expert path as well called SawAlertActivate on a NULL/garbage
-     * obj (native derefs ECX+0x110D unconditionally = crash). Presence
-     * rule: UNI_SAW2_TOOB_OBJ set means a Toob SAW2 was built here. */
+    /* ── Expert: E:ALERTSAW2 ── (narrow veto: skip only when the Toob pipe
+     * saw owns this level AND no Expert saw exists — legacy files that used
+     * ALERTSAW2 for the pipe saw. With both saws present, ALERTSAW2 drives
+     * the Expert saw and ALERTSAW3 drives the pipe; sharing one name could
+     * never run both (SawAlertActivate on the wrong object = crash). */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW2)) && my_stricmp(name, "E:ALERTSAW2") == 0) {
         { char dl[160]; wsprintfA(dl, "ALERTSAW2 blade=%d saw2=%d toob2=%d", (int)*(int *)((char *)ext + UNI_SAWBLADE2_OBJ),
             (int)*(int *)((char *)ext + UNI_SAW2_OBJ), (int)*(int *)((char *)ext + UNI_SAW2_TOOB_OBJ)); ToobDiag(dl); }
-        if (difficulty != 0 && g_SawAlertActivate && !*(int *)((char *)ext + UNI_SAW2_TOOB_OBJ)) {
-            int saw2 = *(int *)((char *)ext + UNI_SAWBLADE2_OBJ);
-            if (!saw2) saw2 = *(int *)((char *)ext + UNI_SAW2_OBJ);
-            if (saw2) g_SawAlertActivate(saw2);
+        int toobSaw = *(int *)((char *)ext + UNI_SAW2_TOOB_OBJ);
+        int expertSaw = *(int *)((char *)ext + UNI_SAWBLADE2_OBJ);
+        if (!expertSaw) expertSaw = *(int *)((char *)ext + UNI_SAW2_OBJ);
+        if (difficulty != 0 && g_SawAlertActivate && (!toobSaw || expertSaw)) {
+            if (expertSaw) g_SawAlertActivate(expertSaw);
         }
     }
 
-    /* ── Toob: E:ALERTSAW2 vanilla + E:ALERTSAW3 renamed ── — vanilla Toob files use ALERTSAW2 */
-    if ((((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW3)) && my_stricmp(name, "E:ALERTSAW3") == 0)) || (ContentFileId(ext) == 10 && my_stricmp(name, "E:ALERTSAW2") == 0)) {
+    /* ── Toob pipe saw: E:ALERTSAW3 only ── ALERTSAW2 is the Expert saw's
+     * name; the old content-10 ALERTSAW2 alias is gone (one name can never
+     * drive both saws). Rename the trigger in the file. Object comes from
+     * the post-Setup native-slot fill (board+0x4384, validated). */
+    if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW3)) && my_stricmp(name, "E:ALERTSAW3") == 0) {
         if (difficulty != 0) {
             int saw2Obj = *(int *)((char *)ext + UNI_SAW2_TOOB_OBJ);
-            if (saw2Obj) *(BYTE *)(saw2Obj + 0x110C) = 1;
+            if (saw2Obj && !IsBadReadPtr((void *)saw2Obj, 0x1110)) *(BYTE *)(saw2Obj + 0x110C) = 1;
         }
     }
 
@@ -897,12 +901,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         }
     }
 
-    /* ── Expert: E:ACTIVATESAW2 ── */
+    /* ── Expert: E:ACTIVATESAW2 ── (same narrow veto as ALERTSAW2 above) */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_ACTIVATESAW2)) && my_stricmp(name, "E:ACTIVATESAW2") == 0) {
-        if (difficulty != 0 && g_SawActivate && !*(int *)((char *)ext + UNI_SAW2_TOOB_OBJ)) {
-            int saw2 = *(int *)((char *)ext + UNI_SAWBLADE2_OBJ);
-            if (!saw2) saw2 = *(int *)((char *)ext + UNI_SAW2_OBJ);
-            if (saw2) g_SawActivate(saw2);
+        int toobSawA = *(int *)((char *)ext + UNI_SAW2_TOOB_OBJ);
+        int expertSawA = *(int *)((char *)ext + UNI_SAWBLADE2_OBJ);
+        if (!expertSawA) expertSawA = *(int *)((char *)ext + UNI_SAW2_OBJ);
+        if (difficulty != 0 && g_SawActivate && (!toobSawA || expertSawA)) {
+            if (expertSawA) g_SawActivate(expertSawA);
         }
     }
 
