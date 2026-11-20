@@ -1627,6 +1627,15 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
 void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out1, void *out2, int *s1data) {
     if (!name || !out1 || !out2 || !s1data) return;
     UniversalCreateDynamicObjectsImpl(board, name, out1, out2, s1data);
+    /* SAW out-param capture (ToobDiag channel — DebugLog is off): the
+     * native scene routes out2 (render) to the render lists, but the
+     * scene is skipped on the fast path, so out2 is dropped and the
+     * blades never draw. Log out1/out2 once per load to confirm. */
+    if ((name[0] == 'S' || name[0] == 's') && (my_stricmp(name, "SAW") == 0 || my_stricmp(name, "SAW2") == 0)) {
+        char sawdbg[160];
+        wsprintfA(sawdbg, "SAWCREATE name=%s out1=0x%08X out2=0x%08X", name, *(DWORD *)out1, *(DWORD *)out2);
+        ToobDiag(sawdbg);
+    }
     {
         void *censext = GetBoardExt(board);
         int cslot = censext ? ContentFileId(censext) : 0;
