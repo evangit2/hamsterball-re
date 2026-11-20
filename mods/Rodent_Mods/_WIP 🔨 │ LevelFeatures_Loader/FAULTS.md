@@ -181,3 +181,9 @@ mark them FIXED with the version instead.
   path (ext + native lit), decay/replica render wired for native-built
   content-10, native update's 4 object anims replicated, slot rebuild
   skipped by design. Awaiting user retest (flash + regressions).
+
+## 2026-11-20 - E:BRANCH fixed on universal Toob (user-verified teleport)
+- Flag was S1-gated; stock Toob has the branch only as S6 geom -> flag now
+  set from S6 find. (A) is teleport+arm like native (was arm-only);
+  suffix only selects saw-arm, both fall into shared POS/VECTOR teleport.
+  Log confirms: (A) touch -> BRANCH count=2 dest + C3C=1, (B) fires too.
