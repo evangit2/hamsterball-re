@@ -300,6 +300,23 @@ void UniversalRenderImpl(void *board, int unk) {
                 char bufA[68];
                 DWORD prod = 0;
                 if (fAD0 && fC60) {
+                    /* Native 0x417C00 issues dev-v[7] BEFORE Timer_Init
+                     * (Ghidra+objdump verified: 0x417CE4 precedes the 0x457AD0
+                     * call): BeginFrame+delegate primes the device, then init
+                     * fills the buffer, C60 scales, v[2] positions, and the
+                     * second dev-v[7] renders. Skipping the first call left
+                     * the finish with no active frame (invisible). */
+                    {
+                        DWORD dev0 = *(DWORD *)(app + (fg ? 0x588 : 0x584));
+                        if (dev0 && !IsBadReadPtr((void *)dev0, 0x20)) {
+                            DWORD *dv0 = *(DWORD **)dev0;
+                            if (dv0 && !IsBadReadPtr((void *)dv0, 0x20)) {
+                                void (__thiscall *d70)(DWORD, DWORD, DWORD) =
+                                    (void (__thiscall *)(DWORD, DWORD, DWORD))dv0[7];
+                                if (d70) d70(dev0, (DWORD)bufA, 0);
+                            }
+                        }
+                    }
                     if (fInit) fInit(bufA);
                     fAD0(bufA);
                     prod = fC60(bufA, pr);
