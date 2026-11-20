@@ -43,6 +43,14 @@ void UniversalRenderImpl(void *board, int unk) {
         return;
     }
 
+    /* Glass render-gap bisect #2 (2026-11-20): universal board + NATIVE
+     * Glass render. The base render walks objects the custom Glass render
+     * needs (NULL+0x154). If Draw stops crashing, the gap is render-only. */
+    if (level == 12 && g_origRender[12]) {
+        g_origRender[12](board, unk);
+        return;
+    }
+
     /* Tower content (any slot): clean-room render below (faithful to native
      * 0x40DFA0 as re-derived 2026-10-23: method-this is the timer object,
      * chomper via board+0x4390 vtbl[7]). Native delegation removed. */
