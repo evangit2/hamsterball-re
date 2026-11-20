@@ -242,6 +242,57 @@ static void UniversalToobInit(void *mem, int app) {
     DebugLog("UniversalToobInit done (no native ctor)");
 }
 
+/* Universal Toob scene — replaces native 0x40FA20 (vtable slot 18).
+ * Exact replica of the native scene's four steps (Ghidra-verified
+ * 0x40FA20-0x40FB26): fog/init, level-mesh + render build, N:BUMPER1..8
+ * link loop (mesh ptr per 0x438C slot, lit 0), then board setup v[0x80].
+ * No native scene code runs for Toob. */
+static DWORD s_toobSceneVtbl[256];
+static int s_toobSceneVtblInit = 0;
+void __thiscall UniversalToobScene(void *board) {
+    if (!board || IsBadReadPtr(board, 0x6500)) return;
+    if (g_LevelInitScene) g_LevelInitScene(board);
+    {
+        int app = *(int *)((char *)board + 0x878);
+        int gfx = 0;
+        int meshWorld = 0;
+        if (app && !IsBadReadPtr((void *)app, 0x500))
+            gfx = *(int *)(app + 0x174);
+        if (g_operatorNew && g_LevelMeshWorldCtor && gfx) {
+            void *mm = g_operatorNew(0x10D0);
+            if (mm) meshWorld = (int)g_LevelMeshWorldCtor(mm, (void *)gfx, "levels\\level8");
+        }
+        if (!meshWorld) return;
+        *(int *)((char *)board + 0x8AC) = meshWorld;
+        if (g_operatorNew && g_LevelRenderCtor) {
+            void *rm = g_operatorNew(0x10D0);
+            if (rm) *(int *)((char *)board + 0x8B0) =
+                (int)g_LevelRenderCtor(rm, (void *)meshWorld);
+        }
+        if (g_LevelFindObjectByName) {
+            int i;
+            for (i = 1; i <= 8; i++) {
+                char nm[16] = "N:BUMPER0";
+                int m = 0;
+                nm[8] = (char)('0' + i);
+                m = g_LevelFindObjectByName((void *)meshWorld, nm);
+                if (BoardHasOffset(board, 0x438C + (i - 1) * 0x418 + 4, 4))
+                    *(int *)((char *)board + 0x438C + (i - 1) * 0x418) = m;
+                if (BoardHasOffset(board, 0x644C + (i - 1) * 4, 4))
+                    *(float *)((char *)board + 0x644C + (i - 1) * 4) = 0.0f;
+            }
+        }
+    }
+    {
+        int vtbl = *(int *)board;
+        if (!IsBadReadPtr((void *)vtbl, 0x84)) {
+            void *setup = *(void **)(vtbl + 0x80);
+            if (setup && !IsBadReadPtr(setup, 16))
+                ((void (__thiscall *)(void *))setup)(board);
+        }
+    }
+}
+
 /* UniversalWobblyInit — content-driven Wobbly board setup, no native code.
  * Replicates Wobbly native ctor (0x41F110, Ghidra-verified): base
  * Board_ctor, Wobbly vtable (0x4D0D38 — shared scene-update/racestate,
@@ -437,6 +488,18 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     } else if (g_loadingContentId == 10) {
         DebugLog("Calling UniversalToobInit...");
         UniversalToobInit(mem, app);
+        /* Universal scene: own vtable copy with slot 18 (scene) replaced.
+         * No native scene code runs for Toob. */
+        if (!s_toobSceneVtblInit) {
+            DWORD nt = *(DWORD *)mem;
+            if (nt && !IsBadReadPtr((void *)nt, 0x400)) {
+                memcpy(s_toobSceneVtbl, (void *)nt, 0x400);
+                s_toobSceneVtbl[18] = (DWORD)UniversalToobScene;
+            }
+            s_toobSceneVtblInit = 1;
+        }
+        if (s_toobSceneVtbl[18] == (DWORD)UniversalToobScene)
+            *(DWORD *)mem = (DWORD)s_toobSceneVtbl;
     } else if (g_loadingContentId == 11) {
         DebugLog("Calling UniversalWobblyInit...");
         UniversalWobblyInit(mem, app);
