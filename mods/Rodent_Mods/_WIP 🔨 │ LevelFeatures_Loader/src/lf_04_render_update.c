@@ -82,11 +82,6 @@ void UniversalRenderImpl(void *board, int unk) {
     /* REND_GLASS: active when N:GLASS collision event is enabled for this level */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_GLASS)))
         features |= REND_GLASS;
-    /* Glass render-gap bisect #3 (2026-11-20): base render WITHOUT the
-     * REND_GLASS block. If Draw stops crashing, the block's device calls
-     * are the gap (fix the block); if it still crashes, the base render
-     * itself is insufficient (native step 3) — keep native render. */
-    if (level == 12) features &= ~REND_GLASS;
 
     /* REND_SKY_BOX: skybox + cloud sprite (CLOUDSCAPE S1). Points 1-3: projection, cull, sprite quad */
     if (*(DWORD *)((char *)ext + REND_SKY_SPRITE) != 0)
@@ -255,6 +250,27 @@ void UniversalRenderImpl(void *board, int unk) {
         if (!app || IsBadReadPtr((void *)app, 0x600)) goto sky_render;
         void *gfx = *(void **)((char *)app + 0x174);
         if (!gfx) goto sky_render;
+
+        /* Native step 3 (0x417C2C): consume the +0x70C flag on the render
+         * ctx — device state sync the material loop expects. Skipping it
+         * crashed Draw (NULL+0x154 at 0x46F160). */
+        {
+            DWORD runk = (DWORD)unk;
+            if (runk && !IsBadReadPtr((void *)runk, 0x800) &&
+                *(BYTE *)(runk + 0x70C)) {
+                DWORD dev = *(DWORD *)(runk + 0x154);
+                if (dev && !IsBadReadPtr((void *)dev, 0xCC)) {
+                    DWORD *dv = *(DWORD **)dev;
+                    if (dv && !IsBadReadPtr((void *)dv, 0xD0)) {
+                        void (__thiscall *rs)(DWORD, DWORD, DWORD, DWORD) =
+                            (void (__thiscall *)(DWORD, DWORD, DWORD, DWORD))dv[50];
+                        if (rs) rs(dv, dev, 0x0E, 0);
+                    }
+                }
+                *(DWORD *)(runk + 0x7C8) = *(DWORD *)(runk + 0x7C8) + 1;
+                *(BYTE *)(runk + 0x70C) = 0;
+            }
+        }
 
         char timerBuf[68];
         if (g_TimerInit && g_TimerCleanup) {
