@@ -394,15 +394,15 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     typedef void (__thiscall *NativeLevelCtor_t)(void *mem, int app);
     NativeLevelCtor_t nativeCtor = NULL;
     /* Content-driven (any slot): native-ctor fast path for custom-scene
-     * contents (10-15). Native slots (content==slot) get exact-native
-     * boards; cross-slot swaps get native-built boards with origs looked
-     * up by CONTENT below. Shared-scene contents (1-9, incl. Tower) keep
-     * the hand-replicated Universal*Init path. (Tower was trialed on the
-     * fast path 2026-10-24: native ctor + scene rebuild hangs/crashes on
-     * this rig in every config — needs dispatch-tail RE; vanilla loads
-     * it fine so this is mod-side, rig-visible.) */
-    if (g_loadingContentId == 10) nativeCtor = (NativeLevelCtor_t)0x41F4B0;
-    else if (g_loadingContentId == 11) nativeCtor = (NativeLevelCtor_t)0x41F110;
+     * contents (11/12/13/15). Content 10 (Toob) builds via the universal
+     * path (2026-11-20: no native builder for any race — same universal
+     * builder everywhere; UniversalToobInit + S1 mirrors own it).
+     * Shared-scene contents (1-9, incl. Tower) keep the hand-replicated
+     * Universal*Init path. (Tower was trialed on the fast path 2026-10-24:
+     * native ctor + scene rebuild hangs/crashes on this rig in every
+     * config — needs dispatch-tail RE; vanilla loads it fine so this is
+     * mod-side, rig-visible.) */
+    if (g_loadingContentId == 11) nativeCtor = (NativeLevelCtor_t)0x41F110;
     else if (g_loadingContentId == 12) nativeCtor = (NativeLevelCtor_t)0x424A90;
     else if (g_loadingContentId == 13) nativeCtor = (NativeLevelCtor_t)0x41F930;
     /* Content 14 (Master) deliberately NOT on the fast path (2026-11-18):
@@ -490,10 +490,6 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
          * native ctor, glow/decay/render from the universal blocks. */
         *(int *)((char *)ext + UNI_NATIVE_CTOR) = useNativeCtor ? 1 : 0;
         *(int *)((char *)ext + UNI_NATIVE_HANDLERS) = useNativeCtor ? 1 : 0;
-        if (g_loadingContentId == 10 && useNativeCtor) {
-            *(int *)((char *)ext + UNI_NATIVE_HANDLERS) = 0;
-            DebugLog("UNI_NATIVE_HANDLERS=0 (universal Toob: native build, universal handlers)");
-        }
         if (useNativeCtor) DebugLog("UNI_NATIVE_CTOR=1 (native-built board)");
     }
 
