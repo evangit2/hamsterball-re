@@ -273,11 +273,51 @@ void UniversalRenderImpl(void *board, int unk) {
         }
 
         char timerBuf[68];
-        /* Render-gap fix: timer sequence REMOVED (2026-11-20) — the
-         * block's Timer Scale/Position API corrupts Draw state on Glass;
-         * native uses the 0x457AD0/0x457C60 factory pair instead. Step 3
-         * + device-select below; timer replication follows once this
-         * loads. */
+        /* Render-gap fix (2026-11-20): native timer sequence replica. The
+         * block's old Timer Scale/Position API corrupted Draw state; native
+         * 0x417C00 uses 0x457AD0/0x457C60 + product-pos + device-select.
+         * Per smasher: AD0(bufA); C60(bufA,float); v[2](bufA,x,y,z);
+         * dev-v[7](dev,bufA,0). (bufB==bufA: native reuses one buffer.) */
+        {
+            typedef void (__thiscall *T57AD0)(void *);
+            typedef DWORD (__thiscall *T57C60)(void *, float);
+            T57AD0 fAD0 = (T57AD0)(g_moduleBase + 0x57AD0);
+            T57C60 fC60 = (T57C60)(g_moduleBase + 0x57C60);
+            int i;
+            for (i = 0; i < 2; i++) {
+                float px = *(float *)((char *)board + (i ? 0x4378 : 0x436C));
+                float py = *(float *)((char *)board + (i ? 0x437C : 0x4370));
+                float pz = *(float *)((char *)board + (i ? 0x4380 : 0x4374));
+                float pr = *(float *)((char *)board + (i ? 0x4388 : 0x4384));
+                BYTE fg = *(BYTE *)((char *)board + (i ? 0x438D : 0x438C));
+                char bufA[68];
+                DWORD prod = 0;
+                if (fAD0 && fC60) {
+                    fAD0(bufA);
+                    prod = fC60(bufA, pr);
+                }
+                if (!IsBadReadPtr(bufA, 0x10)) {
+                    DWORD *pv = *(DWORD **)bufA;
+                    if (pv && !IsBadReadPtr((void *)pv, 0x10)) {
+                        void (__thiscall *p2)(DWORD, float, float, float) =
+                            (void (__thiscall *)(DWORD, float, float, float))pv[2];
+                        if (p2) p2((DWORD)bufA, px, py, pz);
+                    }
+                }
+                {
+                    DWORD dev = *(DWORD *)(app + (fg ? 0x588 : 0x584));
+                    if (dev && !IsBadReadPtr((void *)dev, 0x20)) {
+                        DWORD *dv = *(DWORD **)dev;
+                        if (dv && !IsBadReadPtr((void *)dv, 0x20)) {
+                            void (__thiscall *d7)(DWORD, DWORD, DWORD) =
+                                (void (__thiscall *)(DWORD, DWORD, DWORD))dv[7];
+                            if (d7) d7(dev, (DWORD)bufA, 0);
+                        }
+                    }
+                }
+                (void)prod;
+            }
+        }
 #if 0
         if (g_TimerInit && g_TimerCleanup) {
             g_TimerInit(timerBuf);
