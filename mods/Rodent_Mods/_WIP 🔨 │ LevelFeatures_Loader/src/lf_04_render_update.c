@@ -275,11 +275,12 @@ void UniversalRenderImpl(void *board, int unk) {
         /* Render-gap fix (2026-11-20): native timer sequence replica. The
          * block's old Timer Scale/Position API corrupted Draw state; native
          * 0x417C00 uses 0x457AD0/0x457C60 + product-pos + device-select.
-         * Per smasher: AD0(bufA); C60(bufA,float); v[2](bufA,x,y,z);
-         * dev-v[7](dev,bufA,0). (bufB==bufA: native reuses one buffer.)
-         * 2026-11-20: also replicate the two native 0x457A40 Timer_Init
-         * temps (0x417DB0/0x417DC4) — they call into GAMEDLL state that
-         * the pane draw may read (ball reflection lives or dies here). */
+         * Re-derived 2026-11-20 from 0x417C5D-0x417D71: AD0(buf) then
+         * C60(buf+4, radius) on the SAME overlapping region; the pane draw
+         * consumes buf+4 (C60 product: v[2] positions it, dev-v[7] draws
+         * it). Passing pre-C60 buf drew flat panes with no ball reflection.
+         * Per smasher: AD0(buf); C60(buf+4,r); prodV[2](dummy12,x,y,z);
+         * dev-v[7](dev,buf+4,0). */
         {
             typedef void (__thiscall *T57AD0)(void *);
             typedef DWORD (__thiscall *T57C60)(void *, float);
@@ -299,18 +300,22 @@ void UniversalRenderImpl(void *board, int unk) {
                 float pz = *(float *)((char *)board + (i ? 0x4380 : 0x4374));
                 float pr = *(float *)((char *)board + (i ? 0x4388 : 0x4384));
                 BYTE fg = *(BYTE *)((char *)board + (i ? 0x438D : 0x438C));
-                char bufA[68];
-                DWORD prod = 0;
+                char bufA[72];
+                char dummy12[12];
+                DWORD prodObj = 0;
                 if (fAD0 && fC60) {
+                    int k; for (k = 0; k < 72; k++) bufA[k] = 0;
+                    for (k = 0; k < 12; k++) dummy12[k] = 0;
                     fAD0(bufA);
-                    prod = fC60(bufA, pr);
+                    fC60(bufA + 4, pr);
+                    prodObj = (DWORD)(bufA + 4);
                 }
-                if (!IsBadReadPtr(bufA, 0x10)) {
-                    DWORD *pv = *(DWORD **)bufA;
+                if (prodObj && !IsBadReadPtr((void *)prodObj, 0x10)) {
+                    DWORD *pv = *(DWORD **)prodObj;
                     if (pv && !IsBadReadPtr((void *)pv, 0x10)) {
                         void (__thiscall *p2)(DWORD, float, float, float) =
                             (void (__thiscall *)(DWORD, float, float, float))pv[2];
-                        if (p2) p2((DWORD)bufA, px, py, pz);
+                        if (p2) p2((DWORD)dummy12, px, py, pz);
                     }
                 }
                 {
@@ -320,11 +325,10 @@ void UniversalRenderImpl(void *board, int unk) {
                         if (dv && !IsBadReadPtr((void *)dv, 0x20)) {
                             void (__thiscall *d7)(DWORD, DWORD, DWORD) =
                                 (void (__thiscall *)(DWORD, DWORD, DWORD))dv[7];
-                            if (d7) d7(dev, (DWORD)bufA, 0);
+                            if (d7) d7(dev, prodObj, 0);
                         }
                     }
                 }
-                (void)prod;
             }
         }
     }
