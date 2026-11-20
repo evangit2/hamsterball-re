@@ -253,6 +253,7 @@ void __thiscall UniversalToobScene(void *board) {
     /* No entry guard: the native scene (0x40FA20) runs unguarded on the
      * same board; an over-strict probe here skips setup -> white freeze. */
     if (!board) return;
+    { char sdbg[64]; wsprintfA(sdbg, "UNISCENE enter board=0x%08X", (DWORD)board); ToobDiag(sdbg); }
     if (g_LevelInitScene) g_LevelInitScene(board);
     {
         int app = *(int *)((char *)board + 0x878);
@@ -266,7 +267,8 @@ void __thiscall UniversalToobScene(void *board) {
         }
         /* Native continues to setup even when the mesh build fails. */
         *(int *)((char *)board + 0x8AC) = meshWorld;
-        if (g_operatorNew && g_LevelRenderCtor) {
+        { char sdbg[96]; wsprintfA(sdbg, "UNISCENE mesh=0x%08X gfx=0x%08X", meshWorld, gfx); ToobDiag(sdbg); }
+        if (meshWorld && g_operatorNew && g_LevelRenderCtor) {
             void *rm = g_operatorNew(0x10D0);
             if (rm) *(int *)((char *)board + 0x8B0) =
                 (int)g_LevelRenderCtor(rm, (void *)meshWorld);
@@ -287,11 +289,13 @@ void __thiscall UniversalToobScene(void *board) {
     }
     {
         int vtbl = *(int *)board;
+        ToobDiag("UNISCENE setup-call");
         if (!IsBadReadPtr((void *)vtbl, 0x84)) {
             void *setup = *(void **)(vtbl + 0x80);
             if (setup && !IsBadReadPtr(setup, 16))
                 ((void (__thiscall *)(void *))setup)(board);
         }
+        ToobDiag("UNISCENE setup-done");
     }
 }
 
