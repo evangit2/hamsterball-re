@@ -888,6 +888,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW3)) && my_stricmp(name, "E:ALERTSAW3") == 0) {
         if (difficulty != 0) {
             int saw2Obj = *(int *)((char *)ext + UNI_SAW2_TOOB_OBJ);
+            { char dl[128]; wsprintfA(dl, "ALERTSAW3 saw=0x%08X", saw2Obj); ToobDiag(dl); }
             if (saw2Obj && !IsBadReadPtr((void *)saw2Obj, 0x1110)) *(BYTE *)(saw2Obj + 0x110C) = 1;
         }
     }

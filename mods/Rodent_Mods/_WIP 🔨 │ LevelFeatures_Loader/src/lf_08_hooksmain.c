@@ -191,6 +191,9 @@ static void UniversalConstructor(void *board, int raceIndex) {
                 int sB = *(int *)((char *)board + 0x4384);
                 if (sA && !IsBadReadPtr((void *)sA, 0x1110)) *(int *)((char *)ext + UNI_SAW_TOOB_OBJ) = sA;
                 if (sB && !IsBadReadPtr((void *)sB, 0x1110)) *(int *)((char *)ext + UNI_SAW2_TOOB_OBJ) = sB;
+                { char sdbg[128]; wsprintfA(sdbg, "SAWFILL sA=0x%08X sB=0x%08X extA=0x%08X extB=0x%08X",
+                    sA, sB, *(int *)((char *)ext + UNI_SAW_TOOB_OBJ), *(int *)((char *)ext + UNI_SAW2_TOOB_OBJ));
+                  ToobDiag(sdbg); }
             }
         }
     }
