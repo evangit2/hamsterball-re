@@ -276,13 +276,23 @@ void UniversalRenderImpl(void *board, int unk) {
          * block's old Timer Scale/Position API corrupted Draw state; native
          * 0x417C00 uses 0x457AD0/0x457C60 + product-pos + device-select.
          * Per smasher: AD0(bufA); C60(bufA,float); v[2](bufA,x,y,z);
-         * dev-v[7](dev,bufA,0). (bufB==bufA: native reuses one buffer.) */
+         * dev-v[7](dev,bufA,0). (bufB==bufA: native reuses one buffer.)
+         * 2026-11-20: also replicate the two native 0x457A40 Timer_Init
+         * temps (0x417DB0/0x417DC4) — they call into GAMEDLL state that
+         * the pane draw may read (ball reflection lives or dies here). */
         {
             typedef void (__thiscall *T57AD0)(void *);
             typedef DWORD (__thiscall *T57C60)(void *, float);
+            typedef void (__thiscall *T57A40)(void *);
             T57AD0 fAD0 = (T57AD0)(g_moduleBase + 0x57AD0);
             T57C60 fC60 = (T57C60)(g_moduleBase + 0x57C60);
+            T57A40 fA40 = (T57A40)(g_moduleBase + 0x57A40);
             int i;
+            {
+                char tA[68]; char tB[68];
+                int k; for (k = 0; k < 68; k++) tA[k] = tB[k] = 0;
+                if (fA40) { fA40(tA); fA40(tB); }
+            }
             for (i = 0; i < 2; i++) {
                 float px = *(float *)((char *)board + (i ? 0x4378 : 0x436C));
                 float py = *(float *)((char *)board + (i ? 0x437C : 0x4370));
