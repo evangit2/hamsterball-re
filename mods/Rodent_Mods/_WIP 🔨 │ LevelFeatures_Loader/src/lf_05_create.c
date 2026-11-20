@@ -1654,5 +1654,6 @@ void __thiscall UniversalCreateDynamicObjects(void *board, char *name, void *out
         wsprintfA(censdbg, "CREATE census: name='%.48s' slot=%d content=%d out1=0x%08X out2=0x%08X",
             name, clevel, cslot, *(DWORD *)out1, *(DWORD *)out2);
         DebugLog(censdbg);
+        if (cslot == 13) SkyDiag(censdbg);
     }
 }

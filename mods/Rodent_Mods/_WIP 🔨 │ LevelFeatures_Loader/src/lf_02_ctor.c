@@ -394,6 +394,7 @@ static void UniversalGlassInit(void *mem, int app) {
  * S1 mirrors own popcylinders/posts/magnifier at create/postscan;
  * racestate runs base + Feature_SkyPopcylinder (no native 0x41FC90). */
 static void UniversalSkyInit(void *mem, int app) {
+    { char sdbg[96]; wsprintfA(sdbg, "SKYINIT enter mem=0x%08X app=0x%08X", (DWORD)mem, (DWORD)app); SkyDiag(sdbg); }
     g_BoardCtor(mem, app);
     *(DWORD *)mem = 0x4D0FC8; /* Sky board vtable */
     *(char **)((char *)mem + 0x868) = "Board (Sky)";
@@ -451,6 +452,7 @@ static void UniversalSkyInit(void *mem, int app) {
     if (BoardHasOffset(mem, 0x47F4, 4))
         *(DWORD *)((char *)mem + 0x47F4) = 0;
     DebugLog("UniversalSkyInit done (no native ctor)");
+    { char sdbg[128]; wsprintfA(sdbg, "SKYINIT done mem=0x%08X vtbl=0x%08X 4394=0x%08X 436C=0x%08X 4370=0x%08X 4374=0x%08X", (DWORD)mem, *(DWORD *)mem, *(DWORD *)((char *)mem + 0x4394), *(DWORD *)((char *)mem + 0x436C), *(DWORD *)((char *)mem + 0x4370), *(DWORD *)((char *)mem + 0x4374)); SkyDiag(sdbg); }
 }
 
 /* Fail-closed size tracking: bit i = level i+1 alloc patched to 0x7000.

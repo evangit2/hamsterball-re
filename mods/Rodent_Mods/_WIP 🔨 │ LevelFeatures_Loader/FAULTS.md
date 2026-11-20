@@ -210,3 +210,12 @@ mark them FIXED with the version instead.
   Sky keeps its class/identity in any slot). Rig Sky-load NOT a valid gate:
   even the rollback build dies on rig Sky load (env limitation), boot test
   clean (48s). Awaiting Windows retest.
+
+## 2026-11-20 - Sky Draw crash persists (diag build)
+- uni3 (+0x4394 init, steps 2/3) still crashes at 0001:00052087 on real
+  Windows, same address. Static audit holds (ctor/scene/slot-table parity).
+- Shipped throwaway diag build (SkyDiag channel -> sky_diag.txt in game
+  dir, Sky-content only): SKYINIT enter/done, SKYREPLICA hooks count,
+  per-S1 CREATE census (content 13), SKYRS ticks (1 + every 600),
+  SKYRENDER features/sprite/list (first + every 600). Run Sky ~15s, send
+  sky_diag.txt + crash dialog.

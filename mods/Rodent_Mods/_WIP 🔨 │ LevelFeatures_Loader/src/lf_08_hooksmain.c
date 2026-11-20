@@ -810,6 +810,29 @@ void DebugLog(const char *msg) {
     }
 }
 
+/* Sky-targeted diag (2026-11-20 Draw-crash hunt, 0001:00052087): always-on
+ * file channel, Sky-content only + throttled runtime lines. Writes
+ * sky_diag.txt next to the DLL. Throwaway: delete when Sky is green. */
+void SkyDiag(const char *msg) {
+    static HANDLE hSky = NULL;
+    static int skyTried = 0;
+    if (!hSky && !skyTried) {
+        skyTried = 1;
+        char logPath[MAX_PATH];
+        if (g_configPath[0]) {
+            strcpy(logPath, g_configPath);
+            { char *p = strrchr(logPath, '\\'); if (p) strcpy(p + 1, "sky_diag.txt"); else strcpy(logPath, "sky_diag.txt"); }
+        } else strcpy(logPath, "sky_diag.txt");
+        hSky = CreateFileA(logPath, GENERIC_WRITE,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hSky == INVALID_HANDLE_VALUE) hSky = NULL;
+        if (hSky) { DWORD w = 0; const char *init = "SKYDIAG init log=sky_diag.txt\r\n"; WriteFile(hSky, init, strlen(init), &w, NULL); FlushFileBuffers(hSky); }
+    }
+    if (!hSky) return;
+    { DWORD w = 0; WriteFile(hSky, msg, strlen(msg), &w, NULL); WriteFile(hSky, "\r\n", 2, &w, NULL); FlushFileBuffers(hSky); }
+}
+
 /* Forward declaration for auto-test (unused, kept for future testing) */
 
 /* ═══════════════════════════════════════════════════════════════════════════

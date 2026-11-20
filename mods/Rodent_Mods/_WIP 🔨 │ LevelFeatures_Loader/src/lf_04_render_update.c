@@ -106,6 +106,8 @@ void UniversalRenderImpl(void *board, int unk) {
             features |= REND_SKY_LIST;
     }
 
+    { static int skyRCount = 0; if (ContentFileId(ext) == 13 && (skyRCount == 0 || (++skyRCount % 600) == 0)) { char srd[128]; if (skyRCount == 0) skyRCount = 1; wsprintfA(srd, "SKYRENDER features=0x%X sprite=0x%08X list=%d mesh=0x%08X", features, *(DWORD *)((char *)ext + REND_SKY_SPRITE), *(int *)((char *)ext + REND_SKY_LIST + 4), *(DWORD *)((char *)ext + REND_SKY_MESH)); SkyDiag(srd); } }
+
     if (!features) return;
 
     /* ── Bumper Reflective Render (Beginner, Toob, Master) ──
@@ -823,6 +825,7 @@ void __fastcall UniversalRaceState(void *board) {
         wsprintfA(dbg, "  [raceState] #%d calling Board_UpdateRaceState...", s_rsCount);
         DebugLog(dbg);
     }
+    { void *sdx = GetBoardExt(board); if (sdx && ContentFileId(sdx) == 13 && (s_rsCount == 1 || s_rsCount % 600 == 0)) { char sd[96]; wsprintfA(sd, "SKYRS tick #%d board=0x%08X", s_rsCount, (DWORD)board); SkyDiag(sd); } }
 
     /* Single-chain rule (2026-09-12 audit): every saved orig either IS the
      * base (10 shared levels) or calls it internally first (all 5 customs,

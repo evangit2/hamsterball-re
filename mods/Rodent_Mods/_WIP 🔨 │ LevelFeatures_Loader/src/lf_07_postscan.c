@@ -278,6 +278,7 @@ static void Sky_LoaderReplica(void *board, void *ext) {
     DWORD *array;
     DWORD savedIter;
     (void)ext;
+    { char sdbg[96]; wsprintfA(sdbg, "SKYREPLICA enter board=0x%08X", (DWORD)board); SkyDiag(sdbg); }
     if (!board) return;
     meshWorld = *(DWORD *)((char *)board + BOARD_MESHWORLD);
     if (!meshWorld) return;
@@ -319,7 +320,8 @@ static void Sky_LoaderReplica(void *board, void *ext) {
             hook(list, (void *)obj);
         }
     }
-    *(DWORD*)(objDb + 0x89C + iter*4)=savedIter;
+    *(DWORD *)(objDb + 0x89C + iter*4)=savedIter;
+    { char sdbg[96]; wsprintfA(sdbg, "SKYREPLICA hooks done count=%d", count); SkyDiag(sdbg); }
     /* CLOUDSCAPE mesh ref (native 0x4109FE-0x410A2C): DISABLED 2026-11-16.
      * The 0x4605E0 lookup call crashed postscan (convention mismatch),
      * aborting Sky load. Clouds are pure skybox decor; hooks above are the
