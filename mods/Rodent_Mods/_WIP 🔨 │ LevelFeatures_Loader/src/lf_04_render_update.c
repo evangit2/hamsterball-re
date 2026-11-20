@@ -273,6 +273,12 @@ void UniversalRenderImpl(void *board, int unk) {
         }
 
         char timerBuf[68];
+        /* Render-gap fix: timer sequence REMOVED (2026-11-20) — the
+         * block's Timer Scale/Position API corrupts Draw state on Glass;
+         * native uses the 0x457AD0/0x457C60 factory pair instead. Step 3
+         * + device-select below; timer replication follows once this
+         * loads. */
+#if 0
         if (g_TimerInit && g_TimerCleanup) {
             g_TimerInit(timerBuf);
 
@@ -341,6 +347,7 @@ void UniversalRenderImpl(void *board, int unk) {
             g_TimerCleanup(timerBuf2);
             g_TimerCleanup(timerBuf);
         }
+#endif
     }
 
     sky_render:
