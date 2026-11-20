@@ -53,6 +53,18 @@ void UniversalRenderImpl(void *board, int unk) {
     }
 #endif
 
+    /* Glass slot-24: delegate to native 0x417C00 via orig[12]. It does base +
+     * the full multi-buffer pane-timer sequence (3+ bufs, early v2, dual
+     * dev-v7 per pane). The single-buffer replica was structurally wrong and
+     * each partial fix risked wrong draws. DAT is hook-filled so native
+     * inputs match vanilla exactly. Stock slot+content 12 only; swapped
+     * slots keep the replica path below (guarded, no crash). */
+    if (ext && level == 12 && ContentFileId(ext) == 12 &&
+        *(BYTE *)((char *)ext + COLL_FLAG_GLASS) && g_origRender[12]) {
+        g_origRender[12](board, unk);
+        return;
+    }
+
     /* Call shared base render (Level_RenderDynamicObjects) — forward gfx ctx (native ret $0x4) */
     g_RenderDynamicObjects(board, unk);
 
