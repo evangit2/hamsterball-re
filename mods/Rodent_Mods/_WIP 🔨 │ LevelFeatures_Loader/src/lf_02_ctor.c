@@ -250,7 +250,9 @@ static void UniversalToobInit(void *mem, int app) {
 static DWORD s_toobSceneVtbl[256];
 static int s_toobSceneVtblInit = 0;
 void __thiscall UniversalToobScene(void *board) {
-    if (!board || IsBadReadPtr(board, 0x6500)) return;
+    /* No entry guard: the native scene (0x40FA20) runs unguarded on the
+     * same board; an over-strict probe here skips setup -> white freeze. */
+    if (!board) return;
     if (g_LevelInitScene) g_LevelInitScene(board);
     {
         int app = *(int *)((char *)board + 0x878);
@@ -262,7 +264,7 @@ void __thiscall UniversalToobScene(void *board) {
             void *mm = g_operatorNew(0x10D0);
             if (mm) meshWorld = (int)g_LevelMeshWorldCtor(mm, (void *)gfx, "levels\\level8");
         }
-        if (!meshWorld) return;
+        /* Native continues to setup even when the mesh build fails. */
         *(int *)((char *)board + 0x8AC) = meshWorld;
         if (g_operatorNew && g_LevelRenderCtor) {
             void *rm = g_operatorNew(0x10D0);
