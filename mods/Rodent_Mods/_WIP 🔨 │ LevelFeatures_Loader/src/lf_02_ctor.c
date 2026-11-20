@@ -353,6 +353,33 @@ static void UniversalGlassInit(void *mem, int app) {
     for (i = 0; i < 7; i++)
         if (BoardHasOffset(mem, 0x436C + i * 4, 4))
             *(DWORD *)((char *)mem + 0x436C + i * 4) = 0;
+    /* Base replica (native 0x4217B0 via Glass ctor 0x424A90): the two
+     * sub-objects the Glass Draw path reads. Missing them = Draw crash
+     * NULL+0x154 at 0x46F160. */
+    if (g_AthenaListInit && BoardHasOffset(mem, 0x4394 + 0x10, 4))
+        g_AthenaListInit((void *)((char *)mem + 0x4394), 0);
+    if (BoardHasOffset(mem, 0x47C8 + 0x10, 4)) {
+        void (__thiscall *init47C8)(void *) =
+            (void (__thiscall *)(void *))(g_moduleBase + 0x58E60);
+        init47C8((void *)((char *)mem + 0x47C8));
+    }
+    if (BoardHasOffset(mem, 0x438C, 4))
+        *(DWORD *)((char *)mem + 0x438C) = 0;
+    if (BoardHasOffset(mem, 0x47B0, 1))
+        *(BYTE *)((char *)mem + 0x47B0) = 0;
+    for (i = 0; i < 4; i++)
+        if (BoardHasOffset(mem, 0x47B4 + i * 4, 4))
+            *(DWORD *)((char *)mem + 0x47B4 + i * 4) = 0;
+    if (BoardHasOffset(mem, 0x47C4, 1))
+        *(BYTE *)((char *)mem + 0x47C4) = 0;
+    if (BoardHasOffset(mem, 0x47C5, 1))
+        *(BYTE *)((char *)mem + 0x47C5) = 0;
+    if (BoardHasOffset(mem, 0x4348, 1))
+        *(BYTE *)((char *)mem + 0x4348) = 0;
+    if (BoardHasOffset(mem, 0x47AC, 4))
+        *(DWORD *)((char *)mem + 0x47AC) = 0x1770;
+    if (BoardHasOffset(mem, 0x47D0, 4))
+        *(DWORD *)((char *)mem + 0x47D0) = 0x19;
     DebugLog("UniversalGlassInit done (no native ctor)");
 }
 
