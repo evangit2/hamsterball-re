@@ -179,18 +179,55 @@ static void UniversalConstructor(void *board, int raceIndex) {
             DebugLog("Calling Board_Setup (vtable+0x80)...");
             boardSetup(board);
             DebugLog("Board_Setup done");
-            /* Universal Toob saw fill: native create owns the pipe saws
+            /* Universal Toob saw registration: native create owns the pipe saws
              * (board+0x4380 branch saw, +0x4384 alert saw — Ghidra-verified
-             * 0x410020 arms +0x110C on both), so the LFL create mirrors never
-             * run and the ext mirrors stay NULL — alert blocks no-op and the
-             * blades never show. Mirror the native slots into ext once
-             * (validated objects only; garbage fails safe to skip). */
+             * 0x410020 arms +0x110C on both), and the native S1 dispatcher
+             * tail (0x40C4A0: append out1 to board+0x10EC and
+             * (board+0x8B0)+0x18) never runs on the fast path — so the
+             * setup-built saw entities sit in NO driven list: never updated
+             * (no blade visuals appended to 0x3B00), never drawn. Mirror the
+             * native slots into ext (alert blocks) AND replicate the
+             * dispatcher tail appends (update+render), but only when the
+             * lists don't already contain the object (dispatcher ran =
+             * nothing to do). Validated objects only; garbage fails safe. */
             if (ext && *(int *)((char *)ext + UNI_NATIVE_CTOR) && ContentFileId(ext) == 10 &&
                 BoardHasOffset(board, 0x4384 + 4, 4)) {
                 int sA = *(int *)((char *)board + 0x4380);
                 int sB = *(int *)((char *)board + 0x4384);
                 if (sA && !IsBadReadPtr((void *)sA, 0x1110)) *(int *)((char *)ext + UNI_SAW_TOOB_OBJ) = sA;
                 if (sB && !IsBadReadPtr((void *)sB, 0x1110)) *(int *)((char *)ext + UNI_SAW2_TOOB_OBJ) = sB;
+                /* Dispatcher-tail registration for both saw entities. */
+                {
+                    int saws[2]; saws[0] = sA; saws[1] = sB;
+                    int si;
+                    for (si = 0; si < 2; si++) {
+                        int so = saws[si];
+                        int li;
+                        if (!so || IsBadReadPtr((void *)so, 0x1110)) continue;
+                        for (li = 0; li < 2; li++) {
+                            void *lst = NULL;
+                            if (li == 0) {
+                                if (!BoardHasOffset(board, 0x10EC + 0x410, 4)) continue;
+                                lst = (void *)((char *)board + 0x10EC);
+                            } else {
+                                int b8 = 0;
+                                if (!BoardHasOffset(board, 0x8B0 + 4, 4)) continue;
+                                b8 = *(int *)((char *)board + 0x8B0);
+                                if (!b8 || IsBadReadPtr((void *)b8, 0x1C)) continue;
+                                lst = (void *)(b8 + 0x18);
+                                if (IsBadReadPtr(lst, 0x410)) continue;
+                            }
+                            {
+                                int cnt = *(int *)((char *)lst + 4);
+                                int *items = *(int **)((char *)lst + 0x40C);
+                                int found = 0, ii;
+                                if (cnt < 0 || cnt > 512 || !items || IsBadReadPtr((void *)items, (unsigned)cnt * 4)) continue;
+                                for (ii = 0; ii < cnt; ii++) if (items[ii] == so) { found = 1; break; }
+                                if (!found && g_AthenaListAppend) g_AthenaListAppend(lst, so);
+                            }
+                        }
+                    }
+                }
                 { char sdbg[128]; wsprintfA(sdbg, "SAWFILL sA=0x%08X sB=0x%08X extA=0x%08X extB=0x%08X",
                     sA, sB, *(int *)((char *)ext + UNI_SAW_TOOB_OBJ), *(int *)((char *)ext + UNI_SAW2_TOOB_OBJ));
                   ToobDiag(sdbg); }
