@@ -26,16 +26,18 @@ static int g_collisionEventCount = 0;
  * one INIT line per process so the log proves which build produced it. */
 static int g_toobDiagInit = 0;
 void ToobDiag(const char *line) {
+    int first = !g_toobDiagInit;
     HANDLE hf = CreateFileA("toob_branch_diag.log", GENERIC_WRITE,
-        FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+        first ? CREATE_ALWAYS : OPEN_ALWAYS,
         FILE_ATTRIBUTE_NORMAL, NULL);
     if (hf == INVALID_HANDLE_VALUE) return;
-    SetFilePointer(hf, 0, NULL, FILE_END);
-    if (!g_toobDiagInit) {
+    if (!first) SetFilePointer(hf, 0, NULL, FILE_END);
+    if (first) {
         g_toobDiagInit = 1;
-        const char *initLine = "TOOB_DIAG build=2026-11-16c ALERTSAW2-fix+bounded-pick init\r\n";
+        const char *initLine = "TOOB_DIAG build=2026-11-20-uniscene20 init\r\n";
         DWORD bw = 0;
-        WriteFile(hf, initLine, 57, &bw, NULL);
+        WriteFile(hf, initLine, 44, &bw, NULL);
     }
     {
         DWORD bw = 0, nl = (DWORD)strlen(line);
