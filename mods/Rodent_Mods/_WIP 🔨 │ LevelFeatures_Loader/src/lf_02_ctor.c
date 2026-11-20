@@ -405,6 +405,14 @@ static void UniversalSkyInit(void *mem, int app) {
           *(char *)(prof + 0x10) == 0)
           *(BYTE *)(app + 0x858) = 1; }
     g_LoadRaceData(mem, "SKYRACE");
+    /* Hook registry (native ctor: AthenaListInit at +0x4394 via 0x453210).
+     * The native Sky scene (0x410830) appends every non-PILLAR S1 hook
+     * into +0x4394 with NO null check — without this init it writes
+     * through malloc garbage = heap corruption = Draw crash in d3d8
+     * (0001:00052087, Board (Sky)). Postscan Sky_LoaderReplica also
+     * requires the header (returns early when missing = no posts). */
+    if (g_AthenaListInit && BoardHasOffset(mem, 0x4394 + 0x10, 4))
+        g_AthenaListInit((void *)((char *)mem + 0x4394), 0);
     /* Meshes (native ctor loads; create mirrors refresh them). */
     if (g_operatorNew && g_MeshNodeCtor) {
         void *sm = g_operatorNew(0x18);
@@ -694,7 +702,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         DebugLog(dbg2);
     }
 
-    /* Step 2: Set vtable. Tower/Up/Dizzy/Neon/Expert/Odd/Toob/Wobbly/Glass
+    /* Step 2: Set vtable. Tower/Up/Dizzy/Neon/Expert/Odd/Toob/Wobbly/Glass/Sky
      * content keeps the
      * vtable its Universal*Init set (native class for content); other
      * content gets its slot vtable. Native-ctor boards keep the vtable the
@@ -702,18 +710,20 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     if (!useNativeCtor &&
         g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4 &&
         g_loadingContentId != 7 && g_loadingContentId != 8 && g_loadingContentId != 9 &&
-        g_loadingContentId != 10 && g_loadingContentId != 11 && g_loadingContentId != 12)
+        g_loadingContentId != 10 && g_loadingContentId != 11 && g_loadingContentId != 12 &&
+        g_loadingContentId != 13)
         *(DWORD *)mem = g_levelVtables[raceIndex];
     DebugLog("Vtable set");
 
     /* Step 3: Set board name and race title (slot table — skipped for Tower,
-     * Up, Dizzy, Neon, Expert, Odd, Toob, Wobbly and Glass content, whose
+     * Up, Dizzy, Neon, Expert, Odd, Toob, Wobbly, Glass and Sky content, whose
      * content names the Universal*Init set; native-ctor boards keep native
      * content names). */
     if (!useNativeCtor &&
         g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4 &&
         g_loadingContentId != 7 && g_loadingContentId != 8 && g_loadingContentId != 9 &&
-        g_loadingContentId != 10 && g_loadingContentId != 11 && g_loadingContentId != 12) {
+        g_loadingContentId != 10 && g_loadingContentId != 11 && g_loadingContentId != 12 &&
+        g_loadingContentId != 13) {
         *(char **)((char *)mem + UNI_BOARD_NAME) = ld->boardName;
         *(char **)((char *)mem + UNI_RACE_TITLE) = ld->raceTitle;
     }

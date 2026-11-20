@@ -199,3 +199,14 @@ mark them FIXED with the version instead.
   Feature_SkyPopcylinder (stand-down removed); TRAPDOOR create gate is
   content-driven. Boot crash-test clean (48s). Awaiting user retest on Windows:
   posts, magnifier follow, pegs pop, fun ball + lfdebug.log if anything is off.
+
+## 2026-11-20 - Sky universal Draw crash fix (0001:00052087)
+- User crash: Board (Sky), Draw op, d3d8.dll, FinishLoad(OK). Cause: native Sky
+  scene (0x410830) appends every non-PILLAR S1 hook into board+0x4394 with NO
+  null check — UniversalSkyInit missed the native ctor's AthenaListInit there,
+  so the scene wrote through malloc garbage = heap corruption = first-Draw
+  crash. Fix: AthenaListInit(+0x4394) in UniversalSkyInit (native parity).
+  Also added content-13 to the Step 2/3 vtable+names exclusions (file-swapped
+  Sky keeps its class/identity in any slot). Rig Sky-load NOT a valid gate:
+  even the rollback build dies on rig Sky load (env limitation), boot test
+  clean (48s). Awaiting Windows retest.
