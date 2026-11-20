@@ -1321,6 +1321,14 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
      * +0x4380/7C ch +0x4378 for TB2); ext copies kept for render. */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_TENBONUS1)) && my_strnicmp(name, "N:TENBONUS1", 11) == 0) {
         int phys = ball[0x69];
+        /* TEMP DIAG 2026-11-20: wrong-sound report. */
+        {
+            char dl[128];
+            DWORD c1 = app ? *(DWORD *)(app + 0x52C) : 0;
+            DWORD c2 = app ? *(DWORD *)(app + 0x4D0) : 0;
+            wsprintfA(dl, "TENB1 snd ch52C=0x%08X ch4D0=0x%08X", c1, c2);
+            ToobDiag(dl);
+        }
         if (phys && !IsBadReadPtr((void *)phys, 0xCB0) &&
             BoardHasOffset(board, 0x436C, 16)) {
             if (*(char *)((char *)board + 0x438C) == 0) {
