@@ -275,12 +275,11 @@ void UniversalRenderImpl(void *board, int unk) {
         /* Render-gap fix (2026-11-20): native timer sequence replica. The
          * block's old Timer Scale/Position API corrupted Draw state; native
          * 0x417C00 uses 0x457AD0/0x457C60 + product-pos + device-select.
-         * Re-derived 2026-11-20 from 0x417C5D-0x417D71: AD0(buf) then
-         * C60(buf+4, radius) on the SAME overlapping region; the pane draw
-         * consumes buf+4 (C60 product: v[2] positions it, dev-v[7] draws
-         * it). Passing pre-C60 buf drew flat panes with no ball reflection.
-         * Per smasher: AD0(buf); C60(buf+4,r); prodV[2](dummy12,x,y,z);
-         * dev-v[7](dev,buf+4,0). */
+         * Exact shape (verified by push-counting 0x417CA3-0x417D41):
+         * AD0(buf); C60(buf+4, radius); bufV[2](buf, x, y, z);
+         * dev-v[7](dev, buf+4, 0). Fresh zeroed buffers both draws; the
+         * two 0x457A40 Timer_Inits run AFTER both draws exactly like
+         * native (0x417DB0/0x417DC4, dead stack temps). */
         {
             typedef void (__thiscall *T57AD0)(void *);
             typedef DWORD (__thiscall *T57C60)(void *, float);
@@ -288,52 +287,34 @@ void UniversalRenderImpl(void *board, int unk) {
             T57AD0 fAD0 = (T57AD0)(g_moduleBase + 0x57AD0);
             T57C60 fC60 = (T57C60)(g_moduleBase + 0x57C60);
             T57A40 fA40 = (T57A40)(g_moduleBase + 0x57A40);
-            int i;
+            /* Exact native order (0x417C61-0x417DC4): smasher1 on fresh
+             * buf1, smasher2 on fresh buf2, then A40(tA); A40(tB).
+             * Each draw: bufV[2](buf, x, y, z); devV[7](dev, buf+4, 0). */
+            char buf1[72]; char buf2[72]; char tA[68]; char tB[68];
+            int k; for (k = 0; k < 72; k++) buf1[k] = buf2[k] = 0;
+            for (k = 0; k < 68; k++) tA[k] = tB[k] = 0;
+            /* Smasher 1 on fresh buf1; smasher 2 on fresh buf2 (native
+             * 0x417C61/0x417CEB — both run before the A40s). */
+            if (fAD0 && fC60) { fAD0(buf1); fC60(buf1 + 4, *(float *)((char *)board + 0x4384)); }
+            if (fAD0 && fC60) { fAD0(buf2); fC60(buf2 + 4, *(float *)((char *)board + 0x4388)); }
+            /* Native interlude AFTER both draws (0x417DB0/0x417DC4). */
+            if (fA40) { fA40(tA); fA40(tB); }
             {
-                char tA[68]; char tB[68];
-                int k; for (k = 0; k < 68; k++) tA[k] = tB[k] = 0;
-                if (fA40) { fA40(tA); fA40(tB); }
-            }
-            for (i = 0; i < 2; i++) {
+                char *bufs[2]; bufs[0] = buf1; bufs[1] = buf2;
+                int i;
+                for (i = 0; i < 2; i++) {
                 float px = *(float *)((char *)board + (i ? 0x4378 : 0x436C));
                 float py = *(float *)((char *)board + (i ? 0x437C : 0x4370));
                 float pz = *(float *)((char *)board + (i ? 0x4380 : 0x4374));
-                float pr = *(float *)((char *)board + (i ? 0x4388 : 0x4384));
                 BYTE fg = *(BYTE *)((char *)board + (i ? 0x438D : 0x438C));
-                char bufA[72];
-                char dummy12[12];
-                DWORD prodObj = 0;
-                if (fAD0 && fC60) {
-                    int k; for (k = 0; k < 72; k++) bufA[k] = 0;
-                    for (k = 0; k < 12; k++) dummy12[k] = 0;
-                    /* EXPERIMENT 2026-11-20: native v[2] gets ECX = stale
-                     * stack (contents unknown); feed it the live ball xyz
-                     * in case the reflection is computed ball-relative. */
-                    {
-                        DWORD bl = *(DWORD *)((char *)board + 0x29D4);
-                        if (bl && !IsBadReadPtr((void *)bl, 0x410)) {
-                            DWORD cnt = *(DWORD *)(bl + 4);
-                            DWORD items = *(DWORD *)(bl + 0x40C);
-                            if (cnt > 0 && items && !IsBadReadPtr((void *)items, 4)) {
-                                DWORD ball0 = *(DWORD *)items;
-                                if (ball0 && !IsBadReadPtr((void *)ball0, 0x170)) {
-                                    *(float *)(dummy12 + 0) = *(float *)(ball0 + 0x164);
-                                    *(float *)(dummy12 + 4) = *(float *)(ball0 + 0x168);
-                                    *(float *)(dummy12 + 8) = *(float *)(ball0 + 0x16C);
-                                }
-                            }
-                        }
-                    }
-                    fAD0(bufA);
-                    fC60(bufA + 4, pr);
-                    prodObj = (DWORD)(bufA + 4);
-                }
-                if (prodObj && !IsBadReadPtr((void *)prodObj, 0x10)) {
-                    DWORD *pv = *(DWORD **)prodObj;
+                DWORD prodObj = (DWORD)(bufs[i] + 4);
+                /* bufV[2](buf, x, y, z). */
+                if (!IsBadReadPtr((void *)bufs[i], 0x10)) {
+                    DWORD *pv = *(DWORD **)bufs[i];
                     if (pv && !IsBadReadPtr((void *)pv, 0x10)) {
                         void (__thiscall *p2)(DWORD, float, float, float) =
                             (void (__thiscall *)(DWORD, float, float, float))pv[2];
-                        if (p2) p2((DWORD)dummy12, px, py, pz);
+                        if (p2) p2((DWORD)bufs[i], px, py, pz);
                     }
                 }
                 {
@@ -346,6 +327,7 @@ void UniversalRenderImpl(void *board, int unk) {
                             if (d7) d7(dev, prodObj, 0);
                         }
                     }
+                }
                 }
             }
         }
