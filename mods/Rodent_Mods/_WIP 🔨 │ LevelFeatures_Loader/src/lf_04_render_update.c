@@ -275,46 +275,33 @@ void UniversalRenderImpl(void *board, int unk) {
         /* Render-gap fix (2026-11-20): native timer sequence replica. The
          * block's old Timer Scale/Position API corrupted Draw state; native
          * 0x417C00 uses 0x457AD0/0x457C60 + product-pos + device-select.
-         * Exact shape (verified by push-counting 0x417CA3-0x417D41):
-         * AD0(buf); C60(buf+4, radius); bufV[2](buf, x, y, z);
-         * dev-v[7](dev, buf+4, 0). Fresh zeroed buffers both draws; the
-         * two 0x457A40 Timer_Inits run AFTER both draws exactly like
-         * native (0x417DB0/0x417DC4, dead stack temps). */
+         * Per smasher: AD0(bufA); C60(bufA,float); v[2](bufA,x,y,z);
+         * dev-v[7](dev,bufA,0). (bufB==bufA: native reuses one buffer.)
+         * STABLE BASELINE (no reflection yet — hunt continues from here). */
         {
             typedef void (__thiscall *T57AD0)(void *);
             typedef DWORD (__thiscall *T57C60)(void *, float);
-            typedef void (__thiscall *T57A40)(void *);
             T57AD0 fAD0 = (T57AD0)(g_moduleBase + 0x57AD0);
             T57C60 fC60 = (T57C60)(g_moduleBase + 0x57C60);
-            T57A40 fA40 = (T57A40)(g_moduleBase + 0x57A40);
-            /* Exact native order (0x417C61-0x417DC4): smasher1 on fresh
-             * buf1, smasher2 on fresh buf2, then A40(tA); A40(tB).
-             * Each draw: bufV[2](buf, x, y, z); devV[7](dev, buf+4, 0). */
-            char buf1[72]; char buf2[72]; char tA[68]; char tB[68];
-            int k; for (k = 0; k < 72; k++) buf1[k] = buf2[k] = 0;
-            for (k = 0; k < 68; k++) tA[k] = tB[k] = 0;
-            /* Smasher 1 on fresh buf1; smasher 2 on fresh buf2 (native
-             * 0x417C61/0x417CEB — both run before the A40s). */
-            if (fAD0 && fC60) { fAD0(buf1); fC60(buf1 + 4, *(float *)((char *)board + 0x4384)); }
-            if (fAD0 && fC60) { fAD0(buf2); fC60(buf2 + 4, *(float *)((char *)board + 0x4388)); }
-            /* Native interlude AFTER both draws (0x417DB0/0x417DC4). */
-            if (fA40) { fA40(tA); fA40(tB); }
-            {
-                char *bufs[2]; bufs[0] = buf1; bufs[1] = buf2;
-                int i;
-                for (i = 0; i < 2; i++) {
+            int i;
+            for (i = 0; i < 2; i++) {
                 float px = *(float *)((char *)board + (i ? 0x4378 : 0x436C));
                 float py = *(float *)((char *)board + (i ? 0x437C : 0x4370));
                 float pz = *(float *)((char *)board + (i ? 0x4380 : 0x4374));
+                float pr = *(float *)((char *)board + (i ? 0x4388 : 0x4384));
                 BYTE fg = *(BYTE *)((char *)board + (i ? 0x438D : 0x438C));
-                DWORD prodObj = (DWORD)(bufs[i] + 4);
-                /* bufV[2](buf, x, y, z). */
-                if (!IsBadReadPtr((void *)bufs[i], 0x10)) {
-                    DWORD *pv = *(DWORD **)bufs[i];
+                char bufA[68];
+                DWORD prod = 0;
+                if (fAD0 && fC60) {
+                    fAD0(bufA);
+                    prod = fC60(bufA, pr);
+                }
+                if (!IsBadReadPtr(bufA, 0x10)) {
+                    DWORD *pv = *(DWORD **)bufA;
                     if (pv && !IsBadReadPtr((void *)pv, 0x10)) {
                         void (__thiscall *p2)(DWORD, float, float, float) =
                             (void (__thiscall *)(DWORD, float, float, float))pv[2];
-                        if (p2) p2((DWORD)bufs[i], px, py, pz);
+                        if (p2) p2((DWORD)bufA, px, py, pz);
                     }
                 }
                 {
@@ -324,11 +311,11 @@ void UniversalRenderImpl(void *board, int unk) {
                         if (dv && !IsBadReadPtr((void *)dv, 0x20)) {
                             void (__thiscall *d7)(DWORD, DWORD, DWORD) =
                                 (void (__thiscall *)(DWORD, DWORD, DWORD))dv[7];
-                            if (d7) d7(dev, prodObj, 0);
+                            if (d7) d7(dev, (DWORD)bufA, 0);
                         }
                     }
                 }
-                }
+                (void)prod;
             }
         }
     }
