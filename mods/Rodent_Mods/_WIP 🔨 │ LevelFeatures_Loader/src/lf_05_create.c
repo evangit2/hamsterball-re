@@ -127,6 +127,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
      * mirrors below own them on every race, presence-routed via
      * S1Inventory, never slot-gated. */
     int nativeOwned = *(int *)((char *)ext + UNI_NATIVE_CTOR) &&
+        !*(int *)((char *)ext + UNI_FORCE_UNI_CREATE) &&
         skind != K_TIPPER && skind != K_BRIDGE && skind != K_BBRIDGE &&
         my_strnicmp(name, "POPDOOR", 7) != 0;
     /* Glass render-gap bisect (2026-11-20): force-delegate REMOVED —

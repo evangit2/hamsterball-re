@@ -379,7 +379,8 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
      * (branching, saws, teeth: the "can't play Toob" reports).
      * The native handler falls through to global DispatchCollisionEvents
      * itself, so return after (no call_global: avoids double globals). */
-    if (*(int *)((char *)ext + UNI_NATIVE_HANDLERS)) {
+    if (*(int *)((char *)ext + UNI_NATIVE_HANDLERS) &&
+        !*(int *)((char *)ext + UNI_FORCE_UNI_COLL)) {
         int cslot = ContentFileId(ext);
         int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
         if (effSlot >= 1 && effSlot <= 15 && g_origDispatch[effSlot]) {

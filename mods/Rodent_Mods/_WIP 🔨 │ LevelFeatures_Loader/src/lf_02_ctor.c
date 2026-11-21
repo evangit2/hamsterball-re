@@ -681,6 +681,35 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
             *(int *)((char *)ext + UNI_NATIVE_CTOR) = 1;
             *(int *)((char *)ext + UNI_NATIVE_HANDLERS) = 1;
             SkyDiag("SKY-HYBRID: native handlers on universal ctor");
+            /* Sky handler bisect (2026-11-21): magic files in the game dir
+             * force one handler at a time back to universal, cumulatively
+             * (create -> +race -> +render -> +coll). First crash after adding
+             * a file = that replica is guilty. Presence-tested via
+             * GetFileAttributesA (dir file, not directory). */
+            {
+                DWORD fa;
+                fa = GetFileAttributesA("sky_uni_create.txt");
+                if (fa != 0xFFFFFFFFu && !(fa & 0x10))
+                    *(int *)((char *)ext + UNI_FORCE_UNI_CREATE) = 1;
+                fa = GetFileAttributesA("sky_uni_race.txt");
+                if (fa != 0xFFFFFFFFu && !(fa & 0x10))
+                    *(int *)((char *)ext + UNI_FORCE_UNI_RACE) = 1;
+                fa = GetFileAttributesA("sky_uni_render.txt");
+                if (fa != 0xFFFFFFFFu && !(fa & 0x10))
+                    *(int *)((char *)ext + UNI_FORCE_UNI_RENDER) = 1;
+                fa = GetFileAttributesA("sky_uni_coll.txt");
+                if (fa != 0xFFFFFFFFu && !(fa & 0x10))
+                    *(int *)((char *)ext + UNI_FORCE_UNI_COLL) = 1;
+                {
+                    char fbf[128];
+                    wsprintfA(fbf, "SKY-FORCE create=%d race=%d render=%d coll=%d",
+                        *(int *)((char *)ext + UNI_FORCE_UNI_CREATE),
+                        *(int *)((char *)ext + UNI_FORCE_UNI_RACE),
+                        *(int *)((char *)ext + UNI_FORCE_UNI_RENDER),
+                        *(int *)((char *)ext + UNI_FORCE_UNI_COLL));
+                    SkyDiag(fbf);
+                }
+            }
         }
     }
 

@@ -1039,6 +1039,10 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_CONTENT_FILE  0xBA08  /* dword: stock-file content id 1..15 (0=custom/unknown), from level filename — NEVER slot */
 #define UNI_NATIVE_CTOR   0xBA0C  /* dword: 1 = board built by NATIVE level ctor (fast path: native objects/slots exist). Handler delegation is UNI_NATIVE_HANDLERS below. */
 #define UNI_NATIVE_HANDLERS 0xBA2C /* dword: 1 = create/collide/racestate/update/render delegate to native orig; 0 = universal handlers. Follows CTOR except content-10 (universal Toob: native build, universal handlers). */
+#define UNI_FORCE_UNI_CREATE 0xBA30 /* dword: sky_uni_create.txt present -> create mirrors run even when native-owned (Sky handler bisect 2026-11-21) */
+#define UNI_FORCE_UNI_RACE   0xBA34 /* dword: sky_uni_race.txt present -> universal racestate even when HANDLERS=1 */
+#define UNI_FORCE_UNI_RENDER 0xBA38 /* dword: sky_uni_render.txt present -> universal render even when HANDLERS=1 */
+#define UNI_FORCE_UNI_COLL   0xBA3C /* dword: sky_uni_coll.txt present -> universal collision even when HANDLERS=1 */
 /* proximity branch driver (native boards bypass dispatcher touches): */
 #define OFF_BRANCH_QUAD_VALID 0xBA10  /* dword: 1 = E:BRANCH(B) trigger quad parsed */
 #define OFF_BRANCH_QUAD_MIN   0xBA14  /* 3 floats: trigger AABB min */

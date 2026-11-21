@@ -236,3 +236,13 @@ mark them FIXED with the version instead.
   replica hooks + native racestate in sky_diag, NO SKYRENDER = replica
   skipped), gameplay 28,800+ ticks no crash, blue-sky/checker/loop
   screenshot. Awaiting Windows retest — send sky_diag.txt + result.
+
+## 2026-11-21 - Sky handler bisect build (find the guilty replica)
+- Hybrid works (user-confirmed Sky loads/plays). To un-hybridize safely,
+  shipped a bisect: 4 magic files (sky_uni_create/race/render/coll.txt,
+  presence = that handler runs universal for Sky). Cumulative order
+  create -> race -> render -> coll; first crash after adding a file =
+  that replica guilty. SKY-FORCE line in sky_diag.txt proves the config.
+- Rig-verified: boots clean, baseline Sky loads+plays (25,800 ticks),
+  SKY-FORCE 0 0 0 0 logged. Per-flag loads need the user's fast box
+  (rig nav too slow, and Wine can't reproduce the d3d8 fault anyway).

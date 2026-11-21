@@ -28,7 +28,8 @@ void UniversalRenderImpl(void *board, int unk) {
      * HeapAlloc ret). Skip additive extras — native scene is complete.
      * Origs by CONTENT (g_origRender[15] is NULL — 15 uses 1-param render
      * and is never patched; cross-slot 15 falls back to base render). */
-    if (ext && *(int *)((char *)ext + UNI_NATIVE_HANDLERS)) {
+    if (ext && *(int *)((char *)ext + UNI_NATIVE_HANDLERS) &&
+        !*(int *)((char *)ext + UNI_FORCE_UNI_RENDER)) {
         int cslot = ContentFileId(ext);
         int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
         if (effSlot >= 1 && effSlot <= 15 && g_origRender[effSlot]) {
@@ -851,7 +852,8 @@ void __fastcall UniversalRaceState(void *board) {
      * (racestate_features) still run — ext-driven, S1-based. */
     {
         void *rsext = GetBoardExt(board);
-        if (rsext && *(int *)((char *)rsext + UNI_NATIVE_HANDLERS)) {
+        if (rsext && *(int *)((char *)rsext + UNI_NATIVE_HANDLERS) &&
+            !*(int *)((char *)rsext + UNI_FORCE_UNI_RACE)) {
             int cslot = ContentFileId(rsext);
             int effSlot = (cslot >= 10 && cslot <= 15) ? cslot : level;
             if (effSlot >= 1 && effSlot <= 15 && g_origRaceState[effSlot]) {
