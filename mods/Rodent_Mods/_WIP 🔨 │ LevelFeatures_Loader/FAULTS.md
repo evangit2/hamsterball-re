@@ -246,3 +246,24 @@ mark them FIXED with the version instead.
 - Rig-verified: boots clean, baseline Sky loads+plays (25,800 ticks),
   SKY-FORCE 0 0 0 0 logged. Per-flag loads need the user's fast box
   (rig nav too slow, and Wine can't reproduce the d3d8 fault anyway).
+
+## 2026-11-21 - Sky Draw crash ROOT CAUSE + FIX (full universal)
+- Bisect result: create/race/coll universal all clean on Wine; render=1
+  crashed instantly in d3d8 (Board [Sky], same module as user's 0x52087).
+- Step-diag isolated it to the Z-write block: native 0x410EDB pushes
+  (subObj, 0xE, 0) with ECX=app + callee cleans 12 = __stdcall. The
+  replica called vtable[0x32] as __thiscall (this in ECX, ignored), so
+  the callee read 0xE as the device -> d3d8 AV on first frame. Fixed both
+  sub-object calls (disable + restore) to __stdcall; verified 6,600+
+  clean BOX frames + gameplay on Wine, all four handlers universal.
+- Also fixed (visual parity, not the crash): sprite pos now from
+  board+0x4378/7C/80 (ext slots were never filled = garbage), texture
+  path case to native textures\clouds.png, projection const 1900.0
+  ([0x4CF6F8], was misread 0x454D4143=3284.08).
+- RULE (all future D3D work): engine-object vtables = __thiscall, RAW
+  D3D-device vtables (gfx+0x154 class) = __stdcall, this on stack.
+  The glass rs() call only works by accident (this already on stack).
+- Hybrid retired: content-13 runs full universal; sky_uni_*.txt flags
+  inert (kept for future bisects). Ship build = full universal Sky.
+- SkyDiag handle lesson: persistent CREATE_ALWAYS handle orphans on rm
+  (writes go to deleted inode). Read via /proc/PID/fd when missing.

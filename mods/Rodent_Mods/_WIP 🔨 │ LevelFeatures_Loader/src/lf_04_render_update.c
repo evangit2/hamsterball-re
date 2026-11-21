@@ -403,9 +403,14 @@ void UniversalRenderImpl(void *board, int unk) {
             DWORD subObj = *(DWORD *)((char *)gfx + 0x154);
             if (subObj && !IsBadReadPtr((void *)subObj, 4)) {
                 DWORD *svtbl = *(DWORD **)subObj;
-                if (svtbl) {
-                    void (__thiscall *fnC8)(DWORD, int, int) =
-                        (void (__thiscall *)(DWORD, int, int))svtbl[0x32];
+                if (svtbl && !IsBadReadPtr(svtbl, 0xD0)) {
+                    /* NATIVE SHAPE (0x410EDB-0x410EDC): pushes (subObj, 0xE,
+                     * 0), ECX=app (NOT this) + callee cleans 12 = __stdcall.
+                     * __thiscall passes this in ECX (ignored) so the callee
+                     * reads 0xE as the device -> d3d8 AV (the Sky Draw
+                     * crash). Match native exactly: stdcall, this on stack. */
+                    void (__stdcall *fnC8)(DWORD, int, int) =
+                        (void (__stdcall *)(DWORD, int, int))svtbl[0x32];
                     if (fnC8) fnC8(subObj, 0xe, 0);
                 }
             }
@@ -416,12 +421,16 @@ void UniversalRenderImpl(void *board, int unk) {
         /* Disable culling for cloud sprite */
         if (g_GraphicsSetCullMode2) g_GraphicsSetCullMode2(gfx, 0, 1);
 
-        /* Render cloud sprite quad from dedicated REND_SKY_SPRITE */
+        /* Render cloud sprite quad from dedicated REND_SKY_SPRITE.
+         * Native parity (0x410F0F-0x410F31): sprite object is the board
+         * slot, position comes from BOARD+0x4378/0x437C/0x4380 (filled by
+         * the CLOUDSCAPE create branch), NOT ext (which nothing fills —
+         * heap garbage -> NaN into D3D -> d3d8 crash, the Sky Draw fault). */
         if (g_SpriteRenderQuad) {
             DWORD sprite = *(DWORD *)((char *)ext + REND_SKY_SPRITE);
-            float sp1 = *(float *)((char *)ext + REND_SKY_SPRITE_X);
-            float sp2 = *(float *)((char *)ext + REND_SKY_SPRITE_Y);
-            float sp3 = *(float *)((char *)ext + REND_SKY_SPRITE_Z);
+            float sp1 = *(float *)((char *)board + 0x4378);
+            float sp2 = *(float *)((char *)board + 0x437C);
+            float sp3 = *(float *)((char *)board + 0x4380);
             if (sprite) g_SpriteRenderQuad((void *)sprite, sp1, sp2, sp3, 23.0f, 0);
         }
 
@@ -434,9 +443,10 @@ void UniversalRenderImpl(void *board, int unk) {
             DWORD subObj2 = *(DWORD *)((char *)gfx + 0x154);
             if (subObj2 && !IsBadReadPtr((void *)subObj2, 4)) {
                 DWORD *svtbl2 = *(DWORD **)subObj2;
-                if (svtbl2) {
-                    void (__thiscall *fnC8b)(DWORD, int, int) =
-                        (void (__thiscall *)(DWORD, int, int))svtbl2[0x32];
+                if (svtbl2 && !IsBadReadPtr(svtbl2, 0xD0)) {
+                    /* Same stdcall shape as the disable call above. */
+                    void (__stdcall *fnC8b)(DWORD, int, int) =
+                        (void (__stdcall *)(DWORD, int, int))svtbl2[0x32];
                     if (fnC8b) fnC8b(subObj2, 0xe, 1);
                 }
             }
@@ -445,12 +455,13 @@ void UniversalRenderImpl(void *board, int unk) {
         }
 
         /* Adjust projection from gfx field — native SkyBoard_RenderDynamic tail
-         * (0x410F8E-0x410FAD, binary-verified): f=((f+f)*1100.0+0x454D4143);
-         * SetProjection(gfx, 20.0, f+f). Constants are native ROM floats, not
-         * reciprocals. */
+         * (0x410F8E-0x410FAD, binary-verified): f=((f+f)*1100.0+1900.0);
+         * SetProjection(gfx, 20.0, f+f). Constants are native ROM floats. */
         float fovAdjust = *(float *)((char *)gfx + 0x188);
-        { DWORD cb = 0x454D4143; float m2; memcpy(&m2, &cb, 4);
-          fovAdjust = (fovAdjust + fovAdjust) * 1100.0f + m2; }
+        /* Native 0x410F8E-0x410FAD: f=((f+f)*[0x4CF6FC]+[0x4CF6F8]) doubled.
+         * ROM floats: [0x4CF6FC]=1100.0, [0x4CF6F8]=1900.0 ( NOT 3284.08 —
+         * 0x454D4143 was a misread address). */
+        fovAdjust = (fovAdjust + fovAdjust) * 1100.0f + 1900.0f;
         if (g_GraphicsSetProjection)
             g_GraphicsSetProjection(gfx, 20.0f, fovAdjust + fovAdjust);
     }

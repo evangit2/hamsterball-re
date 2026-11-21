@@ -671,16 +671,15 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         *(int *)((char *)ext + UNI_NATIVE_CTOR) = useNativeCtor ? 1 : 0;
         *(int *)((char *)ext + UNI_NATIVE_HANDLERS) = useNativeCtor ? 1 : 0;
         if (useNativeCtor) DebugLog("UNI_NATIVE_CTOR=1 (native-built board)");
-        /* Sky hybrid (2026-11-21): universal ctor (UniversalSkyInit above)
-         * fills native-equivalent DAT, but create/racestate/render/collision
-         * delegate to the native content handlers (11-19 proven behavior).
-         * Hand-replication of those paths faulted Draw on real Windows
-         * (d3d8 0001:00052087, Board (Sky), ~8s). Native origs match the
-         * native-built objects exactly; only additive feature blocks run. */
+        /* Sky universal (2026-11-21): the hybrid (native handlers) is retired.
+         * The Draw crash was a __thiscall-vs-__stdcall mismatch on the
+         * gfx+0x154 sub-object vtable[0x32] SetRenderState call (native
+         * pushes this on the stack, callee cleans 12). Fixed to stdcall;
+         * render verified clean (6,600+ frames on Wine). Content-13 runs
+         * full universal like every other race. The sky_uni_*.txt flags
+         * below are inert now (kept for future bisects). */
         if (g_loadingContentId == 13) {
-            *(int *)((char *)ext + UNI_NATIVE_CTOR) = 1;
-            *(int *)((char *)ext + UNI_NATIVE_HANDLERS) = 1;
-            SkyDiag("SKY-HYBRID: native handlers on universal ctor");
+            SkyDiag("SKY-UNIVERSAL: full universal handlers");
             /* Sky handler bisect (2026-11-21): magic files in the game dir
              * force one handler at a time back to universal, cumulatively
              * (create -> +race -> +render -> +coll). First crash after adding

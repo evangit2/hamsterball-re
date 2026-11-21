@@ -538,7 +538,7 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
             // Expert/Impossible family — handled via S1Ensure* in CreateDynamicObjects
         }
         if (my_strnicmp(name, "CLOUDSCAPE", 10)==0) {
-            S1EnsureSprite(board, ext, REND_SKY_SPRITE, "Textures\\Clouds.png");
+            S1EnsureSprite(board, ext, REND_SKY_SPRITE, "textures\\clouds.png");
         }
         // Option B: every N:/E: S1 ref auto-enables its collision event for this board
         if ((name[0]=='N' || name[0]=='E') && name[1]==':') {
