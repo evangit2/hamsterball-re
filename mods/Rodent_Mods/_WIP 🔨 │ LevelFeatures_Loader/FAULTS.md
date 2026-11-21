@@ -219,3 +219,20 @@ mark them FIXED with the version instead.
   per-S1 CREATE census (content 13), SKYRS ticks (1 + every 600),
   SKYRENDER features/sprite/list (first + every 600). Run Sky ~15s, send
   sky_diag.txt + crash dialog.
+
+## 2026-11-21 - Sky hybrid fix (universal ctor + native handlers)
+- Root cause narrowed: 11-19 working build ran Sky fully native (ctor
+  0x41F930 + scene + create + racestate + render). uni1-3 hand-replicated
+  create/racestate/render; Draw faulted in d3d8 at 8s on real Windows.
+  Static audit of the replica found no single smoking gun (meshes/sprite/
+  calls all binary-verified), so restored the proven handlers instead.
+- Fix: UniversalSkyInit still builds the board (native-equivalent DAT),
+  but content-13 now sets UNI_NATIVE_CTOR=1 + UNI_NATIVE_HANDLERS=1, so
+  create/racestate/render/collision delegate to the native content origs
+  (0x410AD0/0x41FC90/0x410E80/dispatch) + additive feature blocks — the
+  exact 11-19 combination. POPDOOR carved out of delegation (custom-name
+  mirrors still build; vanilla TRAPDOOR goes native).
+- Rig test (hybrid 0760c283, Wine): Sky loads (SKY-HYBRID + SKYINIT +
+  replica hooks + native racestate in sky_diag, NO SKYRENDER = replica
+  skipped), gameplay 28,800+ ticks no crash, blue-sky/checker/loop
+  screenshot. Awaiting Windows retest — send sky_diag.txt + result.

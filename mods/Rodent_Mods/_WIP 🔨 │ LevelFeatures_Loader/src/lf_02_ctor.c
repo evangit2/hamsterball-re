@@ -671,6 +671,17 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         *(int *)((char *)ext + UNI_NATIVE_CTOR) = useNativeCtor ? 1 : 0;
         *(int *)((char *)ext + UNI_NATIVE_HANDLERS) = useNativeCtor ? 1 : 0;
         if (useNativeCtor) DebugLog("UNI_NATIVE_CTOR=1 (native-built board)");
+        /* Sky hybrid (2026-11-21): universal ctor (UniversalSkyInit above)
+         * fills native-equivalent DAT, but create/racestate/render/collision
+         * delegate to the native content handlers (11-19 proven behavior).
+         * Hand-replication of those paths faulted Draw on real Windows
+         * (d3d8 0001:00052087, Board (Sky), ~8s). Native origs match the
+         * native-built objects exactly; only additive feature blocks run. */
+        if (g_loadingContentId == 13) {
+            *(int *)((char *)ext + UNI_NATIVE_CTOR) = 1;
+            *(int *)((char *)ext + UNI_NATIVE_HANDLERS) = 1;
+            SkyDiag("SKY-HYBRID: native handlers on universal ctor");
+        }
     }
 
     /* Step 1b: Zero-fill old per-level data offsets (0x436C-0x6500).
