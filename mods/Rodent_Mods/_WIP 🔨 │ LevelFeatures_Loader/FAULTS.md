@@ -267,3 +267,21 @@ mark them FIXED with the version instead.
   inert (kept for future bisects). Ship build = full universal Sky.
 - SkyDiag handle lesson: persistent CREATE_ALWAYS handle orphans on rm
   (writes go to deleted inode). Read via /proc/PID/fd when missing.
+
+## 2026-11-21 - Sky fog fix (cloud sprite position + draw order)
+- User: fog way too close on real Windows. Two native-parity defects found:
+- (1) Cloud sprite drew at garbage pos. board+0x4378/7C/80 held heap
+  garbage (x~0 denormal, y/z=NaN) — Step-1b zeroing doesn't cover them and
+  nothing filled them (CLOUDSCAPE lookup was #if-0 disabled since the
+  2026-11-16 postscan crash). Native 0x4109FE fills via 0x4605E0
+  (ECX=meshWorld, push(outbuf,name,0), callee-clean ret $0xC). Re-enabled
+  with hand-rolled asm (MinGW __thiscall caller-cleans and would corrupt
+  ESP — that was the 2026-11-16 crash). Verified SKY-CLOUDPOS filled,
+  res=heap, game alive. New rule: callee-clean native fns need asm, never
+  MinGW __thiscall.
+- (2) Draw order. Native draws the box FIRST (far proj + Z-less sprite),
+  then the level overdraws it. Mine drew it LAST, painting the Z-less
+  sprite over the track. Reordered: Sky pre-runs SkyBoxDraw before the
+  base render (post-base block skips via skyPreRan). Only Sky sets
+  REND_SKY_SPRITE so no other race is affected.
+- Rig shows clear views throughout; user retest decides the fog.

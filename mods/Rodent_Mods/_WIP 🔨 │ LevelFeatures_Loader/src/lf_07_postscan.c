@@ -322,27 +322,51 @@ static void Sky_LoaderReplica(void *board, void *ext) {
     }
     *(DWORD *)(objDb + 0x89C + iter*4)=savedIter;
     { char sdbg[96]; wsprintfA(sdbg, "SKYREPLICA hooks done count=%d", count); SkyDiag(sdbg); }
-    /* CLOUDSCAPE mesh ref (native 0x4109FE-0x410A2C): DISABLED 2026-11-16.
-     * The 0x4605E0 lookup call crashed postscan (convention mismatch),
-     * aborting Sky load. Clouds are pure skybox decor; hooks above are the
-     * load-bearing part (S1 visuals). Revisit with Ghidra-verified typedef. */
-#if 0
-    if (!BoardHasOffset(board, 0x4378, 12)) return;
-    if (*(DWORD *)((char *)board + 0x4378)) return;
+    /* CLOUDSCAPE mesh ref (native 0x4109FE-0x410A2C). Re-enabled 2026-11-21
+     * with exact native shape (the 2026-11-16 crash was MinGW __thiscall
+     * caller-cleanup vs native callee-clean ret $0xC). */
+    /* CLOUDSCAPE mesh ref (native 0x4109FE-0x410A2C, binary-verified):
+     * fills board+0x4378/7C/80 with the CLOUDSCAPE mesh node position.
+     * Without it the cloud sprite draws at (0,0,0) — a near white quad that
+     * reads as fog way too close. Native shape: ECX=meshWorld,
+     * push(0, "CLOUDSCAPE", outbuf), callee cleans 12 (ret $0xC).
+     * MinGW __thiscall is caller-clean (that mismatch was the 2026-11-16
+     * postscan crash), so hand-rolled asm with NO caller cleanup. */
+    if (!BoardHasOffset(board, 0x4378, 12)) { SkyDiag("SKY-CLOUDPOS nooff"); return; }
+    { char sdb[128]; float *sv = (float *)((char *)board + 0x4378);
+      wsprintfA(sdb, "SKY-CLOUDPOS pre x=%d y=%d z=%d", (int)sv[0], (int)sv[1], (int)sv[2]);
+      SkyDiag(sdb); }
+    /* Native copies unconditionally (only skips if res==dest) — no
+     * nonzero guard (garbage denormals would falsely trip it). */
     {
-        typedef void *(__thiscall *MeshLookup_t)(void *mw, int zero, const char *name, void *out);
-        MeshLookup_t lookup = (MeshLookup_t)(g_moduleBase + 0x605E0);
         char outbuf[32];
         void *res = 0;
-        if (!VirtualQuery(meshWorld, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
-        res = lookup((void *)meshWorld, 0, "CLOUDSCAPE", (void *)outbuf);
-        if (res && res != (void *)((char *)board + 0x4378)) {
-            if (!VirtualQuery(res, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+        const char *cname = "CLOUDSCAPE";
+        void *fn = (void *)(g_moduleBase + 0x605E0);
+        DWORD mw = meshWorld;
+        int k;
+        for (k = 0; k < 32; k++) outbuf[k] = 0;
+        __asm__ volatile (
+            "pushl $0\n\t"
+            "pushl %[name]\n\t"
+            "pushl %[out]\n\t"
+            "movl %[mw], %%ecx\n\t"
+            "call *%[fn]\n\t"
+            : "=a" (res)
+            : [mw] "r" (mw), [out] "r" (outbuf),
+              [name] "r" (cname), [fn] "r" (fn)
+            : "ecx", "edx", "memory");
+        { char cdbg[128]; wsprintfA(cdbg, "SKY-CLOUDPOS res=0x%08X fn=0x%08X",
+            (DWORD)res, (DWORD)fn);
+          SkyDiag(cdbg); }
+        if (res && res != (void *)((char *)board + 0x4378) &&
+            !IsBadReadPtr(res, 12)) {
             *(DWORD *)((char *)board + 0x4378) = *(DWORD *)res;
-            *(DWORD *)((char *)board + 0x437C) = *(DWORD *)((char *)res + 4);
-            *(DWORD *)((char *)board + 0x4380) = *(DWORD *)((char *)res + 8);
+            *(DWORD *)((char *)board + 0x437C) = *((DWORD *)res + 1);
+            *(DWORD *)((char *)board + 0x4380) = *((DWORD *)res + 2);
+            SkyDiag("SKY-CLOUDPOS filled");
         }
-#endif
+    }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
