@@ -179,7 +179,10 @@ static void Magnifier_Build(void *board, void *ext) {
     DebugLog("Sky: magnifier built");
 }
 
-static void Sky_LoaderReplica(void *board, void *ext);
+static void SkySceneTails(void *board, void *ext);
+static int g_skyFoundPillars = 0;
+float g_skyPillarPos[128 * 3];
+int g_skyPillarCount = 0;
 static void UniversalPostSetup(void *board) {
     void* ext = EnsureBoardExt(board);
     if (!ext) return;
@@ -265,13 +268,18 @@ static void UniversalPostSetup(void *board) {
      * (cloudscape lookup disabled 2026-11-16 — 0x4605E0 convention crashed
      * postscan, aborting Sky load). Magnifier NOT replicated here
      * (Magnifier_Build above covers it, mirrored to the native slot). */
-    if (ext && ContentFileId(ext) == 13) Sky_LoaderReplica(board, ext);
+    /* Sky scene tails (hooks + cloudpos) run post-Setup (Step 6d, lf_08) —
+     * Board_Setup re-inits +0x4394 and would wipe pre-Setup hooks. */
 }
 
 /* Sky loader-tail replica (native 0x410900, disasm-verified).
- * Registers every non-PILLAR S1 ref into board+0x4394 via 0x453810 and loads
+ * Registers PILLAR S1 refs into board+0x4394 via 0x453810 (native 0x410927:
+ * strncmp==0 falls through to the hook) and loads
  * the CLOUDSCAPE mesh ref to board+0x4378. Runs once per Sky board. */
-static void Sky_LoaderReplica(void *board, void *ext) {
+/* Sky scene tails (native scene 0x410830/0x4109FE, post-Setup).
+ * Board_Setup re-inits +0x4394 (native setup does the same), so hooks set
+ * here would be wiped pre-Setup — this runs post-Setup like native scene. */
+static void SkySceneTails(void *board, void *ext) {
     MEMORY_BASIC_INFORMATION mbi;
     DWORD meshWorld, objDb, listHdr;
     int iter, count, idx;
@@ -279,6 +287,8 @@ static void Sky_LoaderReplica(void *board, void *ext) {
     DWORD savedIter;
     (void)ext;
     { char sdbg[96]; wsprintfA(sdbg, "SKYREPLICA enter board=0x%08X", (DWORD)board); SkyDiag(sdbg); }
+    g_skyFoundPillars = 0;
+    g_skyPillarCount = 0;
     if (!board) return;
     meshWorld = *(DWORD *)((char *)board + BOARD_MESHWORLD);
     if (!meshWorld) return;
@@ -305,9 +315,10 @@ static void Sky_LoaderReplica(void *board, void *ext) {
     if (!VirtualQuery(array, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
     *(DWORD *)(objDb + 0x89C + iter*4) = 1;
     {
-        typedef void (__thiscall *SkyHook_t)(void *list, void *ref);
-        SkyHook_t hook = (SkyHook_t)(g_moduleBase + 0x53810);
-        void *list = (void *)((char *)board + 0x4394);
+        /* NOTE: native +0x4394 hooks deliberately NOT replicated — Board_Setup
+         * re-inits the list and 0x453810 merges sublists (obj+4/obj+0x40C),
+         * not single items, so post-setup S1 objs corrupt it. Positions go
+         * to g_skyPillarPos instead; render draws from there. */
         for (idx=0; idx<count; idx++) {
             DWORD *obj = (DWORD *)array[idx];
             char *name;
@@ -316,12 +327,26 @@ static void Sky_LoaderReplica(void *board, void *ext) {
             name = *(char **)obj;
             if (!name) continue;
             if (!VirtualQuery(name, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) continue;
-            if (my_strnicmp(name, "PILLAR", 6) == 0) continue;
-            hook(list, (void *)obj);
+            /* Native 0x410927-0x410944: hooks PILLAR refs into board+0x4394
+             * (strncmp==0 falls through to the hook); non-PILLAR refs go to
+             * the MAGNIFYER check or are skipped. Poles == PILLARs. */
+            if (my_strnicmp(name, "PILLAR", 6) != 0) continue;
+            g_skyFoundPillars++;
+            /* Store pos values (native +0x4394 hooks can't work here: Setup
+             * re-inits the list and 0x453810 merges sublists, not items).
+             * Render loop draws from this array instead. */
+            if (g_skyPillarCount < 128 && !IsBadReadPtr(obj, 16)) {
+                g_skyPillarPos[g_skyPillarCount * 3 + 0] = *(float *)((char *)obj + 4);
+                g_skyPillarPos[g_skyPillarCount * 3 + 1] = *(float *)((char *)obj + 8);
+                g_skyPillarPos[g_skyPillarCount * 3 + 2] = *(float *)((char *)obj + 12);
+                g_skyPillarCount++;
+            }
         }
     }
     *(DWORD *)(objDb + 0x89C + iter*4)=savedIter;
     { char sdbg[96]; wsprintfA(sdbg, "SKYREPLICA hooks done count=%d", count); SkyDiag(sdbg); }
+    { char hdbg[96];
+      wsprintfA(hdbg, "SKY-PILLARS stored=%d", g_skyPillarCount); SkyDiag(hdbg); }
     /* CLOUDSCAPE mesh ref (native 0x4109FE-0x410A2C). Re-enabled 2026-11-21
      * with exact native shape (the 2026-11-16 crash was MinGW __thiscall
      * caller-cleanup vs native callee-clean ret $0xC). */
@@ -333,9 +358,6 @@ static void Sky_LoaderReplica(void *board, void *ext) {
      * MinGW __thiscall is caller-clean (that mismatch was the 2026-11-16
      * postscan crash), so hand-rolled asm with NO caller cleanup. */
     if (!BoardHasOffset(board, 0x4378, 12)) { SkyDiag("SKY-CLOUDPOS nooff"); return; }
-    { char sdb[128]; float *sv = (float *)((char *)board + 0x4378);
-      wsprintfA(sdb, "SKY-CLOUDPOS pre x=%d y=%d z=%d", (int)sv[0], (int)sv[1], (int)sv[2]);
-      SkyDiag(sdb); }
     /* Native copies unconditionally (only skips if res==dest) — no
      * nonzero guard (garbage denormals would falsely trip it). */
     {
@@ -356,9 +378,6 @@ static void Sky_LoaderReplica(void *board, void *ext) {
             : [mw] "r" (mw), [out] "r" (outbuf),
               [name] "r" (cname), [fn] "r" (fn)
             : "ecx", "edx", "memory");
-        { char cdbg[128]; wsprintfA(cdbg, "SKY-CLOUDPOS res=0x%08X fn=0x%08X",
-            (DWORD)res, (DWORD)fn);
-          SkyDiag(cdbg); }
         if (res && res != (void *)((char *)board + 0x4378) &&
             !IsBadReadPtr(res, 12)) {
             *(DWORD *)((char *)board + 0x4378) = *(DWORD *)res;

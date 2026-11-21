@@ -184,6 +184,10 @@ static void UniversalConstructor(void *board, int raceIndex) {
             DebugLog("Calling Board_Setup (vtable+0x80)...");
             boardSetup(board);
             DebugLog("Board_Setup done");
+            /* Step 6d: Sky scene tails (native scene 0x410830 post-Setup:
+             * PILLAR hooks + CLOUDSCAPE pos). Pre-Setup hooks get wiped by
+             * Setup's +0x4394 re-init (native setup does the same). */
+            if (ext && ContentFileId(ext) == 13) SkySceneTails(board, ext);
             /* Universal Toob saw registration: native create owns the pipe saws
              * (board+0x4380 branch saw, +0x4384 alert saw — Ghidra-verified
              * 0x410020 arms +0x110C on both), and the native S1 dispatcher

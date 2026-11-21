@@ -483,64 +483,74 @@ void UniversalRenderImpl(void *board, int unk) {
     if ((features & REND_SKY_BOX) && !skyPreRan) {
         SkyBoxDraw(board, ext);
     }
-    /* ── Sky Transparent List (point 4) — only if respective objects exist ──
-     * Iterates REND_SKY_LIST (UNI_LIST_7) of transparent popcylinders etc.
-     * Gated on REND_SKY_LIST (count>0 or mesh). */
-    if (features & REND_SKY_LIST) {
-        DWORD app2 = *(DWORD *)((char *)board + BOARD_APP_PTR);
-        void *gfx2 = (app2 && !IsBadReadPtr((void *)app2, 0x200)) ? *(void **)((char *)app2 + 0x174) : NULL;
-        if (gfx2) {
-        /* Level_RenderDynamicObjects was already called above.
-         * Now iterate the Sky render object AthenaList and render transparent objects.
-         * Uses dedicated REND_SKY_LIST (UNI_LIST_7) — separate from swirl's UNI_LIST_6. */
-        if (g_AthenaListGetIterator && g_AthenaListGetSize && meshWorld) {
-            int iter = g_AthenaListGetIterator((void *)((char *)ext + REND_SKY_LIST));
-            *(int *)((char *)ext + REND_SKY_LIST + 8 + iter * 4) = 0;
-            int count = *(int *)((char *)ext + REND_SKY_LIST + 4);
-            int item = 0;
-            if (count > 0) {
-                DWORD arr = *(DWORD *)((char *)ext + REND_SKY_LIST + 0x40C);
-                if (arr && !IsBadReadPtr((void *)arr, 4)) {
-                    item = *(int *)arr;
-                    *(int *)((char *)ext + REND_SKY_LIST + 8 + iter * 4) = 1;
-                }
-            }
-            while (item) {
-                char timerBuf[68];
-                if (g_TimerInit) g_TimerInit(timerBuf);
-                DWORD *tVtbl = *(DWORD **)timerBuf;
-                if (tVtbl) {
-                    void (__thiscall *fn8)(DWORD, DWORD, DWORD, DWORD) =
-                        (void (__thiscall *)(DWORD, DWORD, DWORD, DWORD))tVtbl[2];
-                    if (fn8) {
-                        fn8((DWORD)timerBuf,
-                            *(DWORD *)(item + 4),
-                            *(DWORD *)(item + 8),
-                            *(DWORD *)(item + 0xC));
+    /* ── Sky Pillars (native render tail 0x410FBE-0x41107C, binary-verified) ──
+     * Renders the skypillar mesh (board+0x436C) at each PILLAR S1 position
+     * (g_skyPillarPos filled by scene-tails walk — the native +0x4394 hook
+     * list can't be used: Setup re-inits it and 0x453810 merges sublists,
+     * not items). Per pillar: Timer_Init, Timer-v[0x8] pose, mesh-v[0x1C]
+     * render, Timer_Cleanup. Both v-calls are callee-clean (ret 12 / ret 8)
+     * — hand-rolled asm, MinGW __thiscall caller-cleans and would corrupt
+     * ESP (verified by objdump of thiscall shape). */
+    if (features & REND_SKY_BOX) {
+        extern float g_skyPillarPos[128 * 3];
+        extern int g_skyPillarCount;
+        DWORD pmesh = *(DWORD *)((char *)board + 0x436C);
+        { static int pgOnce = 0; if (!pgOnce) { pgOnce = 1;
+          char pg[96]; wsprintfA(pg, "SKY-PILLARS render n=%d mesh=0x%X",
+            g_skyPillarCount, pmesh);
+          SkyDiag(pg); } }
+        if (pmesh && !IsBadReadPtr((void *)pmesh, 8) &&
+            g_skyPillarCount > 0 && g_skyPillarCount <= 128) {
+                DWORD *mVtbl = *(DWORD **)pmesh;
+                if (mVtbl && !IsBadReadPtr(mVtbl, 0x20)) {
+                    void *fnRender = (void *)mVtbl[7];
+                    if (fnRender) {
+                        int pi;
+                        /* positions come from g_skyPillarPos (scene-tails walk);
+                         * no native-list dependency. */
+                        for (pi = 0; pi < g_skyPillarCount; pi++) {
+                            char timerBuf[68];
+                            DWORD *tVtbl;
+                            void *fnPose;
+                            DWORD px, py, pz;
+                            px = *(DWORD *)&g_skyPillarPos[pi * 3 + 0];
+                            py = *(DWORD *)&g_skyPillarPos[pi * 3 + 1];
+                            pz = *(DWORD *)&g_skyPillarPos[pi * 3 + 2];
+                            if (!g_TimerInit || !g_TimerCleanup) break;
+                            g_TimerInit(timerBuf);
+                            tVtbl = *(DWORD **)timerBuf;
+                            if (!tVtbl || IsBadReadPtr(tVtbl, 12)) {
+                                g_TimerCleanup(timerBuf);
+                                continue;
+                            }
+                            fnPose = (void *)tVtbl[2];
+                            if (!fnPose) {
+                                g_TimerCleanup(timerBuf);
+                                continue;
+                            }
+                            __asm__ volatile (
+                                "pushl %[z]\n\t"
+                                "pushl %[y]\n\t"
+                                "pushl %[x]\n\t"
+                                "movl %[t], %%ecx\n\t"
+                                "call *%[f]\n\t"
+                                : : [x] "m" (px), [y] "m" (py), [z] "m" (pz),
+                                    [t] "r" (timerBuf), [f] "r" (fnPose)
+                                : "eax", "ecx", "edx", "memory");
+                            __asm__ volatile (
+                                "pushl $0\n\t"
+                                "pushl %[t]\n\t"
+                                "movl %[m], %%ecx\n\t"
+                                "call *%[f]\n\t"
+                                : : [t] "r" (timerBuf), [m] "r" (pmesh),
+                                    [f] "r" (fnRender)
+                                : "eax", "ecx", "edx", "memory");
+                            g_TimerCleanup(timerBuf);
+                        }
                     }
                 }
-                /* Render via transparent mesh from dedicated REND_SKY_MESH */
-                DWORD mesh = *(DWORD *)((char *)ext + REND_SKY_MESH);
-                if (mesh && !IsBadReadPtr((void *)mesh, 0x1C)) {
-                    DWORD *mVtbl = *(DWORD **)mesh;
-                    if (mVtbl) {
-                        void (__thiscall *fn1C)(DWORD, int) =
-                            (void (__thiscall *)(DWORD, int))mVtbl[7];
-                        if (fn1C) fn1C(mesh, 0);
-                    }
-                }
-                if (g_TimerCleanup) g_TimerCleanup(timerBuf);
-
-                int next = *(int *)((char *)ext + REND_SKY_LIST + 8 + iter * 4);
-                if (count <= next) break;
-                DWORD arr2 = *(DWORD *)((char *)ext + REND_SKY_LIST + 0x40C);
-                if (!arr2 || IsBadReadPtr((void *)arr2, (next + 1) * 4)) break;
-                item = *(int *)(arr2 + next * 4);
-                *(int *)((char *)ext + REND_SKY_LIST + 8 + iter * 4) = next + 1;
-            }
         }
-        } // gfx2
-    } // REND_SKY_LIST
+    }
 } // UniversalRenderImpl
 
 /* Naked thunk for UniversalRender — forwards (ECX=board, stack gfx) to

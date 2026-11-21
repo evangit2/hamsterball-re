@@ -407,7 +407,7 @@ static void UniversalSkyInit(void *mem, int app) {
           *(BYTE *)(app + 0x858) = 1; }
     g_LoadRaceData(mem, "SKYRACE");
     /* Hook registry (native ctor: AthenaListInit at +0x4394 via 0x453210).
-     * The native Sky scene (0x410830) appends every non-PILLAR S1 hook
+     * The native Sky scene (0x410830) appends PILLAR S1 hooks
      * into +0x4394 with NO null check — without this init it writes
      * through malloc garbage = heap corruption = Draw crash in d3d8
      * (0001:00052087, Board (Sky)). Postscan Sky_LoaderReplica also

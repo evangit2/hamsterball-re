@@ -285,3 +285,20 @@ mark them FIXED with the version instead.
   base render (post-base block skips via skyPreRan). Only Sky sets
   REND_SKY_SPRITE so no other race is affected.
 - Rig shows clear views throughout; user retest decides the fog.
+
+## 2026-11-21 - Sky poles restored (PILLAR hook inversion + render loop)
+- User: poles missing. PILLAR01+ S1 refs exist; my scene replica SKIPPED them
+  (my_strnicmp==0 continue) — native 0x410927 hooks PILLARs (strncmp==0
+  falls through to the 0x453810 hook), skips the rest. Inverted to match.
+- Hooks alone didn't draw: native render tail (0x410FBE) loops +0x4394 and
+  per item runs Timer_Init + Timer-v[0x8] pose + skypillar-mesh-v[0x1C]
+  render (board+0x436C = "meshes\\skypillar") + Timer_Cleanup. Replicated
+  with hand-asm (both v-calls callee-clean ret12/ret8; MinGW __thiscall
+  caller-cleans — verified by objdump, would corrupt ESP).
+- Two deeper findings, both now rules: (1) Board_Setup re-inits +0x4394
+  (native setup does the same), so pre-Setup hooks are wiped — scene tails
+  run post-Setup (Step 6d). (2) 0x453810 APPENDS SUBLISTS (obj+4/obj+0x40C
+  as count/items), not single items — post-setup S1 runtime objs aren't
+  list-like, so hooks silently corrupt. Positions stored in a static array
+  instead; render draws from it. No native-list dependency.
+- Verified on rig: 52 pillars stored + rendered, poles visible under track.
