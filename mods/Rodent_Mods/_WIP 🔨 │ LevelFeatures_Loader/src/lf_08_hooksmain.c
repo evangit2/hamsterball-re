@@ -837,6 +837,28 @@ void SkyDiag(const char *msg) {
     { DWORD w = 0; WriteFile(hSky, msg, strlen(msg), &w, NULL); WriteFile(hSky, "\r\n", 2, &w, NULL); FlushFileBuffers(hSky); }
 }
 
+/* Temporary Impossible gear-spawn diag (throwaway, delete when green).
+ * Logs each gear S1: name, x/y/z, mesh, obj. 70 lines, safe. */
+void ImpDiag(const char *msg) {
+    static HANDLE hImp = NULL;
+    static int impTried = 0;
+    if (!hImp && !impTried) {
+        impTried = 1;
+        char logPath[MAX_PATH];
+        if (g_configPath[0]) {
+            strcpy(logPath, g_configPath);
+            { char *p = strrchr(logPath, '\\'); if (p) strcpy(p + 1, "imp_diag.txt"); else strcpy(logPath, "imp_diag.txt"); }
+        } else strcpy(logPath, "imp_diag.txt");
+        hImp = CreateFileA(logPath, GENERIC_WRITE,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hImp == INVALID_HANDLE_VALUE) hImp = NULL;
+        if (hImp) { DWORD w = 0; const char *init = "IMPDIAG init log=imp_diag.txt\r\n"; WriteFile(hImp, init, strlen(init), &w, NULL); FlushFileBuffers(hImp); }
+    }
+    if (!hImp) return;
+    { DWORD w = 0; WriteFile(hImp, msg, strlen(msg), &w, NULL); WriteFile(hImp, "\r\n", 2, &w, NULL); FlushFileBuffers(hImp); }
+}
+
 /* Forward declaration for auto-test (unused, kept for future testing) */
 
 /* ═══════════════════════════════════════════════════════════════════════════

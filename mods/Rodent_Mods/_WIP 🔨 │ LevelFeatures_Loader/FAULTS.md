@@ -413,3 +413,10 @@ mark them FIXED with the version instead.
   ext (same files, redundant loads). Equivalent, kept.
 - Pendulum native passes NAME as y-arg (garbage y); mirrors pass real y
   (better than native, kept). Boot-clean.
+
+## 2026-11-22 - Impossible gear spawn diag (ImpDiag, temporary)
+- Added imp_diag.txt (ImpDiag, same pattern as SkyDiag, CREATE-only, safe).
+- Logs each gear S1: SPAWN name x y z mesh obj (70 lines max).
+- Bank is 0x2578 (native parity), out-params parity, but 0 gears at start
+  on rig (closest S1 312 out, should be visible). Diag reveals which S1s
+  spawn vs skip (mesh NULL? ctor fail? positions?). Throwaway, delete when green.

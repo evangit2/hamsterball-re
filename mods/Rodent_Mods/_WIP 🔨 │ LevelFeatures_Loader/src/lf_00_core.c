@@ -35,6 +35,7 @@ typedef unsigned long long QWORD;
  * ═══════════════════════════════════════════════════════════════════════════ */
 void DebugLog(const char *msg);
 void SkyDiag(const char *msg);
+void ImpDiag(const char *msg);
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Game addresses (RVAs)
