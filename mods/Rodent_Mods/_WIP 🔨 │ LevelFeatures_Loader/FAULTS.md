@@ -420,3 +420,12 @@ mark them FIXED with the version instead.
 - Bank is 0x2578 (native parity), out-params parity, but 0 gears at start
   on rig (closest S1 312 out, should be visible). Diag reveals which S1s
   spawn vs skip (mesh NULL? ctor fail? positions?). Throwaway, delete when green.
+
+## 2026-11-22 - Impossible gear mesh case fix (Levels\\LevelImpossible-*)
+- Root cause: UniversalImpossibleInit loaded gear meshes with lowercase
+  paths ("levels\\levelimpossible-looper") but files are mixed-case
+  (LevelImpossible-Looper). Wine/Linux case-sensitive -> load fails ->
+  board slots garbage/NULL -> gears invisible.
+- Fixed to "Levels\\LevelImpossible-Looper/Gear/BigGear/Rotator/Pendulum".
+- Mirrors read board+0x436C-0x437C (native parity) + ImpDiag SPAWN lines.
+- Boot-clean 45s title. User: load Impossible, send imp_diag.txt + screenshot.

@@ -482,23 +482,23 @@ static void UniversalImpossibleInit(void *mem, int app) {
         void *lm = g_operatorNew(0x10D0);
         if (lm && BoardHasOffset(mem, 0x436C, 4))
             *(void **)((char *)mem + 0x436C) =
-                g_LevelMeshWorldCtor(lm, *(void **)(app + 0x174), "levels\\\\levelimpossible-looper");
+                g_LevelMeshWorldCtor(lm, *(void **)(app + 0x174), "Levels\\\\LevelImpossible-Looper");
         void *gm = g_operatorNew(0x10D0);
         if (gm && BoardHasOffset(mem, 0x4370, 4))
             *(void **)((char *)mem + 0x4370) =
-                g_LevelMeshWorldCtor(gm, *(void **)(app + 0x174), "levels\\\\levelimpossible-gear");
+                g_LevelMeshWorldCtor(gm, *(void **)(app + 0x174), "Levels\\\\LevelImpossible-Gear");
         void *bg = g_operatorNew(0x10D0);
         if (bg && BoardHasOffset(mem, 0x4374, 4))
             *(void **)((char *)mem + 0x4374) =
-                g_LevelMeshWorldCtor(bg, *(void **)(app + 0x174), "levels\\\\levelimpossible-biggear");
+                g_LevelMeshWorldCtor(bg, *(void **)(app + 0x174), "Levels\\\\LevelImpossible-BigGear");
         void *rt = g_operatorNew(0x10D0);
         if (rt && BoardHasOffset(mem, 0x4378, 4))
             *(void **)((char *)mem + 0x4378) =
-                g_LevelMeshWorldCtor(rt, *(void **)(app + 0x174), "levels\\\\levelimpossible-rotator");
+                g_LevelMeshWorldCtor(rt, *(void **)(app + 0x174), "Levels\\\\LevelImpossible-Rotator");
         void *pd = g_operatorNew(0x10D0);
         if (pd && BoardHasOffset(mem, 0x437C, 4))
             *(void **)((char *)mem + 0x437C) =
-                g_LevelMeshWorldCtor(pd, *(void **)(app + 0x174), "levels\\\\levelimpossible-pendulum");
+                g_LevelMeshWorldCtor(pd, *(void **)(app + 0x174), "Levels\\\\LevelImpossible-Pendulum");
     }
     DebugLog("UniversalImpossibleInit done (no native ctor)");
 }
