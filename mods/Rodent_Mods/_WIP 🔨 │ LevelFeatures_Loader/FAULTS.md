@@ -369,3 +369,7 @@ mark them FIXED with the version instead.
 ## 2026-11-22 - Full 52, X-fix, no inversion (per user)
 - X-only (m12=fileX), Y/Z pose-native (no inversion), full 52 no cull.
 - Boot-clean. Ships for user height compare.
+
+## 2026-11-22 - Popcylinder blue/white swap (parity flip)
+- User: blue/white swapped. Pop1=white [1,1,1,1], Pop2=blue [0.086,0.58,0.925,1].
+- Flipped parity (idx&1 -> (idx+1)&1). Boot-clean.
