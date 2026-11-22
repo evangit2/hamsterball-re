@@ -361,3 +361,7 @@ mark them FIXED with the version instead.
   mm[13]=fileX (m12=X). Y/Z from pose (native).
 - Rig: heights varied (tall foreground + short under-track), spread depth,
   no on-pad, all anchored.
+
+## 2026-11-22 - Inverted Y test (user: heights seem inverted)
+- Negated Y (m13=-fileX). Rig: no flip visible (near unchanged), better anchored.
+- Ships for user compare (tall/short correct? Or still inverted?).

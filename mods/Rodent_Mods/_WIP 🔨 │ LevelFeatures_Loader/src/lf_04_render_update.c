@@ -551,11 +551,10 @@ if (!g_TimerInit || !g_TimerCleanup) break;
                                 : : [x] "m" (px), [y] "m" (py), [z] "m" (pz),
                                     [t] "r" (timerBuf), [f] "r" (fnPose)
                                 : "eax", "ecx", "edx", "memory");
-/* FIX (RE 2026-11-22, MAT01 proof): pose leaves m12=0 (X zeroed).
-                             * Override m12 (timer[13]) = fileX. Leave m13 (Y=fileX,
-                             * native varied heights) and m14 (Z=fileZ) from pose. */
+/* TEST: inverted Y (user: heights seem inverted). m13 = -fileX. */
                             { float *mm = (float *)timerBuf;
-                              mm[13] = *(float *)&px; }
+                              mm[13] = *(float *)&px;
+                              mm[14] = -(*(float *)&px); }
                             
 
                             __asm__ volatile (
