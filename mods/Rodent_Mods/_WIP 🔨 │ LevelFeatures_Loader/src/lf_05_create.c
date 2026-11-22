@@ -1441,8 +1441,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
 
     /* ── LOOPER (Impossible) ── */
     if (my_strnicmp(name, "LOOPER", 6) == 0) {
-        int meshVal = *(int*)((char*)board + 0x436C);
-        if (!meshVal || IsBadReadPtr((void*)meshVal, 4)) { DebugLog("LOOPER: board mesh NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        S1EnsureMeshWorld(board, ext, UNI_LOOPER_MESH, "Levels\\\\LevelImpossible-Looper");
+        int meshVal = *(int*)((char*)ext + UNI_LOOPER_MESH);
+        if (!meshVal) { DebugLog("LOOPER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1500);
         if (mem) {
             obj = g_LooperCtor(mem, (int)board, x, y, z, meshVal);
@@ -1454,8 +1455,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
 
     /* ── GEAR (Impossible) ── */
     if (my_strnicmp(name, "GEAR", 4) == 0 && my_strnicmp(name, "BIGGEAR", 7) != 0) {
-        int meshVal = *(int*)((char*)board + 0x4370);
-        if (!meshVal || IsBadReadPtr((void*)meshVal, 4)) { DebugLog("GEAR: board mesh NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        S1EnsureMeshWorld(board, ext, UNI_GEAR_MESH, "Levels\\\\LevelImpossible-Gear");
+        int meshVal = *(int*)((char*)ext + UNI_GEAR_MESH);
+        if (!meshVal) { DebugLog("GEAR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1514);
         if (mem) {
             obj = g_GearCtor(mem, (int)board, x, y, z, x2, y2, z2, meshVal);
@@ -1467,8 +1469,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
 
     /* ── BIGGEAR (Impossible) ── */
     if (my_strnicmp(name, "BIGGEAR", 7) == 0) {
-        int meshVal = *(int*)((char*)board + 0x4374);
-        if (!meshVal || IsBadReadPtr((void*)meshVal, 4)) { DebugLog("BIGGEAR: board mesh NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        S1EnsureMeshWorld(board, ext, UNI_BIGGEAR_MESH, "Levels\\LevelImpossible-BigGear");
+        int meshVal = *(int*)((char*)ext + UNI_BIGGEAR_MESH);
+        if (!meshVal) { DebugLog("BIGGEAR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1514);
         if (mem) {
             obj = g_GearCtor(mem, (int)board, x, y, z, x2, y2, z2, meshVal);
@@ -1483,8 +1486,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
 
     /* ── ROTATOR (Impossible) ── */
     if (my_strnicmp(name, "ROTATOR", 7) == 0) {
-        int meshVal = *(int*)((char*)board + 0x4378);
-        if (!meshVal || IsBadReadPtr((void*)meshVal, 4)) { DebugLog("ROTATOR: board mesh NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        S1EnsureMeshWorld(board, ext, UNI_ROTATOR_MESH, "Levels\\LevelImpossible-Rotator");
+        int meshVal = *(int*)((char*)ext + UNI_ROTATOR_MESH);
+        if (!meshVal) { DebugLog("ROTATOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1508);
         if (mem) {
             obj = g_RotatorImpossibleCtor(mem, (int)board, x, y, z, meshVal);
@@ -1500,8 +1504,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
 
     /* ── PENDULUM (Impossible) ── */
     if (my_strnicmp(name, "PENDULUM", 8) == 0) {
-        int meshVal = *(int*)((char*)board + 0x437C);
-        if (!meshVal || IsBadReadPtr((void*)meshVal, 4)) { DebugLog("PENDULUM: board mesh NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        S1EnsureMeshWorld(board, ext, UNI_PENDULUM_MESH, "Levels\\LevelImpossible-Pendulum");
+        int meshVal = *(int*)((char*)ext + UNI_PENDULUM_MESH);
+        if (!meshVal) { DebugLog("PENDULUM: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1504);
         if (mem) {
             obj = g_PendulumCtor(mem, (int)board, x, y, z, meshVal);

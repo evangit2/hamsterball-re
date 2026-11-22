@@ -436,3 +436,10 @@ mark them FIXED with the version instead.
 - Rig Impossible slot-15: 0 gears at start, meshes garbage on Linux
   (case-sensitive paths) but Windows loads fine (case-insensitive).
 - Next: user imp_diag.txt with positions maps visible vs invisible S1s.
+
+## 2026-11-22 - Reverted to ext meshes (board slots give ZERO on Windows)
+- Board-slot mirrors (0x436C-0x437C via UniversalImpossibleInit) spawn 0
+  gears on user Windows. Ext S1EnsureMeshWorld gave SOME gears.
+- Reverted all 5 to ext + kept ImpDiag %d positions + 0x2578 bank.
+- Wrap-around: Up from WARM-UP -> PREVIOUS, one more Up -> IMPOSSIBLE.
+- 100ms xdotool presses register exactly once (taps eaten, 1s repeat).
