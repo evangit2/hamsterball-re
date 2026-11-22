@@ -402,3 +402,14 @@ mark them FIXED with the version instead.
 - Steps 2/3 keep Impossible vtable/names (added 15 to exclusions).
 - S1 mirrors not yet (gears invisible in v1). Boot-clean (title).
 - S1 census: 15 BigGear, 25 Gear, 1 Looper, 3 Pendulum, 1 Rotator, 15 Flag.
+
+## 2026-11-22 - Impossible gears bank to 0x2578 (native parity)
+- RE: Impossible_CreateDynamicObjects 0x417FE0 decompiled fully.
+- Mirrors banked to ext UNI_OBJ_LIST (base update/render never pumps ext).
+  Native banks all 5 kinds to board+0x2578. Switched to 0x2578.
+- Out-params: native leaves unset except PENDULUM (sets out1/out2).
+  Mirrors now match (drop for LOOPER/GEAR/BIGGEAR/ROTATOR, keep PENDULUM).
+- Mesh sources: native uses board+0x436C-0x437C (ctor-loaded); mirrors use
+  ext (same files, redundant loads). Equivalent, kept.
+- Pendulum native passes NAME as y-arg (garbage y); mirrors pass real y
+  (better than native, kept). Boot-clean.

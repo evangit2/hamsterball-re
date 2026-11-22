@@ -1447,10 +1447,8 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         void *mem = g_operatorNew(0x1500);
         if (mem) {
             obj = g_LooperCtor(mem, (int)board, x, y, z, meshVal);
-            g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            renderOut = ((DWORD*)obj)[0x435];
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
         }
-        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
     }
 
@@ -1462,10 +1460,8 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         void *mem = g_operatorNew(0x1514);
         if (mem) {
             obj = g_GearCtor(mem, (int)board, x, y, z, x2, y2, z2, meshVal);
-            g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            renderOut = ((DWORD*)obj)[0x435];
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
         }
-        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
     }
 
@@ -1480,10 +1476,8 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             DWORD *o = (DWORD *)obj;
             o[0x43D] = 0x3F000000;
             if (strstr(name, "TOUCH")) *(char*)((char*)obj + 0x544) = 1;
-            g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            renderOut = o[0x435];
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
         }
-        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
     }
 
@@ -1499,10 +1493,8 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             o[0x43A] = 0x3F800000;
             if (g_RNG && RNG_call((void*)0x4F7360, 0, 2, 0) == 0)
                 o[0x43A] = 0xBF800000;
-            g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            renderOut = o[0x435];
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
         }
-        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
     }
 
@@ -1514,7 +1506,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         void *mem = g_operatorNew(0x1504);
         if (mem) {
             obj = g_PendulumCtor(mem, (int)board, x, y, z, meshVal);
-            g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
             renderOut = ((DWORD*)obj)[0x435];
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
