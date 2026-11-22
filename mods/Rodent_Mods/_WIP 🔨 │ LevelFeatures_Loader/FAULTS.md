@@ -429,3 +429,10 @@ mark them FIXED with the version instead.
 - Fixed to "Levels\\LevelImpossible-Looper/Gear/BigGear/Rotator/Pendulum".
 - Mirrors read board+0x436C-0x437C (native parity) + ImpDiag SPAWN lines.
 - Boot-clean 45s title. User: load Impossible, send imp_diag.txt + screenshot.
+
+## 2026-11-22 - ImpDiag positions as %d (wsprintfA has no float)
+- wsprintfA %f prints garbage; use %d with int casts.
+- 100ms xdotool presses are reliable single moves (taps eaten, 1s holds repeat).
+- Rig Impossible slot-15: 0 gears at start, meshes garbage on Linux
+  (case-sensitive paths) but Windows loads fine (case-insensitive).
+- Next: user imp_diag.txt with positions maps visible vs invisible S1s.
