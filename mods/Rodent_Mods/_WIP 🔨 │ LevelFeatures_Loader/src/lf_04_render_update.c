@@ -512,10 +512,10 @@ void UniversalRenderImpl(void *board, int unk) {
                         /* positions come from g_skyPillarPos (scene-tails walk);
                          * no native-list dependency. */
                         for (pi = 0; pi < g_skyPillarCount; pi++) {
-/* Far pillars (deep S1 Y foundations) float at fixed pose height;
-                             * hiding them matches native (fog/cull). Near ones (y>-200)
-                             * render at native pose height (surface, flush). */
-                            if (*(float *)&g_skyPillarPos[pi * 3 + 1] <= -200.0f) continue;
+/* Distance cull (RE 2026-11-22): native renders all 52 but far ones
+                             * hide via fog/distance (7 visible). Render near ones
+                             * (dist<500 to pad) at native pose height (surface, flush);
+                             * skip far floaters (would crowd the track line). */
                             char timerBuf[68];
                             DWORD *tVtbl;
                             void *fnPose;
@@ -523,6 +523,10 @@ void UniversalRenderImpl(void *board, int unk) {
                             px = *(DWORD *)&g_skyPillarPos[pi * 3 + 0];
                             py = *(DWORD *)&g_skyPillarPos[pi * 3 + 1];
                             pz = *(DWORD *)&g_skyPillarPos[pi * 3 + 2];
+                            /* DIAG-ONLY: dist<500 cull (near pad) */
+                            { float _dx = *(float *)&px - 0.0f;
+                              float _dz = *(float *)&pz - 1.0f;
+                              if (_dx*_dx + _dz*_dz >= 500.0f*500.0f) continue; }
 
                             if (!g_TimerInit || !g_TimerCleanup) break;
                             g_TimerInit(timerBuf);

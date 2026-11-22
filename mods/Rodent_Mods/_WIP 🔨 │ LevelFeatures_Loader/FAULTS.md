@@ -327,3 +327,10 @@ mark them FIXED with the version instead.
   Y, binary-verified) — hiding them matches native (fog/cull). Near ones
   (y>-200, 7 S1s) render at native pose height (surface, flush, pad clear).
 - Verified on rig: pad clear, 4-5 supports under platform/track, no piercing.
+
+## 2026-11-22 - Sky pillars distance cull (fix crowded line)
+- User: all poles squished onto one down-left line (GO! shot, matches their game).
+- Cause: full 52 rendered, far ones crowd the track line (dense, overlapping)
+  instead of hiding via fog/distance like native (7 visible, spaced).
+- Fix: distance cull (dist<500 to pad) — 7 nearest S1s (P,01,03,04,06,12,46),
+  spread W/C/E, 0 on pad. Verified on rig: 5 visible, spread 2D, no line.
