@@ -524,11 +524,7 @@ void UniversalRenderImpl(void *board, int unk) {
                             px = *(DWORD *)&g_skyPillarPos[pi * 3 + 0];
                             py = *(DWORD *)&g_skyPillarPos[pi * 3 + 1];
                             pz = *(DWORD *)&g_skyPillarPos[pi * 3 + 2];
-/* Distance cull: dist<500 to pad (7 nearest, spread, no line) */
-                            { float _dx = *(float *)&px - 0.0f;
-                              float _dz = *(float *)&pz - 1.0f;
-
-                              if (_dx*_dx + _dz*_dz >= 500.0f*500.0f) continue; }
+/* Full 52, no cull (per user 2026-11-22). */
 
 if (!g_TimerInit || !g_TimerCleanup) break;
                             g_TimerInit(timerBuf);
@@ -551,10 +547,9 @@ if (!g_TimerInit || !g_TimerCleanup) break;
                                 : : [x] "m" (px), [y] "m" (py), [z] "m" (pz),
                                     [t] "r" (timerBuf), [f] "r" (fnPose)
                                 : "eax", "ecx", "edx", "memory");
-/* TEST: inverted Y (user: heights seem inverted). m13 = -fileX. */
+/* X-fix only, full 52, no inversion (per user 2026-11-22). */
                             { float *mm = (float *)timerBuf;
-                              mm[13] = *(float *)&px;
-                              mm[14] = -(*(float *)&px); }
+                              mm[13] = *(float *)&px; }
                             
 
                             __asm__ volatile (

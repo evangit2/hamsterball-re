@@ -365,3 +365,7 @@ mark them FIXED with the version instead.
 ## 2026-11-22 - Inverted Y test (user: heights seem inverted)
 - Negated Y (m13=-fileX). Rig: no flip visible (near unchanged), better anchored.
 - Ships for user compare (tall/short correct? Or still inverted?).
+
+## 2026-11-22 - Full 52, X-fix, no inversion (per user)
+- X-only (m12=fileX), Y/Z pose-native (no inversion), full 52 no cull.
+- Boot-clean. Ships for user height compare.
