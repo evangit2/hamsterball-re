@@ -373,3 +373,7 @@ mark them FIXED with the version instead.
 ## 2026-11-22 - Popcylinder blue/white swap (parity flip)
 - User: blue/white swapped. Pop1=white [1,1,1,1], Pop2=blue [0.086,0.58,0.925,1].
 - Flipped parity (idx&1 -> (idx+1)&1). Boot-clean.
+
+## 2026-11-22 - Popcylinder path-based colors (A=white,B=blue)
+- User: some flipped, some right (not global parity). Native Path A (EBX 0-3,8-11)
+  vs Path B (4-7,12-15). Try A=Pop1 white, B=Pop2 blue. Boot-clean.

@@ -1350,8 +1350,11 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         if (idx >= 0 && idx < 16) {
             /* Mesh exactly like every other level: file mesh by index parity
              * (Level9-PopCylinder1/2) into ext. No native board slots. */
-            /* FLIP 2026-11-22 (user: blue/white swapped). Was idx&1. */
-            int meshIdx = (idx + 1) & 1;
+            /* PATH-BASED 2026-11-22 (user: some flipped, some right -> not parity).
+             * Native Path A (EBX 0-3,8-11) vs Path B (4-7,12-15) use different
+             * mesh banks. Try A=white(Pop1), B=blue(Pop2). */
+            int isPathA = (idx<=3 || (idx>=8 && idx<=11)) ? 1 : 0;
+            int meshIdx = isPathA ? 0 : 1;
             int meshOff = UNI_POPCYL_MESH_BASE + meshIdx * 4;
             { const char *_pcPath = (meshIdx==0) ? "Levels\\Level9-PopCylinder1" : "Levels\\Level9-PopCylinder2"; S1EnsureMeshWorld(board, ext, meshOff, _pcPath); }
             void* pExt = GetBoardExt(board); if (!pExt) pExt = ext;
