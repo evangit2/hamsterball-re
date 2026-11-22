@@ -334,3 +334,10 @@ mark them FIXED with the version instead.
   instead of hiding via fog/distance like native (7 visible, spaced).
 - Fix: distance cull (dist<500 to pad) — 7 nearest S1s (P,01,03,04,06,12,46),
   spread W/C/E, 0 on pad. Verified on rig: 5 visible, spread 2D, no line.
+
+## 2026-11-22 - Latest (dist<500, pose-native, 7 nearest)
+- Slot audit: [12]=500 and [13]=500 both no-ops (inert, renderer ignores).
+  [14]=fileX (X, spread, proven east-correct for PILLAR04),
+  [15]=fileZ (Z, spread, verified, 0 zeros in 52).
+  Manual D3D matrix misplaces east (X=[13] wrong slot) — native pose correct.
+- Ships 7 nearest (dist<500, spread W/C/E, 0 on pad, parallax on rig).

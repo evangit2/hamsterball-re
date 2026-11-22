@@ -501,7 +501,8 @@ void UniversalRenderImpl(void *board, int unk) {
           SkyDiag(pg);
           { char av[128]; wsprintfA(av, "SKY-ARR0 xyz=%d,%d,%d",
             (int)g_skyPillarPos[0], (int)g_skyPillarPos[1], (int)g_skyPillarPos[2]);
-            SkyDiag(av); } } }
+            SkyDiag(av);
+} } }
         if (pmesh && !IsBadReadPtr((void *)pmesh, 8) &&
             g_skyPillarCount > 0 && g_skyPillarCount <= 128) {
                 DWORD *mVtbl = *(DWORD **)pmesh;
@@ -523,12 +524,12 @@ void UniversalRenderImpl(void *board, int unk) {
                             px = *(DWORD *)&g_skyPillarPos[pi * 3 + 0];
                             py = *(DWORD *)&g_skyPillarPos[pi * 3 + 1];
                             pz = *(DWORD *)&g_skyPillarPos[pi * 3 + 2];
-                            /* DIAG-ONLY: dist<500 cull (near pad) */
+/* Distance cull: dist<500 to pad (7 nearest, spread, no line) */
                             { float _dx = *(float *)&px - 0.0f;
                               float _dz = *(float *)&pz - 1.0f;
                               if (_dx*_dx + _dz*_dz >= 500.0f*500.0f) continue; }
 
-                            if (!g_TimerInit || !g_TimerCleanup) break;
+if (!g_TimerInit || !g_TimerCleanup) break;
                             g_TimerInit(timerBuf);
                             tVtbl = *(DWORD **)timerBuf;
                             if (!tVtbl || IsBadReadPtr(tVtbl, 12)) {
@@ -549,6 +550,8 @@ void UniversalRenderImpl(void *board, int unk) {
                                 : : [x] "m" (px), [y] "m" (py), [z] "m" (pz),
                                     [t] "r" (timerBuf), [f] "r" (fnPose)
                                 : "eax", "ecx", "edx", "memory");
+                            
+
                             __asm__ volatile (
                                 "pushl $0\n\t"
                                 "pushl %[t]\n\t"
