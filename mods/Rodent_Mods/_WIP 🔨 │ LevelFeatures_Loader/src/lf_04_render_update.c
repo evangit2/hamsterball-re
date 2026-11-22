@@ -498,7 +498,10 @@ void UniversalRenderImpl(void *board, int unk) {
         { static int pgOnce = 0; if (!pgOnce) { pgOnce = 1;
           char pg[96]; wsprintfA(pg, "SKY-PILLARS render n=%d mesh=0x%X",
             g_skyPillarCount, pmesh);
-          SkyDiag(pg); } }
+          SkyDiag(pg);
+          { char av[128]; wsprintfA(av, "SKY-ARR0 xyz=%d,%d,%d",
+            (int)g_skyPillarPos[0], (int)g_skyPillarPos[1], (int)g_skyPillarPos[2]);
+            SkyDiag(av); } } }
         if (pmesh && !IsBadReadPtr((void *)pmesh, 8) &&
             g_skyPillarCount > 0 && g_skyPillarCount <= 128) {
                 DWORD *mVtbl = *(DWORD **)pmesh;
@@ -516,11 +519,12 @@ void UniversalRenderImpl(void *board, int unk) {
                             px = *(DWORD *)&g_skyPillarPos[pi * 3 + 0];
                             py = *(DWORD *)&g_skyPillarPos[pi * 3 + 1];
                             pz = *(DWORD *)&g_skyPillarPos[pi * 3 + 2];
+
                             if (!g_TimerInit || !g_TimerCleanup) break;
                             g_TimerInit(timerBuf);
                             tVtbl = *(DWORD **)timerBuf;
                             if (!tVtbl || IsBadReadPtr(tVtbl, 12)) {
-                                g_TimerCleanup(timerBuf);
+                                                        g_TimerCleanup(timerBuf);
                                 continue;
                             }
                             fnPose = (void *)tVtbl[2];
@@ -537,6 +541,14 @@ void UniversalRenderImpl(void *board, int unk) {
                                 : : [x] "m" (px), [y] "m" (py), [z] "m" (pz),
                                     [t] "r" (timerBuf), [f] "r" (fnPose)
                                 : "eax", "ecx", "edx", "memory");
+/* FILE-Y height (binary-verified 2026-11-21): native pose 0x457B50
+                             * ignores S1 Y (reads only X/Z, timer Y stays 0 = start
+                             * level), floating deep pillars at start height. Override
+                             * Y translation (timer+0x34) with file Y so each pillar
+                             * sits at its designed height (deep ones drop out of view,
+                             * near ones unchanged). */
+                            { float *mfY = (float *)timerBuf;
+                              mfY[13] = *(float *)&g_skyPillarPos[pi * 3 + 1]; }
                             __asm__ volatile (
                                 "pushl $0\n\t"
                                 "pushl %[t]\n\t"

@@ -302,3 +302,15 @@ mark them FIXED with the version instead.
   list-like, so hooks silently corrupt. Positions stored in a static array
   instead; render draws from it. No native-list dependency.
 - Verified on rig: 52 pillars stored + rendered, poles visible under track.
+
+## 2026-11-21 - Sky poles placed correctly (FILE-Y height fix)
+- User: poles present but in wrong places (on pad, piercing, floating).
+- Root cause: native pose 0x457B50 reads only S1 X/Z (ignores S1 Y, verified
+  disasm + -500 Y test + timer matrix logs). Timer Y stays 0 = start level,
+  so ALL 52 pillars rendered at start height — deep ones floated 200-1500
+  above their track, overlapping the start area.
+- Fix: override Y translation (timer+0x34) with file S1 Y post-pose, pre-render.
+  Each pillar now sits at its designed height (deep ones drop out of view,
+  near ones unchanged). Verified on rig: pad clear, pillars as supports, no
+  piercing. Single-pillar and zone tests isolated it (south correct, north
+  wrong = deep ones floating high).

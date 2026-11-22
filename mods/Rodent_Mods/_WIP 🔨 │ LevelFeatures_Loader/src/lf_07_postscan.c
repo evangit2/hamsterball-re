@@ -322,7 +322,12 @@ static void SkySceneTails(void *board, void *ext) {
         for (idx=0; idx<count; idx++) {
             DWORD *obj = (DWORD *)array[idx];
             char *name;
-            if (!obj) continue;
+            /* Native parity: scene walk STOPS at first null (0x4109F2 test +
+             * 0x4109F8 jne falls through to exit on null, does not skip).
+             * Skipping nulls renders S1s native never sees (wrong places). */
+            if (!obj) {
+                char ndbg[96]; wsprintfA(ndbg, "SKY-NULLSTOP idx=%d count=%d", idx, count);
+                SkyDiag(ndbg); break; }
             if (!VirtualQuery(obj, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) continue;
             name = *(char **)obj;
             if (!name) continue;
