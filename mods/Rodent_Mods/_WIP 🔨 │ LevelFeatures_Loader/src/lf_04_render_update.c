@@ -551,13 +551,11 @@ if (!g_TimerInit || !g_TimerCleanup) break;
                                 : : [x] "m" (px), [y] "m" (py), [z] "m" (pz),
                                     [t] "r" (timerBuf), [f] "r" (fnPose)
                                 : "eax", "ecx", "edx", "memory");
-/* FIX (RE 2026-11-22, MAT01 proof): pose leaves m12=0 (X zeroed)
-                             * and puts fileX in m13 (Y slot). Override to D3D:
-                             * m12 (timer[13]) = fileX, m13 (timer[14]) = 0 (H).
-                             * m14 (timer[15]) = fileZ already correct. */
+/* FIX (RE 2026-11-22, MAT01 proof): pose leaves m12=0 (X zeroed).
+                             * Override m12 (timer[13]) = fileX. Leave m13 (Y=fileX,
+                             * native varied heights) and m14 (Z=fileZ) from pose. */
                             { float *mm = (float *)timerBuf;
-                              mm[13] = *(float *)&px;
-                              mm[14] = 0.0f; }
+                              mm[13] = *(float *)&px; }
                             
 
                             __asm__ volatile (

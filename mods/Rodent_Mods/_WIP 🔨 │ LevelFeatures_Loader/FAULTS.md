@@ -354,3 +354,10 @@ mark them FIXED with the version instead.
 - Pose 0x457B50 leaves m12=0 and writes fileX to m13. Fix post-pose:
   mm[13]=fileX (m12=X), mm[14]=0 (m13=Y/H). m14 (Z) already correct.
 - Rig: parallax 3D spread, pad clear, no line/flat.
+
+## 2026-11-22 - Y identical -> X-only fix (Y native varied)
+- User: better (X/Z spread), but all Y identical (my m13=0 fixed H).
+- Native Y=fileX (pose, varied heights). Reverted Y override, X-only:
+  mm[13]=fileX (m12=X). Y/Z from pose (native).
+- Rig: heights varied (tall foreground + short under-track), spread depth,
+  no on-pad, all anchored.
