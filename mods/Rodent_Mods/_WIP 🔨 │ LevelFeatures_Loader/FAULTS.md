@@ -377,3 +377,9 @@ mark them FIXED with the version instead.
 ## 2026-11-22 - Popcylinder path-based colors (A=white,B=blue)
 - User: some flipped, some right (not global parity). Native Path A (EBX 0-3,8-11)
   vs Path B (4-7,12-15). Try A=Pop1 white, B=Pop2 blue. Boot-clean.
+
+## 2026-11-22 - Popcylinder suffix odd/even (odd=white,even=blue)
+- User: every other peg (odds one color, evens other). Verify.
+- Suffix-based (raw&1): odd suffix->Pop1 white, even->Pop2 blue.
+- Native uses 16 explicit slots (Path A/B ranges, no parity logic in code).
+- If slots alternate, this matches. Boot-clean.
