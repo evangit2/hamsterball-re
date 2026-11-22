@@ -1499,7 +1499,7 @@ static void Feature_SkyPopcylinder(void *board, int level) {
         SKY_POP(2);
         SKY_POP(3);
         SKY_POP(4);
-        SKY_POP(6);
+        SKY_POP(7);
         SKY_POP(8);
         SKY_POP(11);
         SKY_POP(12);

@@ -388,3 +388,8 @@ mark them FIXED with the version instead.
 - User: 5-8,13-16 flipped (= Path B, EBX 4-7,12-15). Path A correct.
 - Path A (0-3,8-11): suffix-odd->Pop1, even->Pop2. Path B flipped.
 - Boot-clean. Matches native Path A/B banks (forward 0x4384[] vs backward 0x4388-[]).
+
+## 2026-11-22 - Pop pattern case3 idx6->idx7 (Ghidra-verified)
+- Decompiled SkyBoard_Update 0x41FC90 fully (cases 0-5). Case3 native:
+  idx 0,1,2,3,4,7,8,11,12,13,14,15 (complement of case0 5,6,9,10).
+- Mine had idx6, native idx7. Fixed. All other cases match exactly.
