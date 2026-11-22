@@ -443,3 +443,10 @@ mark them FIXED with the version instead.
 - Reverted all 5 to ext + kept ImpDiag %d positions + 0x2578 bank.
 - Wrap-around: Up from WARM-UP -> PREVIOUS, one more Up -> IMPOSSIBLE.
 - 100ms xdotool presses register exactly once (taps eaten, 1s repeat).
+
+## 2026-11-22 - Impossible out-params fix (Ghidra 0x417FE0 RE)
+- Native sets out1=obj, out2=obj[0x435] for ALL gears (else-branch).
+  Mine set 0,0 for LOOPER/GEAR/BIGGEAR/ROTATOR -> caller skipped setup.
+- Fixed all 4 to match native. Rig: 1 gear visible behind start tower.
+- Sizes verified: LOOPER 0x1500, GEAR/BIGGEAR 0x1514, ROTATOR 0x1508.
+- BIGGEAR [0x43D]=0.5f + TOUCH +0x544=1, ROTATOR [0x43A]=+/-1.0f match.

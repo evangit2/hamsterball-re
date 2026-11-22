@@ -1441,13 +1441,14 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
 
     /* ── LOOPER (Impossible) ── */
     if (my_strnicmp(name, "LOOPER", 6) == 0) {
-        S1EnsureMeshWorld(board, ext, UNI_LOOPER_MESH, "Levels\\\\LevelImpossible-Looper");
+        S1EnsureMeshWorld(board, ext, UNI_LOOPER_MESH, "Levels\\LevelImpossible-Looper");
         int meshVal = *(int*)((char*)ext + UNI_LOOPER_MESH);
         if (!meshVal) { DebugLog("LOOPER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1500);
         if (mem) {
             obj = g_LooperCtor(mem, (int)board, x, y, z, meshVal);
             g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            *(int*)out1 = (int)obj; *(int*)out2 = ((DWORD*)obj)[0x435];
             { char ib[128]; wsprintfA(ib, "SPAWN %s x=%d y=%d z=%d mesh=0x%X obj=0x%X", name, (int)x, (int)y, (int)z, meshVal, (int)obj); ImpDiag(ib); }
         }
         return;
@@ -1455,13 +1456,14 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
 
     /* ── GEAR (Impossible) ── */
     if (my_strnicmp(name, "GEAR", 4) == 0 && my_strnicmp(name, "BIGGEAR", 7) != 0) {
-        S1EnsureMeshWorld(board, ext, UNI_GEAR_MESH, "Levels\\\\LevelImpossible-Gear");
+        S1EnsureMeshWorld(board, ext, UNI_GEAR_MESH, "Levels\\LevelImpossible-Gear");
         int meshVal = *(int*)((char*)ext + UNI_GEAR_MESH);
         if (!meshVal) { DebugLog("GEAR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         void *mem = g_operatorNew(0x1514);
         if (mem) {
             obj = g_GearCtor(mem, (int)board, x, y, z, x2, y2, z2, meshVal);
             g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            *(int*)out1 = (int)obj; *(int*)out2 = ((DWORD*)obj)[0x435];
             { char ib[128]; wsprintfA(ib, "SPAWN %s x=%d y=%d z=%d mesh=0x%X obj=0x%X", name, (int)x, (int)y, (int)z, meshVal, (int)obj); ImpDiag(ib); }
         }
         return;
@@ -1479,6 +1481,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             o[0x43D] = 0x3F000000;
             if (strstr(name, "TOUCH")) *(char*)((char*)obj + 0x544) = 1;
             g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            *(int*)out1 = (int)obj; *(int*)out2 = ((DWORD*)obj)[0x435];
             { char ib[128]; wsprintfA(ib, "SPAWN %s x=%d y=%d z=%d mesh=0x%X obj=0x%X", name, (int)x, (int)y, (int)z, meshVal, (int)obj); ImpDiag(ib); }
         }
         return;
@@ -1497,6 +1500,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             if (g_RNG && RNG_call((void*)0x4F7360, 0, 2, 0) == 0)
                 o[0x43A] = 0xBF800000;
             g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            *(int*)out1 = (int)obj; *(int*)out2 = ((DWORD*)obj)[0x435];
             { char ib[128]; wsprintfA(ib, "SPAWN %s x=%d y=%d z=%d mesh=0x%X obj=0x%X", name, (int)x, (int)y, (int)z, meshVal, (int)obj); ImpDiag(ib); }
         }
         return;
