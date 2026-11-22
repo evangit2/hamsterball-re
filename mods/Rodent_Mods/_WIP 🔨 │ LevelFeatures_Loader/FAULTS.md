@@ -383,3 +383,8 @@ mark them FIXED with the version instead.
 - Suffix-based (raw&1): odd suffix->Pop1 white, even->Pop2 blue.
 - Native uses 16 explicit slots (Path A/B ranges, no parity logic in code).
 - If slots alternate, this matches. Boot-clean.
+
+## 2026-11-22 - Popcylinder path-dependent parity (Path B flipped)
+- User: 5-8,13-16 flipped (= Path B, EBX 4-7,12-15). Path A correct.
+- Path A (0-3,8-11): suffix-odd->Pop1, even->Pop2. Path B flipped.
+- Boot-clean. Matches native Path A/B banks (forward 0x4384[] vs backward 0x4388-[]).
