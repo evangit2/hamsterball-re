@@ -314,3 +314,16 @@ mark them FIXED with the version instead.
   near ones unchanged). Verified on rig: pad clear, pillars as supports, no
   piercing. Single-pillar and zone tests isolated it (south correct, north
   wrong = deep ones floating high).
+
+## 2026-11-22 - Sky background pillars (revert fileY, hide far floaters)
+- User: foreground fixed but background still broken.
+- Root cause of background breakage was MY fileY patch (timer[13]=S1 Y):
+  S1 Y is foundation depth (below surface), not surface height. PILLAR12
+  (fileY -374, upper-track surface 0) rendered detached with a sky gap.
+  [13] is Y-slot (vertical shift, no tilt — verified) but file Y is wrong
+  height for upper-track pillars (deep foundations, short mesh can't reach).
+- Fix reverted to native pose height H (surface, flush for upper/start).
+  Far pillars (S1 Y<=-200, deep foundations) float at fixed H (pose ignores
+  Y, binary-verified) — hiding them matches native (fog/cull). Near ones
+  (y>-200, 7 S1s) render at native pose height (surface, flush, pad clear).
+- Verified on rig: pad clear, 4-5 supports under platform/track, no piercing.

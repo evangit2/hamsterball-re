@@ -512,6 +512,10 @@ void UniversalRenderImpl(void *board, int unk) {
                         /* positions come from g_skyPillarPos (scene-tails walk);
                          * no native-list dependency. */
                         for (pi = 0; pi < g_skyPillarCount; pi++) {
+/* Far pillars (deep S1 Y foundations) float at fixed pose height;
+                             * hiding them matches native (fog/cull). Near ones (y>-200)
+                             * render at native pose height (surface, flush). */
+                            if (*(float *)&g_skyPillarPos[pi * 3 + 1] <= -200.0f) continue;
                             char timerBuf[68];
                             DWORD *tVtbl;
                             void *fnPose;
@@ -541,14 +545,6 @@ void UniversalRenderImpl(void *board, int unk) {
                                 : : [x] "m" (px), [y] "m" (py), [z] "m" (pz),
                                     [t] "r" (timerBuf), [f] "r" (fnPose)
                                 : "eax", "ecx", "edx", "memory");
-/* FILE-Y height (binary-verified 2026-11-21): native pose 0x457B50
-                             * ignores S1 Y (reads only X/Z, timer Y stays 0 = start
-                             * level), floating deep pillars at start height. Override
-                             * Y translation (timer+0x34) with file Y so each pillar
-                             * sits at its designed height (deep ones drop out of view,
-                             * near ones unchanged). */
-                            { float *mfY = (float *)timerBuf;
-                              mfY[13] = *(float *)&g_skyPillarPos[pi * 3 + 1]; }
                             __asm__ volatile (
                                 "pushl $0\n\t"
                                 "pushl %[t]\n\t"
