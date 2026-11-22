@@ -450,3 +450,10 @@ mark them FIXED with the version instead.
 - Fixed all 4 to match native. Rig: 1 gear visible behind start tower.
 - Sizes verified: LOOPER 0x1500, GEAR/BIGGEAR 0x1514, ROTATOR 0x1508.
 - BIGGEAR [0x43D]=0.5f + TOUCH +0x544=1, ROTATOR [0x43A]=+/-1.0f match.
+
+## 2026-11-22 - Impossible render RE (0x40C4A0 + slots, partial)
+- Native 0x40C4A0 routes out1->board+0xD54, out2->board+0x10EC, calls
+  slots 22 (CallRender) + 21 (CallUpdate w/Timer) with Gfx pose.
+- Added routing + slot22: stable, 1-2 gears. Full pose (Timer+Gfx+slot21)
+  crashes (0001:00098D9D) - per-vtable slot differences suspected.
+- Ghidra flaky (dies repeatedly). Render RE ongoing.

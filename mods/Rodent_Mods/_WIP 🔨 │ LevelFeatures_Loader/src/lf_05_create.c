@@ -1449,6 +1449,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             obj = g_LooperCtor(mem, (int)board, x, y, z, meshVal);
             g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
             *(int*)out1 = (int)obj; *(int*)out2 = ((DWORD*)obj)[0x435];
+            g_AthenaListAppend((void*)((char*)board + 0xD54), (int)obj);
+            if (((DWORD*)obj)[0x435]) g_AthenaListAppend((void*)((char*)board + 0x10EC), ((DWORD*)obj)[0x435]);
+            { DWORD *vt = *(DWORD **)obj; ((void (__thiscall *)(void *))(vt[0x58/4]))(obj); }
             { char ib[128]; wsprintfA(ib, "SPAWN %s x=%d y=%d z=%d mesh=0x%X obj=0x%X", name, (int)x, (int)y, (int)z, meshVal, (int)obj); ImpDiag(ib); }
         }
         return;
@@ -1464,6 +1467,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             obj = g_GearCtor(mem, (int)board, x, y, z, x2, y2, z2, meshVal);
             g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
             *(int*)out1 = (int)obj; *(int*)out2 = ((DWORD*)obj)[0x435];
+            g_AthenaListAppend((void*)((char*)board + 0xD54), (int)obj);
+            if (((DWORD*)obj)[0x435]) g_AthenaListAppend((void*)((char*)board + 0x10EC), ((DWORD*)obj)[0x435]);
+            { DWORD *vt = *(DWORD **)obj; ((void (__thiscall *)(void *))(vt[0x58/4]))(obj); }
             { char ib[128]; wsprintfA(ib, "SPAWN %s x=%d y=%d z=%d mesh=0x%X obj=0x%X", name, (int)x, (int)y, (int)z, meshVal, (int)obj); ImpDiag(ib); }
         }
         return;
@@ -1482,6 +1488,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             if (strstr(name, "TOUCH")) *(char*)((char*)obj + 0x544) = 1;
             g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
             *(int*)out1 = (int)obj; *(int*)out2 = ((DWORD*)obj)[0x435];
+            g_AthenaListAppend((void*)((char*)board + 0xD54), (int)obj);
+            if (((DWORD*)obj)[0x435]) g_AthenaListAppend((void*)((char*)board + 0x10EC), ((DWORD*)obj)[0x435]);
+            { DWORD *vt = *(DWORD **)obj; ((void (__thiscall *)(void *))(vt[0x58/4]))(obj); }
             { char ib[128]; wsprintfA(ib, "SPAWN %s x=%d y=%d z=%d mesh=0x%X obj=0x%X", name, (int)x, (int)y, (int)z, meshVal, (int)obj); ImpDiag(ib); }
         }
         return;
@@ -1501,6 +1510,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
                 o[0x43A] = 0xBF800000;
             g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
             *(int*)out1 = (int)obj; *(int*)out2 = ((DWORD*)obj)[0x435];
+            g_AthenaListAppend((void*)((char*)board + 0xD54), (int)obj);
+            if (((DWORD*)obj)[0x435]) g_AthenaListAppend((void*)((char*)board + 0x10EC), ((DWORD*)obj)[0x435]);
+            { DWORD *vt = *(DWORD **)obj; ((void (__thiscall *)(void *))(vt[0x58/4]))(obj); }
             { char ib[128]; wsprintfA(ib, "SPAWN %s x=%d y=%d z=%d mesh=0x%X obj=0x%X", name, (int)x, (int)y, (int)z, meshVal, (int)obj); ImpDiag(ib); }
         }
         return;
@@ -1519,6 +1531,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             { char ib[128]; wsprintfA(ib, "SPAWN %s x=%d y=%d z=%d mesh=0x%X obj=0x%X", name, (int)x, (int)y, (int)z, meshVal, (int)obj); ImpDiag(ib); }
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        g_AthenaListAppend((void*)((char*)board + 0xD54), (int)obj);
+        if (renderOut) g_AthenaListAppend((void*)((char*)board + 0x10EC), renderOut);
+        { DWORD *vt = *(DWORD **)obj; ((void (__thiscall *)(void *))(vt[0x58/4]))(obj); }
         return;
     }
 
