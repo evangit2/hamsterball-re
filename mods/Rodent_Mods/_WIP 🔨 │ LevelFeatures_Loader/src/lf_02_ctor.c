@@ -455,6 +455,54 @@ static void UniversalSkyInit(void *mem, int app) {
     { char sdbg[128]; wsprintfA(sdbg, "SKYINIT done mem=0x%08X vtbl=0x%08X 4394=0x%08X 436C=0x%08X 4370=0x%08X 4374=0x%08X", (DWORD)mem, *(DWORD *)mem, *(DWORD *)((char *)mem + 0x4394), *(DWORD *)((char *)mem + 0x436C), *(DWORD *)((char *)mem + 0x4370), *(DWORD *)((char *)mem + 0x4374)); SkyDiag(sdbg); }
 }
 
+/* UniversalImpossibleInit — content-driven Impossible board setup, no native code.
+ * Replicates Impossible native ctor (0x424C20, Ghidra-decompiled 2026-11-22):
+ * base Board_ctor, Impossible vtable 0x4D21C0, "Board (Impossible)",
+ * +0x4348=1, "IMPOSSIBLE RACE", color (1,0,0) via Vec3_Init,
+ * LoadRaceData("IMPOSSIBLERACE"), music "Impossible Theme",
+ * 5 meshes via Level_MeshWorldCtor (0x10D0):
+ * +0x436C=Looper, +0x4370=Gear, +0x4374=BigGear,
+ * +0x4378=Rotator, +0x437C=Pendulum.
+ * S1 mirrors (GEAR/BIGGEAR/LOOPER/PENDULUM/ROTATOR/FLAG) to come;
+ * racestate/render run base universal (no native 0x... ). */
+static void UniversalImpossibleInit(void *mem, int app) {
+    DebugLog("IMPINIT enter");
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D21C0; /* Impossible board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Impossible)";
+    *(char **)((char *)mem + 0x29B4) = "IMPOSSIBLE RACE";
+    *(BYTE *)((char *)mem + 0x4348) = 1;
+    *(char **)((char *)mem + 0x4344) = "Impossible Theme";
+    g_LoadRaceData(mem, "IMPOSSIBLERACE");
+    /* Hook registry (AthenaListInit at +0x4394, like Sky). */
+    if (g_AthenaListInit && BoardHasOffset(mem, 0x4394 + 0x10, 4))
+        g_AthenaListInit((void *)((char *)mem + 0x4394), 0);
+    /* Meshes (native ctor loads 5 via Level_MeshWorldCtor 0x10D0). */
+    if (g_operatorNew && g_LevelMeshWorldCtor) {
+        void *lm = g_operatorNew(0x10D0);
+        if (lm && BoardHasOffset(mem, 0x436C, 4))
+            *(void **)((char *)mem + 0x436C) =
+                g_LevelMeshWorldCtor(lm, *(void **)(app + 0x174), "levels\\\\levelimpossible-looper");
+        void *gm = g_operatorNew(0x10D0);
+        if (gm && BoardHasOffset(mem, 0x4370, 4))
+            *(void **)((char *)mem + 0x4370) =
+                g_LevelMeshWorldCtor(gm, *(void **)(app + 0x174), "levels\\\\levelimpossible-gear");
+        void *bg = g_operatorNew(0x10D0);
+        if (bg && BoardHasOffset(mem, 0x4374, 4))
+            *(void **)((char *)mem + 0x4374) =
+                g_LevelMeshWorldCtor(bg, *(void **)(app + 0x174), "levels\\\\levelimpossible-biggear");
+        void *rt = g_operatorNew(0x10D0);
+        if (rt && BoardHasOffset(mem, 0x4378, 4))
+            *(void **)((char *)mem + 0x4378) =
+                g_LevelMeshWorldCtor(rt, *(void **)(app + 0x174), "levels\\\\levelimpossible-rotator");
+        void *pd = g_operatorNew(0x10D0);
+        if (pd && BoardHasOffset(mem, 0x437C, 4))
+            *(void **)((char *)mem + 0x437C) =
+                g_LevelMeshWorldCtor(pd, *(void **)(app + 0x174), "levels\\\\levelimpossible-pendulum");
+    }
+    DebugLog("UniversalImpossibleInit done (no native ctor)");
+}
+
 /* Fail-closed size tracking: bit i = level i+1 alloc patched to 0x7000.
  * g_nativeBoardSize holds the stock operator_new size per slot (captured
  * before rewrite); g_nativeLevelCtors holds the slot's genuine native ctor
@@ -565,13 +613,17 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
      * like 10/11/12, so no Sky-specific native board code runs.
      * UNI_NATIVE_CTOR stays 0, so create/collide/racestate/render never
      * delegate to native origs. */
+    /* Content 15 (Impossible) joins the universal path (2026-11-22):
+     * UniversalImpossibleInit + S1 mirrors own it, like Sky/10/11/12.
+     * Native fast path disabled (was 0x424C20). */
     if (0) nativeCtor = (NativeLevelCtor_t)0x41F930;
+    /* Content 15 (Impossible) deliberately NOT on the fast path (2026-11-22). */
     /* Content 14 (Master) deliberately NOT on the fast path (2026-11-18):
      * Master builds via the universal path (g_BoardCtor + S1 mirrors) like
      * the shared-scene races, so no Master-specific native board code runs
      * (bridge pair, tipper pair, BreakBridge states). UNI_NATIVE_CTOR stays
      * 0, so create/collide/racestate/render never delegate to native origs. */
-    else if (g_loadingContentId == 15) nativeCtor = (NativeLevelCtor_t)0x424C20;
+    else if (0 && g_loadingContentId == 15) nativeCtor = (NativeLevelCtor_t)0x424C20;
     int useNativeCtor = (nativeCtor != NULL);
     if (g_loadingContentId >= 10) {
         char cd2[128]; wsprintfA(cd2, "CTORDECISION content=%d nativeCtor=0x%08X use=%d",
@@ -625,6 +677,9 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     } else if (g_loadingContentId == 13) {
         DebugLog("Calling UniversalSkyInit...");
         UniversalSkyInit(mem, app);
+    } else if (g_loadingContentId == 15) {
+        DebugLog("Calling UniversalImpossibleInit...");
+        UniversalImpossibleInit(mem, app);
     } else {
         DebugLog("Calling Board_ctor...");
         g_BoardCtor(mem, app);
@@ -680,11 +735,6 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
          * below are inert now (kept for future bisects). */
         if (g_loadingContentId == 13) {
             SkyDiag("SKY-UNIVERSAL: full universal handlers");
-            /* Sky handler bisect (2026-11-21): magic files in the game dir
-             * force one handler at a time back to universal, cumulatively
-             * (create -> +race -> +render -> +coll). First crash after adding
-             * a file = that replica is guilty. Presence-tested via
-             * GetFileAttributesA (dir file, not directory). */
             {
                 DWORD fa;
                 fa = GetFileAttributesA("sky_uni_create.txt");
@@ -752,7 +802,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4 &&
         g_loadingContentId != 7 && g_loadingContentId != 8 && g_loadingContentId != 9 &&
         g_loadingContentId != 10 && g_loadingContentId != 11 && g_loadingContentId != 12 &&
-        g_loadingContentId != 13)
+        g_loadingContentId != 13 && g_loadingContentId != 15)
         *(DWORD *)mem = g_levelVtables[raceIndex];
     DebugLog("Vtable set");
 
@@ -764,7 +814,7 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4 &&
         g_loadingContentId != 7 && g_loadingContentId != 8 && g_loadingContentId != 9 &&
         g_loadingContentId != 10 && g_loadingContentId != 11 && g_loadingContentId != 12 &&
-        g_loadingContentId != 13) {
+        g_loadingContentId != 13 && g_loadingContentId != 15) {
         *(char **)((char *)mem + UNI_BOARD_NAME) = ld->boardName;
         *(char **)((char *)mem + UNI_RACE_TITLE) = ld->raceTitle;
     }

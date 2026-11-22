@@ -393,3 +393,12 @@ mark them FIXED with the version instead.
 - Decompiled SkyBoard_Update 0x41FC90 fully (cases 0-5). Case3 native:
   idx 0,1,2,3,4,7,8,11,12,13,14,15 (complement of case0 5,6,9,10).
 - Mine had idx6, native idx7. Fixed. All other cases match exactly.
+
+## 2026-11-22 - Impossible joins universal path (baseline v1)
+- Content 15 off native fast path (0x424C20 disabled). UniversalImpossibleInit
+  replicates ctor: Board_ctor, vtable 0x4D21C0, "Board (Impossible)",
+  +0x4348=1, "IMPOSSIBLE RACE", IMPOSSIBLERACE, "Impossible Theme",
+  5 meshes (Looper/Gear/BigGear/Rotator/Pendulum) to 0x436C-0x437C.
+- Steps 2/3 keep Impossible vtable/names (added 15 to exclusions).
+- S1 mirrors not yet (gears invisible in v1). Boot-clean (title).
+- S1 census: 15 BigGear, 25 Gear, 1 Looper, 3 Pendulum, 1 Rotator, 15 Flag.
