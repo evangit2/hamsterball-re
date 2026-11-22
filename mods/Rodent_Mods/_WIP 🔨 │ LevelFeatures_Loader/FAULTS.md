@@ -346,3 +346,11 @@ mark them FIXED with the version instead.
 - SKIP log on user box: 44 skips (d2>250000), 8 render (0,1,3,4,6,12,45,46).
   Cull works. n=52 is total stored, not rendered count.
 - Ship: dist<500, pose-native, no DIAG spam. Boot-clean.
+
+## 2026-11-22 - X zeroed proof + fix (MAT01 matrix dump)
+- MAT01 post-pose (PILLAR01 file -17,-8.6,-289):
+  m12=0 (X ZEROED, should be -17), m13=-17 (fileX in Y slot, should be 0),
+  m14=-289 (Z correct). User right (X, not Z).
+- Pose 0x457B50 leaves m12=0 and writes fileX to m13. Fix post-pose:
+  mm[13]=fileX (m12=X), mm[14]=0 (m13=Y/H). m14 (Z) already correct.
+- Rig: parallax 3D spread, pad clear, no line/flat.
