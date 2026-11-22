@@ -341,3 +341,8 @@ mark them FIXED with the version instead.
   [15]=fileZ (Z, spread, verified, 0 zeros in 52).
   Manual D3D matrix misplaces east (X=[13] wrong slot) — native pose correct.
 - Ships 7 nearest (dist<500, spread W/C/E, 0 on pad, parallax on rig).
+
+## 2026-11-22 - Cull proven (44 skip, 8 render), ship clean
+- SKIP log on user box: 44 skips (d2>250000), 8 render (0,1,3,4,6,12,45,46).
+  Cull works. n=52 is total stored, not rendered count.
+- Ship: dist<500, pose-native, no DIAG spam. Boot-clean.

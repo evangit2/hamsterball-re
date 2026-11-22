@@ -527,6 +527,7 @@ void UniversalRenderImpl(void *board, int unk) {
 /* Distance cull: dist<500 to pad (7 nearest, spread, no line) */
                             { float _dx = *(float *)&px - 0.0f;
                               float _dz = *(float *)&pz - 1.0f;
+
                               if (_dx*_dx + _dz*_dz >= 500.0f*500.0f) continue; }
 
 if (!g_TimerInit || !g_TimerCleanup) break;
