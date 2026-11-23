@@ -525,9 +525,15 @@ mark them FIXED with the version instead.
 - Fix: bare LIFTER on Odd content/slot routes into the DROPPER path
   (rename plan enforced in code; Up LIFTERn path untouched); handler
   null+validity-guarded (skips when nothing built).
-- Crash-test clean (92s). Rig can't exercise it (stock Level9 has no
-  lifter S1s) — needs RodentRacer Windows confirm on the custom file
-  (visible lifter + safe touch). No EIP yet; send it if it still dies.
+- Crash-test clean (92s). NOTE: stock Level6 HAS the bare LIFTER but
+  no E:DROPLIFT event, so the rig can prove build (SPAWN line) but not
+  the touch crash — that needs RodentRacer Windows confirm on the
+  custom file (visible lifter + safe touch). No EIP yet; send it if it
+  still dies.
+- CORRECTION: the first rig run (v13.43) did NOT fail the build — the
+  DROPPER branch never had a SPAWN line, so zero SPAWNs was expected
+  even on success (Odd has no gears/judges to log). S1X2 proved parse.
+  v13.44 adds the SPAWN proof line; rig re-run pending.
 
 ## 2026-11-23 - Judge fix RIG-CONFIRMED
 - v13.42 on rig/Expert: 5/5 SPAWN JUDGE lines, 0x4BBC count=5 and
