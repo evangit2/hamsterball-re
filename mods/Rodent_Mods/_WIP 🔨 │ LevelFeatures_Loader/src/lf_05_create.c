@@ -160,6 +160,16 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     float y2 = *(float *)(s1data + 5);
     float z2 = *(float *)(s1data + 6);
     float fparam = *(float *)(s1data + 5);  /* same as y2 for some ctors */
+    /* S1X2 diag (v13.40): log the raw triple2 + next 3 dwords as ints to
+     * identify the runtime S1 layout at +0x10 (NaN axle mystery). */
+    {
+        char xb[160];
+        wsprintfA(xb, "S1X2 %s s1=%d,%d,%d n1=%d n2=%d n3=%d",
+            name, *(int *)(s1data + 4), *(int *)(s1data + 5),
+            *(int *)(s1data + 6), *(int *)(s1data + 7),
+            *(int *)(s1data + 8), *(int *)(s1data + 9));
+        ImpDiag(xb);
+    }
 
     void *obj = NULL;
     int renderOut = 0;
