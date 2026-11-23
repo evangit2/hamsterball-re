@@ -970,11 +970,22 @@ static void Feature_ChomperStates(void *board, DWORD app) {
          * once per load then sticks shut forever). */
         cs *= 1.2f; /* native double 0x4D0A98 */
         *(float *)((char *)board + 0x43A0) = cs;
+        /* Smooth lift: rise with the jaw (+2/frame to 50, mirroring
+         * state 3's -2/frame fall) instead of native's 0→50 single-frame
+         * snap (0x41E8E7) — the snap reads as a teleport-up jerk when
+         * the jaw cycles continuously. */
+        {
+            float ly = *(float *)((char *)board + 0x43B0);
+            if (ly < 50.0f) {
+                ly += 2.0f;
+                if (ly > 50.0f) ly = 50.0f;
+                *(float *)((char *)board + 0x43B0) = ly;
+            }
+        }
         if (cs >= 25.0f) { /* native fcomps 0x4CFECC */
             *(float *)((char *)board + 0x43A0) = 25.0f;
             *(int *)((char *)board + 0x43A8) = 1;
             *(int *)((char *)board + 0x43AC) = 0x19;
-            *(float *)((char *)board + 0x43B0) = 50.0f;
         }
         break;
     }
