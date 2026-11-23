@@ -287,9 +287,11 @@ void UniversalRenderImpl(void *board, int unk) {
      * Inner per-pointer checks stay, outer is OR of all three so a level with
      * only CHOMPER still renders it. */
     if (features & (REND_WINDMILL | REND_CHOMPER | REND_TURRET)) {
-        /* Faithful Tower render (native 0x40DFA0). Method-this is the 68B
-         * timer object T — NOT gfx. Gfx fns take this=T. Chomper is the
-         * board+0x4390 MeshNode, drawn via its vtbl[7](obj, T, 0).
+        /* Faithful Tower render (native 0x40DFA0). The 68B timer T is a
+         * composite: Gfx fns take SUB-OBJECT this-pointers, not T+0 —
+         * rotations + draw matrix use T+4, wave uses T+8, scale/position
+         * use T+12 (objdump: lea 0x18/0x1c/0x20(%esp) off the T at +0x14).
+         * Passing T+0 everywhere misplaces every compose = upper jaw lost.
          * State floats come from ext mirrors (animated by update features);
          * object pointers/positions from native board slots. */
 
@@ -297,6 +299,9 @@ void UniversalRenderImpl(void *board, int unk) {
         if (g_TimerInit && g_TimerCleanup && g_GfxScaleZ && g_GfxScaleX &&
             g_GfxSetPosition && g_WaveSin && g_Matrix44Zero) {
             g_TimerInit(timerBuf);
+            void *rotM = (void *)(timerBuf + 4);   /* rotation/draw matrix */
+            void *wavC = (void *)(timerBuf + 8);   /* wave component */
+            void *posC = (void *)(timerBuf + 12);  /* scale/pos component */
             DWORD *timerVtbl = *(DWORD **)timerBuf;
             void (__thiscall *scaleFn)(void *, float, float, float) = NULL;
             void (__thiscall *posFn)(void *, float, float, float) = NULL;
@@ -312,42 +317,78 @@ void UniversalRenderImpl(void *board, int unk) {
             float liftY = *(float *)((char *)board + 0x43B0);
             DWORD chomperObj = *(DWORD *)((char *)board + 0x4390);
 
-            /* Pass 1 */
-            if (scaleFn) scaleFn(timerBuf, 1.15f, 1.15f, 1.15f);
-            if (g_GfxScaleZ) g_GfxScaleZ(timerBuf, -chompState);
-            if (posFn) posFn(timerBuf, px, py, pz);
-            if (g_GfxSetPosition) g_GfxSetPosition(timerBuf, 0.0f, liftY, 0.0f);
-            if (g_GfxSetPosition && g_WaveSin)
-                g_GfxSetPosition(timerBuf, 0.0f, g_WaveSin((void *)0x4F7188, chompTimer) * 10.0f, 0.0f);
-            if (chomperObj && !IsBadReadPtr((void *)chomperObj, 4)) {
-                DWORD *cvtbl = *(DWORD **)chomperObj;
-                if (cvtbl && !IsBadReadPtr(cvtbl, 32) && cvtbl[7]) {
-                    void (__thiscall *chompRender)(void *, void *, int) =
-                        (void (__thiscall *)(void *, void *, int))cvtbl[7];
-                    chompRender((void *)chomperObj, timerBuf, 0);
+            /* Throttled render-draw log (proves the draws fire + with what).
+             * One line per ~600 frames to chomper_diag.txt: REND prefix. */
+            {
+                static int rn = 0;
+                if (++rn >= 600 && chomperObj) {
+                    rn = 0;
+                    HANDLE rhf = CreateFileA("chomper_diag.txt", GENERIC_WRITE,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS,
+                        FILE_ATTRIBUTE_NORMAL, NULL);
+                    if (rhf != INVALID_HANDLE_VALUE) {
+                        char rl[256]; DWORD rbw = 0;
+                        DWORD vt0 = IsBadReadPtr((void *)chomperObj, 4) ? 0 : *(DWORD *)chomperObj;
+                        DWORD v7 = 0;
+                        if (vt0 && !IsBadReadPtr((void *)vt0, 32)) v7 = ((DWORD *)vt0)[7];
+                        float *m4 = (float *)rotM;
+                        wsprintfA(rl, "REND obj=%d v7=0x%X jaw=%d px=%d py=%d pz=%d m0=%d m1=%d m2=%d m3=%d\r\n",
+                            (int)chomperObj, (unsigned)v7,
+                            (int)(chompState * 100.0f), (int)(px * 100.0f),
+                            (int)(py * 100.0f), (int)(pz * 100.0f),
+                            (int)(m4[0] * 1000.0f), (int)(m4[1] * 1000.0f),
+                            (int)(m4[2] * 1000.0f), (int)(m4[3] * 1000.0f));
+                        SetFilePointer(rhf, 0, NULL, FILE_END);
+                        WriteFile(rhf, rl, strlen(rl), &rbw, NULL);
+                        CloseHandle(rhf);
+                    }
                 }
             }
-            /* Pass 2: reset the TIMER matrix (native 0x40E094 calls 0x457B10
-             * on the timer itself), then rebuild: ScaleX(180), offset jaw,
-             * same draws. The old code zeroed a dead scratch buffer, so
-             * pass 2 accumulated onto pass 1's matrix (double scale/pos) =
-             * upper jaw garbage/missing. */
-            g_Matrix44Zero((int *)timerBuf);
-            if (scaleFn) scaleFn(timerBuf, 1.15f, 1.15f, 1.15f);
-            if (g_GfxScaleZ) g_GfxScaleZ(timerBuf, -chompState);
-            if (g_GfxScaleX) g_GfxScaleX(timerBuf, 180.0f);
-            if (g_GfxSetPosition) g_GfxSetPosition(timerBuf, -35.0f, 0.0f, 0.0f);
-            if (posFn) posFn(timerBuf, px, py, pz);
-            if (g_GfxSetPosition) g_GfxSetPosition(timerBuf, 0.0f, liftY, 0.0f);
+
+            /* Pass 1 */
+            if (scaleFn) scaleFn(posC, 1.15f, 1.15f, 1.15f);
+            if (g_GfxScaleZ) g_GfxScaleZ(rotM, -chompState);
+            if (posFn) posFn(posC, px, py, pz);
+            if (g_GfxSetPosition) g_GfxSetPosition(posC, 0.0f, liftY, 0.0f);
             if (g_GfxSetPosition && g_WaveSin)
-                g_GfxSetPosition(timerBuf, 0.0f, g_WaveSin((void *)0x4F7188, chompTimer) * 10.0f, 0.0f);
+                g_GfxSetPosition(wavC, 0.0f, g_WaveSin((void *)0x4F7188, chompTimer) * 10.0f, 0.0f);
             if (chomperObj && !IsBadReadPtr((void *)chomperObj, 4)) {
                 DWORD *cvtbl = *(DWORD **)chomperObj;
                 if (cvtbl && !IsBadReadPtr(cvtbl, 32) && cvtbl[7]) {
                     void (__thiscall *chompRender)(void *, void *, int) =
                         (void (__thiscall *)(void *, void *, int))cvtbl[7];
-                    chompRender((void *)chomperObj, timerBuf, 0);
+                    chompRender((void *)chomperObj, rotM, 0);
                 }
+            }
+            /* Pass 2: reset the matrix (native 0x40E094), then rebuild:
+             * ScaleX(180), offset jaw, same draws. */
+            g_Matrix44Zero((int *)timerBuf);
+            if (scaleFn) scaleFn(posC, 1.15f, 1.15f, 1.15f);
+            if (g_GfxScaleZ) g_GfxScaleZ(rotM, -chompState);
+            if (g_GfxScaleX) g_GfxScaleX(rotM, 180.0f);
+            if (g_GfxSetPosition) g_GfxSetPosition(posC, -35.0f, 0.0f, 0.0f);
+            if (posFn) posFn(posC, px, py, pz);
+            if (g_GfxSetPosition) g_GfxSetPosition(posC, 0.0f, liftY, 0.0f);
+            if (g_GfxSetPosition && g_WaveSin)
+                g_GfxSetPosition(wavC, 0.0f, g_WaveSin((void *)0x4F7188, chompTimer) * 10.0f, 0.0f);
+            /* Pass-2 draw with culling OFF for the 180-mirrored copy:
+             * mirrored winding is backface-culled under LFL's phase
+             * states (native draws with culling effectively off here). */
+            {
+                void *pgfx = NULL;
+                DWORD papp = *(DWORD *)((char *)board + BOARD_APP_PTR);
+                if (papp && !IsBadReadPtr((void *)papp, 0x600))
+                    pgfx = *(void **)((char *)papp + 0x174);
+                if (pgfx && g_GraphicsSetCullMode2) g_GraphicsSetCullMode2(pgfx, 0, 1);
+                if (chomperObj && !IsBadReadPtr((void *)chomperObj, 4)) {
+                    DWORD *cvtbl = *(DWORD **)chomperObj;
+                    if (cvtbl && !IsBadReadPtr(cvtbl, 32) && cvtbl[7]) {
+                        void (__thiscall *chompRender)(void *, void *, int) =
+                            (void (__thiscall *)(void *, void *, int))cvtbl[7];
+                        chompRender((void *)chomperObj, rotM, 0);
+                    }
+                }
+                if (pgfx && g_GraphicsSetCullMode2) g_GraphicsSetCullMode2(pgfx, 1, 1);
             }
             g_TimerCleanup(timerBuf);
         }
