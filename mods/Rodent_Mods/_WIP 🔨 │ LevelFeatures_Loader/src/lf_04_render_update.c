@@ -346,31 +346,31 @@ void UniversalRenderImpl(void *board, int unk) {
             }
 
             /* Pass 1 */
-            if (scaleFn) scaleFn(posC, 1.15f, 1.15f, 1.15f);
-            if (g_GfxScaleZ) g_GfxScaleZ(rotM, -chompState);
-            if (posFn) posFn(posC, px, py, pz);
-            if (g_GfxSetPosition) g_GfxSetPosition(posC, 0.0f, liftY, 0.0f);
+            if (scaleFn) scaleFn(timerBuf, 1.15f, 1.15f, 1.15f);
+            if (g_GfxScaleZ) g_GfxScaleZ(timerBuf, -chompState);
+            if (posFn) posFn(timerBuf, px, py, pz);
+            if (g_GfxSetPosition) g_GfxSetPosition(timerBuf, 0.0f, liftY, 0.0f);
             if (g_GfxSetPosition && g_WaveSin)
-                g_GfxSetPosition(wavC, 0.0f, g_WaveSin((void *)0x4F7188, chompTimer) * 10.0f, 0.0f);
+                g_GfxSetPosition(timerBuf, 0.0f, g_WaveSin((void *)0x4F7188, chompTimer) * 10.0f, 0.0f);
             if (chomperObj && !IsBadReadPtr((void *)chomperObj, 4)) {
                 DWORD *cvtbl = *(DWORD **)chomperObj;
                 if (cvtbl && !IsBadReadPtr(cvtbl, 32) && cvtbl[7]) {
                     void (__thiscall *chompRender)(void *, void *, int) =
                         (void (__thiscall *)(void *, void *, int))cvtbl[7];
-                    chompRender((void *)chomperObj, rotM, 0);
+                    chompRender((void *)chomperObj, timerBuf, 0);
                 }
             }
             /* Pass 2: reset the matrix (native 0x40E094), then rebuild:
              * ScaleX(180), offset jaw, same draws. */
             g_Matrix44Zero((int *)timerBuf);
-            if (scaleFn) scaleFn(posC, 1.15f, 1.15f, 1.15f);
-            if (g_GfxScaleZ) g_GfxScaleZ(rotM, -chompState);
-            if (g_GfxScaleX) g_GfxScaleX(rotM, 180.0f);
-            if (g_GfxSetPosition) g_GfxSetPosition(posC, -35.0f, 0.0f, 0.0f);
-            if (posFn) posFn(posC, px, py, pz);
-            if (g_GfxSetPosition) g_GfxSetPosition(posC, 0.0f, liftY, 0.0f);
+            if (scaleFn) scaleFn(timerBuf, 1.15f, 1.15f, 1.15f);
+            if (g_GfxScaleZ) g_GfxScaleZ(timerBuf, -chompState);
+            if (g_GfxScaleX) g_GfxScaleX(timerBuf, 180.0f);
+            if (g_GfxSetPosition) g_GfxSetPosition(timerBuf, -35.0f, 0.0f, 0.0f);
+            if (posFn) posFn(timerBuf, px, py, pz);
+            if (g_GfxSetPosition) g_GfxSetPosition(timerBuf, 0.0f, liftY, 0.0f);
             if (g_GfxSetPosition && g_WaveSin)
-                g_GfxSetPosition(wavC, 0.0f, g_WaveSin((void *)0x4F7188, chompTimer) * 10.0f, 0.0f);
+                g_GfxSetPosition(timerBuf, 0.0f, g_WaveSin((void *)0x4F7188, chompTimer) * 10.0f, 0.0f);
             /* Pass-2 draw with culling OFF for the 180-mirrored copy:
              * mirrored winding is backface-culled under LFL's phase
              * states (native draws with culling effectively off here). */
@@ -385,7 +385,7 @@ void UniversalRenderImpl(void *board, int unk) {
                     if (cvtbl && !IsBadReadPtr(cvtbl, 32) && cvtbl[7]) {
                         void (__thiscall *chompRender)(void *, void *, int) =
                             (void (__thiscall *)(void *, void *, int))cvtbl[7];
-                        chompRender((void *)chomperObj, rotM, 0);
+                        chompRender((void *)chomperObj, timerBuf, 0);
                     }
                 }
                 if (pgfx && g_GraphicsSetCullMode2) g_GraphicsSetCullMode2(pgfx, 1, 1);
