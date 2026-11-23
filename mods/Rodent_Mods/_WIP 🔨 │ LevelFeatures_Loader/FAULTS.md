@@ -533,9 +533,21 @@ mark them FIXED with the version instead.
 - CORRECTION: the first rig run (v13.43) did NOT fail the build — the
   DROPPER branch never had a SPAWN line, so zero SPAWNs was expected
   even on success (Odd has no gears/judges to log). S1X2 proved parse.
-  v13.44 adds the SPAWN proof line; RIG-PASS 2026-11-23: SPAWN DROPPER
-  x=-605 y=-2334 z=-2334 obj=0x5F98B80 (nonzero, race stable 48.8s).
-  Touch crash still needs the custom file (stock has no E:DROPLIFT).
+  - v13.44 adds the SPAWN proof line; RIG-PASS 2026-11-23: SPAWN DROPPER
+    x=-605 y=-2334 z=-2334 obj=0x5F98B80 (nonzero, race stable 48.8s).
+    Touch crash still needs the custom file (stock has no E:DROPLIFT).
+
+## 2026-11-23 - Chomper bite fix (v13.45, SHIPPED)
+- User: mouth never bites (not even intermittently), E:BITE touch does
+    nothing. Root causes (objdump): (1) jaw starts 0.0 and 0x0*1.2 = 0 —
+    native NaN-arms 0x43A0 at load (0x40EB57) so state 0 regrows from
+    0.25; LFL never armed. (2) E:BITE wrote ext slots nothing reads;
+    native writes board+0x43A8=0 / +0x43A0=25.0 (0x40DE76/7C) = forced
+    snap-shut. Fix mirrors both. All other constants re-verified
+    (1.2 dbl, 0.5, 1.0, 2.0, thresholds).
+- Crash-test clean (93s). Ask: Tower play — jaw opens/closes on its
+    own + E:BITE touch forces a snap. Still open: purple look (needs
+    screenshot), bite kill (E:BITE consumer mapped, kill unproven).
 
 ## 2026-11-23 - Judge fix RIG-CONFIRMED
 - v13.42 on rig/Expert: 5/5 SPAWN JUDGE lines, 0x4BBC count=5 and
