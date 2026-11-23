@@ -1058,6 +1058,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             renderOut = ((DWORD*)obj)[0x435];
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        { char db[128]; wsprintfA(db, "SPAWN %s x=%d y=%d z=%d obj=0x%X", name, (int)x, (int)y, (int)z, (int)obj); ImpDiag(db); }
         return;
         }
     }
