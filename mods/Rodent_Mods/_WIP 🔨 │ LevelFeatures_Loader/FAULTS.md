@@ -528,3 +528,9 @@ mark them FIXED with the version instead.
 - Crash-test clean (92s). Rig can't exercise it (stock Level9 has no
   lifter S1s) — needs RodentRacer Windows confirm on the custom file
   (visible lifter + safe touch). No EIP yet; send it if it still dies.
+
+## 2026-11-23 - Judge fix RIG-CONFIRMED
+- v13.42 on rig/Expert: 5/5 SPAWN JUDGE lines, 0x4BBC count=5 and
+  0x2578 contains the same 5 (judge vtable 0x4D52B8 in both lists).
+  Not visually seen (judges spawn at x~4600, far from start, no
+  driving) — presence proven, Windows eyes still needed for visible.
