@@ -36,7 +36,7 @@ typedef void *__thiscall (*Ctor4f_t)(void *mem, int board, float x, float y, flo
 typedef void *__thiscall (*Ctor5f_t)(void *mem, int board, float x, float y, float z, float f);  /* Fan, Spinner_Level */
 typedef void *__thiscall (*Ctor3f_t)(void *mem, int board, float x, float y, float z, int meshPtr);  /* Rotator_Impossible, Fallout, NeonPlatform, ArenaStands, Looper, Pendulum, Lifter */
 typedef void *__thiscall (*Ctor6f_t)(void *mem, int board, float x, float y, float z, int meshPtr, int pathObj);  /* Saw, Saw2, Blockdawg */
-typedef void *__thiscall (*Ctor7f_t)(void *mem, int board, float x, float y, float z, int x2, int y2, int z2, int meshPtr);  /* Gear */
+typedef void *__thiscall (*Ctor7f_t)(void *mem, int board, float x, float y, float z, float x2, float y2, float z2, int meshPtr);  /* Gear (Impossible dual-position: x2/y2/z2 are FLOATS — int truncates -90.0 to -90 = NaN, v13.40 root cause) */
 typedef void *__thiscall (*Ctor_Str_t)(void *mem, int board, float x, float y, float z, const char *path);  /* Wavy */
 typedef void *__thiscall (*Ctor_Lifter_t)(void *mem, int board, float x, float y, float z, int meshPtr, long num);  /* Lifter (Up) */
 typedef void *__thiscall (*Ctor_SpeedCyl_t)(void *mem, int board, float x, float y, float z, int num, int meshPtr);  /* SpeedCylinder */

@@ -483,3 +483,21 @@ mark them FIXED with the version instead.
   vis+vpos in centi-units at ~3s + ~10s into imp_diag.txt
   (GEARPOS begin/end). Join to S1 coords via obj addr (SPAWN lines).
 - Crash-test clean (93s). Ask: play Impossible ~12s, send imp_diag.txt.
+
+## 2026-11-23 - Impossible gears ROOT CAUSE + FIX (v13.41, SHIPPED)
+- S1X2 (rig): runtime S1 triple2 = sane rot floats, e.g. GEAR
+  (-90.0,-180.0,~0). But obj+0x10E4 held 0xFFFFFFA6/0xFFFFFF4C =
+  (int)(-90.0)/(int)(-180.0) TRUNCATED, i.e. NaN as floats.
+- Cause: Ctor7f_t typedef declared x2/y2/z2 as INT (lf_01_bumpers.c:39).
+  MinGW converted the floats to ints at the call: -90.0f -> -90
+  (0xFFFFFFA6) -> reinterpreted as float NaN by Gear_ctor 0x437590 and
+  the per-frame pose (0x43E600 reads +0x10E4/8 as axle). One-word fix:
+  x2/y2/z2 -> float. Looper/rotator/pendulum ctors take only
+  (x,y,z,MESH) floats -> unaffected (looper placed right, as reported).
+- Explains everything: NaN axle -> NaN pose matrix -> all 43 visuals
+  stuck at origin (looks like "one gear"), wrong orientations, jank
+  collisions, NaN carry/ride -> instawin. Anchors/lists/speeds were
+  always correct.
+- Fix build crash-test clean (93s). GEARPOS/S1X2 diags KEPT: sane axle
+  lines in the log prove the new binary runs. Ask: visual confirm on
+  Windows (gears spread over the track, rotating).
