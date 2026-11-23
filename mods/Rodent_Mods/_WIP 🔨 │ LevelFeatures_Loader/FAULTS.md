@@ -473,3 +473,13 @@ mark them FIXED with the version instead.
   the dispatcher does 0xCD4/0x10EC/slot22/slot21 natively with pose.
 - Boot crash-test clean (93s, no crash). Needs Windows confirm: all 25x
   GEAR + 15x BIGGEAR + looper/rotator/pendulums visible?
+
+## 2026-11-23 - GEARPOS diag (v13.39, SHIPPED)
+- User: gears spawn misplaced/misoriented, looper right but riding it
+  instawins. Spawn data proven file-correct (47 SPAWN + rig mem-dump:
+  obj+0x10D8 == file coords) -> per-frame pose/rider state suspect.
+- Build logs runtime positions: UniversalBoardUpdate walks 0x2578 for
+  vtable 0x4D5AD0 (GEAR+BIGGEAR+TOUCH), dumps obj/anchor/axle/spd/
+  vis+vpos in centi-units at ~3s + ~10s into imp_diag.txt
+  (GEARPOS begin/end). Join to S1 coords via obj addr (SPAWN lines).
+- Crash-test clean (93s). Ask: play Impossible ~12s, send imp_diag.txt.

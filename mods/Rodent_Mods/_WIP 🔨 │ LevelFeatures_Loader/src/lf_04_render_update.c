@@ -17,6 +17,7 @@ static void FireBranchTeleport(void *board, int *ball, const char *branchName, i
  * Called by the naked thunk below which handles RET 4.
  * Must be non-static for asm reference from the naked thunk. */
 void ToobDiag(const char *line);
+void ImpDiag(const char *msg);
 /* Sky pre-base box (native order 0x410E80: BOX then Level_RenderDynamicObjects).
  * Native draws the far-projection + cloud sprite FIRST (Z off), then the level
  * overdraws it. Running it after the base paints the Z-less sprite OVER the
@@ -793,6 +794,64 @@ board_additive:
     if (level == 0) return;
     // Pause already handled per-feature, but gate here too
     if (*(BYTE*)((char*)board+0x874)) return;
+
+    /* GEARPOS diag (v13.39): loaded-vs-supposed positions for Impossible gears.
+     * Spawn (ImpDiag SPAWN lines) matches the file; gears render misplaced/
+     * misoriented on real Windows. Dump each gear obj's runtime anchor +
+     * axle + visual pos at ~3s and ~10s after load so S1 coords compare in
+     * one file. Join key = obj addr (also in SPAWN lines). wsprintfA has no
+     * float support: centi-units via (int)(x*100). Tick only advances on
+     * frames where a gear exists (menu frames don't consume the dump). */
+    {
+        static DWORD gpBoard = 0;
+        static int gpTick = 0, gpD1 = 0, gpD2 = 0;
+        int gi, gfound = 0;
+        int gcnt = 0; int *gitems = NULL;
+        if ((DWORD)board != gpBoard) { gpBoard = (DWORD)board; gpTick = 0; gpD1 = 0; gpD2 = 0; }
+        gcnt = *(int *)((char *)board + 0x2578 + 4);
+        gitems = *(int **)((char *)board + 0x2578 + 0x40C);
+        if (gcnt > 0 && gcnt <= 128 && gitems && !IsBadReadPtr(gitems, (unsigned)gcnt * 4)) {
+            for (gi = 0; gi < gcnt; gi++) {
+                int go = gitems[gi];
+                if (!go || IsBadReadPtr((void *)go, 4)) continue;
+                if (*(DWORD *)go == 0x4D5AD0) { gfound = 1; break; }
+            }
+        }
+        if (gfound) gpTick++;
+        if (gfound && ((gpTick == 180 && !gpD1) || (gpTick == 600 && !gpD2))) {
+            char hb[96];
+            if (gpTick == 180) gpD1 = 1; else gpD2 = 1;
+            wsprintfA(hb, "GEARPOS begin tick=%d", gpTick); ImpDiag(hb);
+            for (gi = 0; gi < gcnt; gi++) {
+                int go = gitems[gi];
+                char ib[192];
+                int ax, ay, az, ex, ey, ez, spd, vx, vy, vz, vv;
+                int vis;
+                if (!go || IsBadReadPtr((void *)go, 0x1514)) continue;
+                if (*(DWORD *)go != 0x4D5AD0) continue;
+                ax = (int)(*(float *)(go + 0x10D8) * 100.0f);
+                ay = (int)(*(float *)(go + 0x10DC) * 100.0f);
+                az = (int)(*(float *)(go + 0x10E0) * 100.0f);
+                ex = (int)(*(float *)(go + 0x10E4) * 100.0f);
+                ey = (int)(*(float *)(go + 0x10E8) * 100.0f);
+                ez = (int)(*(float *)(go + 0x10EC) * 100.0f);
+                spd = (int)(*(float *)(go + 0x10F4) * 100.0f);
+                vis = *(int *)(go + 0x10D4);
+                vx = 0; vy = 0; vz = 0; vv = 0;
+                if (vis && !IsBadReadPtr((void *)vis, 0x1100)) {
+                    vv = *(int *)vis;
+                    vx = (int)(*(float *)(vis + 0x10D8) * 100.0f);
+                    vy = (int)(*(float *)(vis + 0x10DC) * 100.0f);
+                    vz = (int)(*(float *)(vis + 0x10E0) * 100.0f);
+                }
+                wsprintfA(ib, "GEARPOS obj=0x%X anch=(%d,%d,%d) axle=(%d,%d,%d) spd=%d vis=0x%X(%X) vpos=(%d,%d,%d)",
+                    go, ax, ay, az, ex, ey, ez, spd, vis, vv, vx, vy, vz);
+                ImpDiag(ib);
+            }
+            ImpDiag("GEARPOS end");
+        }
+    }
+
     DWORD extFeat = GetBoardFeat(board);
     DWORD features = extFeat; // Option B: pure S1-driven, no g_updateFeatures fallback
     if (!features) return;
