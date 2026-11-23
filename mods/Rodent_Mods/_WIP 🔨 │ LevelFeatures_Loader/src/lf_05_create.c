@@ -994,6 +994,22 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
                     }
                 }
                 g_AthenaListAppend((void*)((char*)board + 0x4BBC), (int)obj);
+                /* Native parity (0x434C40, run per 0x4BBC item by the native
+                 * Expert create walk): zero obj+0x10F4 + dedup-append obj to
+                 * board+0x2578. Out-params stay NULL by design (non-null out1
+                 * crashes the game-side consumer), so without this 0x2578
+                 * link judges never update or draw = invisible on LFL. */
+                *(BYTE *)((char *)obj + 0x10F4) = 0;
+                {
+                    void *ul = (void *)((char *)board + UNI_OBJ_LIST);
+                    int un = *(int *)((char *)ul + 4);
+                    int *ui = *(int **)((char *)ul + 0x40C);
+                    int uk, ufound = 0;
+                    if (un > 0 && un <= 4096 && ui && !IsBadReadPtr(ui, (unsigned)un * 4)) {
+                        for (uk = 0; uk < un; uk++) if (ui[uk] == (int)obj) { ufound = 1; break; }
+                    }
+                    if (!ufound) g_AthenaListAppend(ul, (int)obj);
+                }
             }
         }
         /* Ship state: return (NULL,NULL) for JUDGE. The game-side JUDGE
@@ -1001,6 +1017,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
          * crashes, (0,0)+link runs). Judges are driven via the 0x4BBC
          * board link above, so NULL outs lose nothing. */
         *(int*)out1 = 0; *(int*)out2 = 0;
+        { char jb[128]; wsprintfA(jb, "SPAWN %s x=%d y=%d z=%d obj=0x%X", name, (int)x, (int)y, (int)z, (int)obj); ImpDiag(jb); }
         return;
     }
 

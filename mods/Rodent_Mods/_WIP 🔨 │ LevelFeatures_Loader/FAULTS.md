@@ -505,3 +505,13 @@ mark them FIXED with the version instead.
   screenshots, red/white bullseye, on poles), axle = sane rot bits
   (0xC2B40001/-90.0 etc., zero NaN), GEARPOS axle sane centi-numbers.
   Still needs RodentRacer Windows confirm (gameplay + ride/instawin).
+
+## 2026-11-23 - Expert judges fix (v13.42, SHIPPED)
+- User: judges absent/invisible. Root cause (objdump): native Expert
+  create appends each judge to board+0x4BBC AND runs 0x434C40 per
+  0x4BBC item (zero +0x10F4 + dedup-append to 0x2578). LFL did the
+  0x4BBC half only; with out-params NULL by design, judges had no
+  update/render link at all. Fix replicates 0x434C40 inline in the
+  JUDGE branch. Added JUDGE SPAWN line (dispatch proof).
+- Crash-test clean (93s). Ask: visual confirm on Windows + imp_diag
+  SPAWN JUDGE lines (expect 5: JUDGE..JUDGE04).
