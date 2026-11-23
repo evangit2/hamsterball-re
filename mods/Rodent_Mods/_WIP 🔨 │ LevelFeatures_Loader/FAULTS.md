@@ -560,6 +560,17 @@ mark them FIXED with the version instead.
   timer (native 0x40E094 zeroes the timer). Pass 2 accumulated onto
   pass 1's matrix (double scale/position) = upper jaw garbage.
   One-target fix, exact native parity. Rig screenshot pending.
+- RIG: no change (still half) + cull-disable (v13.46b) also no change.
+  Nopass diag (both draws off): BOWL REMAINS = the photographed bowl
+  is LEVEL GEO, chomper mesh draws nothing anywhere. Mesh-move test
+  (mesh pinned at ball+80, jaw 25): MESH-INVISIBLE.
+- ROOT HUNT: objdump of native 0x40DFA0 shows Gfx fns take SUB-OBJECT
+  this-pointers (rot=T+4, wave=T+8, pos=T+12), confirmed by native
+  windmill compose (ScaleY=T+4, SetPos=T+12). LFL passed T+0
+  everywhere (windmill too — check if its wheel spins!). v13.47
+  mirrors the offsets + cull-off pass 2 + REND draw logging.
+  Rig can't judge (mesh invisible there for its own reason); the
+  user's box decides now: send chomper_diag.txt (has REND lines).
 
 ## 2026-11-23 - Judge fix RIG-CONFIRMED
 - v13.42 on rig/Expert: 5/5 SPAWN JUDGE lines, 0x4BBC count=5 and
