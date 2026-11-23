@@ -546,8 +546,13 @@ mark them FIXED with the version instead.
     snap-shut. Fix mirrors both. All other constants re-verified
     (1.2 dbl, 0.5, 1.0, 2.0, thresholds).
 - Crash-test clean (93s). Ask: Tower play — jaw opens/closes on its
-    own + E:BITE touch forces a snap. Still open: purple look (needs
-    screenshot), bite kill (E:BITE consumer mapped, kill unproven).
+  own + E:BITE touch forces a snap. Still open: purple look (needs
+  screenshot), bite kill (E:BITE consumer mapped, kill unproven).
+- RIG-SEEN 2026-11-23: mouth renders correct (yellow dome, pink
+  interior, white teeth — the "purple" is this pink at low res; zero
+  purple pixels). Wide open in all 14 frames across 140s; snap-shut
+  phase too brief to catch = consistent with working cycle (mostly
+  open, brief snap). v13.45 NaN-arm + E:BITE board writes.
 
 ## 2026-11-23 - Judge fix RIG-CONFIRMED
 - v13.42 on rig/Expert: 5/5 SPAWN JUDGE lines, 0x4BBC count=5 and
