@@ -675,6 +675,11 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         *(float *)((char *)ext + REND_TOWER_CHOMP_X) = x;
         *(float *)((char *)ext + REND_TOWER_CHOMP_Y) = y - adj;
         *(float *)((char *)ext + REND_TOWER_CHOMP_Z) = z;
+        /* Native Tower load/reset (0x40EB57) NaN-arms the jaw: state 0 maps
+         * NaN (or <0) to 0.25 and the jaw regrows from there. Base ctor
+         * leaves 0x43A0 = 0.0, and 0x0 * 1.2 stays 0 — without this arm
+         * the jaw is stuck shut from frame 1 (never bites). */
+        if (BoardHasOffset(board, 0x43A0, 4)) *(int *)((char *)board + 0x43A0) = -1;
         *(int*)out1 = 0; *(int*)out2 = 0;
         return;
     }

@@ -627,10 +627,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         }
     }
 
-    /* ── Tower: E:BITE ── */
+    /* ── Tower: E:BITE — exact native parity (0x40DE76/0x40DE7C): force
+     * the bite NOW by snapping the jaw to full-open in state 0 (25.0 in
+     * state 0 immediately trips the close transition = snap shut). The
+     * old ext-slot writes drove nothing (no reader) = touch never bit. */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_BITE)) && my_stricmp(name, "E:BITE") == 0) {
-        *(DWORD *)((char *)ext + UNI_BITE_STATE) = 0;
-        *(DWORD *)((char *)ext + UNI_BITE_SPEED) = 0x41C80000;
+        if (BoardHasOffset(board, 0x43A8, 4)) *(int *)((char *)board + 0x43A8) = 0;
+        if (BoardHasOffset(board, 0x43A0, 4)) *(float *)((char *)board + 0x43A0) = 25.0f;
     }
 
     /* ── Tower: E:MACETRIGGER ──
