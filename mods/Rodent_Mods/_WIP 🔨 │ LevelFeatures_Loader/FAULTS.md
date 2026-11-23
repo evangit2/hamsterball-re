@@ -515,3 +515,16 @@ mark them FIXED with the version instead.
   JUDGE branch. Added JUDGE SPAWN line (dispatch proof).
 - Crash-test clean (93s). Ask: visual confirm on Windows + imp_diag
   SPAWN JUDGE lines (expect 5: JUDGE..JUDGE04).
+
+## 2026-11-23 - Odd lifter fix (v13.43, SHIPPED)
+- User: Odd lifter invisible + touch crash (no crash EIP; custom file
+  still has bare LIFTER, rename to DROPPER not done). Root causes:
+  (1) bare LIFTER matches neither DROPPER nor LIFTER-digit branch ->
+  falls through unbuilt (invisible); (2) E:DROPLIFT handler called
+  g_DropLiftActivate(UNI_BONK_STORE=0) with no null check = crash.
+- Fix: bare LIFTER on Odd content/slot routes into the DROPPER path
+  (rename plan enforced in code; Up LIFTERn path untouched); handler
+  null+validity-guarded (skips when nothing built).
+- Crash-test clean (92s). Rig can't exercise it (stock Level9 has no
+  lifter S1s) — needs RodentRacer Windows confirm on the custom file
+  (visible lifter + safe touch). No EIP yet; send it if it still dies.
