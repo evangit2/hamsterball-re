@@ -964,7 +964,10 @@ static void Feature_ChomperStates(void *board, DWORD app) {
     switch (state) {
     case 0: {
         float cs = *(float *)((char *)board + 0x43A0);
-        if (!(cs >= 0.0f)) cs = 0.25f; /* native: <0 or NaN → 0.25 */
+        if (!(cs > 0.0f)) cs = 0.25f; /* native: <0 or NaN → 0.25; LFL
+         * also re-arms from exact 0.0 (native re-arms via its reset path
+         * 0x40EB57 which LFL doesn't run — without this the jaw bites
+         * once per load then sticks shut forever). */
         cs *= 1.2f; /* native double 0x4D0A98 */
         *(float *)((char *)board + 0x43A0) = cs;
         if (cs >= 25.0f) { /* native fcomps 0x4CFECC */
