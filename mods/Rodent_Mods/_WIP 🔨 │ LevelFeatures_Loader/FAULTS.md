@@ -577,6 +577,10 @@ mark them FIXED with the version instead.
   = normal-size lower jaw). REND logging stays. ALSO: jaw frozen
   at 0 (a8=0) — states run once then stick (no native-equivalent
   re-arm on LFL). Next: confirm E:BITE touch forces a snap.
+- v13.49: jaw re-arms from 0.0 (continuous bite cycles). v13.50:
+  the pre-bite jerk = native's 0→50 lift snap (0x41E8E7), once per
+  load in vanilla but every cycle now — replaced with +2/frame
+  rise (mirrors state 3's fall). Full mouth confirmed by user.
 
 ## 2026-11-23 - Judge fix RIG-CONFIRMED
 - v13.42 on rig/Expert: 5/5 SPAWN JUDGE lines, 0x4BBC count=5 and
