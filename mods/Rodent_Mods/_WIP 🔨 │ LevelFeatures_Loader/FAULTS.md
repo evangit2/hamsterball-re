@@ -501,3 +501,7 @@ mark them FIXED with the version instead.
 - Fix build crash-test clean (93s). GEARPOS/S1X2 diags KEPT: sane axle
   lines in the log prove the new binary runs. Ask: visual confirm on
   Windows (gears spread over the track, rotating).
+- RIG-CONFIRMED 2026-11-23: gears render on track (4+ visible in
+  screenshots, red/white bullseye, on poles), axle = sane rot bits
+  (0xC2B40001/-90.0 etc., zero NaN), GEARPOS axle sane centi-numbers.
+  Still needs RodentRacer Windows confirm (gameplay + ride/instawin).
