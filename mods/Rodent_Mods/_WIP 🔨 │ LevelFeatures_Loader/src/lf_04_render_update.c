@@ -294,7 +294,6 @@ void UniversalRenderImpl(void *board, int unk) {
          * object pointers/positions from native board slots. */
 
         char timerBuf[68];
-        char zeroScratch[64];
         if (g_TimerInit && g_TimerCleanup && g_GfxScaleZ && g_GfxScaleX &&
             g_GfxSetPosition && g_WaveSin && g_Matrix44Zero) {
             g_TimerInit(timerBuf);
@@ -328,8 +327,12 @@ void UniversalRenderImpl(void *board, int unk) {
                     chompRender((void *)chomperObj, timerBuf, 0);
                 }
             }
-            /* Pass 2: reset matrix, ScaleX(180), offset jaw, same draws */
-            g_Matrix44Zero((int *)zeroScratch);
+            /* Pass 2: reset the TIMER matrix (native 0x40E094 calls 0x457B10
+             * on the timer itself), then rebuild: ScaleX(180), offset jaw,
+             * same draws. The old code zeroed a dead scratch buffer, so
+             * pass 2 accumulated onto pass 1's matrix (double scale/pos) =
+             * upper jaw garbage/missing. */
+            g_Matrix44Zero((int *)timerBuf);
             if (scaleFn) scaleFn(timerBuf, 1.15f, 1.15f, 1.15f);
             if (g_GfxScaleZ) g_GfxScaleZ(timerBuf, -chompState);
             if (g_GfxScaleX) g_GfxScaleX(timerBuf, 180.0f);
