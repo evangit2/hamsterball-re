@@ -533,7 +533,9 @@ mark them FIXED with the version instead.
 - CORRECTION: the first rig run (v13.43) did NOT fail the build — the
   DROPPER branch never had a SPAWN line, so zero SPAWNs was expected
   even on success (Odd has no gears/judges to log). S1X2 proved parse.
-  v13.44 adds the SPAWN proof line; rig re-run pending.
+  v13.44 adds the SPAWN proof line; RIG-PASS 2026-11-23: SPAWN DROPPER
+  x=-605 y=-2334 z=-2334 obj=0x5F98B80 (nonzero, race stable 48.8s).
+  Touch crash still needs the custom file (stock has no E:DROPLIFT).
 
 ## 2026-11-23 - Judge fix RIG-CONFIRMED
 - v13.42 on rig/Expert: 5/5 SPAWN JUDGE lines, 0x4BBC count=5 and
