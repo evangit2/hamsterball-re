@@ -547,9 +547,12 @@ if (!g_TimerInit || !g_TimerCleanup) break;
                                 : : [x] "m" (px), [y] "m" (py), [z] "m" (pz),
                                     [t] "r" (timerBuf), [f] "r" (fnPose)
                                 : "eax", "ecx", "edx", "memory");
-/* X-fix only, full 52, no inversion (per user 2026-11-22). */
+/* File XYZ (user: Y based on X is wrong). X=fileX (m12 fix),
+                             * Y=fileY (m13, exact S1 height, not fileX),
+                             * Z=fileZ (m14, pose). */
                             { float *mm = (float *)timerBuf;
-                              mm[13] = *(float *)&px; }
+                              mm[13] = *(float *)&px;
+                              mm[14] = *(float *)&py; }
                             
 
                             __asm__ volatile (

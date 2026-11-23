@@ -457,3 +457,19 @@ mark them FIXED with the version instead.
 - Added routing + slot22: stable, 1-2 gears. Full pose (Timer+Gfx+slot21)
   crashes (0001:00098D9D) - per-vtable slot differences suspected.
 - Ghidra flaky (dies repeatedly). Render RE ongoing.
+
+## 2026-11-23 - Impossible gears: 0xD54 is not a list (objdump-proof, SHIPPED)
+- Correction to the 11-22 note: native 0x40C4A0 per-S1 does slot33 ->
+  pose (TimerInit 0x457AD0/0x457C60/SetPosition 0x457B50) ->
+  out1->board+0xCD4 + meshdb+0x1C -> slot22 (0x58) -> slot21 (0x54) ->
+  out2->board+0x10EC. There is NO 0xD54 anywhere in the dispatcher,
+  and base Board_ctor (0x419030) never inits 0xD54 (inits
+  0x884/0x898/0x8B8/0xCD4/0x10EC/0x2578/... only).
+- So every Impossible spawn (looper/gear/biggear/rotator/pendulum) wrote
+  one AthenaListAppend into garbage + double-listed the render in 0x10EC
+  + double-fired slot22 unposed. Only 1-2 gears survived.
+- Fix: deleted all five manual 0xD54/0x10EC/slot22 blocks. Mirrors now do
+  0x2578 append only (exact native 0x417FE0 parity) + out1=obj/out2=[0x435];
+  the dispatcher does 0xCD4/0x10EC/slot22/slot21 natively with pose.
+- Boot crash-test clean (93s, no crash). Needs Windows confirm: all 25x
+  GEAR + 15x BIGGEAR + looper/rotator/pendulums visible?

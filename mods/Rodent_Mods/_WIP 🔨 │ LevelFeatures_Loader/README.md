@@ -121,6 +121,12 @@ Source lives in `src/` as 11 chapters (one translation unit —
 
 ## History
 
+- **v13.38** — Impossible gears fix (objdump-proof). The 11-22 routing wrote
+out1 to board+0xD54, which is not a list (base Board_ctor never inits it;
+native 0x40C4A0 routes out1→0xCD4, out2→0x10EC, slots 22+21 itself). Every
+Impossible spawn corrupted the heap + double-listed/duplicated slot22, so
+only 1-2 gears survived. Fix: mirrors append 0x2578 only + out-params,
+dispatcher does the rest. Crash-test clean (93s).
 - **v13.37** — 8-ball glow fix. Sprite-balls (754>=3, incl. 8-ball end-state)
 render through helper 0x4011C0 with a hardcoded white triple (three push
 1.0 at 0x4011C9/D0/D5 into 0x453150) — native never tints it anywhere.
