@@ -554,6 +554,13 @@ mark them FIXED with the version instead.
   phase too brief to catch = consistent with working cycle (mostly
   open, brief snap). v13.45 NaN-arm + E:BITE board writes.
 
+## 2026-11-23 - Chomper upper jaw fix (v13.46, SHIPPED)
+- User: only bottom jaw renders, top half missing. Root cause: the
+  pass-2 matrix reset zeroed a dead scratch buffer instead of the
+  timer (native 0x40E094 zeroes the timer). Pass 2 accumulated onto
+  pass 1's matrix (double scale/position) = upper jaw garbage.
+  One-target fix, exact native parity. Rig screenshot pending.
+
 ## 2026-11-23 - Judge fix RIG-CONFIRMED
 - v13.42 on rig/Expert: 5/5 SPAWN JUDGE lines, 0x4BBC count=5 and
   0x2578 contains the same 5 (judge vtable 0x4D52B8 in both lists).
