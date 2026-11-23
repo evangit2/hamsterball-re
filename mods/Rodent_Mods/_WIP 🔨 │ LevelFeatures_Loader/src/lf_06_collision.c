@@ -1062,9 +1062,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         if (g_BallGrow) g_BallGrow((int)ball);
     }
 
-    /* ── Odd: E:DROPLIFT ── */
+    /* ── Odd: E:DROPLIFT — null-guarded: no DROPPER/bare-LIFTER S1 built
+     * means UNI_BONK_STORE is 0 (invisible lifter); calling the native
+     * activate on 0/garbage = touch crash. Skip instead. */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_DROPLIFT)) && my_stricmp(name, "E:DROPLIFT") == 0) {
-        if (g_DropLiftActivate) g_DropLiftActivate(*(int *)((char *)ext + UNI_BONK_STORE));
+        int droper = *(int *)((char *)ext + UNI_BONK_STORE);
+        if (droper && !IsBadReadPtr((void *)droper, 4) && g_DropLiftActivate)
+            g_DropLiftActivate(droper);
     }
 
     /* ── Odd: E:PIPERANDOM (complex — simplified to core behavior) ── */

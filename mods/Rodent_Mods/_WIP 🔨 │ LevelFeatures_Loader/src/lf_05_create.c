@@ -1037,8 +1037,16 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     }
 
     /* ── DROPPER (Odd single lifer) — renamed from LIFTER (level==9) ──
-     * S1: DROPPER — was bare LIFTER on Odd */
-    if (my_strnicmp(name, "DROPPER", 7) == 0) {
+     * S1: DROPPER — was bare LIFTER on Odd. Bare LIFTER on Odd content/slot
+     * also routes here (rename plan: bare LIFTER belongs to Odd; LIFTERn =
+     * Up tubes). Without this, bare LIFTER falls through unbuilt (invisible)
+     * and E:DROPLIFT fires g_DropLiftActivate(0) = touch crash. */
+    {
+        int isOdd = (ContentFileId(ext) == 9) || (level == 9);
+        int isDropper = (my_strnicmp(name, "DROPPER", 7) == 0);
+        int isBareLifterOdd = (!isDropper && my_strnicmp(name, "LIFTER", 6) == 0 &&
+                               name[6] == 0 && isOdd);
+        if (isDropper || isBareLifterOdd) {
         void *mem = g_operatorNew(0x10FC);
         if (mem) {
             obj = g_OddLifterCtor(mem, (int)board, x, y, z);
@@ -1051,6 +1059,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
+        }
     }
 
     /* ── LIFTER (Up tubes) ──
