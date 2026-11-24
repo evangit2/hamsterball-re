@@ -828,8 +828,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
              * ext UNI_BONK_MESH/STORE hold MeshNodes/meshworlds, never bonk
              * objects; feeding those to natives corrupts heap
              * (0001:00037B87). Skip when both slots are empty. */
-            int bonkObj = BoardHasOffset(board, 0x436C, 4) ? *(int*)((char*)board + 0x436C) : 0;
-            if (!bonkObj && BoardHasOffset(board, 0x540C, 4)) bonkObj = *(int*)((char*)board + 0x540C);
+            int bonkObj = BoardHasOffset(board, 0x540C, 4) ? *(int*)((char*)board + 0x540C) : 0;
             if (bonkObj) g_CreateBonkPopup(bonkObj);
         }
     }
@@ -838,8 +837,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     if ((*(BYTE*)((char*)ext + COLL_FLAG_HAMMERCHASE)) && my_stricmp(name, "E:HAMMERCHASE") == 0) {
         if (difficulty != 0 && g_HammerChaseStart) {
             /* Board slots ONLY: 0x436C, else 0x540C (same heap guard). */
-            int bonkObj2 = BoardHasOffset(board, 0x436C, 4) ? *(int*)((char*)board + 0x436C) : 0;
-            if (!bonkObj2 && BoardHasOffset(board, 0x540C, 4)) bonkObj2 = *(int*)((char*)board + 0x540C);
+            int bonkObj2 = BoardHasOffset(board, 0x540C, 4) ? *(int*)((char*)board + 0x540C) : 0;
             if (bonkObj2) g_HammerChaseStart(bonkObj2);
         }
     }

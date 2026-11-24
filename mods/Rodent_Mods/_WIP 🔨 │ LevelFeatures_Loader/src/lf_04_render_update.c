@@ -766,7 +766,6 @@ board_additive:
                                 /* Board slots ONLY (0x436C else 0x540C) —
                                  * mesh fallbacks are never bonk objects. */
                                 int bonkObj = BoardHasOffset(board, 0x540C, 4) ? *(int *)((char *)board + 0x540C) : 0;
-                                if (!bonkObj && BoardHasOffset(board, 0x436C, 4)) bonkObj = *(int *)((char *)board + 0x436C);
                                 if (bonkObj) ((CreateBonkPopup_t)(g_moduleBase + RVA_CreateBonkPopup))(bonkObj);
                                 *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE) &= (DWORD)~1;
                                 *(BYTE *)(b + 0x2CD) |= 2;
@@ -792,8 +791,7 @@ board_additive:
                                 st = *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE);
                                 if (inside && !was && (st & (int)vbit)) {
                                     /* Board slots ONLY (0x436C else 0x540C). */
-                                    int b2 = BoardHasOffset(board, 0x436C, 4) ? *(int *)((char *)board + 0x436C) : 0;
-                                    if (!b2 && BoardHasOffset(board, 0x540C, 4)) b2 = *(int *)((char *)board + 0x540C);
+                                    int b2 = BoardHasOffset(board, 0x540C, 4) ? *(int *)((char *)board + 0x540C) : 0;
                                     if (b2) ((Hammer_ChaseStart_t)(g_moduleBase + RVA_Hammer_ChaseStart))(b2);
                                     *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE) &= (DWORD)~vbit;
                                     *(BYTE *)(b + 0x2CD) |= 4;
