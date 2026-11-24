@@ -744,14 +744,10 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         if (mem) {
             obj = g_BonkCtor(mem, (int)board, x, y, z);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            /* Native stores the bonk obj at board+0x436C (read by
-             * E:CALLHAMMER/E:HAMMERCHASE). Expert slot-1 mirrors stay off
-             * until the shared-code occupant issue is root-caused. */
-            if (g_enableExpertMirrors && BoardHasOffset(board, 0x436C, 4)) *(void **)((char *)board + 0x436C) = obj;
-            /* Native Master create stores the bonk obj at board+0x540C
-             * (0x4123C7, unconditional) — the hammer/popup/break readers.
-             * Restored 2026-11-19: v13.22 dropped it, Master hammer went
-             * dead. Guarded: only fires where the board really extends. */
+            /* Single canonical bonk slot: board+0x540C (native Master
+             * create fills it unconditionally at 0x4123C7; Expert's 0x436C
+             * copy was the per-race duplicate — removed, all readers use
+             * 0x540C now). Guarded: only fires where the board extends. */
             if (BoardHasOffset(board, 0x540C, 4)) *(void **)((char *)board + 0x540C) = obj;
             /* Bonk obj for the breakable-bridge feature: ext slot, set on
              * any level with a Bonk S1 (presence, never slot/content). */
