@@ -823,11 +823,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         if (difficulty != 0 && g_CreateBonkPopup) {
             void *be = GetBoardExt(board); if (!be) be = ext;
             /* Native reads the bonk obj from board+0x436C (mirrored at
-             * BONK create). Board slot ONLY — ext UNI_BONK_MESH/STORE hold
-             * MeshNodes/meshworlds, never bonk objects; feeding those to
-             * CreateBonkPopup corrupts heap (0001:00037B87). Skip when the
-             * slot is empty (hammer/bonk objects not built yet). */
+             * BONK create). Board slots ONLY (0x436C, else 0x540C which
+             * native Master create fills unconditionally at 0x4123C7) —
+             * ext UNI_BONK_MESH/STORE hold MeshNodes/meshworlds, never bonk
+             * objects; feeding those to natives corrupts heap
+             * (0001:00037B87). Skip when both slots are empty. */
             int bonkObj = BoardHasOffset(board, 0x436C, 4) ? *(int*)((char*)board + 0x436C) : 0;
+            if (!bonkObj && BoardHasOffset(board, 0x540C, 4)) bonkObj = *(int*)((char*)board + 0x540C);
             if (bonkObj) g_CreateBonkPopup(bonkObj);
         }
     }
@@ -835,9 +837,9 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     /* ── Expert/Master: E:HAMMERCHASE ── */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_HAMMERCHASE)) && my_stricmp(name, "E:HAMMERCHASE") == 0) {
         if (difficulty != 0 && g_HammerChaseStart) {
-            /* Board slot ONLY (same heap-corruption guard as CALLHAMMER
-             * above — mesh/MW fallbacks are never hammer objects). */
+            /* Board slots ONLY: 0x436C, else 0x540C (same heap guard). */
             int bonkObj2 = BoardHasOffset(board, 0x436C, 4) ? *(int*)((char*)board + 0x436C) : 0;
+            if (!bonkObj2 && BoardHasOffset(board, 0x540C, 4)) bonkObj2 = *(int*)((char*)board + 0x540C);
             if (bonkObj2) g_HammerChaseStart(bonkObj2);
         }
     }
