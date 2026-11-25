@@ -42,10 +42,6 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   the file-scan like everyone else — never native slots.
 - REMAINING: gm_06:476 Toob lit-mirror (live code, writes board+0x6448
   nobody reads on replica boards — harmless; folds into item 8).
-- `gm_04:181,227` `gm_07:518` `gm_06:390` `gm_08:216`
-- Replace with: single `UNI_NATIVE_CTOR` ext flag (already exists —
-  just delete the ContentFileId half of each condition).
-- Status: TODO (easy)
 
 ## 4. Sky(13) tails
 - `gm_04:208` `gm_08:204`
