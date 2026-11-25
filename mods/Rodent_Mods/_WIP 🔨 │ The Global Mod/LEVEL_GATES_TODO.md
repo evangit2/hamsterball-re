@@ -7,7 +7,18 @@ never level numbers.
 
 Guards (`level == 0`, range checks) stay — they are not hardcoding.
 
-## 1. Race-state update dispatch (IN PROGRESS)
+## 1. Race-state update dispatch (DONE 2026-11-25)
+- Universal cut: EVERY board runs base + feature blocks. Slot-19 audit
+  (exe .rdata): 10 of 15 levels already ran base 0x41B130 natively.
+- Customs absorbed: Beginner 0x420240 decayed dead +0x642C timers (mod
+  decays ext UNI_BUMPER_LIT instead); Toob 0x41F7E0 zoom clamp dropped
+  (user to verify intro visuals); Up 0x420660 walked always-empty +0x436C
+  calling deleting dtor v[0] (landmine, never a driver — lifters live in
+  0x2578 via v[11] walk); Neon 0x424790 double-positioned followers the
+  mod already drives; Sky 0x41FC90 never ran (universal path).
+- Dead code noted: UNI_NATIVE_HANDLERS fast path (nativeCtor always NULL,
+  both assignments if(0)) — left in place, never fires.
+- REMAINING: none. Both dispatch sites + pump mirror collapsed.
 - `gm_03_features.c:263-274` (NativeWalkPresent scan fn)
 - `gm_04_render_update.c:1081-1110` (UniversalRaceState proper)
 - Rows: Beginner(2)->base | Neon(7)->native-if-followers-built |

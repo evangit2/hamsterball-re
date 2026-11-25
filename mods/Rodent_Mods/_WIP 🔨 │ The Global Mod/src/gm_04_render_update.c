@@ -1044,23 +1044,21 @@ void __fastcall UniversalRaceState(void *board) {
     }
     { void *sdx = GetBoardExt(board); if (sdx && ContentFileId(sdx) == 13 && (s_rsCount == 1 || s_rsCount % 600 == 0)) { char sd[96]; wsprintfA(sd, "SKYRS tick #%d board=0x%08X", s_rsCount, (DWORD)board); SkyDiag(sd); } }
 
-    /* Single-chain rule (2026-09-12 audit): every saved orig either IS the
-     * base (10 shared levels) or calls it internally first (all 5 customs,
-     * verified in disasm), so the dispatch below runs orig-or-base exactly
-     * once — never both (double-run was 2x timers/RNG/lifters). */
+    /* Single-chain rule (2026-09-12 audit, 2026-11-25 universal cut):
+     * every board runs the shared base handler exactly once, then the
+     * ext-driven feature blocks below. No native per-level orig runs:
+     * 10 of 15 origs already WERE base; Beginner/Toob/Up/Neon/Sky customs
+     * audited and absorbed (dead timers / waived clamp / empty-list walk /
+     * mod-side followers / universal Sky path). */
+    (void)0;
 
-    /* Get level and dispatch features */
+    /* Get level (feature blocks below still take it as context) and run
+     * the universal handler. The old per-level orig dispatch is gone —
+     * see the universal-racestate note below. Native-ctor fast path
+     * (UNI_NATIVE_HANDLERS) is dead code: nativeCtor is always NULL
+     * (both assignments are if(0)), so no board ever sets the flag. */
     int level = GetCurrentLevel(board);
     if (level == 0) return;
-
-    /* Call the ORIGINAL per-level RaceState handler.  Several levels have
-     * custom RaceState code that iterates per-level data at board+0x436C:
-     *   Up  (lvl 6):  iterates lifter AthenaList, calls each Lifter_Update
-     *   Neon(lvl 7):  calls vtable[1] on render objects at board+0x436C/0x4370
-     *   Beginner(2):  decays 8 float timers at board+0x642C-0x6448
-     * Without this call, lifters don't animate, vacuum events never fire, etc.
-     * Beginner is skipped — orig decays dead board+0x642C while Feature_BumperDecay
-     * decays the relocated UNI_BUMPER_LIT; calling both double-decays and desyncs. */
     /* Native-ctor fast path: native-built boards run the NATIVE per-level
      * RaceState (orig), which matches the native ctor/create objects exactly.
      * Custom-branch replication (e.g. Toob ClampZoom) is skipped — the orig
@@ -1078,48 +1076,18 @@ void __fastcall UniversalRaceState(void *board) {
             }
         }
     }
-    if (level == 2 || ContentFileId(GetBoardExt(board)) == 2) {
-        /* skip orig 0x420240 (decays dead board+0x642C) — base + ext decay instead */
-        g_BoardUpdateRaceState(board);
-    } else if (Neon_IsActive(board)) {
-        /* Neon: followers are driven mod-side every frame
-         * (Feature_NeonCamera: v[1] SetPosition, same +20/+30/-20 offsets
-         * native 0x424790 used). Native racestate would double-position.
-         * Base only — no slot/content numbers. */
-        g_BoardUpdateRaceState(board);
-    } else if (ContentFileId(GetBoardExt(board)) == 10) {
-        /* Toob RaceState (0x41F7E0) = Board_UpdateRaceState + zoom clamp of
-         * board+0x644C..+0x6468 (intro camera). Calls base internally, so
-         * call it instead of the slot orig (single-chain safe).
-         * BISECT 2026-10-23: ClampZoom suspected in frame-1 crash; fall back
-         * to base-only until the zoom words are proven initialized. */
-        g_BoardUpdateRaceState(board);
-
-    } else if (board && !IsBadReadPtr(board, (void*)4) && *(DWORD *)board == 0x4D0FC8) {
-        /* Sky board object (own vtable — true whatever slot/file it is in).
-         * UniversalSkyInit + S1 mirrors own it; native 0x41FC90 never runs. */
-        /* 2026-11-20: Sky runs the universal path (UniversalSkyInit +
-         * S1 mirrors). Base drives the shared scene; Feature_SkyPopcylinder
-         * (racestate_features below) drives the ext popcylinder bank +
-         * magnifier. Native 0x41FC90 no longer runs. */
-        g_BoardUpdateRaceState(board);
-    } else if (level >= 1 && level <= 15 && g_origRaceState[level]) {
-        /* v13.29: slot-native orig runs ONLY when the loaded file IS the
-         * slot's own (content == level — objects it expects exist, proven
-         * safe). A foreign file gets base + our own drivers (universal
-         * pump) instead — slot-native on a foreign file walks/touches
-         * objects that aren't there. Tower content: orig IS the shared
-         * base handler; call base directly (verified identical). */
-        /* Tower board object (own vtable — true whatever slot/file it is in):
-         * orig IS the shared base handler (verified identical), so base. */
-        if (*(DWORD *)board == 0x4D0A08) g_BoardUpdateRaceState(board);
-        else if (ContentFileId(GetBoardExt(board)) == level) g_origRaceState[level](board);
-        else g_BoardUpdateRaceState(board);
-        if (s_rsCount <= 4) DebugLog("  [raceState] orig/base call returned");
-    } else {
-        g_BoardUpdateRaceState(board);
-        if (s_rsCount <= 4) DebugLog("  [raceState] fallback call returned");
-    }
+    /* Universal racestate: EVERY board runs the shared base handler plus
+     * the ext-driven feature blocks below. No native per-level orig runs
+     * anywhere (2026-11-25: Beginner timers / Toob clamp / Up lifter-walk /
+     * generic same-slot orig all cut — audited, see LEVEL_GATES_TODO #1).
+     * 10 of 15 native origs already WERE base (slot19==0x41B130); the
+     * customs: Beginner decayed dead +0x642C timers (mod decays ext instead),
+     * Toob added an intro zoom clamp (dropped per user — visual check later),
+     * Up walked an always-empty +0x436C list calling the deleting dtor
+     * v[0] (a landmine, never a driver — lifters live in 0x2578, driven by
+     * the v[11] walk), Neon/Sky/Tower already owned mod-side. */
+    g_BoardUpdateRaceState(board);
+    if (s_rsCount <= 4) DebugLog("  [raceState] base call returned");
 
     DWORD extFeat = GetBoardFeat(board);
     DWORD features = extFeat; // Option B: pure S1-driven, no g_updateFeatures fallback

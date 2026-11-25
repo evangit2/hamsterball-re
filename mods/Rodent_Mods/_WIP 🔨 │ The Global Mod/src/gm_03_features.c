@@ -250,7 +250,6 @@ static int *Gm_DynCounts(void *ext);
 static int NativeWalkPresent(void *board) {
     void *ext = GetBoardExt(board);
     int *cache;
-    int level, content;
     void *fn = NULL;
     unsigned char *p;
     int i;
@@ -258,24 +257,9 @@ static int NativeWalkPresent(void *board) {
     cache = (int *)((char *)ext + UNI_PUMP_SKIP);
     if (*cache == 1) return 1;
     if (*cache == 2) return 0;
-    level = GetCurrentLevel(board);
-    content = ContentFileId(ext);
-    if (level == 2 || content == 2) fn = (void *)g_BoardUpdateRaceState;
-    else if (Neon_IsActive(board))
-        /* Followers driven mod-side (Feature_NeonCamera); native 0x424790
-         * would double-position. Base only. */
-        fn = (void *)g_BoardUpdateRaceState;
-    else if (content == 10) fn = (void *)g_BoardUpdateRaceState;
-    else if (board && !IsBadReadPtr(board, (void*)4) &&
-             (*(DWORD *)board == 0x4D0FC8)) fn = (void *)(g_moduleBase + 0x1FC90);
-    else if (level >= 1 && level <= 15 && g_origRaceState[level])
-        /* v13.29: mirror UniversalRaceState — slot-native orig runs only
-         * for the slot's own file; foreign files get base. */
-        fn = (board && !IsBadReadPtr(board, (void *)4) &&
-              *(DWORD *)board == 0x4D0A08) ? (void *)g_BoardUpdateRaceState :
-             (content == level) ? (void *)g_origRaceState[level] :
-             (void *)g_BoardUpdateRaceState;
-    else fn = (void *)g_BoardUpdateRaceState;
+    /* Universal racestate (2026-11-25): every board runs base. The scan
+     * below verifies base's shape (0x2578 walk present?) — no table. */
+    fn = (void *)g_BoardUpdateRaceState;
     if (fn && !IsBadReadPtr((void *)fn, 0x1000)) {
         p = (unsigned char *)fn;
         for (i = 0; i < 0x1000 - 6; i++) {
