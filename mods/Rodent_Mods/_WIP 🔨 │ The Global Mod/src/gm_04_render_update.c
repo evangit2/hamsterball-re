@@ -213,17 +213,18 @@ void UniversalRenderImpl(void *board, int unk) {
      * Faithful to native Scene_RenderReflectiveObjects7 (0x411380): one
      * slot per bumper, lit drives the flash, ctx layout matches native,
      * ctx pointer on GFX+0x7C0. Runs whenever REND_BUMPER is set, which
-     * requires bumper S1s in the file (N:BUMPER collect) or native-built
-     * Toob slots — files without bumpers can never set it, so no level
+     * requires N:BUMPER names in the file bytes (harvested by the
+     * file-scan into the collision table, meshes pulled by the collect)
+     * — files without bumpers can never set it, so no level
      * list is needed. Same meshes, same stride, same vtbl[0x14]
      * call. Old replica used a fixed ext slot + undersized ctx + board+0x7C0
      * (Draw crash + no flash). Capacity is dynamic: UNI_BUMPER_COUNT. */
     if (features & REND_BUMPER) {
-        int useNativeSlots = (ContentFileId(ext) == 10 && *(int *)((char *)ext + UNI_NATIVE_CTOR) &&
-            BoardHasOffset(board, 0x438C + 7 * 0x418 + 0x410, 4));
-        /* Native Toob slots are native-built (collect finds nothing, count=0)
-         * — render the 8 native slots. Otherwise render what collect found. */
-        int bumperCount = useNativeSlots ? BUMPER_NATIVE_COUNT : *(int *)((char *)ext + UNI_BUMPER_COUNT);
+        /* All boards are replica-built (UNI_NATIVE_CTOR is always 0 —
+         * both nativeCtor assignments are if(0), so the native path is
+         * dead). Toob's 8 bumpers (N:BUMPER1-8 in the file bytes) flow
+         * through the same collect as everyone else. */
+        int bumperCount = *(int *)((char *)ext + UNI_BUMPER_COUNT);
         if (bumperCount <= 0 || bumperCount > BUMPER_LIT_MAX) bumperCount = 0;
         float *litPtr = (float *)((char *)ext + UNI_BUMPER_LIT);
         int i;
@@ -234,15 +235,10 @@ void UniversalRenderImpl(void *board, int unk) {
                  * else rather than rendering a hollow/garbage slot. */
                 char *slotPtr = BumperSlotPtr(ext, i);
                 if (!slotPtr) continue;
-                if (useNativeSlots) {
-                    if (i >= BUMPER_NATIVE_COUNT) continue;
-                    slotPtr = (char *)board + 0x438C + i * 0x418;
-                } else {
-                    if (IsBadReadPtr(slotPtr, 0x410)) continue;
-                    if (*(int *)(slotPtr + 0x04) <= 0) continue;
-                    { DWORD itArr = *(DWORD *)(slotPtr + 0x40C);
-                      if (!itArr || IsBadReadPtr((void *)itArr, 4)) continue; }
-                }
+                if (IsBadReadPtr(slotPtr, 0x410)) continue;
+                if (*(int *)(slotPtr + 0x04) <= 0) continue;
+                { DWORD itArr = *(DWORD *)(slotPtr + 0x40C);
+                  if (!itArr || IsBadReadPtr((void *)itArr, 4)) continue; }
                 /* Native ctx is 0x4E bytes (Init writes vtable+17 dwords+
                  * 2 bytes); 64-byte buffer smashed the stack. */
                 char renderCtx[0x60];
