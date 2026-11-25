@@ -379,26 +379,9 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     DWORD *cp = (DWORD *)collPair;
     char *name = NULL;
     DWORD meshBuf = cp[1]; /* collPair[1] = mesh buffer */
-    /* Universal Toob bumper fixup: stock Toob carries no bumper S1s/meshes —
-     * its 8 bumper slot structs (board+0x438C, 0x418 stride) are native-built
-     * and the touch buffer IS the slot, but no name was ever linked (native
-     * scene 0x40FA20 skipped). Identify bumper touches by buffer address and
-     * set lit directly: ext lit (replica render + decay) and the native lit
-     * (board+0x644C, same store the native render reads). Unnamed touches
-     * would otherwise hit `if (!name) goto call_global` below and stay dark.
-     * Idempotent; gated on native-built content-10 (slots exist). */
-    if (ContentFileId(ext) == 10 && *(int *)((char *)ext + UNI_NATIVE_CTOR)) {
-        DWORD bsl = (DWORD)board + 0x438C;
-        if (meshBuf >= bsl && meshBuf < bsl + 8 * 0x418 &&
-            BoardHasOffset(board, 0x438C + 7 * 0x418 + 0x410, 4)) {
-            int bidx = (int)((meshBuf - bsl) / 0x418);
-            if (bidx >= 0 && bidx < 8) {
-                *(float *)((char *)ext + UNI_BUMPER_LIT + bidx * 4) = 1.0f;
-                if (BoardHasOffset(board, 0x644C + 7 * 4, 4))
-                    *(float *)((char *)board + 0x644C + bidx * 4) = 1.0f;
-            }
-        }
-    }
+    /* (Dead native-Toob bumper fixup removed 2026-11-25: it required
+     * UNI_NATIVE_CTOR=1, always 0 — every board is replica-built and
+     * bumper touches arrive with N:BUMPERn names from the S6 meshes.) */
     if (meshBuf && !IsBadReadPtr((void *)meshBuf, 0x868)) {
         name = *(char **)(meshBuf + 0x864);
         if (!name || IsBadReadPtr(name, 4)) name = NULL;

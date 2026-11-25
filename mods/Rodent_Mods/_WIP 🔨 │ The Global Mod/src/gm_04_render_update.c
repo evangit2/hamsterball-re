@@ -174,11 +174,11 @@ void UniversalRenderImpl(void *board, int unk) {
      * level as long as the required objects/events are present. */
     DWORD features = 0;
 
-    /* REND_BUMPER: active when N:BUMPER collision event is enabled for this level.
-     * Universal Toob (native-built content-10) has no bumper S1s — its slots
-     * are native-built — so the render runs on native-built content-10 too. */
-    if ((*(BYTE*)((char*)ext + COLL_FLAG_BUMPER)) ||
-        (ContentFileId(ext) == 10 && *(int *)((char *)ext + UNI_NATIVE_CTOR)))
+    /* REND_BUMPER: active when N:BUMPER names are in the file bytes.
+     * (Dead native-Toob second half removed 2026-11-25: it required
+     * UNI_NATIVE_CTOR=1, always 0. Toob's N:BUMPER1-8 flow through the
+     * same file-scan as everyone else.) */
+    if (*(BYTE*)((char*)ext + COLL_FLAG_BUMPER))
         features |= REND_BUMPER;
 
     /* REND_WINDMILL/CHOMPER/TURRET: each tower segment gated on its own S1 / render pointer.

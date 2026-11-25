@@ -30,11 +30,18 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   even reached the block (no bumper S1s in its file, flag stays 0).
 - Cut to `if (features & REND_BUMPER)`. Comments updated.
 - REMAINING: none.
-- `gm_04_render_update.c:224-226` (render + ContentFileId forms)
-- Replace with: S4/mat params or per-file palette marker in MESHWORLD.
-- Status: TODO
 
-## 3. Toob(10) native-ctor short-circuits (5 sites, one pattern)
+## 3. Toob(10) native-ctor short-circuits (DONE 2026-11-25)
+- All 5 sites gated on UNI_NATIVE_CTOR, which is always 0 (both
+  nativeCtor assignments are if(0) — every board is replica-built).
+  Deleted: gm_04:227 native-slots render branch, gm_06:390 unnamed-touch
+  fixup, gm_08:216 84-line saw-mirror block, gm_04:181 + gm_07:518
+  second-half conditions. Plus gm_03 decay level==2/10/14 fallback->8
+  (COUNT from the collect is always valid when decay runs).
+- File proof: Toob's N:BUMPER1-8 live in the file bytes, harvested by
+  the file-scan like everyone else — never native slots.
+- REMAINING: gm_06:476 Toob lit-mirror (live code, writes board+0x6448
+  nobody reads on replica boards — harmless; folds into item 8).
 - `gm_04:181,227` `gm_07:518` `gm_06:390` `gm_08:216`
 - Replace with: single `UNI_NATIVE_CTOR` ext flag (already exists —
   just delete the ContentFileId half of each condition).

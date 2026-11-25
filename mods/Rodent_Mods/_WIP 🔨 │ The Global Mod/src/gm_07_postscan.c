@@ -512,10 +512,9 @@ static void BuildCollisionFlags(void *board, void *ext) {
      * N:BUMPER presence => bumper-lit decay (render reads ext+UNI_BUMPER_LIT).
      * Without this FEAT_BUMPER_DECAY never sets and Beginner (native orig
      * skipped in UniversalRaceState) loses decay entirely.
-     * Content-10 (universal Toob) has no bumper S1s — its bumper slots are
-     * native-built — so the feat is set on native-built content-10 too. */
-    if (*(BYTE*)((char*)ext + COLL_FLAG_BUMPER) ||
-        (ContentFileId(ext) == 10 && *(int *)((char *)ext + UNI_NATIVE_CTOR)))
+     * (Dead native-Toob second half removed 2026-11-25: UNI_NATIVE_CTOR
+     * is always 0. Toob's bumpers come through the file-scan like the rest.) */
+    if (*(BYTE*)((char*)ext + COLL_FLAG_BUMPER))
         OrBoardFeat(board, FEAT_BUMPER_DECAY);
     { char dbg[96]; int cnt=0; for(int i=0;i<COLL_FLAG_COUNT;i++) if(*(BYTE*)((char*)ext+OFF_COLLISION_FLAGS+i)) cnt++; wsprintfA(dbg,"BuildCollisionFlags: %d/%d enabled",cnt,COLL_FLAG_COUNT); DebugLog(dbg); }
 }

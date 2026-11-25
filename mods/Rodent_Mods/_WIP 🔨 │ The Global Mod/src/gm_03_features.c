@@ -1644,14 +1644,11 @@ static void Feature_BumperDecay(void *board, int level) {
      * the mod owns all slots now. */
     baseOfs = BRD_BUMPER_DECAY_BEG;
     count = *(int *)((char *)ext + UNI_BUMPER_COUNT);
+    /* No fallback guess: COUNT comes from the same collect the render
+     * reads, so a valid count is always present when this runs. (Old
+     * level==2/10/14 fallback to 8 removed 2026-11-25.) */
     if (count <= 0 || count > BUMPER_LIT_MAX) {
-        if (level == 2 || ContentFileId(ext) == 2 ||
-            level == 10 || ContentFileId(ext) == 10 ||
-            level == 14 || ContentFileId(ext) == 14) {
-            count = BUMPER_NATIVE_COUNT;
-        } else {
-            return;
-        }
+        return;
     }
 
     int i;
