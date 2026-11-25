@@ -52,7 +52,13 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   is a no-op by content. Gate removed, runs on every board.
 - REMAINING: none.
 
-## 5. Odd(9) BadBall table variant
+## 5. Odd(9) BadBall table variant (DONE 2026-11-25, pending file rename)
+- DROPPER block is pure-name now (isOdd/isBareLifterOdd deleted).
+- LIFTER block accepts bare (=150, native ctor 0x43698f writes 0x96 on
+  num==0 — verified) or LIFTERn; LIFTERFOO still never builds.
+- REMAINING (user file edit): rename Odd's bare LIFTER S1 to DROPPER in
+  the meshworld. Until then stock Odd routes its lifter nowhere (falls
+  through unbuilt) — do NOT ship this build to Odd players yet.
 - `gm_05_create.c:1072` (isOdd)
 - Replace with: file contains LAUNCH01-03 S1s (S1 census already counts
   them — gate on the count, not the slot).

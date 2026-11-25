@@ -1063,17 +1063,12 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         return;
     }
 
-    /* ── DROPPER (Odd single lifer) — renamed from LIFTER (level==9) ──
-     * S1: DROPPER — was bare LIFTER on Odd. Bare LIFTER on Odd content/slot
-     * also routes here (rename plan: bare LIFTER belongs to Odd; LIFTERn =
-     * Up tubes). Without this, bare LIFTER falls through unbuilt (invisible)
-     * and E:DROPLIFT fires g_DropLiftActivate(0) = touch crash. */
+    /* ── DROPPER (Odd single lifer) — pure name-driven, no level gate ──
+     * S1: DROPPER* — Odd's file carries DROPPER (renamed from bare LIFTER).
+     * Without this, E:DROPLIFT fires g_DropLiftActivate(0) = touch crash. */
     {
-        int isOdd = (ContentFileId(ext) == 9) || (level == 9);
         int isDropper = (my_strnicmp(name, "DROPPER", 7) == 0);
-        int isBareLifterOdd = (!isDropper && my_strnicmp(name, "LIFTER", 6) == 0 &&
-                               name[6] == 0 && isOdd);
-        if (isDropper || isBareLifterOdd) {
+        if (isDropper) {
         void *mem = g_operatorNew(0x10FC);
         if (mem) {
             obj = g_OddLifterCtor(mem, (int)board, x, y, z);
@@ -1092,15 +1087,14 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     }
 
     /* ── LIFTER (Up tubes) ──
-     * S1: LIFTER2, LIFTER3... — Up only, level-gate removed (name-driven).
-     * Digits REQUIRED: bare LIFTER is dead (RodentRacer rename plan —
-     * stock Up's bare S1s get renamed to LIFTERn in the meshworld; bare
-     * LIFTER belongs to Odd, caught above on level 9). Native Up create
-     * prefix-matches "LIFTER" (6 chars) and atol()s the suffix, but LFL
-     * follows the rename scheme, not native. LIFTERFOO never builds. */
-    if (my_strnicmp(name, "LIFTER", 6) == 0 && (name[6] >= '0' && name[6] <= '9')) {
+     * S1: LIFTER2, LIFTER3... or bare LIFTER (= default 150). Digits
+     * optional: bare LIFTER is the Up tube-lifter with num=150 (native
+     * ctor 0x43698f writes 0x96 when num==0 — verified in disasm).
+     * LIFTERFOO (non-digit suffix) never builds. Odd's dropper is
+     * DROPPER, routed above — no level gate anywhere. */
+    if (my_strnicmp(name, "LIFTER", 6) == 0 && (name[6] == 0 || (name[6] >= '0' && name[6] <= '9'))) {
         S1EnsureMeshWorld(board, ext, UNI_LIFTER_MESH, "Levels\\LevelUp-Lifter");
-        long num = atol(name + 6);
+        long num = (name[6] == 0) ? 150 : atol(name + 6);
         int meshVal = *(int*)((char*)ext + UNI_LIFTER_MESH);
         if (!meshVal) { DebugLog("LIFTER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
         /* Mirror into the native mesh slot (native Up ctor +0x4784). Native
