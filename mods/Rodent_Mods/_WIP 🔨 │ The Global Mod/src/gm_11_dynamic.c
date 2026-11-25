@@ -207,6 +207,22 @@ static void Gm_LogCreated(const char *line) {
 /* Per-create registration: remembers which drawer each S1 instance got.
  * idx 0 = legacy singleton (existing UNI_* slots drive it).
  * idx>=1 = overflow drawer written here. Returns idx, -1 on error. */
+extern int g_loadingContentId; /* set per load in UniversalConstructor (gm_00_core.c) */
+static const char *Gm_RaceName(int id) {
+    switch (id) {
+        case 1: return "WARM-UP"; case 2: return "BEGINNER";
+        case 3: return "INTERMEDIATE"; case 4: return "DIZZY";
+        case 5: return "TOWER"; case 6: return "UP";
+        case 7: return "NEON"; case 8: return "EXPERT";
+        case 9: return "ODD"; case 10: return "TOOB";
+        case 11: return "WOBBLY"; case 12: return "GLASS";
+        case 13: return "SKY"; case 14: return "MASTER";
+        case 15: return "IMPOSSIBLE"; default: return "?";
+    }
+}
+/* Public skip-log line (mesh-missing etc.): gm_05_create.c fwd-declares this.
+ * DebugLog is globally off, so skips would otherwise vanish silently. */
+void Gm_LogSkip(const char *line) { Gm_LogCreated(line); }
 static int Gm_CreateSlot(void *board, void *ext, int type,
     float x, float y, float z, float rx, float ry, float rz, void *obj,
     const char *s1name) {
@@ -369,5 +385,9 @@ static void *Gm_EnsureDynamic(void *board, void *ext, void *meshWorld) {
         counts[6], counts[7], counts[8], counts[9], counts[10], counts[11],
         counts[12], counts[13], counts[14], counts[15]);
       Gm_LogCreated(hdr); }
+    { char rl[64];
+      wsprintfA(rl, "RACE content=%d name=%s", g_loadingContentId,
+        Gm_RaceName(g_loadingContentId));
+      Gm_LogCreated(rl); }
     return ext;
 }

@@ -1,6 +1,7 @@
 /* Chapter 5 - S1Ensure helpers + UniversalCreateDynamicObjects
  * (Global Mod: Gm_CreateSlot fwd decl — defined in gm_11_dynamic.c) */
 static int Gm_CreateSlot(void *board, void *ext, int type, float x, float y, float z, float rx, float ry, float rz, void *obj, const char *s1name);
+void Gm_LogSkip(const char *line);
 static void Gm_SetSlotRender(void *ext, int type, int idx, void *render);
 static void *Gm_DynSlotPtr(void *ext, int type, int idx);
 static void Gm_LogCreated(const char *line);
@@ -1521,7 +1522,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     if (my_strnicmp(name, "LOOPER", 6) == 0) {
         S1EnsureMeshWorld(board, ext, UNI_LOOPER_MESH, "Levels\\LevelImpossible-Looper");
         int meshVal = *(int*)((char*)ext + UNI_LOOPER_MESH);
-        if (!meshVal) { DebugLog("LOOPER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        if (!meshVal) { DebugLog("LOOPER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; { char sl[96]; wsprintfA(sl, "SKIP %s mesh Levels\\LevelImpossible-Looper missing", name); Gm_LogSkip(sl); } return; }
         void *mem = g_operatorNew(0x1500);
         if (mem) {
             obj = g_LooperCtor(mem, (int)board, x, y, z, meshVal);
@@ -1537,11 +1538,12 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     if (my_strnicmp(name, "GEAR", 4) == 0 && my_strnicmp(name, "BIGGEAR", 7) != 0) {
         S1EnsureMeshWorld(board, ext, UNI_GEAR_MESH, "Levels\\LevelImpossible-Gear");
         int meshVal = *(int*)((char*)ext + UNI_GEAR_MESH);
-        if (!meshVal) { DebugLog("GEAR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        if (!meshVal) { DebugLog("GEAR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; { char sl[96]; wsprintfA(sl, "SKIP %s mesh Levels\\LevelImpossible-Gear missing", name); Gm_LogSkip(sl); } return; }
         void *mem = g_operatorNew(0x1514);
         if (mem) {
             obj = g_GearCtor(mem, (int)board, x, y, z, x2, y2, z2, meshVal);
             g_AthenaListAppend((void*)((char*)board + 0x2578), (int)obj);
+            if (ext) Gm_CreateSlot(board, ext, 15, x, y, z, x2, y2, z2, obj, name);
             *(int*)out1 = (int)obj; *(int*)out2 = ((DWORD*)obj)[0x435];
             { char ib[128]; wsprintfA(ib, "SPAWN %s x=%d y=%d z=%d mesh=0x%X obj=0x%X", name, (int)x, (int)y, (int)z, meshVal, (int)obj); ImpDiag(ib); }
         }
@@ -1552,7 +1554,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     if (my_strnicmp(name, "BIGGEAR", 7) == 0) {
         S1EnsureMeshWorld(board, ext, UNI_BIGGEAR_MESH, "Levels\\LevelImpossible-BigGear");
         int meshVal = *(int*)((char*)ext + UNI_BIGGEAR_MESH);
-        if (!meshVal) { DebugLog("BIGGEAR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        if (!meshVal) { DebugLog("BIGGEAR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; { char sl[96]; wsprintfA(sl, "SKIP %s mesh Levels\\LevelImpossible-BigGear missing", name); Gm_LogSkip(sl); } return; }
         void *mem = g_operatorNew(0x1514);
         if (mem) {
             obj = g_GearCtor(mem, (int)board, x, y, z, x2, y2, z2, meshVal);
@@ -1571,7 +1573,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     if (my_strnicmp(name, "ROTATOR", 7) == 0) {
         S1EnsureMeshWorld(board, ext, UNI_ROTATOR_MESH, "Levels\\LevelImpossible-Rotator");
         int meshVal = *(int*)((char*)ext + UNI_ROTATOR_MESH);
-        if (!meshVal) { DebugLog("ROTATOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        if (!meshVal) { DebugLog("ROTATOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; { char sl[96]; wsprintfA(sl, "SKIP %s mesh Levels\\LevelImpossible-Rotator missing", name); Gm_LogSkip(sl); } return; }
         void *mem = g_operatorNew(0x1508);
         if (mem) {
             obj = g_RotatorImpossibleCtor(mem, (int)board, x, y, z, meshVal);
@@ -1591,7 +1593,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
     if (my_strnicmp(name, "PENDULUM", 8) == 0) {
         S1EnsureMeshWorld(board, ext, UNI_PENDULUM_MESH, "Levels\\LevelImpossible-Pendulum");
         int meshVal = *(int*)((char*)ext + UNI_PENDULUM_MESH);
-        if (!meshVal) { DebugLog("PENDULUM: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        if (!meshVal) { DebugLog("PENDULUM: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; { char sl[96]; wsprintfA(sl, "SKIP %s mesh Levels\\LevelImpossible-Pendulum missing", name); Gm_LogSkip(sl); } return; }
         void *mem = g_operatorNew(0x1504);
         if (mem) {
             obj = g_PendulumCtor(mem, (int)board, x, y, z, meshVal);
