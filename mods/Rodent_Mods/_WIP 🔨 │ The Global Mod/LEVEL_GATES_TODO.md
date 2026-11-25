@@ -51,10 +51,6 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   File proof: only Level9 contains PILLAR (52 refs) — every other file
   is a no-op by content. Gate removed, runs on every board.
 - REMAINING: none.
-- `gm_04:208` `gm_08:204`
-- Replace with: S1-presence (PILLAR/CLOUD in file?) — SkySceneTails
-  already walks scene state; gate on what it finds, not slot 13.
-- Status: TODO
 
 ## 5. Odd(9) BadBall table variant
 - `gm_05_create.c:1072` (isOdd)
