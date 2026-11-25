@@ -1365,11 +1365,9 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         /* BONKCYLINDER = the Master-race popcylinder under its own name
          * (adjusted Master file carries these instead of POPCYLINDER S1s).
          * The name alone selects the Master class — unambiguous anywhere,
-         * so no content gate. POPCYLINDER keeps the content-14 rule below
-         * (same S1 name, two native classes; presence alone cannot
-         * disambiguate those). On native-ctor boards neither fires: the
-         * bypass delegates to orig create, which returns zeros for both
-         * names (exact native parity — unknown S1 builds nothing). */
+         * so no content gate. POPCYLINDER always means Sky class (same S1
+         * name, two native classes; the rename is the disambiguator).
+         * (Old content-14 half of the gate removed 2026-11-26.) */
         int isBonkCyl = (my_strnicmp(name, "BONKCYLINDER", 12) == 0);
         /* Master content (14) uses a different native class: Master create
          * (0x4124E7+) calls PopCylinder_ctor (0x36ee0, 0x10E8), feeds it the
@@ -1378,8 +1376,8 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
          * never appears on Master. Safe: Master content always builds
          * universal (0x7000), never native-ctor, so the 0x5420/0x5428
          * slots are ours to use. */
-        if (ContentFileId(ext) == 14 || isBonkCyl) {
-            long rawB = atol(name + (isBonkCyl ? 12 : 11));
+        if (isBonkCyl) {
+            long rawB = atol(name + 12);
             long idxB = (rawB <= 0) ? 0 : rawB - 1;
             if (idxB < 0) idxB = 0; if (idxB > 15) idxB = 15;
             int meshVal = BoardMeshOrZero(board, 0x5420);

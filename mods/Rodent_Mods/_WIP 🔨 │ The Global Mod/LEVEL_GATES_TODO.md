@@ -60,7 +60,14 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   the meshworld. Until then stock Odd routes its lifter nowhere (falls
   through unbuilt) — do NOT ship this build to Odd players yet.
 
-## 6. Pin behavior: Master(14) vs BonkCyl
+## 6. Pin behavior: Master(14) vs BonkCyl (DONE 2026-11-26, user verifies)
+- Gate cut to `isBonkCyl` only (content-14 half removed). BONKCYLINDER
+  selects Master class on name alone, anywhere. POPCYLINDER always
+  means Sky class now — the rename is the disambiguator.
+- NOT rig-verified: rig carries stock Master (POPCYLINDER S1s, now
+  Sky-path by design). Needs user's adjusted file (BONKCYLINDER).
+  User runs Master: confirm pins + close behavior (close-crash still
+  open, untouched by this change).
 - `gm_05_create.c:1387`
 - Replace with: mesh param on the pin S1 (BONK vs TOOB variant tag in
   MESHWORLD) or presence of the BonkCyl parent object.
