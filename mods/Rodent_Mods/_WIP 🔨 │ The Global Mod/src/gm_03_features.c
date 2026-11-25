@@ -261,16 +261,18 @@ static int NativeWalkPresent(void *board) {
     level = GetCurrentLevel(board);
     content = ContentFileId(ext);
     if (level == 2 || content == 2) fn = (void *)g_BoardUpdateRaceState;
-    else if (level == 7 || content == 7)
-        fn = (Neon_IsActive(board) && level >= 1 && level <= 15 && g_origRaceState[level])
-             ? (void *)g_origRaceState[level] : (void *)g_BoardUpdateRaceState;
+    else if (Neon_IsActive(board))
+        /* Followers driven mod-side (Feature_NeonCamera); native 0x424790
+         * would double-position. Base only. */
+        fn = (void *)g_BoardUpdateRaceState;
     else if (content == 10) fn = (void *)g_BoardUpdateRaceState;
-    else if (level == 13 || content == 13 ||
+    else if (board && !IsBadReadPtr(board, (void*)4) &&
              (*(DWORD *)board == 0x4D0FC8)) fn = (void *)(g_moduleBase + 0x1FC90);
     else if (level >= 1 && level <= 15 && g_origRaceState[level])
         /* v13.29: mirror UniversalRaceState — slot-native orig runs only
          * for the slot's own file; foreign files get base. */
-        fn = (content == 5) ? (void *)g_BoardUpdateRaceState :
+        fn = (board && !IsBadReadPtr(board, (void *)4) &&
+              *(DWORD *)board == 0x4D0A08) ? (void *)g_BoardUpdateRaceState :
              (content == level) ? (void *)g_origRaceState[level] :
              (void *)g_BoardUpdateRaceState;
     else fn = (void *)g_BoardUpdateRaceState;

@@ -1081,15 +1081,12 @@ void __fastcall UniversalRaceState(void *board) {
     if (level == 2 || ContentFileId(GetBoardExt(board)) == 2) {
         /* skip orig 0x420240 (decays dead board+0x642C) — base + ext decay instead */
         g_BoardUpdateRaceState(board);
-    } else if (level == 7 || ContentFileId(GetBoardExt(board)) == 7) {
-        /* Neon RaceState (0x424790) positions board+0x436C/0x4370 followers.
-         * Only valid when Neon_PostSetup built them (S3-gap gate passed);
-         * otherwise the slots are NULL/garbage or foreign (never touch). */
-        if (Neon_IsActive(board) && g_origRaceState[level]) {
-            g_origRaceState[level](board);
-        } else {
-            g_BoardUpdateRaceState(board);
-        }
+    } else if (Neon_IsActive(board)) {
+        /* Neon: followers are driven mod-side every frame
+         * (Feature_NeonCamera: v[1] SetPosition, same +20/+30/-20 offsets
+         * native 0x424790 used). Native racestate would double-position.
+         * Base only — no slot/content numbers. */
+        g_BoardUpdateRaceState(board);
     } else if (ContentFileId(GetBoardExt(board)) == 10) {
         /* Toob RaceState (0x41F7E0) = Board_UpdateRaceState + zoom clamp of
          * board+0x644C..+0x6468 (intro camera). Calls base internally, so
@@ -1098,8 +1095,9 @@ void __fastcall UniversalRaceState(void *board) {
          * to base-only until the zoom words are proven initialized. */
         g_BoardUpdateRaceState(board);
 
-    } else if (level == 13 || ContentFileId(GetBoardExt(board)) == 13 ||
-               (board && !IsBadReadPtr(board, (void*)4) && *(DWORD *)board == 0x4D0FC8)) {
+    } else if (board && !IsBadReadPtr(board, (void*)4) && *(DWORD *)board == 0x4D0FC8) {
+        /* Sky board object (own vtable — true whatever slot/file it is in).
+         * UniversalSkyInit + S1 mirrors own it; native 0x41FC90 never runs. */
         /* 2026-11-20: Sky runs the universal path (UniversalSkyInit +
          * S1 mirrors). Base drives the shared scene; Feature_SkyPopcylinder
          * (racestate_features below) drives the ext popcylinder bank +
@@ -1112,7 +1110,9 @@ void __fastcall UniversalRaceState(void *board) {
          * pump) instead — slot-native on a foreign file walks/touches
          * objects that aren't there. Tower content: orig IS the shared
          * base handler; call base directly (verified identical). */
-        if (ContentFileId(GetBoardExt(board)) == 5) g_BoardUpdateRaceState(board);
+        /* Tower board object (own vtable — true whatever slot/file it is in):
+         * orig IS the shared base handler (verified identical), so base. */
+        if (*(DWORD *)board == 0x4D0A08) g_BoardUpdateRaceState(board);
         else if (ContentFileId(GetBoardExt(board)) == level) g_origRaceState[level](board);
         else g_BoardUpdateRaceState(board);
         if (s_rsCount <= 4) DebugLog("  [raceState] orig/base call returned");
