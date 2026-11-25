@@ -68,10 +68,6 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   Sky-path by design). Needs user's adjusted file (BONKCYLINDER).
   User runs Master: confirm pins + close behavior (close-crash still
   open, untouched by this change).
-- `gm_05_create.c:1387`
-- Replace with: mesh param on the pin S1 (BONK vs TOOB variant tag in
-  MESHWORLD) or presence of the BonkCyl parent object.
-- Status: TODO
 
 ## 7. Sky(13) trapdoor-as-popdoor
 - `gm_05_create.c:1456`
