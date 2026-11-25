@@ -19,18 +19,6 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
 - Dead code noted: UNI_NATIVE_HANDLERS fast path (nativeCtor always NULL,
   both assignments if(0)) — left in place, never fires.
 - REMAINING: none. Both dispatch sites + pump mirror collapsed.
-- `gm_03_features.c:263-274` (NativeWalkPresent scan fn)
-- `gm_04_render_update.c:1081-1110` (UniversalRaceState proper)
-- Rows: Beginner(2)->base | Neon(7)->native-if-followers-built |
-  Toob(10)->base | Sky(13)->base | Tower(5)->base |
-  else native-iff-content==level else base.
-- CUT 2026-11-25: Tower row -> Tower-vtable check -> base (orig identical
-  to base, board-type not slot number). Sky row -> Sky-vtable check only
-  (dropped level/content halves). Neon row -> Neon_IsActive ext flag only
-  (native 0x424790 call deleted; followers already driven mod-side by
-  Feature_NeonCamera, same offsets — native call was double-positioning).
-- REMAINING: Beginner row, Toob row, generic content==level row (audit
-  each native orig's effects, absorb into feature blocks, then cut).
 
 ## 2. Beginner/Toob/Master color tables
 - `gm_04_render_update.c:224-226` (render + ContentFileId forms)
