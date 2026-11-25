@@ -228,6 +228,7 @@ static void Feature_BridgeAnimation(void *board, int level) {
  * ═══════════════════════════════════════════════════════════════════════════ */
 static void *Gm_DynSlotPtr(void *ext, int type, int idx);
 static int Gm_DrawerCount(void *ext, int type);
+void Gm_LogSkip(const char *line);
 static int *Gm_DynCounts(void *ext);
 /* TIPPER VISUALS (Ghidra-verified): native render never draws OUR 0x2578
  * objects, so tipper planks are solid but invisible. The tipper visual
@@ -1514,6 +1515,34 @@ static void Feature_BadBallSpawner(void *board, int level) {
     if (!ext) return;
 
     char spawnFlag = *(char *)((char *)ext + BRD_BB_FLAG);
+    /* 8-ball tripwire (Odd chrome-ball hunt 2026-11-25): ball+0x808 nonzero
+     * = native 8-ball mode. Log transitions only (no per-frame I/O). */
+    {
+        static int last808[4] = { -1, -1, -1, -1 };
+        DWORD bl = *(DWORD *)((char *)board + 0x29D4);
+        if (bl && !IsBadReadPtr((void *)bl, 0x410)) {
+            int n = *(int *)(bl + 4);
+            DWORD items = *(DWORD *)(bl + 0x40C);
+            int i;
+            if (n > 4) n = 4;
+            for (i = 0; i < n; i++) {
+                DWORD b = 0;
+                if (!IsBadReadPtr((void *)(items + i * 4), 4)) b = *(DWORD *)(items + i * 4);
+                if (!b || IsBadReadPtr((void *)b, 0x80C)) continue;
+                {
+                    int cur = *(int *)((char *)b + 0x808);
+                    if (last808[i] != -1 && cur != last808[i]) {
+                        char wl[128];
+                        wsprintfA(wl, "BALL808 ball%d %d -> %d pos=%d,%d,%d",
+                            i, last808[i], cur, (int)*(float *)((char *)b + 0x164),
+                            (int)*(float *)((char *)b + 0x168), (int)*(float *)((char *)b + 0x16C));
+                        Gm_LogSkip(wl);
+                    }
+                    last808[i] = cur;
+                }
+            }
+        }
+    }
     if (!spawnFlag) return;
 
     int counter = *(int *)((char *)ext + BRD_BB_COUNTER) - 1;
