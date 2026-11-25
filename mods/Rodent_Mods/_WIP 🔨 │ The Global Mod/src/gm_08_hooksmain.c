@@ -198,10 +198,13 @@ static void UniversalConstructor(void *board, int raceIndex) {
             /* Global Mod: true drawer totals (creates ran inside Setup). */
             { void *sumExt = GetBoardExt(board);
               if (sumExt) Gm_WriteSummary(board, sumExt); }
-            /* Step 6d: Sky scene tails (native scene 0x410830 post-Setup:
-             * PILLAR hooks + CLOUDSCAPE pos). Pre-Setup hooks get wiped by
-             * Setup's +0x4394 re-init (native setup does the same). */
-            if (ext && ContentFileId(ext) == 13) SkySceneTails(board, ext);
+            /* Step 6d: Sky tails (PILLAR hooks + CLOUDSCAPE pos). Runs on
+             * every board: SkySceneTails walks the S1 list and only acts
+             * on PILLAR-prefixed refs, so files without pillars are a
+             * cheap guarded no-op. (Old content==13 gate removed
+             * 2026-11-25.) Pre-Setup hooks get wiped by Setup's +0x4394
+             * re-init (native setup does the same). */
+            if (ext) SkySceneTails(board, ext);
         }
     }
 

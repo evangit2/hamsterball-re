@@ -43,7 +43,14 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
 - REMAINING: gm_06:476 Toob lit-mirror (live code, writes board+0x6448
   nobody reads on replica boards — harmless; folds into item 8).
 
-## 4. Sky(13) tails
+## 4. Sky(13) tails (DONE 2026-11-25)
+- gm_04:208 SKYRENDER diag: called the retired SkyDiag stub — pure dead
+  logging, deleted.
+- gm_08:204 SkySceneTails gate: function is fully S1-driven internally
+  (walks objDb, acts only on PILLAR-prefixed refs, 6+ early-returns).
+  File proof: only Level9 contains PILLAR (52 refs) — every other file
+  is a no-op by content. Gate removed, runs on every board.
+- REMAINING: none.
 - `gm_04:208` `gm_08:204`
 - Replace with: S1-presence (PILLAR/CLOUD in file?) — SkySceneTails
   already walks scene state; gate on what it finds, not slot 13.

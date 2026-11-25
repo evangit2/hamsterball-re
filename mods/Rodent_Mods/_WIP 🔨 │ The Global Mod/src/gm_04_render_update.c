@@ -205,7 +205,8 @@ void UniversalRenderImpl(void *board, int unk) {
             features |= REND_SKY_LIST;
     }
 
-    { static int skyRCount = 0; if (ContentFileId(ext) == 13 && (skyRCount == 0 || (++skyRCount % 600) == 0)) { char srd[128]; if (skyRCount == 0) skyRCount = 1; wsprintfA(srd, "SKYRENDER features=0x%X sprite=0x%08X list=%d mesh=0x%08X", features, *(DWORD *)((char *)ext + REND_SKY_SPRITE), *(int *)((char *)ext + REND_SKY_LIST + 4), *(DWORD *)((char *)ext + REND_SKY_MESH)); SkyDiag(srd); } }
+    /* (Dead SKYRENDER diag removed 2026-11-25: it called the retired
+     * SkyDiag stub. Render presence comes from REND_SKY_* above.) */
 
     if (!features) return;
 
