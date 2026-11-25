@@ -7,7 +7,7 @@ static void FireBranchTeleport(void *board, int *ball, const char *branchName, i
  * dispatches to per-level render feature blocks based on g_renderFeatures[].
  *
  * Render blocks:
- *   REND_BUMPER:   Bumper reflective material (Beginner, Toob, Master)
+ *   REND_BUMPER:   Bumper reflective material (any file with bumper S1s)
  *   REND_WINDMILL: Tower windmill + chomper render with projection adjust
  *   REND_GLASS:    Glass transparent smasher render with render-state toggles
  *   REND_SKY_CAM:  Sky camera setup + cloud sprite + transparent objects
@@ -209,21 +209,16 @@ void UniversalRenderImpl(void *board, int unk) {
 
     if (!features) return;
 
-    /* ── Bumper Reflective Render (Beginner, Toob, Master) ──
+    /* ── Bumper Reflective Render (presence-gated, no level numbers) ──
      * Faithful to native Scene_RenderReflectiveObjects7 (0x411380): one
      * slot per bumper, lit drives the flash, ctx layout matches native,
-     * ctx pointer on GFX+0x7C0. Slots come from OUR postscan collect
-     * (UniversalPostSetup: AthenaList-init + Scene_CollectByNameFilter
-     * "N:BUMPER%d" into BumperSlotPtr(ext,i) — slots 1-8 in ext, 9+ in the
-     * EHV2 heap array) — the replica board ctor is generic and never fills
-     * the native board+0x436C slots, so reading those is always empty
-     * (the missing-glow bug). Same meshes, same stride, same vtbl[0x14]
+     * ctx pointer on GFX+0x7C0. Runs whenever REND_BUMPER is set, which
+     * requires bumper S1s in the file (N:BUMPER collect) or native-built
+     * Toob slots — files without bumpers can never set it, so no level
+     * list is needed. Same meshes, same stride, same vtbl[0x14]
      * call. Old replica used a fixed ext slot + undersized ctx + board+0x7C0
      * (Draw crash + no flash). Capacity is dynamic: UNI_BUMPER_COUNT. */
-    if ((features & REND_BUMPER) &&
-        (level == 2 || level == 10 || level == 14 ||
-         ContentFileId(ext) == 2 || ContentFileId(ext) == 10 ||
-         ContentFileId(ext) == 14)) {
+    if (features & REND_BUMPER) {
         int useNativeSlots = (ContentFileId(ext) == 10 && *(int *)((char *)ext + UNI_NATIVE_CTOR) &&
             BoardHasOffset(board, 0x438C + 7 * 0x418 + 0x410, 4));
         /* Native Toob slots are native-built (collect finds nothing, count=0)

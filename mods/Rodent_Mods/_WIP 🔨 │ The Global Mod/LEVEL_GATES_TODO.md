@@ -20,7 +20,16 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   both assignments if(0)) — left in place, never fires.
 - REMAINING: none. Both dispatch sites + pump mirror collapsed.
 
-## 2. Beginner/Toob/Master color tables
+## 2. Beginner/Toob/Master color tables (DONE 2026-11-25)
+- The gate was the bumper reflective render (`gm_04:224`), not a color
+  table — mislabeled in the original list.
+- File audit: bumper S1 refs exist ONLY in LevelCascade (Beginner, 6) and
+  Level8 (Toob, 13). No other stock file has them, so the presence flag
+  (COLL_FLAG_BUMPER from N:BUMPER S1s, set in gm_07_postscan:449) is the
+  complete gate. The level==2/10/14 list was redundant; Master(14) never
+  even reached the block (no bumper S1s in its file, flag stays 0).
+- Cut to `if (features & REND_BUMPER)`. Comments updated.
+- REMAINING: none.
 - `gm_04_render_update.c:224-226` (render + ContentFileId forms)
 - Replace with: S4/mat params or per-file palette marker in MESHWORLD.
 - Status: TODO

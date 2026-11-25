@@ -355,7 +355,7 @@ typedef enum {
  * Controls which per-level render blocks run in UniversalRender (vtable slot 24). */
 typedef enum {
     REND_NONE         = 0,
-    REND_BUMPER       = 1 << 0,  /* Bumper reflective material (Beginner, Toob, Master) */
+    REND_BUMPER       = 1 << 0,  /* Bumper reflective material (bumper S1s present) */
     REND_WINDMILL     = 1 << 1,  /* Tower windmill wheel */
     REND_GLASS        = 1 << 2,  /* Glass transparent smasher render */
     REND_SKY_BOX      = 1 << 3,  /* Sky box: far-clip + CLOUDSCAPE sprite (points 1-3) */
