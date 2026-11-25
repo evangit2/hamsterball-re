@@ -69,7 +69,14 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   User runs Master: confirm pins + close behavior (close-crash still
   open, untouched by this change).
 
-## 7. Sky(13) trapdoor-as-popdoor
+## 7. Sky(13) trapdoor-as-popdoor (DONE 2026-11-26, pending file rename)
+- Sky block is POPDOOR-only now (TRAPDOOR-on-13 half removed). Same
+  rename shape as #5/#6: Sky's door = POPDOOR, Tower's = TRAPDOOR
+  (line 640 block untouched — its native name, no gate needed there
+  once Sky's S1 is renamed).
+- REMAINING (user file edit): rename Sky's single TRAPDOOR S1 to
+  POPDOOR in Level9. Until then stock Sky's door falls through to the
+  unknown-S1 log (no crash — the most-exercised path in the mod).
 - `gm_05_create.c:1456`
 - Replace with: DAT flag on the S1 ref (door behavior tag), read at spawn.
 - Status: TODO

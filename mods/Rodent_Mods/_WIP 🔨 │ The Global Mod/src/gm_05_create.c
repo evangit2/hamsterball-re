@@ -1442,10 +1442,13 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         return;
     }
 
-    /* ── POPDOOR/TRAPDOOR (Sky Rotator, content-13) ──
-     * S1 vanilla name is TRAPDOOR (Sky_CreateDynamicObjects 0x410AD0 line 79); POPDOOR accepted for new files.
-     * Content-gated (not slot): file-swapped Sky in any slot still builds. */
-    if ((my_strnicmp(name, "POPDOOR", 7) == 0) || (my_strnicmp(name, "TRAPDOOR", 8) == 0 && (GetCurrentLevel(board) == 13 || ContentFileId(ext) == 13))) {
+    /* ── POPDOOR (Sky Rotator) — pure name-driven, no level gate ──
+     * S1 vanilla name was TRAPDOOR (Sky_CreateDynamicObjects 0x410AD0
+     * line 79); renamed POPDOOR so Tower's TRAPDOOR (line 640, its
+     * native name) needs no gate either. Same rename shape as DROPPER
+     * (#5) and BONKCYLINDER (#6). (Old TRAPDOOR-on-13 half removed
+     * 2026-11-26 — Sky's file carries POPDOOR after the rename.) */
+    if (my_strnicmp(name, "POPDOOR", 7) == 0) {
         float dat = *(float *)(g_moduleBase + 0xCF44C);
         S1EnsureMeshWorld(board, ext, UNI_SKY_TRAPDOOR, "Levels\\Level9-TrapDoor");
         int meshVal = *(int*)((char*)ext + UNI_SKY_TRAPDOOR);
