@@ -86,10 +86,6 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   case-insensitive). Rig Beginner clean (defaults path live).
 - REMAINING: none. If your Master file ever gains bumpers and you want
   5/12 back, add one N:VELOCITY(12.0,5.0) S1 to it.
-- `gm_06_collision.c:460-461` (5.0/12.0 vs 4.0/10.0)
-- Replace with: `N:VELOCITY(max,scale)`-style S1 params, defaults = base
-  values. Any level can then tune without code.
-- Status: TODO
 
 ## 9. Impossible(15) kill-floor exception (x2)
 - `gm_06_collision.c:703,710`
