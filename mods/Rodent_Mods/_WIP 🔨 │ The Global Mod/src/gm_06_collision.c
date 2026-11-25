@@ -23,30 +23,11 @@ typedef struct {
 static CollisionEventEntry g_collisionEvents[MAX_COLLISION_EVENTS];
 static int g_collisionEventCount = 0;
 
-/* Toob branch self-diagnosis (temporary): touch-rate logging only, no
- * per-frame I/O. One line per E:BRANCH, E:ALERTSAW2 or N:SAWTEETH touch plus
- * one INIT line per process so the log proves which build produced it. */
+/* Toob branch self-diagnosis: RETIRED 2026-11-26 (user asked to drop
+ * unneeded logs). No-op stub so old call sites still compile. */
 static int g_toobDiagInit = 0;
 void ToobDiag(const char *line) {
-    int first = !g_toobDiagInit;
-    HANDLE hf = CreateFileA("toob_branch_diag.log", GENERIC_WRITE,
-        FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
-        first ? CREATE_ALWAYS : OPEN_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hf == INVALID_HANDLE_VALUE) return;
-    if (!first) SetFilePointer(hf, 0, NULL, FILE_END);
-    if (first) {
-        g_toobDiagInit = 1;
-        const char *initLine = "TOOB_DIAG build=2026-11-20-uniscene20 init\r\n";
-        DWORD bw = 0;
-        WriteFile(hf, initLine, 44, &bw, NULL);
-    }
-    {
-        DWORD bw = 0, nl = (DWORD)strlen(line);
-        WriteFile(hf, line, nl, &bw, NULL);
-        WriteFile(hf, "\r\n", 2, &bw, NULL);
-    }
-    CloseHandle(hf);
+    (void)line;
 }
 
 /* Default collision event assignments (matching original game behavior).
