@@ -1,0 +1,154 @@
+/* Chapter 1 - bumper physics, game function pointers, mesh path table (LevelFeatures.c lines 1426-1661) */
+/* NOTE: the old bumper trampoline (ApplyBumperBounce / BumperCollisionLogic /
+ * Hook_DispatchCollisionEvents) was removed — slot 29 now runs
+ * UniversalDispatchCollision directly (see lf_06_collision.c). */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Game function typedefs
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+typedef void *(__cdecl *operator_new_t)(unsigned int size);
+typedef void *(__thiscall *Level_MeshWorldCtor_t)(void *mem, void *gfx, const char *meshPath);
+typedef void *(__thiscall *Level_RenderCtor_t)(void *mem, void *meshWorld);
+typedef void (__thiscall *Level_InitScene_t)(void *board);
+typedef void (__thiscall *Scene_CollectByNameFilter_t)(void *meshWorld, char *name, void *destList);
+typedef void *(__thiscall *AthenaList_Init_t)(void *this, int capacity);
+typedef void *(__thiscall *Board_ctor_t)(void *this, int app);
+typedef void (__thiscall *LoadRaceData_t)(void *board, const char *raceName);
+typedef int (__thiscall *Vec3_Init_t)(void *out, float x, float y, float z);
+typedef void (__thiscall *Matrix_Identity_t)(void *out); /* native 0x453200: ECX-only */
+typedef void *(__thiscall *MeshNode_ctor_t)(void *mem, void *gfx, const char *path);
+typedef void *(__thiscall *Sprite_ctor_t)(void *mem, void *gfx, const char *path);
+typedef void (__thiscall *TipperVisual_Attach_t)(void *renderObj, void *meshWorld);
+typedef void (__thiscall *Level_AssignTex_t)(void *board, void *meshWorld);
+typedef int (__thiscall *Sound_GetNextChannel_t)(void *soundDevice);
+typedef void (__thiscall *Scene_RenderIfVisible_t)(int obj, float unk); /* native 0x459610: ret $0x4 */
+typedef void (__thiscall *AthenaList_Append_t)(void *list, int item);
+typedef int (__thiscall *AthenaList_GetSize_t)(void *list);
+typedef int (__thiscall *AthenaList_GetIterator_t)(void *list);
+typedef void (__stdcall *eh_vector_ctor_t)(void *base, DWORD stride, int count, void *ctor_fn, void *dtor_fn);
+typedef void (__thiscall *Level_AssignTexScales_t)(void *board, void *meshWorld);
+
+/* CreateDynamicObjects ctor typedefs */
+typedef void *__thiscall (*Ctor3_t)(void *mem, int board, int meshPtr);  /* Tipper, Gluebie, Catapult, Mace, Glass_Level */
+typedef void *__thiscall (*Ctor2_t)(void *mem, int board);  /* Trapdoor */
+typedef void *__thiscall (*Ctor4f_t)(void *mem, int board, float x, float y, float z);  /* Bonk, Bell, Gear_Level */
+typedef void *__thiscall (*Ctor5f_t)(void *mem, int board, float x, float y, float z, float f);  /* Fan, Spinner_Level */
+typedef void *__thiscall (*Ctor3f_t)(void *mem, int board, float x, float y, float z, int meshPtr);  /* Rotator_Impossible, Fallout, NeonPlatform, ArenaStands, Looper, Pendulum, Lifter */
+typedef void *__thiscall (*Ctor6f_t)(void *mem, int board, float x, float y, float z, int meshPtr, int pathObj);  /* Saw, Saw2, Blockdawg */
+typedef void *__thiscall (*Ctor7f_t)(void *mem, int board, float x, float y, float z, float x2, float y2, float z2, int meshPtr);  /* Gear (Impossible dual-position: x2/y2/z2 are FLOATS — int truncates -90.0 to -90 = NaN, v13.40 root cause) */
+typedef void *__thiscall (*Ctor_Str_t)(void *mem, int board, float x, float y, float z, const char *path);  /* Wavy */
+typedef void *__thiscall (*Ctor_Lifter_t)(void *mem, int board, float x, float y, float z, int meshPtr, long num);  /* Lifter (Up) */
+typedef void *__thiscall (*Ctor_SpeedCyl_t)(void *mem, int board, float x, float y, float z, int num, int meshPtr);  /* SpeedCylinder */
+typedef void *__thiscall (*Ctor_Rotator_t)(void *mem, int board, float x, float y, float z, float f, int meshPtr);  /* Rotator (Sky trapdoor) */
+typedef void *__thiscall (*Stands_ctor_t)(void *mem, int meshPtr);  /* Stands */
+typedef void *__thiscall (*TipperVisual_ctor_t)(void *mem, int renderObj);  /* TipperVisual */
+typedef int  (__thiscall *Level_FindObjectByName_t)(int meshWorld, const char *name);
+typedef void (__thiscall *SawBlade_SetVariant_t)(void *obj, int variant);
+typedef void (__thiscall *Wavy_Configure_t)(void *obj, int a, int b, int c, int d);
+typedef void (__thiscall *Sound_InitChannels_t)(void *obj, int flag);
+
+static operator_new_t g_operatorNew = NULL;
+static Level_MeshWorldCtor_t g_LevelMeshWorldCtor = NULL;
+static Level_RenderCtor_t g_LevelRenderCtor = NULL;
+static Level_InitScene_t g_LevelInitScene = NULL;
+static Scene_CollectByNameFilter_t g_CollectByNameFilter = NULL;
+static AthenaList_Init_t g_AthenaListInit = NULL;
+static Board_ctor_t g_BoardCtor = NULL;
+static LoadRaceData_t g_LoadRaceData = NULL;
+static Vec3_Init_t g_Vec3Init = NULL;
+static Matrix_Identity_t g_MatrixIdentity = NULL;
+static MeshNode_ctor_t g_MeshNodeCtor = NULL;
+static Sprite_ctor_t g_SpriteCtor = NULL;
+static TipperVisual_Attach_t g_TipperVisualAttach = NULL;
+static Level_AssignTex_t g_LevelAssignTex = NULL;
+static Sound_GetNextChannel_t g_SoundGetNextChannel = NULL;
+static Scene_RenderIfVisible_t g_SceneRenderIfVisible = NULL;
+static AthenaList_Append_t g_AthenaListAppend = NULL;
+static AthenaList_GetSize_t g_AthenaListGetSize = NULL;
+static AthenaList_GetIterator_t g_AthenaListGetIterator = NULL;
+static eh_vector_ctor_t g_ehVectorCtor = NULL;
+static Level_AssignTexScales_t g_LevelAssignTexScales = NULL;
+static void *g_ehVectorCtorFn = NULL;
+static void *g_Vec3ListFree = NULL;
+
+/* CreateDynamicObjects ctor pointers */
+static Ctor3_t g_TipperCtor = NULL;
+static TipperVisual_ctor_t g_TipperVisualCtor = NULL;
+/* Plan A (2026-11-03): drive the native tipper slot-11 update (0x437A40,
+ * __fastcall ECX=obj, returns 1). Native owns the 0-3 fire/hold/blink state
+ * machine + the Append/Remove of vis on board+0x8B0 + the pose tail. */
+typedef int (__fastcall *TipperUpdate_t)(void *obj);
+static TipperUpdate_t g_TipperUpdate = NULL;
+static Ctor3_t g_GluebieCtor = NULL;
+static Ctor3_t g_CatapultCtor = NULL;
+static Ctor3_t g_MaceCtor = NULL;
+static Ctor3_t g_MaceTowerCtor = NULL; /* Tower MACE S1 -> 0x438750, not 0x437CB0 (own class) */
+/* Tower native ctor (0x41E340: lists+meshes+renders) + native render (0x40DFA0).
+ * Called for level 5 only; replaces base ctor + our Tower mirrors. */
+static void *__thiscall (*g_TowerBoardCtor)(void *mem, int app) = NULL;
+static void *__thiscall (*g_TowerRender)(void *board, int unk) = NULL;
+static Ctor3_t g_GlassLevelCtor = NULL;
+static Ctor2_t g_TrapdoorCtor = NULL;
+static Stands_ctor_t g_StandsCtor = NULL;
+static Ctor4f_t g_BonkCtor = NULL;
+static Ctor5f_t g_FanCtor = NULL;
+static Ctor4f_t g_SawBladeCtor = NULL;
+static SawBlade_SetVariant_t g_SawBladeSetVariant = NULL;
+static Ctor5f_t g_SpinnerLevelCtor = NULL;
+static Ctor5f_t g_SecretCtor = NULL; /* Secret_ctor(mem,board,x,y,z,mesh) — same arity */
+static Ctor4f_t g_GearLevelCtor = NULL;
+static Ctor4f_t g_BellCtor = NULL;
+static Ctor4f_t g_OddLifterCtor = NULL;
+static Ctor_Lifter_t g_LifterCtor = NULL;
+static Ctor_SpeedCyl_t g_SpeedCylinderCtor = NULL;
+static Ctor3f_t g_TimeButtonCtor = NULL;
+static Ctor3f_t g_RotatorImpossibleCtor = NULL;
+static Ctor6f_t g_SawCtor = NULL;
+static Ctor6f_t g_Saw2Ctor = NULL;
+static Ctor3f_t g_FalloutCtor = NULL;
+static Ctor6f_t g_BlockdawgCtor = NULL;
+static Ctor3f_t g_GameLevelCtor = NULL;
+static Ctor_Str_t g_WavyCtor = NULL;
+static Wavy_Configure_t g_WavyConfigure = NULL;
+static Ctor3f_t g_NeonPlatformCtor = NULL;
+static Ctor3f_t g_ArenaStandsCtor = NULL;
+static Ctor3f_t g_PopcylinderCtor = NULL;
+static Ctor3f_t g_PopCylinderCtor = NULL;
+static Ctor_Rotator_t g_RotatorCtor = NULL;
+static Ctor3f_t g_LooperCtor = NULL;
+static Ctor7f_t g_GearCtor = NULL;
+static Ctor3f_t g_PendulumCtor = NULL;
+static Ctor3f_t g_BreakBridgeCtor = NULL;
+/* Native BreakBridge break (0x436e70, __thiscall ECX=obj, dir selects
+ * (+5,20,0) for 0 / (-5,20,0) for 1 — Master calls halves with 0/1). */
+typedef void (__thiscall *BreakBridge_Break_t)(void *obj, int dir);
+static BreakBridge_Break_t g_BreakBridgeBreak = NULL;
+static Level_FindObjectByName_t g_LevelFindObjectByName = NULL;
+static Sound_InitChannels_t g_SoundInitChannels = NULL;
+
+/* Forward declaration */
+static void UniversalPostSetup(void *board);
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Mesh path table — one per level (for scene loading hook)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static const char *g_meshPaths[16] = {
+    NULL,                          /* 0 unused */
+    "levels\\level1",              /* 1=WarmUp */
+    "levels\\levelcascade",        /* 2=Beginner */
+    "levels\\level2",              /* 3=Intermediate */
+    "levels\\level3",              /* 4=Dizzy */
+    "levels\\level4",              /* 5=Tower */
+    "levels\\levelup",             /* 6=Up */
+    "levels\\leveldark",           /* 7=Neon */
+    "levels\\level5",              /* 8=Expert */
+    "levels\\level6",              /* 9=Odd */
+    "levels\\level8",              /* 10=Toob */
+    "levels\\level7",              /* 11=Wobbly */
+    "levels\\levelglass",          /* 12=Glass */
+    "levels\\level9",              /* 13=Sky */
+    "levels\\level10",             /* 14=Master */
+    "levels\\levelimpossible",     /* 15=Impossible */
+};

@@ -1,0 +1,1209 @@
+/* Chapter 2 - UniversalBoardCtorLogic + install thunks (LevelFeatures.c lines 1662-2008) */
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Universal Board Constructor — REPLACES all 15 per-level board constructors
+ *
+ * Called via 15 naked thunks that set g_pendingRaceIndex.
+ * Does the same steps every LevelBoard_*_ctor does:
+ *   1. Board_ctor(mem, app)
+ *   2. Set vtable
+ *   3. Set board name (+0x868), race title (+0x29B4)
+ *   4. Set +0x870 from app+0x1DC
+ *   5. Vec3_Init with per-level color, store at +0x1508
+ *   6. LoadRaceData(mem, raceName)
+ *   7. Set music name (+0x4344)
+ *   8. Load extra meshes (per-level)
+ *   9. Set unlock flags (per-level)
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* UniversalTowerInit — content-driven Tower board setup, no native ctor.
+ * Replicates Tower native ctor (0x41E340, Ghidra-verified) field-by-field:
+ * base Board_ctor, Tower vtable, name strings, difficulty flag,
+ * LoadRaceData("TOWERRACE"). +0x870 comes from Step 4 (proven app-source),
+ * +0x1508 from Step 5 (slot colors, proven), lists from Step 9a-extra3.
+ * Mesh slots (+0x436C..+0x43B4) stay empty — S1-driven create loads and
+ * mirrors them (BoardMeshOrZero: Tower content never trusts board slots). */
+static void UniversalTowerInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D0A08; /* Tower board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Tower)";
+    *(char **)((char *)mem + 0x29B4) = "TOWER RACE";
+    *(char **)((char *)mem + 0x4344) = "Happy Rush";
+    *(DWORD *)((char *)mem + 0x43A4) = 0;
+    *(DWORD *)((char *)mem + 0x43A0) = 0;
+    *(DWORD *)((char *)mem + 0x43A8) = 0;
+    *(DWORD *)((char *)mem + 0x43AC) = 0;
+    *(DWORD *)((char *)mem + 0x43B0) = 0;
+    { int diff = *(int *)(app + 0x23C);
+      DWORD prof = *(DWORD *)(app + 0x220);
+      if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&
+          *(char *)(prof + 0x10) == 0)
+          *(BYTE *)(app + 0x852) = 1; }
+    g_LoadRaceData(mem, "TOWERRACE");
+    DebugLog("UniversalTowerInit done (no native ctor)");
+}
+
+/* UniversalUpInit — content-driven Up board setup, no native ctor.
+ * Replicates Up native ctor (0x420390, Ghidra-verified) field-by-field:
+ * base Board_ctor, Up vtable (0x4D11A0 — owns slot 18 vacuum scene setup
+ * 0x411540, slot 19 lifter RaceState 0x420660, slot 29 Up collision
+ * 0x4119B0), name strings, difficulty flag, LoadRaceData("UPRACE").
+ * +0x870 comes from Step 4 (proven app-source), +0x1508 from Step 5 (table
+ * color {1,0,1} matches native Vec3), +0x4344 from Step 7 (table music
+ * "Up Race" matches native), 0x436C list from Step 9a-extra (content-6
+ * gated). Mesh slots (+0x4784/88/8C) stay empty — S1-driven create loads
+ * and mirrors them (same pattern as Tower). */
+static void UniversalUpInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D11A0; /* Up board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Up)";
+    *(char **)((char *)mem + 0x29B4) = "UP RACE";
+    *(char **)((char *)mem + 0x4344) = "Up Race";
+    { int diff = *(int *)(app + 0x23C);
+      DWORD prof = *(DWORD *)(app + 0x220);
+      if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&
+          *(char *)(prof + 0x10) == 0)
+          *(BYTE *)(app + 0x853) = 1; }
+    g_LoadRaceData(mem, "UPRACE");
+    DebugLog("UniversalUpInit done (no native ctor)");
+}
+
+/* UniversalDizzyInit — content-driven Dizzy board setup, no native ctor.
+ * Replicates Dizzy native ctor (0x41D060, Ghidra-verified) field-by-field:
+ * base Board_ctor, Dizzy vtable (0x4D0890 — owns slot 1 update 0x41D510,
+ * slot 18 scene 0x40D390, slot 29 collision 0x40D500), name strings,
+ * difficulty flag, LoadRaceData("DIZZYRACE"). +0x870 comes from Step 4
+ * (proven app-source), +0x1508 from Step 5 (table color {0,1,0} matches
+ * native Vec3), lists 0x4378/0x4790 from Step 9a-extra2/2b (content-4
+ * gated). Mesh slots (+0x436C/+0x4370/+0x4374/+0x4BA8/+0x4BAC/+0x4BC4/
+ * +0x4BC8) stay empty — S1-driven create loads and mirrors them. */
+static void UniversalDizzyInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D0890; /* Dizzy board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Dizzy)";
+    *(char **)((char *)mem + 0x29B4) = "DIZZY RACE";
+    *(char **)((char *)mem + 0x4344) = "Dizzy!";
+    { int diff = *(int *)(app + 0x23C);
+      DWORD prof = *(DWORD *)(app + 0x220);
+      if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&
+          *(char *)(prof + 0x10) == 0)
+          *(BYTE *)(app + 0x851) = 1; }
+    g_LoadRaceData(mem, "DIZZYRACE");
+    /* Wheel sound channel (native ctor: GetNextChannel(app+0x490) -> +0x4BDC,
+     * RenderIfVisible; read per-frame by the update for creak playback). */
+    if (g_SoundGetNextChannel) {
+        DWORD appVal = *(DWORD *)((char *)mem + BOARD_APP_PTR);
+        if (appVal && !IsBadReadPtr((void *)appVal, 0x500)) {
+            DWORD soundDevice = *(DWORD *)(appVal + 0x490);
+            if (soundDevice) {
+                int channel = g_SoundGetNextChannel((void *)soundDevice);
+                *(int *)((char *)mem + 0x4BDC) = channel;
+                if (channel && g_SceneRenderIfVisible)
+                    g_SceneRenderIfVisible(channel, 0.0f);
+            }
+        }
+    }
+    DebugLog("UniversalDizzyInit done (no native ctor)");
+}
+
+/* UniversalNeonInit — content-driven Neon board setup, no native code.
+ * Replicates Neon native ctor (0x424440, Ghidra-verified): base Board_ctor,
+ * Neon vtable (0x4D1DF0 — owns slot 18 scene 0x416270, slot 19 RaceState
+ * 0x424790, slot 29 collision 0x416CA0, slot 33 create 0x416910), name
+ * strings, LoadRaceData("NEONRACE"). +0x870 from Step 4 (proven app-source),
+ * +0x1508 from Step 5 (table color {1,1,0} matches native Vec3), zero slots
+ * +0x436C/70/90 (native ctor zeroes; glow followers built later by
+ * Neon_PostSetup under the S3-gap rule). Mesh slots stay empty — S1-driven
+ * create loads and mirrors them. */
+static void UniversalNeonInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D1DF0; /* Neon board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Dark)";
+    *(char **)((char *)mem + 0x29B4) = "NEON RACE";
+    *(char **)((char *)mem + 0x4344) = "Neon Theme";
+    if (BoardHasOffset(mem, 0x436C, 4)) *(DWORD *)((char *)mem + 0x436C) = 0;
+    if (BoardHasOffset(mem, 0x4370, 4)) *(DWORD *)((char *)mem + 0x4370) = 0;
+    if (BoardHasOffset(mem, 0x4390, 4)) *(DWORD *)((char *)mem + 0x4390) = 0;
+    g_LoadRaceData(mem, "NEONRACE");
+    DebugLog("UniversalNeonInit done (no native ctor)");
+}
+
+/* UniversalExpertInit — content-driven Expert board setup, no native code.
+ * Replicates Expert native ctor (0x41EA40, Ghidra-verified): base Board_ctor,
+ * Expert vtable (0x4D0B00 — slot 1 is shared Scene_Update, custom scene
+ * 0x40E190, custom collision 0x40E6A0, custom create 0x40E250), AthenaLists
+ * 0x4380/0x4798 (BRIDGE spinner lists) + 0x4BBC (JUDGE list), name strings,
+ * difficulty flag, LoadRaceData("EXPERTRACE"), bridge mesh+render
+ * (+0x4378/+0x437C, Levels\Level5-Bridge), THREE hammyjudge MeshNodes
+ * (0x18 each, meshes\hammyjudge) at +0x4BB0/4/8. */
+static void UniversalExpertInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D0B00; /* Expert board vtable */
+    if (g_AthenaListInit) {
+        g_AthenaListInit((void *)((char *)mem + 0x4380), 0);
+        g_AthenaListInit((void *)((char *)mem + 0x4798), 0);
+        g_AthenaListInit((void *)((char *)mem + 0x4BBC), 0);
+    }
+    *(char **)((char *)mem + 0x868) = "Board (Expert)";
+    *(char **)((char *)mem + 0x29B4) = "EXPERT RACE";
+    *(char **)((char *)mem + 0x4344) = "Fight!";
+    { int diff = *(int *)(app + 0x23C);
+      DWORD prof = *(DWORD *)(app + 0x220);
+      if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&
+          *(char *)(prof + 0x10) == 0)
+          *(BYTE *)(app + 0x854) = 1; }
+    g_LoadRaceData(mem, "EXPERTRACE");
+    /* Bridge mesh+render (native ctor loads; create mirrors refresh them). */
+    if (g_operatorNew && g_LevelMeshWorldCtor) {
+        void *bm = g_operatorNew(0x10D0);
+        if (bm) {
+            void *bmesh = g_LevelMeshWorldCtor(bm, *(void **)(app + 0x174), "Levels\\Level5-Bridge");
+            *(void **)((char *)mem + 0x4378) = bmesh;
+            if (bmesh && g_operatorNew && g_LevelRenderCtor) {
+                void *br = g_operatorNew(0x10D0);
+                if (br) *(void **)((char *)mem + 0x437C) = g_LevelRenderCtor(br, (int)bmesh);
+            }
+        }
+    }
+    /* Three hammyjudge MeshNodes (native ctor; drawn by native scene). */
+    if (g_operatorNew && g_MeshNodeCtor) {
+        int ji;
+        for (ji = 0; ji < 3; ji++) {
+            void *jm = g_operatorNew(0x18);
+            if (jm) *(void **)((char *)mem + 0x4BB0 + ji * 4) =
+                g_MeshNodeCtor(jm, *(void **)(app + 0x174), "meshes\\hammyjudge");
+        }
+    }
+    DebugLog("UniversalExpertInit done (no native ctor)");
+}
+
+/* UniversalOddInit — content-driven Odd board setup, no native code.
+ * Replicates Odd native ctor (0x41ED80, Ghidra-verified): base Board_ctor,
+ * Odd vtable (0x4D0BC0 — owns custom slot-1 update 0x41EE80 spawner, custom
+ * scene, custom collision 0x40ED30, custom create 0x40EC40), name strings,
+ * difficulty flag, LoadRaceData("ODDRACE"). +0x870 from Step 4, +0x1508
+ * from Step 5 (table color {1,0.5,0} matches native Vec3). No lists, no
+ * meshes — spawner state lives in ext, filled by postscan. */
+static void UniversalOddInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D0BC0; /* Odd board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Odd)";
+    *(char **)((char *)mem + 0x29B4) = "ODD RACE";
+    *(char **)((char *)mem + 0x4344) = "Ninja Hamster";
+    { int diff = *(int *)(app + 0x23C);
+      DWORD prof = *(DWORD *)(app + 0x220);
+      if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&
+          *(char *)(prof + 0x10) == 0)
+          *(BYTE *)(app + 0x855) = 1; }
+    g_LoadRaceData(mem, "ODDRACE");
+    DebugLog("UniversalOddInit done (no native ctor)");
+}
+
+/* UniversalToobInit — content-driven Toob board setup, no native code.
+ * Replicates Toob native ctor (0x41F4B0, Ghidra-verified): base Board_ctor,
+ * Toob vtable (0x4D0E78 — custom RaceState 0x41F7E0 zoom-clamp, custom
+ * scene 0x40FA20, custom collision 0x410020, custom create 0x40FB30), name
+ * strings, difficulty flag, LoadRaceData("TOOBRACE"), 5 meshes
+ * (+0x436C Spinny, +0x4370 Saw, +0x4374 Fallout, +0x4378 Blockdawg1,
+ * +0x437C Blockdawg2), zeroed saw slots +0x4380/84/88. The 8x0x418
+ * Vec3List at +0x438C is zeroed (no reader in our paths; native dtor's
+ * free is never invoked since boards are never destroyed mid-race). */
+static void UniversalToobInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D0E78; /* Toob board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Toob)";
+    *(char **)((char *)mem + 0x29B4) = "TOOB RACE";
+    *(char **)((char *)mem + 0x4344) = "Rodenthood";
+    { int diff = *(int *)(app + 0x23C);
+      DWORD prof = *(DWORD *)(app + 0x220);
+      if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&
+          *(char *)(prof + 0x10) == 0)
+          *(BYTE *)(app + 0x856) = 1; }
+    g_LoadRaceData(mem, "TOOBRACE");
+    /* Five meshes (native ctor loads; create mirrors refresh them). */
+    if (g_operatorNew && g_LevelMeshWorldCtor) {
+        static const char *paths[5] = {
+            "Levels\\Level8-Spinny", "Levels\\Level8-Saw",
+            "Levels\\Level8-Fallout", "Levels\\Level8-Blockdawg1",
+            "Levels\\Level8-Blockdawg2" };
+        int i;
+        for (i = 0; i < 5; i++) {
+            void *bm = g_operatorNew(0x10D0);
+            if (bm) *(void **)((char *)mem + 0x436C + i * 4) =
+                g_LevelMeshWorldCtor(bm, *(void **)(app + 0x174), (char *)paths[i]);
+        }
+    }
+    if (BoardHasOffset(mem, 0x4380, 12)) {
+        *(DWORD *)((char *)mem + 0x4380) = 0;
+        *(DWORD *)((char *)mem + 0x4384) = 0;
+        *(DWORD *)((char *)mem + 0x4388) = 0;
+    }
+    if (BoardHasOffset(mem, 0x438C, 8 * 0x418))
+        memset((char *)mem + 0x438C, 0, 8 * 0x418);
+    DebugLog("UniversalToobInit done (no native ctor)");
+}
+
+/* Universal Toob scene — replaces native 0x40FA20 (vtable slot 18).
+ * Exact replica of the native scene's four steps (Ghidra-verified
+ * 0x40FA20-0x40FB26): fog/init, level-mesh + render build, N:BUMPER1..8
+ * link loop (mesh ptr per 0x438C slot, lit 0), then board setup v[0x80].
+ * No native scene code runs for Toob. */
+static int s_toobSceneVtblInit = 0;
+void __thiscall UniversalToobScene(void *board) {
+    /* No entry guard: the native scene (0x40FA20) runs unguarded on the
+     * same board; an over-strict probe here skips setup -> white freeze. */
+    if (!board) return;
+    { char sdbg[64]; wsprintfA(sdbg, "UNISCENE enter board=0x%08X", (DWORD)board); ToobDiag(sdbg); }
+    if (g_LevelInitScene) g_LevelInitScene(board);
+    {
+        int app = *(int *)((char *)board + 0x878);
+        int gfx = 0;
+        int meshWorld = 0;
+        if (app && !IsBadReadPtr((void *)app, 0x500))
+            gfx = *(int *)(app + 0x174);
+        if (g_operatorNew && g_LevelMeshWorldCtor && gfx) {
+            void *mm = g_operatorNew(0x10D0);
+            if (mm) meshWorld = (int)g_LevelMeshWorldCtor(mm, (void *)gfx, "levels\\level8");
+        }
+        /* Native continues to setup even when the mesh build fails. */
+        *(int *)((char *)board + 0x8AC) = meshWorld;
+        { char sdbg[96]; wsprintfA(sdbg, "UNISCENE mesh=0x%08X gfx=0x%08X", meshWorld, gfx); ToobDiag(sdbg); }
+        if (meshWorld && g_operatorNew && g_LevelRenderCtor) {
+            void *rm = g_operatorNew(0x10D0);
+            if (rm) *(int *)((char *)board + 0x8B0) =
+                (int)g_LevelRenderCtor(rm, (void *)meshWorld);
+        }
+        if (g_LevelFindObjectByName) {
+            int i;
+            for (i = 1; i <= 8; i++) {
+                char nm[16] = "N:BUMPER0";
+                int m = 0;
+                nm[8] = (char)('0' + i);
+                m = g_LevelFindObjectByName((void *)meshWorld, nm);
+                if (BoardHasOffset(board, 0x438C + (i - 1) * 0x418 + 4, 4))
+                    *(int *)((char *)board + 0x438C + (i - 1) * 0x418) = m;
+                if (BoardHasOffset(board, 0x644C + (i - 1) * 4, 4))
+                    *(float *)((char *)board + 0x644C + (i - 1) * 4) = 0.0f;
+            }
+        }
+    }
+    {
+        int vtbl = *(int *)board;
+        ToobDiag("UNISCENE setup-call");
+        if (!IsBadReadPtr((void *)vtbl, 0x84)) {
+            void *setup = *(void **)(vtbl + 0x80);
+            if (setup && !IsBadReadPtr(setup, 16))
+                ((void (__thiscall *)(void *))setup)(board);
+        }
+        ToobDiag("UNISCENE setup-done");
+    }
+}
+
+/* UniversalWobblyInit — content-driven Wobbly board setup, no native code.
+ * Replicates Wobbly native ctor (0x41F110, Ghidra-verified): base
+ * Board_ctor, Wobbly vtable (0x4D0D38 — shared scene-update/racestate,
+ * custom scene 0x40F360, custom collision 0x40F9A0 rider lists, custom
+ * create 0x40F420), name strings, difficulty flag,
+ * LoadRaceData("WOBBLYRACE"), 7 meshes +0x436C..+0x4384
+ * (Level7-Wobbly1..7). No lists — rider state is per-object. */
+static void UniversalWobblyInit(void *mem, int app) {
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D0D38; /* Wobbly board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Wobbly)";
+    *(char **)((char *)mem + 0x29B4) = "WOBBLY RACE";
+    *(char **)((char *)mem + 0x4344) = "Hamster Chase";
+    { int diff = *(int *)(app + 0x23C);
+      DWORD prof = *(DWORD *)(app + 0x220);
+      if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&
+          *(char *)(prof + 0x10) == 0)
+          *(BYTE *)(app + 0x857) = 1; }
+    g_LoadRaceData(mem, "WOBBLYRACE");
+    /* Seven meshes (native ctor loads; create mirrors refresh them). */
+    if (g_operatorNew && g_LevelMeshWorldCtor) {
+        static const char *paths[7] = {
+            "Levels\\Level7-Wobbly1", "Levels\\Level7-Wobbly2",
+            "Levels\\Level7-Wobbly3", "Levels\\Level7-Wobbly4",
+            "Levels\\Level7-Wobbly5", "Levels\\Level7-Wobbly6",
+            "Levels\\Level7-Wobbly7" };
+        int i;
+        for (i = 0; i < 7; i++) {
+            void *bm = g_operatorNew(0x10D0);
+            if (bm) *(void **)((char *)mem + 0x436C + i * 4) =
+                g_LevelMeshWorldCtor(bm, *(void **)(app + 0x174), (char *)paths[i]);
+        }
+    }
+    DebugLog("UniversalWobblyInit done (no native ctor)");
+}
+
+/* UniversalGlassInit — content-driven Glass board setup, no native code.
+ * Replicates Glass native ctor (0x424A90, Ghidra-verified): base
+ * Board_ctor, Glass vtable (0x4D1F90 — shared scene-update/racestate,
+ * custom scene 0x417640, custom collision 0x417760 smashers, custom
+ * create 0x40AD80), name strings, LoadRaceData("GLASSRACE"). NO
+ * difficulty flag (native ctor has none — first board without one).
+ * Pre-zeroes smasher/timer slots +0x436C..+0x4390 (create fills them
+ * from SMASHER1/2 S1 DAT floats). */
+static void UniversalGlassInit(void *mem, int app) {
+    int i;
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D1F90; /* Glass board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Glass)";
+    *(char **)((char *)mem + 0x29B4) = "GLASS RACE";
+    *(char **)((char *)mem + 0x4344) = "Glass Theme";
+    g_LoadRaceData(mem, "GLASSRACE");
+    for (i = 0; i < 7; i++)
+        if (BoardHasOffset(mem, 0x436C + i * 4, 4))
+            *(DWORD *)((char *)mem + 0x436C + i * 4) = 0;
+    /* Base replica (native 0x4217B0 via Glass ctor 0x424A90): the two
+     * sub-objects the Glass Draw path reads. Missing them = Draw crash
+     * NULL+0x154 at 0x46F160. */
+    if (g_AthenaListInit && BoardHasOffset(mem, 0x4394 + 0x10, 4))
+        g_AthenaListInit((void *)((char *)mem + 0x4394), 0);
+    if (BoardHasOffset(mem, 0x47C8 + 0x10, 4)) {
+        void (__thiscall *init47C8)(void *) =
+            (void (__thiscall *)(void *))(g_moduleBase + 0x58E60);
+        init47C8((void *)((char *)mem + 0x47C8));
+    }
+    if (BoardHasOffset(mem, 0x438C, 4))
+        *(DWORD *)((char *)mem + 0x438C) = 0;
+    if (BoardHasOffset(mem, 0x47B0, 1))
+        *(BYTE *)((char *)mem + 0x47B0) = 0;
+    for (i = 0; i < 4; i++)
+        if (BoardHasOffset(mem, 0x47B4 + i * 4, 4))
+            *(DWORD *)((char *)mem + 0x47B4 + i * 4) = 0;
+    if (BoardHasOffset(mem, 0x47C4, 1))
+        *(BYTE *)((char *)mem + 0x47C4) = 0;
+    if (BoardHasOffset(mem, 0x47C5, 1))
+        *(BYTE *)((char *)mem + 0x47C5) = 0;
+    if (BoardHasOffset(mem, 0x4348, 1))
+        *(BYTE *)((char *)mem + 0x4348) = 0;
+    if (BoardHasOffset(mem, 0x47AC, 4))
+        *(DWORD *)((char *)mem + 0x47AC) = 0x1770;
+    if (BoardHasOffset(mem, 0x47D0, 4))
+        *(DWORD *)((char *)mem + 0x47D0) = 0x19;
+    DebugLog("UniversalGlassInit done (no native ctor)");
+}
+
+/* UniversalSkyInit — content-driven Sky board setup, no native code.
+ * Replicates Sky native ctor (0x41F930, objdump-verified 2026-11-20):
+ * base Board_ctor, Sky vtable 0x4D0FC8, name strings, difficulty flag
+ * (app+0x858, like Tower), LoadRaceData("SKYRACE"), music "Bucky Break",
+ * meshes: skypillar + magnifyingglass via MeshNode_ctor (0x18),
+ * popcylinder1/2 + trapdoor via Level_MeshWorldCtor (0x10D0),
+ * clouds.png via Sprite_ctor (0xD4 -> +0x4374). Zeroes timer slots
+ * +0x47AC/+0x47F0/+0x47F4. +0x870/+0x1508 come from Steps 4/5.
+ * S1 mirrors own popcylinders/posts/magnifier at create/postscan;
+ * racestate runs base + Feature_SkyPopcylinder (no native 0x41FC90). */
+static void UniversalSkyInit(void *mem, int app) {
+    { char sdbg[96]; wsprintfA(sdbg, "SKYINIT enter mem=0x%08X app=0x%08X", (DWORD)mem, (DWORD)app); SkyDiag(sdbg); }
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D0FC8; /* Sky board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Sky)";
+    *(char **)((char *)mem + 0x29B4) = "SKY RACE";
+    *(char **)((char *)mem + 0x4344) = "Bucky Break";
+    { int diff = *(int *)(app + 0x23C);
+      DWORD prof = *(DWORD *)(app + 0x220);
+      if (diff != 0 && prof && !IsBadReadPtr((void *)(prof + 0x10), 1) &&
+          *(char *)(prof + 0x10) == 0)
+          *(BYTE *)(app + 0x858) = 1; }
+    g_LoadRaceData(mem, "SKYRACE");
+    /* Hook registry (native ctor: AthenaListInit at +0x4394 via 0x453210).
+     * The native Sky scene (0x410830) appends PILLAR S1 hooks
+     * into +0x4394 with NO null check — without this init it writes
+     * through malloc garbage = heap corruption = Draw crash in d3d8
+     * (0001:00052087, Board (Sky)). Postscan Sky_LoaderReplica also
+     * requires the header (returns early when missing = no posts). */
+    if (g_AthenaListInit && BoardHasOffset(mem, 0x4394 + 0x10, 4))
+        g_AthenaListInit((void *)((char *)mem + 0x4394), 0);
+    /* Meshes (native ctor loads; create mirrors refresh them). */
+    if (g_operatorNew && g_MeshNodeCtor) {
+        void *sm = g_operatorNew(0x18);
+        if (sm && BoardHasOffset(mem, 0x436C, 4))
+            *(void **)((char *)mem + 0x436C) =
+                g_MeshNodeCtor(sm, *(void **)(app + 0x174), "meshes\\skypillar");
+        void *mm = g_operatorNew(0x18);
+        if (mm && BoardHasOffset(mem, 0x4370, 4))
+            *(void **)((char *)mem + 0x4370) =
+                g_MeshNodeCtor(mm, *(void **)(app + 0x174), "meshes\\magnifyingglass");
+    }
+    if (g_operatorNew && g_LevelMeshWorldCtor) {
+        void *p1 = g_operatorNew(0x10D0);
+        if (p1 && BoardHasOffset(mem, 0x4384, 4))
+            *(void **)((char *)mem + 0x4384) =
+                g_LevelMeshWorldCtor(p1, *(void **)(app + 0x174), "levels\\level9-popcylinder1");
+        void *p2 = g_operatorNew(0x10D0);
+        if (p2 && BoardHasOffset(mem, 0x4388, 4))
+            *(void **)((char *)mem + 0x4388) =
+                g_LevelMeshWorldCtor(p2, *(void **)(app + 0x174), "levels\\level9-popcylinder2");
+        void *td = g_operatorNew(0x10D0);
+        if (td && BoardHasOffset(mem, 0x438C, 4))
+            *(void **)((char *)mem + 0x438C) =
+                g_LevelMeshWorldCtor(td, *(void **)(app + 0x174), "levels\\level9-trapdoor");
+    }
+    if (g_operatorNew && g_SpriteCtor && BoardHasOffset(mem, 0x4374, 4)) {
+        void *cs = g_operatorNew(0xD4);
+        if (cs)
+            *(void **)((char *)mem + 0x4374) =
+                g_SpriteCtor(cs, *(void **)(app + 0x174), "textures\\clouds.png");
+    }
+    if (BoardHasOffset(mem, 0x47AC, 4))
+        *(DWORD *)((char *)mem + 0x47AC) = 0;
+    if (BoardHasOffset(mem, 0x47F0, 4))
+        *(DWORD *)((char *)mem + 0x47F0) = 0;
+    if (BoardHasOffset(mem, 0x47F4, 4))
+        *(DWORD *)((char *)mem + 0x47F4) = 0;
+    DebugLog("UniversalSkyInit done (no native ctor)");
+    { char sdbg[128]; wsprintfA(sdbg, "SKYINIT done mem=0x%08X vtbl=0x%08X 4394=0x%08X 436C=0x%08X 4370=0x%08X 4374=0x%08X", (DWORD)mem, *(DWORD *)mem, *(DWORD *)((char *)mem + 0x4394), *(DWORD *)((char *)mem + 0x436C), *(DWORD *)((char *)mem + 0x4370), *(DWORD *)((char *)mem + 0x4374)); SkyDiag(sdbg); }
+}
+
+/* UniversalImpossibleInit — content-driven Impossible board setup, no native code.
+ * Replicates Impossible native ctor (0x424C20, Ghidra-decompiled 2026-11-22):
+ * base Board_ctor, Impossible vtable 0x4D21C0, "Board (Impossible)",
+ * +0x4348=1, "IMPOSSIBLE RACE", color (1,0,0) via Vec3_Init,
+ * LoadRaceData("IMPOSSIBLERACE"), music "Impossible Theme",
+ * 5 meshes via Level_MeshWorldCtor (0x10D0):
+ * +0x436C=Looper, +0x4370=Gear, +0x4374=BigGear,
+ * +0x4378=Rotator, +0x437C=Pendulum.
+ * S1 mirrors (GEAR/BIGGEAR/LOOPER/PENDULUM/ROTATOR/FLAG) to come;
+ * racestate/render run base universal (no native 0x... ). */
+static void UniversalImpossibleInit(void *mem, int app) {
+    DebugLog("IMPINIT enter");
+    g_BoardCtor(mem, app);
+    *(DWORD *)mem = 0x4D21C0; /* Impossible board vtable */
+    *(char **)((char *)mem + 0x868) = "Board (Impossible)";
+    *(char **)((char *)mem + 0x29B4) = "IMPOSSIBLE RACE";
+    *(BYTE *)((char *)mem + 0x4348) = 1;
+    *(char **)((char *)mem + 0x4344) = "Impossible Theme";
+    g_LoadRaceData(mem, "IMPOSSIBLERACE");
+    /* Hook registry (AthenaListInit at +0x4394, like Sky). */
+    if (g_AthenaListInit && BoardHasOffset(mem, 0x4394 + 0x10, 4))
+        g_AthenaListInit((void *)((char *)mem + 0x4394), 0);
+    /* Meshes (native ctor loads 5 via Level_MeshWorldCtor 0x10D0). */
+    if (g_operatorNew && g_LevelMeshWorldCtor) {
+        void *lm = g_operatorNew(0x10D0);
+        if (lm && BoardHasOffset(mem, 0x436C, 4))
+            *(void **)((char *)mem + 0x436C) =
+                g_LevelMeshWorldCtor(lm, *(void **)(app + 0x174), "Levels\\\\LevelImpossible-Looper");
+        void *gm = g_operatorNew(0x10D0);
+        if (gm && BoardHasOffset(mem, 0x4370, 4))
+            *(void **)((char *)mem + 0x4370) =
+                g_LevelMeshWorldCtor(gm, *(void **)(app + 0x174), "Levels\\\\LevelImpossible-Gear");
+        void *bg = g_operatorNew(0x10D0);
+        if (bg && BoardHasOffset(mem, 0x4374, 4))
+            *(void **)((char *)mem + 0x4374) =
+                g_LevelMeshWorldCtor(bg, *(void **)(app + 0x174), "Levels\\\\LevelImpossible-BigGear");
+        void *rt = g_operatorNew(0x10D0);
+        if (rt && BoardHasOffset(mem, 0x4378, 4))
+            *(void **)((char *)mem + 0x4378) =
+                g_LevelMeshWorldCtor(rt, *(void **)(app + 0x174), "Levels\\\\LevelImpossible-Rotator");
+        void *pd = g_operatorNew(0x10D0);
+        if (pd && BoardHasOffset(mem, 0x437C, 4))
+            *(void **)((char *)mem + 0x437C) =
+                g_LevelMeshWorldCtor(pd, *(void **)(app + 0x174), "Levels\\\\LevelImpossible-Pendulum");
+    }
+    DebugLog("UniversalImpossibleInit done (no native ctor)");
+}
+
+/* Fail-closed size tracking: bit i = level i+1 alloc patched to 0x7000.
+ * g_nativeBoardSize holds the stock operator_new size per slot (captured
+ * before rewrite); g_nativeLevelCtors holds the slot's genuine native ctor
+ * (RVA; Ghidra-verified: WarmUp 0x41CA40, Master 0x4206D0, + repo table).
+ * If a slot's patch misses, mem is native-sized and the universal layout
+ * would heap-corrupt — the logic below runs the native ctor instead. */
+typedef void (__thiscall *NativeBoardCtor_t)(void *mem, int app);
+static DWORD g_sizePatchOk = 0;
+static DWORD g_nativeBoardSize[16] = {0};
+static DWORD g_sizePushAddr[16] = {0}; /* address of the patched push imm32 */
+static const DWORD g_nativeLevelCtors[16] = {
+    0,
+    0x1CA40, /* 1 WarmUp */
+    0x200E0, /* 2 Beginner */
+    0x1CB20, /* 3 Intermediate */
+    0x1D060, /* 4 Dizzy */
+    0x1E340, /* 5 Tower */
+    0x20390, /* 6 Up */
+    0x24440, /* 7 Neon */
+    0x1EA40, /* 8 Expert */
+    0x1ED80, /* 9 Odd */
+    0x1F4B0, /* 10 Toob */
+    0x1F110, /* 11 Wobbly */
+    0x24A90, /* 12 Glass */
+    0x1F930, /* 13 Sky */
+    0x206D0, /* 14 Master */
+    0x24C20, /* 15 Impossible */
+};
+
+/* Universal board size: every level board allocates 0x7000 bytes (>= the
+ * largest native board, Master 0x6498, plus margin). Any content in any slot
+ * gets a board big enough for the largest per-level layout (Tower lists at
+ * 0x5000, Dizzy fields, etc.) — no OOB writes on file/slot swaps.
+ * Runs inside InstallBoardCtorHooks: for each of the 15 ctor CALL sites,
+ * scan back for the operator_new CALL and rewrite its preceding push $SIZE.
+ * Verification is strict: CALL target must be operator_new exactly, and the
+ * 5 bytes before it must be a push imm32 (0x68). */
+#define UNI_BOARD_SIZE 0x7000
+
+void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
+    int raceIndex = g_pendingRaceIndex;
+    g_lastAppParam = app;
+    char buf[256];
+    wsprintfA(buf, "UniversalBoardCtorLogic called: mem=%p app=0x%X raceIndex=%d", mem, app, raceIndex);
+    DebugLog(buf);
+    if (!mem || raceIndex < 1 || raceIndex > 15) {
+        DebugLog("UniversalBoardCtorLogic: invalid params, returning");
+        return;
+    }
+    if (!g_BoardCtor || !g_LoadRaceData) {
+        DebugLog("UniversalBoardCtorLogic: function pointers not resolved");
+        return;
+    }
+
+    /* Fail closed: if this slot's alloc patch missed, mem is native-sized and
+     * every universal layout write past it is heap corruption. Run the slot's
+     * genuine native ctor on its native-sized mem (exact vanilla behavior;
+     * mod handlers degrade cleanly with no ext). */
+    if (!(g_sizePatchOk & (1u << (raceIndex - 1)))) {
+        char fb[160];
+        wsprintfA(fb, "UniversalBoardCtorLogic: size patch missing slot %d (native %dB) — native ctor fallback", raceIndex, g_nativeBoardSize[raceIndex]);
+        DebugLog(fb);
+        ((NativeBoardCtor_t)(g_moduleBase + g_nativeLevelCtors[raceIndex]))(mem, app);
+        return;
+    }
+
+    LevelData *ld = &g_levelData[raceIndex];
+
+    /* Step 0: Content identity (file, never slot). MUST precede Step 1 —
+     * the ctor delegation below reads g_loadingContentId. */
+    {
+        const char *rp0 = NULL;
+        char rsl0[MAX_PATH]; rsl0[0] = '\0';
+        LoadRaceFiles();
+        if (raceIndex>=1 && raceIndex<=15 && g_raceFiles[raceIndex][0]) rp0 = g_raceFiles[raceIndex];
+        if (!rp0 || !*rp0) rp0 = g_levelData[raceIndex].meshPath;
+        if (!rp0 || !*rp0) rp0 = g_meshPaths[raceIndex];
+        if (rp0 && *rp0) {
+            ResolveRacePath(rsl0, rp0);
+            g_loadingContentId = ContentIdFromPath(rsl0);
+        } else g_loadingContentId = 0;
+    }
+
+    /* Step 1: base setup. NATIVE-SLOT FAST PATH (fix 2026-10-23, extended to
+     * 13/14/15 2026-10-24): when the loaded content has a verified native
+     * level ctor, call it instead of replicating. Hand-replication missed
+     * engine fields the custom scenes need (Toob died in Scene_Update
+     * frame 1; Glass render deref'd a NULL object+0x154).
+     * vtable slots [1,19,29,33] still redirect to our handlers, which
+     * delegate to native orig for these boards (UNI_NATIVE_CTOR), keeping
+     * only additive extras (update/render feature blocks). */
+    typedef void (__thiscall *NativeLevelCtor_t)(void *mem, int app);
+    NativeLevelCtor_t nativeCtor = NULL;
+    /* Content-driven (any slot): native-ctor fast path for custom-scene
+     * content 15 only (2026-11-20: Sky joins the universal path —
+     * UniversalSkyInit + S1 mirrors own it, like 10/11/12).
+     * Contents 10/11/12/13 build via the universal path
+     * (2026-11-20: no native builder — Universal*Init + S1 mirrors own
+     * them; Glass S1s force-delegated to orig until the render gap
+     * NULL+0x154 at 0x46F160 is bisected). Shared-scene
+     * contents (1-9, incl. Tower) keep the hand-replicated Universal*Init path. (Tower
+     * was trialed on the fast path 2026-10-24: native ctor + scene
+     * rebuild hangs/crashes on this rig in every config — needs
+     * dispatch-tail RE; vanilla loads it fine so this is mod-side,
+     * rig-visible.) */
+    /* Content 13 (Sky) deliberately NOT on the fast path (2026-11-20):
+     * Sky builds via the universal path (UniversalSkyInit + S1 mirrors)
+     * like 10/11/12, so no Sky-specific native board code runs.
+     * UNI_NATIVE_CTOR stays 0, so create/collide/racestate/render never
+     * delegate to native origs. */
+    /* Content 15 (Impossible) joins the universal path (2026-11-22):
+     * UniversalImpossibleInit + S1 mirrors own it, like Sky/10/11/12.
+     * Native fast path disabled (was 0x424C20). */
+    if (0) nativeCtor = (NativeLevelCtor_t)0x41F930;
+    /* Content 15 (Impossible) deliberately NOT on the fast path (2026-11-22). */
+    /* Content 14 (Master) deliberately NOT on the fast path (2026-11-18):
+     * Master builds via the universal path (g_BoardCtor + S1 mirrors) like
+     * the shared-scene races, so no Master-specific native board code runs
+     * (bridge pair, tipper pair, BreakBridge states). UNI_NATIVE_CTOR stays
+     * 0, so create/collide/racestate/render never delegate to native origs. */
+    else if (0 && g_loadingContentId == 15) nativeCtor = (NativeLevelCtor_t)0x424C20;
+    int useNativeCtor = (nativeCtor != NULL);
+    if (g_loadingContentId >= 10) {
+        char cd2[128]; wsprintfA(cd2, "CTORDECISION content=%d nativeCtor=0x%08X use=%d",
+            g_loadingContentId, (DWORD)nativeCtor, useNativeCtor); ToobDiag(cd2);
+    }
+    if (useNativeCtor) {
+        DebugLog("NativeCtor fast path: calling native level ctor...");
+        nativeCtor(mem, app);
+        DebugLog("NativeCtor fast path: native ctor done");
+    }
+    if (!useNativeCtor) {
+    if (g_loadingContentId == 5) {
+        DebugLog("Calling UniversalTowerInit...");
+        UniversalTowerInit(mem, app);
+    } else if (g_loadingContentId == 6) {
+        DebugLog("Calling UniversalUpInit...");
+        UniversalUpInit(mem, app);
+    } else if (g_loadingContentId == 4) {
+        DebugLog("Calling UniversalDizzyInit...");
+        UniversalDizzyInit(mem, app);
+    } else if (g_loadingContentId == 7) {
+        DebugLog("Calling UniversalNeonInit...");
+        UniversalNeonInit(mem, app);
+    } else if (g_loadingContentId == 8) {
+        DebugLog("Calling UniversalExpertInit...");
+        UniversalExpertInit(mem, app);
+    } else if (g_loadingContentId == 9) {
+        DebugLog("Calling UniversalOddInit...");
+        UniversalOddInit(mem, app);
+    } else if (g_loadingContentId == 10) {
+        DebugLog("Calling UniversalToobInit...");
+        UniversalToobInit(mem, app);
+        /* Universal scene: patch slot 18 (scene) IN PLACE on the shared
+         * Toob table. A private vtable copy breaks board identity
+         * (GetCurrentLevel matches vptr -> level 0 -> every S1 bails). */
+        if (!s_toobSceneVtblInit) {
+            DWORD prot = 0;
+            DWORD *tbl = (DWORD *)0x4D0E78;
+            if (VirtualProtect(tbl, 0x400, PAGE_READWRITE, &prot)) {
+                tbl[18] = (DWORD)UniversalToobScene;
+                VirtualProtect(tbl, 0x400, prot, &prot);
+            }
+            s_toobSceneVtblInit = 1;
+        }
+    } else if (g_loadingContentId == 11) {
+        DebugLog("Calling UniversalWobblyInit...");
+        UniversalWobblyInit(mem, app);
+    } else if (g_loadingContentId == 12) {
+        DebugLog("Calling UniversalGlassInit...");
+        UniversalGlassInit(mem, app);
+    } else if (g_loadingContentId == 13) {
+        DebugLog("Calling UniversalSkyInit...");
+        UniversalSkyInit(mem, app);
+    } else if (g_loadingContentId == 15) {
+        DebugLog("Calling UniversalImpossibleInit...");
+        UniversalImpossibleInit(mem, app);
+    } else {
+        DebugLog("Calling Board_ctor...");
+        g_BoardCtor(mem, app);
+        DebugLog("Board_ctor done");
+    }
+    } /* end if (!useNativeCtor) — native fast path skips replication */
+
+    /* Ext heap: fresh lifecycle per construction. Drop any stale entry for
+     * this address first (heap reuse after quit-to-menu/restart paths that
+     * bypass AdvanceRace). Otherwise a new board inherits dead mesh pointers
+     * and feat bits -> use-after-free on race open (fix 2026-09-18). */
+    FreeBoardExt(mem);
+    void *ext = EnsureBoardExt(mem);
+    if (!ext) {
+        DebugLog("UniversalBoardCtorLogic: EnsureBoardExt failed");
+        return;
+    }
+
+    /* Record this board's true alloc size for precise BoardHasOffset checks
+     * (VirtualQuery over-estimates game-heap regions). */
+    {
+        DWORD known = (g_sizePatchOk & (1u << (raceIndex - 1))) ? (DWORD)UNI_BOARD_SIZE : g_nativeBoardSize[raceIndex];
+        if (known) { int bi; for (bi = 0; bi < MAX_EXT_MAP; bi++) if (g_extMap[bi].board == mem) { g_extMap[bi].boardSize = known; break; } }
+    }
+
+    /* Step 0 (cont.): stamp per-board content id (ext exists from here). */
+    {
+        const char *rp = NULL;
+        char rsl[MAX_PATH]; rsl[0] = '\0';
+        LoadRaceFiles();
+        if (raceIndex>=1 && raceIndex<=15 && g_raceFiles[raceIndex][0]) rp = g_raceFiles[raceIndex];
+        if (!rp || !*rp) rp = g_levelData[raceIndex].meshPath;
+        if (!rp || !*rp) rp = g_meshPaths[raceIndex];
+        if (rp && *rp) {
+            ResolveRacePath(rsl, rp);
+            g_loadingContentId = ContentIdFromPath(rsl);
+        } else g_loadingContentId = 0;
+        *(int *)((char *)ext + UNI_CONTENT_FILE) = g_loadingContentId;
+        { char cd[160]; wsprintfA(cd, "ContentId=%d path='%s' mem=0x%08X slot=%d", g_loadingContentId, rsl, (DWORD)mem, raceIndex); DebugLog(cd); }
+        /* Native-ctor fast path flag: native-built boards exist (objects/slots).
+         * Handler delegation is separate: content-10 runs UNIVERSAL handlers
+         * on its native build (universal Toob) — bumper objects come from the
+         * native ctor, glow/decay/render from the universal blocks. */
+        *(int *)((char *)ext + UNI_NATIVE_CTOR) = useNativeCtor ? 1 : 0;
+        *(int *)((char *)ext + UNI_NATIVE_HANDLERS) = useNativeCtor ? 1 : 0;
+        if (useNativeCtor) DebugLog("UNI_NATIVE_CTOR=1 (native-built board)");
+        /* Sky universal (2026-11-21): the hybrid (native handlers) is retired.
+         * The Draw crash was a __thiscall-vs-__stdcall mismatch on the
+         * gfx+0x154 sub-object vtable[0x32] SetRenderState call (native
+         * pushes this on the stack, callee cleans 12). Fixed to stdcall;
+         * render verified clean (6,600+ frames on Wine). Content-13 runs
+         * full universal like every other race. The sky_uni_*.txt flags
+         * below are inert now (kept for future bisects). */
+        if (g_loadingContentId == 13) {
+            SkyDiag("SKY-UNIVERSAL: full universal handlers");
+            {
+                DWORD fa;
+                fa = GetFileAttributesA("sky_uni_create.txt");
+                if (fa != 0xFFFFFFFFu && !(fa & 0x10))
+                    *(int *)((char *)ext + UNI_FORCE_UNI_CREATE) = 1;
+                fa = GetFileAttributesA("sky_uni_race.txt");
+                if (fa != 0xFFFFFFFFu && !(fa & 0x10))
+                    *(int *)((char *)ext + UNI_FORCE_UNI_RACE) = 1;
+                fa = GetFileAttributesA("sky_uni_render.txt");
+                if (fa != 0xFFFFFFFFu && !(fa & 0x10))
+                    *(int *)((char *)ext + UNI_FORCE_UNI_RENDER) = 1;
+                fa = GetFileAttributesA("sky_uni_coll.txt");
+                if (fa != 0xFFFFFFFFu && !(fa & 0x10))
+                    *(int *)((char *)ext + UNI_FORCE_UNI_COLL) = 1;
+                {
+                    char fbf[128];
+                    wsprintfA(fbf, "SKY-FORCE create=%d race=%d render=%d coll=%d",
+                        *(int *)((char *)ext + UNI_FORCE_UNI_CREATE),
+                        *(int *)((char *)ext + UNI_FORCE_UNI_RACE),
+                        *(int *)((char *)ext + UNI_FORCE_UNI_RENDER),
+                        *(int *)((char *)ext + UNI_FORCE_UNI_COLL));
+                    SkyDiag(fbf);
+                }
+            }
+        }
+    }
+
+    /* Step 1b: Zero-fill old per-level data offsets (0x436C-0x6500).
+     * The mod moved ehVector, bumper lit, and render data to the unified
+     * zone (0x6500+). But per-level RENDER functions (vtable slot 24)
+     * still read from the OLD per-level offsets (e.g. Beginner reads
+     * board+0x436C for ehVector, board+0x642C for bumper lit).
+     * operator_new uses malloc (no zeroing), so these offsets contain
+     * garbage. Zeroing them ensures:
+     *   - Bumper lit floats = 0.0 → render function skips (no reflective material)
+     *   - Mesh slot pointers = NULL → render function does nothing
+     * This prevents crashes from garbage pointers being dereferenced.
+     *
+     * IMPORTANT: Start at 0x436C, NOT 0x4300. Board_ctor writes critical
+     * data in 0x4300-0x436B that must be preserved:
+     *   0x4340 = 1.0f (scale factor)
+     *   0x434C = NULL pointer check
+     *   0x4350 = -150.0f (camera offset)
+     *   0x4358 = demo timer flag
+     *   0x435C = demo timer count (0x9c4 = 2500)
+     *   0x4368 = 0 (byte flag)
+     * Zeroing these causes crashes in Scene_Update's vtable sub-functions. */
+    // Vanilla board stays small; unified data now lives in ext (HEAP_ZERO_MEMORY).
+    // Previous memset to 0x6000 overflowed WarmUp (~0x4400) -> heap corruption -> 0x452783 crash.
+    // Safe fix: do NOT memset board+0x436C at all. Ext is already zeroed. If a level needs
+    // legacy zero at 0x436C (Up lifter list), that is handled in step 9a-extra instead.
+    // (Kept as no-op to avoid OOB on small boards.)
+    {
+        char dbg2[128];
+        wsprintfA(dbg2, "memset skipped (OOB fix, board=0x%08X)", (DWORD)mem);
+        DebugLog(dbg2);
+    }
+
+    /* Step 2: Set vtable. Tower/Up/Dizzy/Neon/Expert/Odd/Toob/Wobbly/Glass/Sky
+     * content keeps the
+     * vtable its Universal*Init set (native class for content); other
+     * content gets its slot vtable. Native-ctor boards keep the vtable the
+     * native ctor set (skip unconditionally — incl. cross-slot). */
+    if (!useNativeCtor &&
+        g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4 &&
+        g_loadingContentId != 7 && g_loadingContentId != 8 && g_loadingContentId != 9 &&
+        g_loadingContentId != 10 && g_loadingContentId != 11 && g_loadingContentId != 12 &&
+        g_loadingContentId != 13 && g_loadingContentId != 15)
+        *(DWORD *)mem = g_levelVtables[raceIndex];
+    DebugLog("Vtable set");
+
+    /* Step 3: Set board name and race title (slot table — skipped for Tower,
+     * Up, Dizzy, Neon, Expert, Odd, Toob, Wobbly, Glass and Sky content, whose
+     * content names the Universal*Init set; native-ctor boards keep native
+     * content names). */
+    if (!useNativeCtor &&
+        g_loadingContentId != 5 && g_loadingContentId != 6 && g_loadingContentId != 4 &&
+        g_loadingContentId != 7 && g_loadingContentId != 8 && g_loadingContentId != 9 &&
+        g_loadingContentId != 10 && g_loadingContentId != 11 && g_loadingContentId != 12 &&
+        g_loadingContentId != 13 && g_loadingContentId != 15) {
+        *(char **)((char *)mem + UNI_BOARD_NAME) = ld->boardName;
+        *(char **)((char *)mem + UNI_RACE_TITLE) = ld->raceTitle;
+    }
+    DebugLog("Names set");
+
+    /* Step 4: Set +0x870 from app+0x1DC (proven source; all working runs). */
+    *(DWORD *)((char *)mem + UNI_BOARD_APPVAL) = *(DWORD *)(app + 0x1DC);
+    DebugLog("+0x870 set");
+
+    /* Step 5: Write per-level color directly to board+0x1508 */
+    /* Original game uses Vec3_Init+Matrix_Identity, but we write directly
+       to avoid calling convention issues. Board+0x1508 is a 4-float RGBA. */
+    *(float *)((char *)mem + UNI_COLOR_R) = ld->color[0];
+    *(float *)((char *)mem + UNI_COLOR_G) = ld->color[1];
+    *(float *)((char *)mem + UNI_COLOR_B) = ld->color[2];
+    *(float *)((char *)mem + UNI_COLOR_A) = 1.0f;  /* alpha */
+    DebugLog("Color set");
+
+    /* Step 6: LoadRaceData(mem, raceName) */
+    DebugLog("Calling LoadRaceData...");
+    g_LoadRaceData(mem, ld->raceData);
+    DebugLog("LoadRaceData done");
+
+    /* Step 7: Set music name */
+    *(char **)((char *)mem + UNI_MUSIC_NAME) = ld->musicName;
+    DebugLog("Music set");
+
+    /* Step 8: Load extra meshes — DEPRECATED Phase1 S1-driven.
+     * Static g_levelData[].meshes preload removed. All meshes now lazy-loaded
+     * via S1Ensure* inside UniversalCreateDynamicObjects on demand. */
+    DebugLog("Step 8: S1-driven meshes (no static preload)");
+
+    /* Step 8b: For Dizzy, also write mesh pointers to ORIGINAL offsets.
+     * Unified storage is now in ext; copy to vanilla offsets for native code.
+     * Guard: vanilla Dizzy board is ~0x6000, but file-swapped Dizzy-in-WarmUp
+     * board is ~0x4400 → 0x4BA8 is OOB. Use BoardHasOffset (VirtualQuery+HeapSize),
+     * NOT IsBadWritePtr (which only checks page writability). */
+    if (g_loadingContentId == 4) {
+        if (BoardHasOffset(mem, 0x4BC8, 4) && BoardHasOffset(mem, 0x4BD8, 4) && ExtHasOffset(ext, UNI_TIPPER_MESH, 4)) {
+            /* Tipper mesh+render — load from ext dedicated slots */
+            *(DWORD *)((char *)mem + 0x436C) = *(DWORD *)((char *)ext + UNI_TIPPER_MESH);
+            *(DWORD *)((char *)mem + 0x4370) = *(DWORD *)((char *)ext + UNI_TIPPER_RENDER);
+            /* WaterWheel mesh+render */
+            *(DWORD *)((char *)mem + 0x4BA8) = *(DWORD *)((char *)ext + UNI_MESH_0);
+            *(DWORD *)((char *)mem + 0x4BAC) = *(DWORD *)((char *)ext + UNI_MESH_1);
+            /* Swirl mesh+render (slots match S1-driven create: MESH_6/MESH_7) */
+            *(DWORD *)((char *)mem + 0x4BC4) = *(DWORD *)((char *)ext + UNI_MESH_6);
+            *(DWORD *)((char *)mem + 0x4BC8) = *(DWORD *)((char *)ext + UNI_MESH_7);
+            /* Gluebie mesh */
+            *(DWORD *)((char *)mem + 0x4374) = *(DWORD *)((char *)ext + UNI_GLUEBIE_MESH);
+            /* Init angle/scale fields (original offsets) */
+            *(DWORD *)((char *)mem + 0x4BC0) = 0;  /* WaterWheel scale */
+            *(DWORD *)((char *)mem + 0x4BD8) = 0;  /* Swirl angle */
+            DebugLog("Step 8b: Dizzy mesh pointers dual-written to original offsets");
+        } else {
+            DebugLog("Step 8b: Dizzy dual-write skipped (vanilla board too small for 0x4BA8)");
+        }
+    }
+
+    /* Step 9: Set unlock flags */
+    if (ld->unlockFlagOffset) {
+        DWORD appVal = *(DWORD *)((char *)mem + BOARD_APP_PTR);
+        if (appVal && !IsBadReadPtr((void *)appVal, 0x860)) {
+            DWORD diff = *(DWORD *)(appVal + 0x23C);
+            if (diff != 0) {
+                DWORD gameMode = *(DWORD *)(appVal + 0x220);
+                if (gameMode && !IsBadReadPtr((void *)gameMode, 0x20)) {
+                    if (*(char *)(gameMode + 0x10) == 0) {
+                        *(char *)(appVal + ld->unlockFlagOffset) = 1;
+                    }
+                }
+            }
+        }
+    }
+    DebugLog("Step 9 (unlock flags) done");
+
+    /* Step 9: Per-level structural init (AthenaLists, eh_vector arrays, zero-fills) */
+
+    /* 9a: AthenaList_Init — unified offsets >=0x6500 live in ext */
+    if (g_AthenaListInit) {
+        int ai;
+        for (ai = 0; ai < 8 && ld->athenaListOffsets[ai]; ai++) {
+            DWORD off = ld->athenaListOffsets[ai];
+            void *dst = (off >= 0x6500) ? (void *)((char *)ext + off) : (void *)((char *)mem + off);
+            g_AthenaListInit(dst, 0);
+        }
+    }
+    DebugLog("Step 9a (AthenaList_Init) done");
+
+    /* v13.27: init board+0x2578 (object list) unconditionally. Base
+     * Board_ctor does this natively, but universal boards skip it — live
+     * reads show 0x4D875C garbage there, so every mirror append to 0x2578
+     * went into the void and every 0x2578 scan (tippers, native pump) found
+     * nothing. Same class as the 0x5C64/0x436C/0x4378 missing inits. */
+    if (g_AthenaListInit) g_AthenaListInit((void *)((char *)mem + 0x2578), 0);
+
+    /* 9a-extra: Up race (level 6) needs a legacy AthenaList at board+0x436C.
+     * The original Up RaceState (0x00420660) iterates this list and calls
+     * each Lifter's Update() every frame.  Without it, vacuum tubes never
+     * animate and E:HELPINERTIA/E:VACPOPOUT events never fire. */
+    if (g_loadingContentId == 6 && g_AthenaListInit) {
+        g_AthenaListInit((void *)((char *)mem + 0x436C), 0);
+        DebugLog("Step 9a-extra: legacy AthenaList at board+0x436C for Up");
+    }
+
+    /* 9a-extra2: Dizzy race (level 4) needs a gluebie object list at
+     * board+0x4378. Native Dizzy ctor inits it (base Board_ctor does NOT —
+     * verified by disasm: it inits 0x8B8/0xCD4/0x10EC/0x2578/... but never
+     * 0x436C/0x4378). Without this, GLUEBIE appends to garbage → heap
+     * corruption on every Dizzy race open (fix 2026-09-18). */
+    if (g_loadingContentId == 4 && g_AthenaListInit) {
+        g_AthenaListInit((void *)((char *)mem + 0x4378), 0);
+        DebugLog("Step 9a-extra2: gluebie list at board+0x4378 for Dizzy");
+    }
+
+    /* 9a-extra2b: Dizzy race also needs the tarbubble/vector list at
+     * board+0x4790. Native Dizzy ctor inits it; base Board_ctor does not.
+     * Native update appends ambient tarbubbles and splash particles here —
+     * without init those appends corrupt the heap (same class as 9a-extra2). */
+    if (g_loadingContentId == 4 && g_AthenaListInit) {
+        g_AthenaListInit((void *)((char *)mem + 0x4790), 0);
+        DebugLog("Step 9a-extra2b: tarbubble list at board+0x4790 for Dizzy");
+    }
+
+    /* 9a-extra3: Tower race (level 5) needs native object lists at
+     * board+0x43B8 (catapult), 0x47D0 (trapdoor), 0x4BE8 (drawbridge),
+     * 0x5000 (mace). Base Board_ctor never inits them (verified live:
+     * they hold small-int garbage, not list heads); appends corrupted the
+     * heap on every Tower open (fix 2026-10-21). */
+    if (g_loadingContentId == 5 && g_AthenaListInit) {
+        g_AthenaListInit((void *)((char *)mem + 0x43B8), 0);
+        g_AthenaListInit((void *)((char *)mem + 0x47D0), 0);
+        g_AthenaListInit((void *)((char *)mem + 0x4BE8), 0);
+        g_AthenaListInit((void *)((char *)mem + 0x5000), 0);
+        DebugLog("Step 9a-extra3: Tower native lists 43B8/47D0/4BE8/5000");
+    }
+    /* Expert (level 8) spinner lists: board+0x4380 ("1") / +0x4798 ("2").
+     * Base Board_ctor never inits them; native slot33 appended directly.
+     * Init here or the spinner append corrupts the heap at load. */
+    if (g_loadingContentId == 8 && g_AthenaListInit) {
+        g_AthenaListInit((void *)((char *)mem + 0x4380), 0);
+        g_AthenaListInit((void *)((char *)mem + 0x4798), 0);
+        DebugLog("Step 9a-extra4: Expert native lists 4380/4798");
+    }
+
+    /* 9b: eh_vector — lives in ext if offset >=0x6500 */
+    if (g_ehVectorCtor && g_ehVectorCtorFn && g_Vec3ListFree &&
+        ld->ehVectorOffset && ld->ehVectorCount > 0) {
+        void *dst = (ld->ehVectorOffset >= 0x6500) ? (void *)((char *)ext + ld->ehVectorOffset) : (void *)((char *)mem + ld->ehVectorOffset);
+        g_ehVectorCtor(dst,
+                       ld->ehVectorStride, ld->ehVectorCount,
+                       g_ehVectorCtorFn, g_Vec3ListFree);
+    }
+    DebugLog("Step 9b (ehVector) done");
+
+    /* 9c: Zero-fill — unified offsets go to ext */
+    {
+        int zi;
+        for (zi = 0; zi < 8 && ld->zeroFillOffsets[zi]; zi++) {
+            DWORD off = ld->zeroFillOffsets[zi];
+            if (off >= 0x6500) *(DWORD *)((char *)ext + off) = 0;
+            else *(DWORD *)((char *)mem + off) = 0;
+        }
+    }
+    DebugLog("Step 9c (zero-fills) done");
+
+    /* 9d: Level_AssignTexturesAndScales — mesh ptr may be in ext */
+    if (g_LevelAssignTexScales) {
+        int ti;
+        for (ti = 0; ti < 8 && ld->assignTexOffsets[ti]; ti++) {
+            DWORD off = ld->assignTexOffsets[ti];
+            DWORD meshPtr = (off >= 0x6500) ? *(DWORD *)((char *)ext + off) : *(DWORD *)((char *)mem + off);
+            if (meshPtr && !IsBadReadPtr((void *)meshPtr, 4)) {
+                g_LevelAssignTexScales(mem, (void *)meshPtr);
+            }
+        }
+    }
+    DebugLog("Step 9d (textures) done");
+
+    /* 9e: Sound channel — unified offset goes to ext.
+     * Skipped for Dizzy content: UniversalDizzyInit already grabbed the
+     * channel into board+0x4BDC (exact-once; a second grab would leak). */
+    if (ld->soundChannelOffset && g_SoundGetNextChannel && g_loadingContentId != 4) {
+        DWORD appVal = *(DWORD *)((char *)mem + BOARD_APP_PTR);
+        if (appVal && !IsBadReadPtr((void *)appVal, 0x500)) {
+            DWORD soundDevice = *(DWORD *)(appVal + 0x490);
+            if (soundDevice) {
+                int channel = g_SoundGetNextChannel((void *)soundDevice);
+                if (ld->soundChannelOffset >= 0x6500) *(int *)((char *)ext + ld->soundChannelOffset) = channel;
+                else *(int *)((char *)mem + ld->soundChannelOffset) = channel;
+                if (channel && g_SceneRenderIfVisible)
+                    g_SceneRenderIfVisible(channel, 0.0f);
+            }
+        }
+    }
+    DebugLog("Step 9e (sound) done");
+
+    /* 9f: Bridge params — unified goes to ext */
+    if (ld->bridgeParamOffset) {
+        void *base = (ld->bridgeParamOffset >= 0x6500) ? ext : mem;
+        DWORD off = ld->bridgeParamOffset;
+        *(DWORD *)((char *)base + off)     = 0x42340000;  /* 45.0f */
+        *(DWORD *)((char *)base + off + 4) = 0;
+        *(DWORD *)((char *)base + off + 8) = 0x32;
+    }
+    DebugLog("Step 9f (bridge params) done");
+
+    /* 9g: Special init — unified goes to ext */
+    if (ld->specialByteOffset) {
+        if (ld->specialByteOffset >= 0x6500) *(BYTE *)((char *)ext + ld->specialByteOffset) = ld->specialByteValue;
+        else *(BYTE *)((char *)mem + ld->specialByteOffset) = ld->specialByteValue;
+    }
+    if (ld->specialDwordOffset) {
+        if (ld->specialDwordOffset >= 0x6500) *(DWORD *)((char *)ext + ld->specialDwordOffset) = ld->specialDwordValue;
+        else *(DWORD *)((char *)mem + ld->specialDwordOffset) = ld->specialDwordValue;
+    }
+    DebugLog("Step 9g (special init) done — UniversalBoardCtorLogic complete");
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Universal Board Constructor Entry — naked, handles __thiscall convention
+ * ECX=mem, [ESP+4]=app, returns board ptr in EAX
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+__attribute__((naked)) void UniversalBoardCtorEntry(void) {
+    __asm__ __volatile__(
+        "pushl %%ebp\n\t"
+        "movl  %%esp, %%ebp\n\t"
+        "pushl %%ecx\n\t"          /* save mem */
+        "pushl 8(%%ebp)\n\t"       /* app */
+        "pushl %%ecx\n\t"          /* mem (from saved) */
+        "call  _UniversalBoardCtorLogic\n\t"
+        "addl  $8, %%esp\n\t"
+        "popl  %%ecx\n\t"          /* restore mem to ECX */
+        "movl  %%ecx, %%eax\n\t"   /* return mem in EAX */
+        "popl  %%ebp\n\t"
+        "ret   $4\n\t"             /* __thiscall: callee cleans 4 bytes */
+        :: : "eax", "ecx", "edx", "memory"
+    );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 15 naked thunks — each sets race index then JMPs to UniversalBoardCtorEntry
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+#define DEFINE_LEVEL_THUNK(NUM) \
+__attribute__((naked)) static void Thunk_Level##NUM(void) { \
+    __asm__ __volatile__( \
+        "movl $" #NUM ", _g_pendingRaceIndex\n\t" \
+        "jmp _UniversalBoardCtorEntry\n\t" \
+    ); \
+}
+
+DEFINE_LEVEL_THUNK(1)
+DEFINE_LEVEL_THUNK(2)
+DEFINE_LEVEL_THUNK(3)
+DEFINE_LEVEL_THUNK(4)
+DEFINE_LEVEL_THUNK(5)
+DEFINE_LEVEL_THUNK(6)
+DEFINE_LEVEL_THUNK(7)
+DEFINE_LEVEL_THUNK(8)
+DEFINE_LEVEL_THUNK(9)
+DEFINE_LEVEL_THUNK(10)
+DEFINE_LEVEL_THUNK(11)
+DEFINE_LEVEL_THUNK(12)
+DEFINE_LEVEL_THUNK(13)
+DEFINE_LEVEL_THUNK(14)
+DEFINE_LEVEL_THUNK(15)
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Patch all 15 CALL LevelBoard_*_ctor instructions
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static const DWORD g_ctorCallRVAs[15] = {
+    0x0002712C,  /* 1=WarmUp */
+    0x0002715D,  /* 2=Beginner */
+    0x0002718E,  /* 3=Intermediate */
+    0x000271BF,  /* 4=Dizzy */
+    0x000271F0,  /* 5=Tower */
+    0x00027221,  /* 6=Up */
+    0x00027252,  /* 7=Neon */
+    0x00027283,  /* 8=Expert */
+    0x000272B4,  /* 9=Odd */
+    0x000272E5,  /* 10=Toob */
+    0x00027316,  /* 11=Wobbly */
+    0x00027347,  /* 12=Glass */
+    0x00027374,  /* 13=Sky */
+    0x0002739E,  /* 14=Master */
+    0x000273C8,  /* 15=Impossible */
+};
+
+static void *g_thunkPtrs[16] = {
+    NULL,
+    Thunk_Level1, Thunk_Level2, Thunk_Level3, Thunk_Level4,
+    Thunk_Level5, Thunk_Level6, Thunk_Level7, Thunk_Level8,
+    Thunk_Level9, Thunk_Level10, Thunk_Level11, Thunk_Level12,
+    Thunk_Level13, Thunk_Level14, Thunk_Level15,
+};
+
+/* Size-patch install per ctor CALL site below (tracking tables live above,
+ * before UniversalBoardCtorLogic). */
+
+static void InstallUniversalBoardSize(void) {
+    DWORD newAddr = g_moduleBase + RVA_operator_new;
+    int i;
+    for (i = 0; i < 15; i++) {
+        unsigned char *call = (unsigned char *)(g_moduleBase + g_ctorCallRVAs[i]);
+        int back;
+        if (IsBadReadPtr(call, 5)) continue;
+        if (call[0] != 0xE8) continue;
+        for (back = 6; back <= 48; back++) {
+            unsigned char *c = call - back;
+            if (IsBadReadPtr(c, 5)) break;
+            if (c[0] != 0xE8) continue;
+            if ((DWORD)(c + 5 + *(int *)(c + 1)) != newAddr) continue;
+            /* c = CALL operator_new; preceding 5 bytes must be push imm32 */
+            if (c[-5] != 0x68) continue;
+            g_nativeBoardSize[i + 1] = *(DWORD *)(c - 4);   /* stock size */
+            g_sizePushAddr[i + 1] = (DWORD)(c - 4);
+            { DWORD oldProtect;
+              VirtualProtect(c - 5, 5, PAGE_EXECUTE_READWRITE, &oldProtect);
+              *(DWORD *)(c - 4) = UNI_BOARD_SIZE;
+              VirtualProtect(c - 5, 5, oldProtect, &oldProtect);
+              FlushInstructionCache(GetCurrentProcess(), c - 5, 5); }
+            g_sizePatchOk |= (1u << i);
+            break;
+        }
+    }
+    DebugLog("Universal board size installed (0x7000 x15)");
+}
+
+static void InstallBoardCtorHooks(void) {
+    int i;
+    InstallUniversalBoardSize();
+    for (i = 0; i < 15; i++) {
+        unsigned char *site = (unsigned char *)(g_moduleBase + g_ctorCallRVAs[i]);
+        if (IsBadReadPtr(site, 5)) continue;
+        if (site[0] != 0xE8) continue;  /* verify CALL opcode */
+
+        DWORD target = (DWORD)g_thunkPtrs[i + 1];
+        DWORD rel32 = target - ((DWORD)site + 5);
+
+        DWORD oldProtect;
+        VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &oldProtect);
+        *(DWORD *)(site + 1) = rel32;
+        VirtualProtect(site, 5, oldProtect, &oldProtect);
+        FlushInstructionCache(GetCurrentProcess(), site, 5);
+    }
+}
+
+/* DETACH restores (verify-before-write: only touch sites we own). */
+void RestoreBoardCtorHooks(void) {
+    int i;
+    if (!g_moduleBase) return;
+    for (i = 0; i < 15; i++) {
+        unsigned char *site = (unsigned char *)(g_moduleBase + g_ctorCallRVAs[i]);
+        if (IsBadReadPtr(site, 5)) continue;
+        if (site[0] != 0xE8) continue;
+        /* Only restore sites pointing at our thunks. */
+        {
+            DWORD cur = (DWORD)site + 5 + *(DWORD *)(site + 1);
+            if (cur != (DWORD)g_thunkPtrs[i + 1]) continue;
+        }
+        {
+            DWORD native = g_moduleBase + g_nativeLevelCtors[i + 1];
+            DWORD rel32 = native - ((DWORD)site + 5);
+            DWORD oldProtect;
+            VirtualProtect(site, 5, PAGE_EXECUTE_READWRITE, &oldProtect);
+            *(DWORD *)(site + 1) = rel32;
+            VirtualProtect(site, 5, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), site, 5);
+        }
+    }
+}
+
+void RestoreAllocSizes(void) {
+    int i;
+    for (i = 1; i <= 15; i++) {
+        if (!(g_sizePatchOk & (1u << (i - 1)))) continue;
+        unsigned char *p = (unsigned char *)g_sizePushAddr[i];
+        if (!p || IsBadReadPtr(p, 4)) continue;
+        if (*(DWORD *)p != (DWORD)UNI_BOARD_SIZE) continue; /* not ours */
+        {
+            DWORD oldProtect;
+            VirtualProtect(p, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+            *(DWORD *)p = g_nativeBoardSize[i];
+            VirtualProtect(p, 4, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), p, 4);
+        }
+        g_sizePatchOk &= ~(1u << (i - 1));
+    }
+}

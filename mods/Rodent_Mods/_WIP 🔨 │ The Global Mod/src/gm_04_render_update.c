@@ -321,33 +321,8 @@ void UniversalRenderImpl(void *board, int unk) {
             float liftY = *(float *)((char *)board + 0x43B0);
             DWORD chomperObj = *(DWORD *)((char *)board + 0x4390);
 
-            /* Throttled render-draw log (proves the draws fire + with what).
-             * One line per ~600 frames to chomper_diag.txt: REND prefix. */
-            {
-                static int rn = 0;
-                if (++rn >= 600 && chomperObj) {
-                    rn = 0;
-                    HANDLE rhf = CreateFileA("chomper_diag.txt", GENERIC_WRITE,
-                        FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS,
-                        FILE_ATTRIBUTE_NORMAL, NULL);
-                    if (rhf != INVALID_HANDLE_VALUE) {
-                        char rl[256]; DWORD rbw = 0;
-                        DWORD vt0 = IsBadReadPtr((void *)chomperObj, 4) ? 0 : *(DWORD *)chomperObj;
-                        DWORD v7 = 0;
-                        if (vt0 && !IsBadReadPtr((void *)vt0, 32)) v7 = ((DWORD *)vt0)[7];
-                        float *m4 = (float *)rotM;
-                        wsprintfA(rl, "REND obj=%d v7=0x%X jaw=%d px=%d py=%d pz=%d m0=%d m1=%d m2=%d m3=%d\r\n",
-                            (int)chomperObj, (unsigned)v7,
-                            (int)(chompState * 100.0f), (int)(px * 100.0f),
-                            (int)(py * 100.0f), (int)(pz * 100.0f),
-                            (int)(m4[0] * 1000.0f), (int)(m4[1] * 1000.0f),
-                            (int)(m4[2] * 1000.0f), (int)(m4[3] * 1000.0f));
-                        SetFilePointer(rhf, 0, NULL, FILE_END);
-                        WriteFile(rhf, rl, strlen(rl), &rbw, NULL);
-                        CloseHandle(rhf);
-                    }
-                }
-            }
+            /* (REND chomper_diag.txt writer retired 2026-11-25 — logs dropped
+             * per user request. Draws proven live on their box.) */
 
             /* Pass 1 */
             if (scaleFn) scaleFn(timerBuf, 1.15f, 1.15f, 1.15f);

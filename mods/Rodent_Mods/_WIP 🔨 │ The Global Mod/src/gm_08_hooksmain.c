@@ -1,0 +1,1352 @@
+/* Chapter 8 - UniversalConstructor + hooks + DebugLog + vtable patches + PatchThread + DllMain (LevelFeatures.c lines 6105-6930) */
+/* Chapter-9 pennants (lf_09_pennants.c, included after this file). */
+void Pennant_PostSetup(void *board, void *ext, int raceIndex);
+static void InstallFlagRenderHook(void);
+static void S1Inventory(void *board, void *ext);
+/* Cross-chapter DETACH restores (defined in their own chapters). */
+void RestoreBoardCtorHooks(void);
+void RestoreAllocSizes(void);
+void RestoreFlagRenderHook(void);
+static void *Gm_EnsureDynamic(void *board, void *ext, void *meshWorld);
+static void Gm_WriteSummary(void *board, void *ext);
+static void UniversalConstructor(void *board, int raceIndex) {
+    void* ext = EnsureBoardExt(board);
+    char buf[256];
+    wsprintfA(buf, "UniversalConstructor called: board=%p raceIndex=%d", board, raceIndex);
+    DebugLog(buf);
+    if (!board || raceIndex < 1 || raceIndex > 15) {
+        DebugLog("UniversalConstructor: invalid params");
+        return;
+    }
+    if (!g_operatorNew || !g_LevelMeshWorldCtor || !g_LevelRenderCtor ||
+        !g_LevelInitScene) {
+        DebugLog("UniversalConstructor: function pointers not resolved");
+        return;
+    }
+
+    /* RaceFiles.txt overrides everything: Race 1..15 -> file. Then LevelData, then g_meshPaths.
+     * Bare names like "LoopyRace" resolve to "levels\\LoopyRace\\LoopyRace" if that
+     * subfolder file exists, otherwise fallback to "levels\\LoopyRace". */
+    LoadRaceFiles();
+    const char *rawPath = NULL;
+    if (raceIndex>=1 && raceIndex<=15 && g_raceFiles[raceIndex][0]) rawPath = g_raceFiles[raceIndex];
+    if (!rawPath || !*rawPath) rawPath = g_levelData[raceIndex].meshPath;
+    if (!rawPath || !*rawPath) rawPath = g_meshPaths[raceIndex];
+    if (!rawPath) return;
+    char resolved[MAX_PATH]; ResolveRacePath(resolved, rawPath);
+    const char *meshPath = resolved;
+    {
+        char dbg2[600]; wsprintfA(dbg2, "UniversalConstructor meshPath race=%d raw='%s' resolved='%s'", raceIndex, rawPath, meshPath);
+        DebugLog(dbg2);
+    }
+    /* Content identity (file, never slot): powers all per-file decisions. */
+    g_loadingContentId = ContentIdFromPath(resolved);
+    if (ext) *(int *)((char *)ext + UNI_CONTENT_FILE) = g_loadingContentId;
+
+    /* Extract level dir for texture/sound/sub-mesh fallback.
+     * e.g. "levels\\MyLevel\\MyLevel" -> "levels\\MyLevel\\"
+     *      "levels\\level1" -> "levels\\" (no extra dir, fallback is just levels\\) */
+    {
+        const char *lastSlash = strrchr(resolved, '\\');
+        const char *lastSlash2 = strrchr(resolved, '/');
+        if (lastSlash2 && (!lastSlash || lastSlash2 > lastSlash)) lastSlash = lastSlash2;
+        if (lastSlash) {
+            int dirLen = (int)(lastSlash - resolved) + 1; // include slash
+            if (dirLen >= MAX_PATH) dirLen = MAX_PATH - 1;
+            strncpy(g_levelDir, resolved, dirLen);
+            g_levelDir[dirLen] = '\0';
+        } else {
+            g_levelDir[0] = '\0';
+        }
+        char dbg3[320]; wsprintfA(dbg3, "g_levelDir set to '%s'", g_levelDir);
+        DebugLog(dbg3);
+    }
+
+    /* Tower mesh-reuse note (audit 2026-10-24): INERT right now — Tower
+     * is back on replication (no NATIVE_CTOR flag), so this never fires.
+     * Kept + stepmarks kept: if Tower ever returns to the fast path,
+     * calling MeshWorldCtor on an already-parsed level4 spins re-reading
+     * the file (game parser not re-entrant for level4) — reuse instead. */
+
+    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
+    if (!app || IsBadReadPtr((void *)app, 0x200)) return;
+    void *gfx = *(void **)((char *)app + 0x174);
+    if (!gfx) return;
+
+    /* Step 1: MeshWorld. Native-ctor fast-path boards (custom scenes) may
+     * already carry a native-built meshWorld — REUSE it (calling the ctor
+     * twice hangs on Tower's level4 and double-frees elsewhere). */
+    void *meshMem = NULL;
+    void *meshWorld = NULL;
+    {
+        void *preExt = GetBoardExt(board);
+        if (preExt && *(int *)((char *)preExt + UNI_NATIVE_CTOR)) {
+            void *nativeMW = *(void **)((char *)board + BOARD_MESHWORLD);
+            MEMORY_BASIC_INFORMATION mwbi;
+            if (nativeMW && VirtualQuery(nativeMW, &mwbi, sizeof(mwbi)) &&
+                mwbi.State == MEM_COMMIT)
+                meshWorld = nativeMW;
+        }
+    }
+    DebugLog("STEPMARK MeshWorld calling");
+    /* Tower-only bypass (audit 2026-10-24): the native Tower ctor already
+     * built this board's scene; rebuilding the meshWorld here hangs inside
+     * MeshWorldCtor (FD spins re-reading level4). Reuse the native mesh if
+     * valid, else proceed with NULL (scans are NULL-guarded; Board_Setup
+     * below still creates objects via the saved native orig create). */
+    int skipSceneBuild = 0;
+    {
+        void *preExt2 = GetBoardExt(board);
+        if (preExt2 && *(int *)((char *)preExt2 + UNI_NATIVE_CTOR) &&
+            ContentFileId(preExt2) == 5)
+            skipSceneBuild = 1;
+    }
+    if (!meshWorld && !skipSceneBuild) {
+        meshMem = g_operatorNew(0x10D0);
+        if (!meshMem) return;
+        meshWorld = g_LevelMeshWorldCtor(meshMem, gfx, meshPath);
+        *(DWORD *)((char *)board + BOARD_MESHWORLD) = (DWORD)meshWorld;
+    }
+    { char mwdbg[128]; wsprintfA(mwdbg, "STEPMARK MeshWorld done: meshWorld=0x%08X", (DWORD)meshWorld); DebugLog(mwdbg); }
+
+    /* Step 1b: Extension heap allocation (Option B) — S1-driven. */
+    {
+        void* ext2 = EnsureBoardExt(board);
+        (void)ext2;
+        // S1 scan now that meshWorld exists — auto-enables feats for file-swapped levels
+        if (ext && meshWorld) ScanS1AndAutoEnable(board, ext, meshWorld);
+        // Targeted scan: only S1-referenced sub-meshes + main file (not wildcard whole folder)
+        if (ext) ScanS1ReferencedMeshesForCollisions(board, ext, meshWorld, meshPath);
+        // Build per-board cached collision flags (once, not per-collision)
+        if (ext) BuildCollisionFlags(board, ext);
+        /* E:BRANCH(B) trigger quad for the proximity driver (needs flags) */
+        if (ext) ParseBranchQuad(board, ext, meshWorld, meshPath);
+        /* E:ALERTSAW3 presence (S6-driven pipe-saw flag, no S1 needed) */
+        if (ext) ParseAlertSaw3Presence(board, ext, meshPath);
+        /* Global Mod: grow the cabinet now that S1 counts are known.
+         * Gm_EnsureDynamic may REALLOC ext — refresh local + map. */
+        if (ext && meshWorld) {
+            void *grown = Gm_EnsureDynamic(board, ext, meshWorld);
+            if (grown && grown != ext) {
+                ext = grown;
+                *(DWORD *)((char *)board + BOARD_MESHWORLD) = (DWORD)meshWorld;
+            }
+        }
+        /* Glass triggers (S6-driven N:GLASS + N:TENBONUS1/2, no S1s) */
+        if (ext) ParseGlassPresence(board, ext, meshPath);
+        /* Glass smasher DAT floats (native create replica — the S1
+         * SMASHER mirror never fires, so the pane finish drew at origin). */
+        if (ext && meshWorld) FillGlassSmasherDat(board, ext, meshWorld);
+        /* Master hammer triggers (E:CALLHAMMER/E:HAMMERCHASE) for the proximity driver */
+        if (ext) ParseHammerQuads(board, ext, meshWorld, meshPath);
+        /* ParseGravityZones is DORMANT (v13.34): the E:GRAVITY touch path
+         * works, so no proximity driver is needed; the per-frame driver
+         * only multiplied native calls. Kept for custom files if the touch
+         * path ever proves unreliable on some level. */
+        DebugLog("STEPMARK S1 scans done");
+    }
+
+    /* Step 2: RenderObj (Tower reuses its native meshWorld above; render +
+     * init + setup still run — they operate on the reused native mesh). */
+    void *renderMem = g_operatorNew(0x10D0);
+    void *renderObj = NULL;
+    if (renderMem) {
+        renderObj = g_LevelRenderCtor(renderMem, meshWorld);
+    }
+    *(DWORD *)((char *)board + BOARD_RENDEROBJ) = (DWORD)renderObj;
+    DebugLog("STEPMARK RenderObj done");
+
+    /* Step 3: InitScene. */
+    g_LevelInitScene(board);
+    DebugLog("STEPMARK InitScene done");
+
+    /* Step 4: Config-driven features (BEFORE Board_Setup)
+     * The original game loads sub-meshes (bridge, tipper, etc.) in the
+     * board ctor, BEFORE Board_Setup runs. Board_Setup calls
+     * Scene_CreateDynamicObjects -> vtable[33] which reads these mesh
+     * pointers. If we load them after Board_Setup, vtable[33] sees NULL
+     * pointers and the dynamic objects get no mesh. */
+    UniversalPostSetup(board);
+    DebugLog("UniversalPostSetup done");
+
+    /* Diagnostic: verify mesh pointers survived post-setup.
+     * UNI_BONK_STORE (0x8620) and UNI_SAW2_OBJ (0x862C) are generic mesh
+     * slots — they hold different objects per level (Tipper for Dizzy,
+     * Bridge for Intermediate/Expert, Spinny for Toob, etc.) */
+    {
+        DWORD mesh0x8620 = *(DWORD *)((char *)ext + UNI_BONK_STORE);
+        DWORD mesh0x862C = *(DWORD *)((char *)ext + UNI_SAW2_OBJ);
+        char dbg[256];
+        wsprintfA(dbg, "Pre-Board_Setup mesh check: [0x8620]=0x%08X [0x862C]=0x%08X", mesh0x8620, mesh0x862C);
+        DebugLog(dbg);
+    }
+
+    /* S1 inventory BEFORE setup: one walk of the loaded object database,
+     * recording which LFL-mirrorable kinds are present. Presence (not
+     * slot, not per-name dispatch) drives all tipper/bridge routing —
+     * create runs inside Board_Setup, so this must precede it. */
+    S1Inventory(board, ext);
+
+    /* Step 5: Board_Setup via vtable[0x80] */
+    DWORD vtable = *(DWORD *)board;
+    if (vtable && !IsBadReadPtr((void *)vtable, 0x84)) {
+        void (__thiscall *boardSetup)(void *) = *(void (__thiscall **)(void *))((char *)vtable + 0x80);
+        if (boardSetup) {
+            DebugLog("Calling Board_Setup (vtable+0x80)...");
+            boardSetup(board);
+            DebugLog("Board_Setup done");
+            /* Global Mod: true drawer totals (creates ran inside Setup). */
+            { void *sumExt = GetBoardExt(board);
+              if (sumExt) Gm_WriteSummary(board, sumExt); }
+            /* Step 6d: Sky scene tails (native scene 0x410830 post-Setup:
+             * PILLAR hooks + CLOUDSCAPE pos). Pre-Setup hooks get wiped by
+             * Setup's +0x4394 re-init (native setup does the same). */
+            if (ext && ContentFileId(ext) == 13) SkySceneTails(board, ext);
+            /* Universal Toob saw registration: native create owns the pipe saws
+             * (board+0x4380 branch saw, +0x4384 alert saw — Ghidra-verified
+             * 0x410020 arms +0x110C on both), and the native S1 dispatcher
+             * tail (0x40C4A0: append out1 to board+0x10EC and
+             * (board+0x8B0)+0x18) never runs on the fast path — so the
+             * setup-built saw entities sit in NO driven list: never updated
+             * (no blade visuals appended to 0x3B00), never drawn. Mirror the
+             * native slots into ext (alert blocks) AND replicate the
+             * dispatcher tail appends (update+render), but only when the
+             * lists don't already contain the object (dispatcher ran =
+             * nothing to do). Validated objects only; garbage fails safe. */
+            if (ext && *(int *)((char *)ext + UNI_NATIVE_CTOR) && ContentFileId(ext) == 10 &&
+                BoardHasOffset(board, 0x4384 + 4, 4)) {
+                int sA = *(int *)((char *)board + 0x4380);
+                int sB = *(int *)((char *)board + 0x4384);
+                if (sA && !IsBadReadPtr((void *)sA, 0x1110)) *(int *)((char *)ext + UNI_SAW_TOOB_OBJ) = sA;
+                if (sB && !IsBadReadPtr((void *)sB, 0x1110)) *(int *)((char *)ext + UNI_SAW2_TOOB_OBJ) = sB;
+                /* Dispatcher-tail registration for both saw entities. */
+                {
+                    int saws[2]; saws[0] = sA; saws[1] = sB;
+                    int si;
+                    for (si = 0; si < 2; si++) {
+                        int so = saws[si];
+                        int li;
+                        float sx = 0, sy = 0, sz = 0;
+                        if (!so || IsBadReadPtr((void *)so, 0x1110)) continue;
+                        if (!IsBadReadPtr((void *)(so + 0x10D4), 12)) {
+                            sx = *(float *)(so + 0x10D4);
+                            sy = *(float *)(so + 0x10D8);
+                            sz = *(float *)(so + 0x10DC);
+                        }
+                        { char pdbg[160]; wsprintfA(pdbg, "SAWPOS idx=%d obj=0x%08X pos=(%d,%d,%d)",
+                            si, so, (int)sx, (int)sy, (int)sz); ToobDiag(pdbg); }
+                        for (li = 0; li < 3; li++) {
+                            void *lst = NULL;
+                            int preskip = 0;
+                            if (li == 0) {
+                                if (!BoardHasOffset(board, 0x10EC + 0x410, 4)) preskip = 4;
+                                else lst = (void *)((char *)board + 0x10EC);
+                            } else if (li == 2) {
+                                /* 0x2578: the v[11] update pump (0x41B130, runs in
+                                 * base RS). Setup-built saws are never appended
+                                 * here on the fast path (native scene did it). */
+                                if (!BoardHasOffset(board, 0x2578 + 0x410, 4)) preskip = 8;
+                                else lst = (void *)((char *)board + 0x2578);
+                            } else {
+                                int b8 = 0;
+                                if (!BoardHasOffset(board, 0x8B0 + 4, 4)) preskip = 5;
+                                else {
+                                    b8 = *(int *)((char *)board + 0x8B0);
+                                    if (!b8 || IsBadReadPtr((void *)b8, 0x1C)) preskip = 6;
+                                    else {
+                                        lst = (void *)(b8 + 0x18);
+                                        if (IsBadReadPtr(lst, 0x410)) preskip = 7;
+                                    }
+                                }
+                            }
+                            {
+                                int cnt = -1;
+                                int *items = NULL;
+                                int found = 0, ii;
+                                int skipped = preskip;
+                                if (!skipped && lst) {
+                                    if (IsBadReadPtr(lst, 0x410)) skipped = 1;
+                                    else {
+                                        cnt = *(int *)((char *)lst + 4);
+                                        items = *(int **)((char *)lst + 0x40C);
+                                        if (cnt < 0 || cnt > 512 || !items ||
+                                            IsBadReadPtr((void *)items, (unsigned)cnt * 4)) skipped = 2;
+                                    }
+                                } else skipped = 3;
+                                if (!skipped) {
+                                    for (ii = 0; ii < cnt; ii++) if (items[ii] == so) { found = 1; break; }
+                                    if (!found && g_AthenaListAppend) g_AthenaListAppend(lst, so);
+                                }
+                                { char ldbg[160]; wsprintfA(ldbg, "SAWREG idx=%d list=%d cnt=%d found=%d appended=%d skipped=%d",
+                                    si, li, cnt, found, (!skipped && !found) ? 1 : 0, skipped); ToobDiag(ldbg); }
+                            }
+                        }
+                    }
+                }
+                { char sdbg[128]; wsprintfA(sdbg, "SAWFILL sA=0x%08X sB=0x%08X extA=0x%08X extB=0x%08X",
+                    sA, sB, *(int *)((char *)ext + UNI_SAW_TOOB_OBJ), *(int *)((char *)ext + UNI_SAW2_TOOB_OBJ));
+                  ToobDiag(sdbg); }
+            }
+        }
+    }
+
+    /* Step 6: TarBubble S1 feeds — fully universal, zero race/slot gates.
+     /* Tarbubble feed (ext only, generic): the S1 inventory walk below
+      * appends every TarBubble S1 to the ext list (UNI_TARBUBBLE_LIST) on
+      * replicated boards, whose manual update cannot run the native spawn.
+      * Native-built boards are NOT fed (their native update already spawns;
+      * feeding both would double-spawn). No native board lists are touched:
+      * native consumers are dead code on universal builds. An empty scan
+      * still gets an ext dummy so replica walkers never see an empty list. */
+     {
+         DWORD bvtable = *(DWORD *)board;
+         int extFeed = (ext && !*(int *)((char *)ext + UNI_NATIVE_CTOR));
+         (void)bvtable;
+        {
+            int scanCount = 0;
+            DWORD meshWorldPtr = *(DWORD *)((char *)board + BOARD_MESHWORLD);
+            if (meshWorldPtr && !IsBadReadPtr((void *)meshWorldPtr, 0x500) &&
+                g_AthenaListAppend && g_AthenaListGetIterator && g_AthenaListGetSize) {
+                DWORD objDb = *(DWORD *)(meshWorldPtr + 0x480);
+                if (objDb && !IsBadReadPtr((void *)objDb, 0x20)) {
+                    int iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
+                    if (iter >= 0) {
+                        *(DWORD *)(objDb + 0x89C + iter * 4) = 0;
+                        int count = *(int *)(objDb + 0x898);
+                        if (count > 0 && count <= 8192) {
+                            DWORD *array = *(DWORD **)(objDb + 0xCA0);
+                            if (array && !IsBadReadPtr((void *)array, count * 4)) {
+                                *(DWORD *)(objDb + 0x89C + iter * 4) = 1;
+                                int idx = 0;
+                                while (idx < count) {
+                                    DWORD *obj = (DWORD *)array[idx];
+                                    if (obj && !IsBadReadPtr((void *)obj, 4)) {
+                                        char *name = *(char **)obj;
+                                        if (name && !IsBadReadPtr(name, 9)) {
+                                            if (my_strnicmp(name, "TarBubble", 9) == 0) {
+                                                if (extFeed) {
+                                                    g_AthenaListAppend(
+                                                        (void *)((char *)ext + UNI_TARBUBBLE_LIST),
+                                                        (int)obj);
+                                                }
+                                                scanCount++;
+                                            }
+                                        }
+                                    }
+                                    idx++;
+                                    *(DWORD *)(objDb + 0x89C + iter * 4) = idx;
+                                }
+                            }
+                        }
+                        *(DWORD *)(objDb + 0x89C + iter * 4) = 0;
+                    }
+                }
+            }
+            /* No TarBubbles (custom file): dummy entries so FUN_0044fa90
+             * reads harmless zeros instead of *(NULL+4). Same layout it
+             * reads: +0x00 name ptr, +0x04/0x08/0x0C float X/Y/Z. */
+            if (scanCount == 0 && g_AthenaListAppend && g_operatorNew) {
+                if (extFeed) {
+                    DWORD *edummy = (DWORD *)g_operatorNew(0x10);
+                    if (edummy) {
+                        memset(edummy, 0, 0x10);
+                        static char extDummyName[] = "TarBubble";
+                        edummy[0] = (DWORD)extDummyName;
+                        g_AthenaListAppend(
+                            (void *)((char *)ext + UNI_TARBUBBLE_LIST),
+                            (int)edummy);
+                        DebugLog("TarBubble scan: empty, added ext dummy entry");
+                    }
+                }
+            }
+        }
+    }
+
+    /* Step 6b: PENNANT* collection (see lf_09_pennants.c). */
+    Pennant_PostSetup(board, ext, raceIndex);
+
+    /* Step 6c: Neon glow followers (see lf_10_neon.c) — S3-gap gated. */
+    Neon_PostSetup(board, ext, raceIndex, meshPath);
+}
+
+/* S1 inventory: one walk of the loaded MESHWORLD object database at load,
+ * recording which LFL-mirrorable kinds are present. Presence (not slot,
+ * not per-name dispatch) drives all tipper/bridge routing. S6 hook point
+ * reserved (not needed: S1 covers every tipper/bridge ref). */
+static void S1Inventory(void *board, void *ext) {
+    int mask = 0;
+    if (board && ext && !IsBadReadPtr(board, 0x900) && g_AthenaListGetIterator) {
+        DWORD meshWorldPtr = *(DWORD *)((char *)board + BOARD_MESHWORLD);
+        if (meshWorldPtr && !IsBadReadPtr((void *)meshWorldPtr, 0x500)) {
+            DWORD objDb = *(DWORD *)(meshWorldPtr + 0x480);
+            if (objDb && !IsBadReadPtr((void *)objDb, 0x20)) {
+                int iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
+                if (iter >= 0) {
+                    *(DWORD *)(objDb + 0x89C + iter * 4) = 0;
+                    int count = *(int *)(objDb + 0x898);
+                    if (count > 0 && count <= 8192) {
+                        DWORD *array = *(DWORD **)(objDb + 0xCA0);
+                        if (array && !IsBadReadPtr((void *)array, count * 4)) {
+                            *(DWORD *)(objDb + 0x89C + iter * 4) = 1;
+                            int idx = 0;
+                            while (idx < count) {
+                                DWORD *obj = (DWORD *)array[idx];
+                                if (obj && !IsBadReadPtr((void *)obj, 4)) {
+                                    char *name = *(char **)obj;
+                                    if (name && !IsBadReadPtr(name, 8)) {
+                                        int k = S1KindFor(name);
+                                        if (k == 1) mask |= S1P_TIPPER;
+                                        else if (k == 2) mask |= S1P_BRIDGE;
+                                        else if (k == 3) mask |= S1P_BRIDGESPIN;
+                                        else if (k == 4) mask |= S1P_BBRIDGE;
+                                    }
+                                }
+                                idx++;
+                                *(DWORD *)(objDb + 0x89C + iter * 4) = idx;
+                            }
+                        }
+                    }
+                    *(DWORD *)(objDb + 0x89C + iter * 4) = 0;
+                }
+            }
+        }
+        *(int *)((char *)ext + UNI_S1_PRESENT) = mask;
+        /* FEAT bits are owned by the mirrors + postscan registry (ground
+         * truth = the S1 that needs them). Inventory sets no FEATs: e.g.
+         * BBRIDGE presence must NOT arm the drawbridge-deck feature. */
+    }
+}
+
+/* Must be non-static for asm reference */
+void __cdecl UniversalConstructorLogic(void *board, int raceIndex) {
+    UniversalConstructor(board, raceIndex);
+}
+
+__attribute__((naked)) static void Hook_UniversalConstructor(void) {
+    __asm__ __volatile__(
+        "pushl %%ebp\n\t"
+        "movl  %%esp, %%ebp\n\t"
+        "pushl %%edx\n\t"
+        "pushl %%ecx\n\t"
+
+        "movl  0x08(%%esi), %%eax\n\t"
+        "pushl %%eax\n\t"
+        "pushl %%ecx\n\t"
+
+        "call  _UniversalConstructorLogic\n\t"
+        "addl  $8, %%esp\n\t"
+
+        "popl  %%ecx\n\t"
+        "popl  %%edx\n\t"
+        "popl  %%ebp\n\t"
+
+        "jmpl  *_g_ctorTrampoline\n\t"
+        :: : "eax", "memory"
+    );
+}
+
+/* Must be non-static for asm reference */
+unsigned char *g_ctorTrampoline = NULL;
+
+static void InstallUniversalConstructorHook(void) {
+    DWORD targetAddr = g_moduleBase + 0x000273E0;
+    unsigned char *orig = (unsigned char *)targetAddr;
+
+    if (orig[0] != 0xFF || orig[1] != 0x52 || orig[2] != 0x48 ||
+        orig[3] != 0x8B || orig[4] != 0x4E || orig[5] != 0x04) return;
+
+    g_ctorTrampoline = VirtualAlloc(NULL, 16,
+                        MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!g_ctorTrampoline) return;
+
+    g_ctorTrampoline[0] = 0x8B;  /* MOV ECX, [ESI+4] */
+    g_ctorTrampoline[1] = 0x4E;
+    g_ctorTrampoline[2] = 0x04;
+    g_ctorTrampoline[3] = 0xE9;  /* JMP back to original+6 */
+    *(DWORD *)(g_ctorTrampoline + 4) = (targetAddr + 6) - ((DWORD)g_ctorTrampoline + 8);
+
+    DWORD oldProtect;
+    VirtualProtect(orig, 6, PAGE_EXECUTE_READWRITE, &oldProtect);
+    orig[0] = 0xE9;
+    *(DWORD *)(orig + 1) = (DWORD)&Hook_UniversalConstructor - (targetAddr + 5);
+    orig[5] = 0x90;
+    VirtualProtect(orig, 6, oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), orig, 6);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Allocation size patch
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static const DWORD g_allocPatchRVAs[15] __attribute__((unused)) = {
+    0x00027109, 0x00027136, 0x00027167, 0x00027198, 0x000271C9,
+    0x000271FA, 0x0002722B, 0x0002725C, 0x0002728D, 0x000272BE,
+    0x000272EF, 0x00027320, 0x00027351, 0x0002737B, 0x000273A5,
+};
+
+static void PatchAllocSizes(void) {
+    /* Option B: board stays vanilla-sized; union lives in extension heap at board+EXT_PTR.
+     * We no longer patch the 15 PUSH sites to UNION_SIZE (0xAB00). Leave them vanilla. */
+    DebugLog("PatchAllocSizes: skipped (vanilla board size, ext heap used)");
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Install collision hook
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Hook Tournament_AdvanceRace (0x00427080) to free ext on level unload */
+/* Non-static: referenced from naked asm below (_g_advanceTrampoline). */
+unsigned char* g_advanceTrampoline = NULL;
+static void (__thiscall *g_origAdvanceRace)(void *, DWORD);
+/* Live ECX (this) stashed by the naked Hook so Logic can invoke the original
+ * exactly once with the caller's ECX (single-execution fix 2026-09-18).
+ * Non-static: referenced from naked asm above (_g_savedAdvanceECX). */
+DWORD g_savedAdvanceECX = 0;
+/* Naked ECX-preserving wrapper: 0x427080 is __thiscall with one stack arg.
+ * Logic runs the original EXACTLY ONCE via the trampoline using the stashed
+ * ECX (single-execution fix 2026-09-18: an earlier revision both called the
+ * original inside Logic AND jumped to the trampoline here, running
+ * AdvanceRace twice per transition). */
+__attribute__((naked)) static void Hook_AdvanceRace(void) {
+    __asm__ __volatile__(
+        "movl %%ecx, _g_savedAdvanceECX\n\t" /* stash this for Logic */
+        "pushl %%ecx\n\t"
+        "pushl %%edx\n\t"
+        "pushl 12(%%esp)\n\t"   /* a1 (ret + 2 pushes above it) */
+        "call  _Hook_AdvanceRaceLogic\n\t"
+        "addl  $4, %%esp\n\t"
+        "popl  %%edx\n\t"
+        "popl  %%ecx\n\t"
+        "ret   $4\n\t"   /* orig already ran inside Logic; clean a1 */
+        :: : "eax", "memory"
+    );
+}
+
+void __cdecl Hook_AdvanceRaceLogic(DWORD a1) { /* non-static + cdecl: referenced from naked asm above */
+    /* Free the outgoing board's ext *before* the call and sweep stales
+     * *after* the call. Covers both reuse and free cases.
+     * App pointer is at absolute 0x005341E0 (RVA 0x1341E0 from g_moduleBase).
+     * NOTE: App+0x178 is ASSUMED to be the current board (binary: AdvanceRace
+     * never reads +0x178; App_Ctor treats 0x174-0x184 as zeroed device
+     * slots). Only free when the pointer actually owns an ext — a device
+     * pointer never matches a map key, so a mistap degrades to sweep-lazy
+     * instead of a wrong free. */
+    void* curBoard = NULL;
+    DWORD appPtrAddr = g_moduleBase ? g_moduleBase + 0x1341E0 : 0x005341E0;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery((void*)appPtrAddr, &mbi, sizeof(mbi)) && mbi.State==MEM_COMMIT) {
+        DWORD app = *(DWORD*)appPtrAddr;
+        if (app && VirtualQuery((void*)app, &mbi, sizeof(mbi)) && mbi.State==MEM_COMMIT) {
+            /* App+0x178 is the current board (VirtualQuery above guards the read). */
+            curBoard = *(void**)((char*)app + 0x178);
+        }
+    }
+    if (curBoard && GetBoardExt(curBoard)) {
+        FreeBoardExt(curBoard);
+    }
+    if (g_origAdvanceRace) g_origAdvanceRace((void*)g_savedAdvanceECX, a1);
+    /* Re-read the CURRENT board after the transition: the fresh board's ext
+     * was just created by its ctor. The sweep below must never clear it. */
+    void *newBoard = NULL;
+    if (VirtualQuery((void*)appPtrAddr, &mbi, sizeof(mbi)) && mbi.State==MEM_COMMIT) {
+        DWORD app2 = *(DWORD*)appPtrAddr;
+        if (app2 && VirtualQuery((void*)app2, &mbi, sizeof(mbi)) && mbi.State==MEM_COMMIT) {
+            newBoard = *(void**)((char*)app2 + 0x178);
+        }
+    }
+    int j;
+    for (j=0;j<MAX_EXT_MAP;j++) if (g_extMap[j].ext) {
+        void* b = g_extMap[j].board;
+        if (b && b == newBoard) continue;
+        /* Fix 2026-10-20: the old HeapValidate(GetProcessHeap(),0,b) branch
+         * is systematically wrong — game boards are not allocated on the
+         * process default heap, so it returns FALSE for LIVE race boards
+         * (proven: SweepClear hv=0 on the just-constructed Beginner board,
+         * emptying the map on every load and killing all ext-gated dispatch
+         * incl. the bumper bounce). A board page that is still committed may
+         * be live, reused, or stale-freed; the ctor's FreeBoardExt+Ensure
+         * already handles address reuse, so only reclaim truly-dead pages. */
+        { MEMORY_BASIC_INFORMATION mb2;
+          if (!b || !VirtualQuery(b, &mb2, sizeof(mb2)) || mb2.State!=MEM_COMMIT) {
+              HeapFree(GetProcessHeap(),0,g_extMap[j].ext);
+              g_extMap[j].ext=NULL; g_extMap[j].extSize=0; g_extMap[j].feat=0; g_extMap[j].board=NULL;
+          }
+        }
+    }
+}
+static void InstallExtFreeHook(void) {
+    DWORD targetAddr = g_moduleBase + 0x00027080;
+    unsigned char* orig = (unsigned char*)targetAddr;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery(orig, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
+    if (!(mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY))) return;
+    // RVA 0x27080 prologue varies by build (dump shows 3C AE FD FF at 0x26480 file-off, not 55 8B EC)
+    // Don't gate on exact bytes — log and continue
+    if (orig[0]!=0x55 || orig[1]!=0x8B || orig[2]!=0xEC) {
+        char dbg[64]; wsprintfA(dbg, "InstallExtFreeHook: prologue %02X %02X %02X (continuing)", orig[0], orig[1], orig[2]);
+        DebugLog(dbg);
+    }
+    g_advanceTrampoline = VirtualAlloc(NULL, 32, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!g_advanceTrampoline) return;
+    memcpy(g_advanceTrampoline, orig, 6);
+    g_advanceTrampoline[6]=0xE9;
+    *(DWORD*)(g_advanceTrampoline+7) = (targetAddr+6) - ((DWORD)g_advanceTrampoline+11);
+    g_origAdvanceRace = (void (__thiscall *)(void *, DWORD))g_advanceTrampoline;
+    DWORD oldProtect;
+    VirtualProtect(orig, 6, PAGE_EXECUTE_READWRITE, &oldProtect);
+    orig[0]=0xE9;
+    *(DWORD*)(orig+1) = (DWORD)Hook_AdvanceRace - (targetAddr+5);
+    orig[5]=0x90;
+    VirtualProtect(orig,6, oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), orig, 6);
+    DebugLog("InstallExtFreeHook: hooked Tournament_AdvanceRace");
+}
+
+static void InstallHook(void) {
+    /* DEPRECATED: SEH trampoline on DispatchCollisionEvents (0x40C5D0) caused
+     * stack/exception chain corruption (skill: Manual trampoline detour hooks
+     * on SEH functions crash). UniversalDispatchCollision via vtable[29]
+     * now solely handles collisions and calls the original directly.
+     * Keep trampoline disabled — just set g_OriginalDispatch to the raw
+     * function address. */
+    g_OriginalDispatch = (DispatchCollisionEvents_t)(g_moduleBase + RVA_DispatchCollisionEvents);
+    DebugLog("InstallHook: SEH trampoline disabled, vtable[29] handles collisions");
+    (void)g_trampoline;
+}
+
+/* BASS proxy exports handled by bass.def - DLL forwarding to bass_real.dll */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * File fallback hook — if game can't find texture/sound/mesh in its
+ * default folder, retry in g_levelDir (the folder containing the main
+ * MESHWORLD for this race). Covers:
+ *   textures\\foo.png      -> g_levelDir\\foo.png
+ *   levels\\Level3-Water  -> g_levelDir\\Level3-Water  (+ .MESHWORLD/.MESH)
+ *   sounds\\foo.ogg       -> g_levelDir\\foo.ogg
+ * Implemented as IAT patch on kernel32!CreateFileA/W so every file open
+ * (D3DX, BASS, MESHWORLD) is covered without per-callsite hooks.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static HANDLE (WINAPI *g_origCreateFileA)(LPCSTR,DWORD,DWORD,LPSECURITY_ATTRIBUTES,DWORD,DWORD,HANDLE) = NULL;
+static HANDLE (WINAPI *g_origCreateFileW)(LPCWSTR,DWORD,DWORD,LPSECURITY_ATTRIBUTES,DWORD,DWORD,HANDLE) = NULL;
+static volatile LONG g_inFileHookFallback = 0;
+
+static HANDLE WINAPI Hook_CreateFileA(LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) {
+    if (InterlockedExchange(&g_inFileHookFallback, 1) != 0) {
+        return g_origCreateFileA(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    }
+    HANDLE h = g_origCreateFileA(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    if (h != INVALID_HANDLE_VALUE) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    DWORD err = GetLastError();
+    if (err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    if (!lpFileName || !g_levelDir[0]) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    const char *ext = strrchr(lpFileName, '.');
+    const char *slash = strrchr(lpFileName, '\\');
+    const char *slash2 = strrchr(lpFileName, '/');
+    if (slash2 && (!slash || slash2 > slash)) slash = slash2;
+    const char *base = slash ? slash + 1 : lpFileName;
+    if (!base || !*base) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    char trial[MAX_PATH];
+    int dirLen = strlen(g_levelDir);
+    int baseLen = strlen(base);
+    if (dirLen + baseLen >= MAX_PATH) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    strcpy(trial, g_levelDir);
+    strcat(trial, base);
+    if (my_stricmp(trial, lpFileName) == 0) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    if (my_strnicmp(base, "lfdebug", 7)==0 || my_strnicmp(base, "LevelFeatures", 13)==0 || my_strnicmp(base, "RaceFiles", 9)==0) {
+        InterlockedExchange(&g_inFileHookFallback, 0);
+        return h;
+    }
+    HANDLE h2 = g_origCreateFileA(trial, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    if (h2 != INVALID_HANDLE_VALUE) {
+        char dbg[1024]; wsprintfA(dbg, "Fallback: '%s' -> '%s' (OK)", lpFileName, trial);
+        DebugLog(dbg);
+        InterlockedExchange(&g_inFileHookFallback, 0);
+        return h2;
+    }
+    if (!ext) {
+        if (dirLen + baseLen + 10 >= MAX_PATH) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+        strcpy(trial, g_levelDir);
+        strcat(trial, base);
+        strcat(trial, ".MESHWORLD");
+        HANDLE h3 = g_origCreateFileA(trial, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+        if (h3 != INVALID_HANDLE_VALUE) {
+            char dbg2[1024]; wsprintfA(dbg2, "Fallback (+.MESHWORLD): '%s' -> '%s' (OK)", lpFileName, trial);
+            DebugLog(dbg2);
+            InterlockedExchange(&g_inFileHookFallback, 0);
+            return h3;
+        }
+    }
+    InterlockedExchange(&g_inFileHookFallback, 0);
+    return h;
+}
+
+static HANDLE WINAPI Hook_CreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) {
+    if (InterlockedExchange(&g_inFileHookFallback, 1) != 0) return g_origCreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    HANDLE h = g_origCreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    if (h != INVALID_HANDLE_VALUE) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    DWORD err = GetLastError();
+    if (err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    if (!lpFileName || !g_levelDir[0]) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    char ansi[MAX_PATH]; WideCharToMultiByte(CP_ACP, 0, lpFileName, -1, ansi, MAX_PATH, NULL, NULL);
+    ansi[MAX_PATH-1] = 0; /* truncation never leaves unterminated (menu-stage file storm) */
+    const char *slash = strrchr(ansi, '\\');
+    const char *slash2 = strrchr(ansi, '/');
+    if (slash2 && (!slash || slash2 > slash)) slash = slash2;
+    const char *base = slash ? slash + 1 : ansi;
+    if (!base || !*base) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    char trialAnsi[MAX_PATH];
+    int dirLen = strlen(g_levelDir);
+    int baseLen = strlen(base);
+    if (dirLen + baseLen >= MAX_PATH) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    strcpy(trialAnsi, g_levelDir);
+    strcat(trialAnsi, base);
+    if (my_stricmp(trialAnsi, ansi)==0) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    if (my_strnicmp(base, "lfdebug", 7)==0) { InterlockedExchange(&g_inFileHookFallback, 0); return h; }
+    WCHAR trialW[MAX_PATH]; MultiByteToWideChar(CP_ACP, 0, trialAnsi, -1, trialW, MAX_PATH);
+    trialW[MAX_PATH-1] = 0; /* truncation never leaves unterminated */
+    HANDLE h2 = g_origCreateFileW(trialW, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    if (h2 != INVALID_HANDLE_VALUE) {
+        char dbg[640]; wsprintfA(dbg, "FallbackW: '%s' -> '%s' (OK)", ansi, trialAnsi);
+        DebugLog(dbg);
+        InterlockedExchange(&g_inFileHookFallback, 0);
+        return h2;
+    }
+    InterlockedExchange(&g_inFileHookFallback, 0);
+    return h;
+}
+
+static void InstallFileFallbackHook(void) {
+    if (g_origCreateFileA) return; // already installed
+    HMODULE exe = GetModuleHandleA(NULL);
+    if (!exe) exe = (HMODULE)g_moduleBase;
+    if (!exe || IsBadReadPtr(exe, 0x100)) return;
+    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)exe;
+    if (dos->e_magic != 0x5A4D) return;
+    PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((char*)exe + dos->e_lfanew);
+    if (IsBadReadPtr(nt, sizeof(IMAGE_NT_HEADERS))) return;
+    if (nt->Signature != 0x00004550) return;
+    DWORD importRVA = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+    if (!importRVA) return;
+    PIMAGE_IMPORT_DESCRIPTOR imp = (PIMAGE_IMPORT_DESCRIPTOR)((char*)exe + importRVA);
+    for (; imp->Name; imp++) {
+        char *dllName = (char*)exe + imp->Name;
+        if (!dllName || IsBadReadPtr(dllName, 8)) continue;
+        if (my_stricmp(dllName, "KERNEL32.dll") != 0 && my_stricmp(dllName, "kernel32.dll") != 0) continue;
+        PIMAGE_THUNK_DATA thunk = (PIMAGE_THUNK_DATA)((char*)exe + imp->FirstThunk);
+        PIMAGE_THUNK_DATA origThunk = (PIMAGE_THUNK_DATA)((char*)exe + imp->OriginalFirstThunk);
+        int useOrig = (imp->OriginalFirstThunk != 0);
+        for (; thunk->u1.Function; thunk++, origThunk++) {
+            PIMAGE_THUNK_DATA nameThunk = useOrig ? origThunk : thunk;
+            if (IMAGE_SNAP_BY_ORDINAL(nameThunk->u1.Ordinal)) continue;
+            PIMAGE_IMPORT_BY_NAME byName = (PIMAGE_IMPORT_BY_NAME)((char*)exe + nameThunk->u1.AddressOfData);
+            if (IsBadReadPtr(byName, 4)) continue;
+            char *funcName = (char*)byName->Name;
+            if (!funcName || IsBadReadPtr(funcName, 4)) continue;
+            DWORD oldProtect;
+            if (strcmp(funcName, "CreateFileA")==0) {
+                g_origCreateFileA = (void*)thunk->u1.Function;
+                VirtualProtect(&thunk->u1.Function, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                thunk->u1.Function = (DWORD)Hook_CreateFileA;
+                VirtualProtect(&thunk->u1.Function, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), &thunk->u1.Function, 4);
+                DebugLog("InstallFileFallbackHook: CreateFileA hooked");
+            } else if (strcmp(funcName, "CreateFileW")==0) {
+                g_origCreateFileW = (void*)thunk->u1.Function;
+                VirtualProtect(&thunk->u1.Function, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                thunk->u1.Function = (DWORD)Hook_CreateFileW;
+                VirtualProtect(&thunk->u1.Function, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), &thunk->u1.Function, 4);
+                DebugLog("InstallFileFallbackHook: CreateFileW hooked");
+            }
+        }
+    }
+    if (!g_origCreateFileA) DebugLog("InstallFileFallbackHook: CreateFileA not found in IAT");
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Debug logging
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+void DebugLog(const char *msg) {
+    /* LOGGING DISABLED 2026-11-02 (user: per-frame file I/O on the game
+     * thread lagged loads and dropped Dizzy to ~2fps; 600 identical swirl
+     * lines per session). All call sites stay; re-enable by deleting the
+     * next line when diagnostics are needed. */
+    (void)msg; return;
+    /* Keep-one-handle: open once per process (append), flush per line.
+     * (Per-line open/write/close lost the tail whenever an external
+     * scanner/viewer briefly locked the file mid-run - fix 2026-11-02.)
+     * Handle is never closed; the OS reclaims it at process exit. */
+    static HANDLE hLog = NULL;
+    static int logSeq = 0;
+    static int logInitTried = 0;
+    if (!hLog && !logInitTried) {
+        logInitTried = 1;
+        char logPath[MAX_PATH];
+        if (g_configPath[0]) {
+            strcpy(logPath, g_configPath);
+            char *p = strrchr(logPath, '\\');
+            if (p) { strcpy(p + 1, "lfdebug.log"); }
+            else { strcpy(logPath, "lfdebug.log"); }
+        } else {
+            strcpy(logPath, "lfdebug.log");
+        }
+        hLog = CreateFileA(logPath, GENERIC_WRITE,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hLog == INVALID_HANDLE_VALUE) {
+            hLog = NULL;
+            char tmp[MAX_PATH], tlog[MAX_PATH];
+            DWORD tl = GetTempPathA(MAX_PATH, tmp);
+            if (tl > 0 && tl < MAX_PATH - 12) {
+                strcpy(tlog, tmp);
+                strcat(tlog, "lfdebug.log");
+                HANDLE ht = CreateFileA(tlog, GENERIC_WRITE,
+                                        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                        NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+                if (ht != INVALID_HANDLE_VALUE) hLog = ht;
+            }
+        }
+        if (hLog) {
+            SetFilePointer(hLog, 0, NULL, FILE_END);
+            logSeq = 0;
+        }
+    }
+    if (!hLog) return;
+    {
+        char seq[32]; int sl = 0; int v = ++logSeq; char rev[12]; int rl = 0;
+        if (v == 0) { seq[0] = '0'; sl = 1; }
+        else { while (v > 0 && rl < 11) { rev[rl++] = '0' + (v % 10); v /= 10; } while (rl > 0) seq[sl++] = rev[--rl]; }
+        seq[sl++] = ' '; seq[sl] = 0;
+        DWORD written = 0;
+        SetFilePointer(hLog, 0, NULL, FILE_END);
+        WriteFile(hLog, seq, sl, &written, NULL);
+        WriteFile(hLog, msg, strlen(msg), &written, NULL);
+        WriteFile(hLog, "\r\n", 2, &written, NULL);
+        FlushFileBuffers(hLog);
+    }
+}
+
+/* Sky-targeted diag (2026-11-20 Draw-crash hunt, 0001:00052087): always-on
+ * file channel, Sky-content only + throttled runtime lines. Writes
+ * sky_diag.txt next to the DLL. Throwaway: delete when Sky is green. */
+void SkyDiag(const char *msg) {
+    static HANDLE hSky = NULL;
+    static int skyTried = 0;
+    if (!hSky && !skyTried) {
+        skyTried = 1;
+        char logPath[MAX_PATH];
+        if (g_configPath[0]) {
+            strcpy(logPath, g_configPath);
+            { char *p = strrchr(logPath, '\\'); if (p) strcpy(p + 1, "sky_diag.txt"); else strcpy(logPath, "sky_diag.txt"); }
+        } else strcpy(logPath, "sky_diag.txt");
+        hSky = CreateFileA(logPath, GENERIC_WRITE,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hSky == INVALID_HANDLE_VALUE) hSky = NULL;
+        if (hSky) { DWORD w = 0; const char *init = "SKYDIAG init log=sky_diag.txt\r\n"; WriteFile(hSky, init, strlen(init), &w, NULL); FlushFileBuffers(hSky); }
+    }
+    if (!hSky) return;
+    { DWORD w = 0; WriteFile(hSky, msg, strlen(msg), &w, NULL); WriteFile(hSky, "\r\n", 2, &w, NULL); FlushFileBuffers(hSky); }
+}
+
+/* Temporary Impossible gear-spawn diag: RETIRED 2026-11-25 (user asked to
+ * drop unneeded logs). No-op stub so old call sites still compile. */
+void ImpDiag(const char *msg) {
+    (void)msg;
+}
+
+/* Forward declaration for auto-test (unused, kept for future testing) */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Vtable patching — replace slots 1, 19, 29, 33 in all 15 level vtables
+ * with universal handlers. Saves original pointers for delegation.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+static void InstallVtablePatches(void) {
+    int i;
+    for (i = 1; i <= 15; i++) {
+        DWORD vtableAddr = g_levelVtables[i];
+        if (!vtableAddr) continue;
+        { MEMORY_BASIC_INFORMATION mbi; if (!VirtualQuery((void*)vtableAddr, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT || (DWORD)mbi.BaseAddress + mbi.RegionSize < vtableAddr + 0x88) continue; }
+
+        DWORD oldProtect;
+
+        /* Slot 1 (offset +0x04): Board_Update → UniversalBoardUpdate */
+        {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x04);
+            if (i >= 1 && i <= 15) g_origUpdate[i] = (void *)*slot;
+            VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+            *slot = (DWORD)&UniversalBoardUpdate;
+            VirtualProtect(slot, 4, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), slot, 4);
+        }
+
+        /* Slot 19 (offset +0x4C): RaceState → UniversalRaceState
+         * Save original per-level handler — levels 2,6,7 have custom RaceState
+         * that iterates per-level data (lifter list, render objs, timers). */
+        {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x4C);
+            /* Save original before overwriting (index by level 1-15) */
+            if (i >= 1 && i <= 15) {
+                g_origRaceState[i] = (RaceState_t)*slot;
+            }
+            VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+            *slot = (DWORD)&UniversalRaceState;
+            VirtualProtect(slot, 4, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), slot, 4);
+        }
+
+        /* Slot 29 (offset +0x74): DispatchCollision → UniversalDispatchCollision
+         * Save original for DETACH restore (dispatch still runs natively
+         * when the mod unloads; g_OriginalDispatch is our own call target). */
+        {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x74);
+            if (i >= 1 && i <= 15) g_origDispatch[i] = (void *)*slot;
+            VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+            *slot = (DWORD)&UniversalDispatchCollision;
+            VirtualProtect(slot, 4, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), slot, 4);
+        }
+
+        /* Slot 33 (offset +0x84): CreateDynamicObjects → UniversalCreateDynamicObjects
+         * Save original per level — the native-ctor fast path (UNI_NATIVE_CTOR)
+         * delegates to it so native-built boards get native objects. */
+        {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x84);
+            if (i >= 1 && i <= 15) {
+                g_origCreate[i] = (CreateDynamic_t)*slot;
+            }
+            VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+            *slot = (DWORD)&UniversalCreateDynamicObjects;
+            VirtualProtect(slot, 4, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), slot, 4);
+        }
+
+        /* Slot 24 (offset +0x60): Per-level render — per-level RET convention.
+         * Two call sites: 0x0046C8C7 (1-param RET 0) vs 0x0046C9F0 (2-param RET 4).
+         * Only the 6 levels that use 2-param render (2=Beginner,5=Tower,10=Toob,12=Glass,13=Sky,14=Master) are patched. */
+        {
+            int is_two_param = (i==2 || i==5 || i==10 || i==12 || i==13 || i==14);
+            if (is_two_param) {
+                DWORD *slot = (DWORD *)(vtableAddr + 0x60);
+                if (i >= 1 && i <= 15) {
+                    g_origRender[i] = (Render_t)*slot;
+                }
+                VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                *slot = (DWORD)&UniversalRender;
+                VirtualProtect(slot, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), slot, 4);
+            }
+        }
+    }
+    DebugLog("Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)");
+}
+
+static DWORD WINAPI PatchThread(LPVOID param) {
+    { char boot[64]; wsprintfA(boot, "=== PatchThread started pid=%u ===", (unsigned)GetCurrentProcessId()); DebugLog(boot); }
+    Sleep(1000); // 1s: early enough to beat first level load (~3-4s), late enough for BASS init
+    DebugLog("Sleep done, resolving module base");
+    g_moduleBase = (DWORD)GetModuleHandleA("Hamsterball.exe");
+    if (!g_moduleBase) g_moduleBase = 0x00400000;
+
+    g_operatorNew = (operator_new_t)(g_moduleBase + RVA_operator_new);
+    g_LevelMeshWorldCtor = (Level_MeshWorldCtor_t)(g_moduleBase + RVA_Level_MeshWorldCtor);
+    g_LevelRenderCtor = (Level_RenderCtor_t)(g_moduleBase + RVA_Level_RenderCtor);
+    g_LevelInitScene = (Level_InitScene_t)(g_moduleBase + RVA_Level_InitScene);
+    g_SoundPlay3D = (Sound_Play3D_t)(g_moduleBase + RVA_Sound_Play3D);
+    g_CollectByNameFilter = (Scene_CollectByNameFilter_t)(g_moduleBase + RVA_Scene_CollectByNameFilter);
+    g_AthenaListInit = (AthenaList_Init_t)(g_moduleBase + RVA_AthenaList_Init);
+    g_BoardCtor = (Board_ctor_t)(g_moduleBase + RVA_Board_ctor);
+    g_LoadRaceData = (LoadRaceData_t)(g_moduleBase + RVA_LoadRaceData);
+    g_Vec3Init = (Vec3_Init_t)(g_moduleBase + RVA_Vec3_Init);
+    g_MatrixIdentity = (Matrix_Identity_t)(g_moduleBase + RVA_Matrix_Identity);
+    g_MeshNodeCtor = (MeshNode_ctor_t)(g_moduleBase + RVA_MeshNode_ctor);
+    g_SpriteCtor = (Sprite_ctor_t)(g_moduleBase + RVA_Sprite_ctor);
+    g_TipperVisualAttach = (TipperVisual_Attach_t)(g_moduleBase + RVA_TipperVisual_Attach);
+    g_LevelAssignTex = (Level_AssignTex_t)(g_moduleBase + RVA_Level_AssignTexAndScales);
+    g_SoundGetNextChannel = (Sound_GetNextChannel_t)(g_moduleBase + RVA_Sound_GetNextChannel);
+    g_SceneRenderIfVisible = (Scene_RenderIfVisible_t)(g_moduleBase + RVA_Scene_RenderIfVisible);
+    g_AthenaListAppend = (AthenaList_Append_t)(g_moduleBase + RVA_AthenaList_Append);
+    g_AthenaListGetSize = (AthenaList_GetSize_t)(g_moduleBase + RVA_AthenaList_GetSize);
+    g_AthenaListGetIterator = (AthenaList_GetIterator_t)(g_moduleBase + RVA_AthenaList_GetIterator);
+    g_ehVectorCtor = (eh_vector_ctor_t)(g_moduleBase + RVA_eh_vector_ctor);
+    g_ehVectorCtorFn = (void *)(g_moduleBase + RVA_FUN_0040a870);
+    g_Vec3ListFree = (void *)(g_moduleBase + RVA_Vec3List_Free);
+    g_LevelAssignTexScales = (Level_AssignTexScales_t)(g_moduleBase + RVA_Level_AssignTexScales);
+
+    /* Resolve CreateDynamicObjects ctors */
+    g_TipperCtor = (Ctor3_t)(g_moduleBase + RVA_Tipper_ctor);
+    g_TipperVisualCtor = (TipperVisual_ctor_t)(g_moduleBase + RVA_TipperVisual_ctor);
+    g_TipperUpdate = (TipperUpdate_t)(g_moduleBase + RVA_Tipper_Update);
+    g_GluebieCtor = (Ctor3_t)(g_moduleBase + RVA_Gluebie_ctor);
+    g_CatapultCtor = (Ctor3_t)(g_moduleBase + RVA_Catapult_ctor);
+    g_MaceCtor = (Ctor3_t)(g_moduleBase + RVA_Mace_ctor);
+    g_MaceTowerCtor = (Ctor3_t)(g_moduleBase + 0x00038750);
+    g_TowerBoardCtor = (void *__thiscall (*)(void *, int))(g_moduleBase + 0x0001E340);
+    g_TowerRender = (void *__thiscall (*)(void *, int))(g_moduleBase + 0x0000DFA0);
+    g_GlassLevelCtor = (Ctor3_t)(g_moduleBase + RVA_Glass_Level_ctor);
+    g_TrapdoorCtor = (Ctor2_t)(g_moduleBase + RVA_Trapdoor_ctor);
+    g_StandsCtor = (Stands_ctor_t)(g_moduleBase + RVA_Stands_ctor);
+    g_BonkCtor = (Ctor4f_t)(g_moduleBase + RVA_Bonk_ctor);
+    g_FanCtor = (Ctor5f_t)(g_moduleBase + RVA_Fan_ctor);
+    g_SawBladeCtor = (Ctor4f_t)(g_moduleBase + RVA_SawBlade_ctor);
+    g_SawBladeSetVariant = (SawBlade_SetVariant_t)(g_moduleBase + RVA_SawBlade_SetVariant);
+    g_SpinnerLevelCtor = (Ctor5f_t)(g_moduleBase + RVA_Spinner_Level_ctor);
+    g_SecretCtor = (Ctor5f_t)(g_moduleBase + RVA_Secret_ctor);
+    g_GearLevelCtor = (Ctor4f_t)(g_moduleBase + RVA_Gear_Level_ctor);
+    g_BellCtor = (Ctor4f_t)(g_moduleBase + RVA_Bell_ctor);
+    g_OddLifterCtor = (Ctor4f_t)(g_moduleBase + RVA_Odd_Lifter_ctor);
+    g_LifterCtor = (Ctor_Lifter_t)(g_moduleBase + RVA_Lifter_ctor);
+    g_SpeedCylinderCtor = (Ctor_SpeedCyl_t)(g_moduleBase + RVA_SpeedCylinder_ctor);
+    g_TimeButtonCtor = (Ctor3f_t)(g_moduleBase + RVA_TimeButton_ctor);
+    g_RotatorImpossibleCtor = (Ctor3f_t)(g_moduleBase + RVA_Rotator_ctor_Impossible);
+    g_SawCtor = (Ctor6f_t)(g_moduleBase + RVA_Saw_ctor);
+    g_Saw2Ctor = (Ctor6f_t)(g_moduleBase + RVA_Saw2_ctor);
+    g_FalloutCtor = (Ctor3f_t)(g_moduleBase + RVA_Fallout_ctor);
+    g_BlockdawgCtor = (Ctor6f_t)(g_moduleBase + RVA_Blockdawg_ctor);
+    g_GameLevelCtor = (Ctor3f_t)(g_moduleBase + RVA_GameLevel_ctor);
+    g_WavyCtor = (Ctor_Str_t)(g_moduleBase + RVA_Wavy_ctor);
+    g_WavyConfigure = (Wavy_Configure_t)(g_moduleBase + RVA_Wavy_Configure);
+    g_NeonPlatformCtor = (Ctor3f_t)(g_moduleBase + RVA_NeonPlatform_ctor);
+    g_ArenaStandsCtor = (Ctor3f_t)(g_moduleBase + RVA_ArenaStands_ctor);
+    g_PopcylinderCtor = (Ctor3f_t)(g_moduleBase + RVA_Popcylinder_ctor);
+    g_PopCylinderCtor = (Ctor3f_t)(g_moduleBase + RVA_PopCylinder_ctor);
+    g_RotatorCtor = (Ctor_Rotator_t)(g_moduleBase + RVA_Rotator_ctor);
+    g_LooperCtor = (Ctor3f_t)(g_moduleBase + RVA_Looper_ctor);
+    g_GearCtor = (Ctor7f_t)(g_moduleBase + RVA_Gear_ctor);
+    g_PendulumCtor = (Ctor3f_t)(g_moduleBase + RVA_Pendulum_ctor);
+    g_BreakBridgeCtor = (Ctor3f_t)(g_moduleBase + RVA_BreakBridge_ctor);
+    g_BreakBridgeBreak = (BreakBridge_Break_t)(g_moduleBase + RVA_BreakBridge_break);
+    g_LevelFindObjectByName = (Level_FindObjectByName_t)(g_moduleBase + RVA_Level_FindObjectByName);
+    g_SoundInitChannels = (Sound_InitChannels_t)(g_moduleBase + RVA_Sound_InitChannels);
+
+    /* Resolve Board_Update function pointers */
+    g_SceneUpdate = (Scene_Update_t)(g_moduleBase + RVA_Scene_Update);
+    g_BoardUpdateRaceState = (Board_UpdateRaceState_t)(g_moduleBase + RVA_Board_UpdateRaceState);
+    g_RenderDynamicObjects = (Level_RenderDynamicObjects_t)(g_moduleBase + RVA_Level_RenderDynamicObjects);
+    g_GraphicsSetProjection = (Graphics_SetProjection_t)(g_moduleBase + RVA_Graphics_SetProjection);
+    g_GraphicsSetCullMode2 = (Graphics_SetCullMode2_t)(g_moduleBase + RVA_Graphics_SetCullMode2);
+    g_SpriteRenderQuad = (Sprite_RenderQuad_t)(g_moduleBase + RVA_Sprite_RenderQuad);
+    g_RenderContextInit = (RenderContext_Init_t)(g_moduleBase + RVA_RenderContext_Init);
+    g_Matrix4Identity = (Matrix4_Identity_t)(g_moduleBase + RVA_Matrix4_Identity);
+    g_GfxScaleZ = (Gfx_ScaleFn_t)(g_moduleBase + RVA_Gfx_ScaleZ);
+    g_GfxScaleY = (Gfx_ScaleFn_t)(g_moduleBase + RVA_Gfx_ScaleY);
+    g_GfxScaleX = (Gfx_ScaleFn_t)(g_moduleBase + RVA_Gfx_ScaleX);
+    g_GfxSetPosition = (Gfx_SetPosition_t)(g_moduleBase + RVA_Gfx_SetPosition);
+    g_TimerInit = (Timer_Init_t)(g_moduleBase + RVA_Timer_Init);
+    g_TimerCleanup = (Timer_Cleanup_t)(g_moduleBase + RVA_Timer_Cleanup);
+    g_MatrixTransformVec3 = (Matrix_TransformVec3_t)(g_moduleBase + RVA_Matrix_TransformVec3);
+    g_Matrix44Zero = (Matrix44_Zero_t)(g_moduleBase + RVA_Matrix44_Zero);
+    g_SceneForEachBallSetVelocity = (Scene_ForEachBall_SetVelocity_t)(g_moduleBase + RVA_Scene_ForEachBall_SetVel);
+    /* g_AthenaListGetIterator, g_AthenaListGetSize, g_AthenaListAppend already
+     * resolved above — removed redundant re-resolution. */
+    g_CreateTarBubble = (FUN_0044fa90_t)(g_moduleBase + RVA_FUN_0044fa90);
+    g_CreateSplashParticle = (FUN_0044fb50_t)(g_moduleBase + RVA_FUN_0044fb50);
+    g_RemoveBall = (FUN_00405190_t)(g_moduleBase + RVA_FUN_00405190);
+    g_RNG = (CPUID_RNG_t)(g_moduleBase + RVA_CPUID_RNG);
+    g_RNG_raw = (DWORD)(g_moduleBase + RVA_CPUID_RNG);
+    g_BadBallCtor = (BadBall_ctor_t)(g_moduleBase + RVA_BadBall_ctor);
+    g_VacFaceCtor = (VacFace_ctor_t)(g_moduleBase + RVA_VacFace_ctor);
+    g_MagnifierCtor = (Magnifier_ctor_t)(g_moduleBase + RVA_Magnifier_ctor);
+    g_BallSetTrajectory = (Ball_SetTrajectory_t)(g_moduleBase + RVA_Ball_SetTrajectory);
+    g_BallSetVec3AtOffset = (Ball_SetVec3AtOffset_t)(g_moduleBase + RVA_Ball_SetVec3AtOffset);
+    g_Vec3NormalizeAndScale = (Vec3_NormalizeAndScale_t)(g_moduleBase + RVA_Vec3_NormalizeAndScale);
+    g_Vec3CopyUpd = (Vec3_Copy_t)(g_moduleBase + RVA_Vec3_Copy_Upd);
+    g_SoundCalcDistAtten = (Sound_CalcDistAtten_t)(g_moduleBase + RVA_Sound_CalcDistAtten);
+    g_SoundPlay3DAtPos = (Sound_Play3DAtPos_t)(g_moduleBase + RVA_Sound_Play3DAtPos);
+    g_SceneSetRaceActive = (Scene_SetRaceActive_t)(g_moduleBase + RVA_Scene_SetRaceActive);
+    g_SceneAddObject = (Scene_AddObject_t)(g_moduleBase + RVA_Scene_AddObject);
+
+    /* Option B: Feature flags now per-board via ScanS1AndAutoEnable/OrBoardFeat.
+     * g_updateFeatures/g_collisionEvents no longer used — S1-driven. */
+    // memcpy(g_updateFeatures, ...) deprecated
+
+    /* Resolve collision handler function pointers */
+    g_SoundPlayChannel = (Sound_PlayChannel_t)(g_moduleBase + RVA_Sound_PlayChannel);
+    g_BallDizzyImmunity = (Ball_DizzyImmunity_t)(g_moduleBase + RVA_Ball_DizzyImmunity);
+    g_BallGrow = (Ball_Grow_t)(g_moduleBase + RVA_Ball_Grow);
+    g_BallShrink = (Ball_Shrink_t)(g_moduleBase + RVA_Ball_Shrink);
+    g_BallSetName = (Ball_SetName_t)(g_moduleBase + RVA_Ball_SetName);
+    g_BallApplyTrajectory = (Ball_ApplyTrajectory_t)(g_moduleBase + RVA_Ball_ApplyTrajectory);
+    g_BallSetTiltedGravity = (Ball_SetTiltedGravity_t)(g_moduleBase + RVA_Ball_SetTiltedGravity);
+    g_BallSetFlatGravity = (Ball_SetFlatGravity_t)(g_moduleBase + RVA_Ball_SetFlatGravity);
+    g_RotatorMarkTriggered = (Rotator_MarkTriggered_t)(g_moduleBase + RVA_Rotator_MarkTriggered);
+    g_RotatorPlayCollisionSound = (Rotator_PlayCollisionSound_t)(g_moduleBase + RVA_Rotator_PlayCollisionSound);
+    g_RotatorTriggerSound = (Rotator_TriggerSound_t)(g_moduleBase + RVA_Rotator_TriggerSound);
+    g_RotatorStartSound = (Rotator_StartSound_t)(g_moduleBase + RVA_Rotator_StartSound);
+    g_RotatorAddBall = (Rotator_AddBall_t)(g_moduleBase + RVA_Rotator_AddBall);
+    g_CheckArenaUnlock = (CheckArenaUnlock_t)(g_moduleBase + RVA_CheckArenaUnlock);
+    g_CatapultLaunch = (Catapult_Launch_t)(g_moduleBase + RVA_Catapult_Launch);
+    g_TrapdoorOpen = (Trapdoor_Open_t)(g_moduleBase + RVA_Trapdoor_Open);
+    g_TrapdoorActivate = (Trapdoor_Activate_t)(g_moduleBase + RVA_Trapdoor_Activate);
+    g_SawAlertActivate = (Saw_AlertActivate_t)(g_moduleBase + RVA_Saw_AlertActivate);
+    g_SawActivate = (Saw_Activate_t)(g_moduleBase + RVA_Saw_Activate);
+    g_BellActivate = (Bell_Activate_t)(g_moduleBase + RVA_Bell_Activate);
+    g_JudgeReset = (Judge_Reset_t)(g_moduleBase + RVA_Judge_Reset);
+    g_ScoreDisplaySetTime = (ScoreDisplay_SetTime_t)(g_moduleBase + RVA_ScoreDisplay_SetTime);
+    g_CreateBonkPopup = (CreateBonkPopup_t)(g_moduleBase + RVA_CreateBonkPopup);
+    g_HammerChaseStart = (Hammer_ChaseStart_t)(g_moduleBase + RVA_Hammer_ChaseStart);
+    g_PendulumPlayCollisionSound = (Pendulum_PlayCollisionSound_t)(g_moduleBase + RVA_Pendulum_PlayCollisionSound);
+    g_PendulumAddIndex = (Pendulum_AddIndex_t)(g_moduleBase + RVA_Pendulum_AddIndex);
+    g_ScoreObjectCtor = (ScoreObject_ctor_t)(g_moduleBase + RVA_ScoreObject_ctor);
+    g_TimerDecrement = (Timer_Decrement_t)(g_moduleBase + RVA_Timer_Decrement);
+    g_ToobClampZoom = (ToobClampZoom_t)(g_moduleBase + RVA_ToobClampZoom);
+    g_ArenaScoreParticleCtor = (ArenaScoreParticle_ctor_t)(g_moduleBase + RVA_ArenaScoreParticle_ctor);
+    g_AthenaHashTableLookup = (AthenaHashTable_Lookup_t)(g_moduleBase + RVA_AthenaHashTable_Lookup);
+    g_AthenaListContainsValue = (AthenaList_ContainsValue_t)(g_moduleBase + RVA_AthenaList_ContainsValue);
+    g_SceneObjectSub1Ctor = (SceneObject_sub1_ctor_t)(g_moduleBase + RVA_SceneObject_sub1_ctor);
+    g_AthenaStringSet = (AthenaString_Set_t)(g_moduleBase + RVA_AthenaString_Set);
+    g_MWParserReadTag = (MWParser_ReadTag_t)(g_moduleBase + RVA_MWParser_ReadTag);
+    g_StreamReaderDtor = (StreamReader_dtor_t)(g_moduleBase + RVA_StreamReader_dtor);
+    g_AudioPlayMusic = (Audio_PlayMusic_t)(g_moduleBase + RVA_Audio_PlayMusic);
+    g_DifficultyGetTimeModifier = (Difficulty_GetTimeModifier_t)(g_moduleBase + RVA_Difficulty_GetTimeModifier);
+    g_AthenaStringFormat = (AthenaString_Format_t)(g_moduleBase + RVA_AthenaString_Format);
+    g_AthenaStringSprintfToBuffer = (AthenaString_SprintfToBuffer_t)(g_moduleBase + RVA_AthenaString_SprintfToBuffer);
+    g_WaveCos = (Wave_Fn_t)(g_moduleBase + RVA_Wave_Cos);
+    g_WaveSin = (Wave_Fn_t)(g_moduleBase + RVA_Wave_Sin);
+    g_SceneRegisterObject = (Scene_RegisterObject_t)(g_moduleBase + RVA_Scene_RegisterObject);
+    g_AthenaListRemoveByValue = (AthenaList_RemoveByValue_t)(g_moduleBase + RVA_AthenaList_RemoveByValue);
+    g_NeonPlatformActivate = (NeonPlatform_Activate_t)(g_moduleBase + RVA_NeonPlatform_Activate);
+    g_SquareWobblyActivate = (SquareWobbly_Activate_t)(g_moduleBase + RVA_SquareWobbly_Activate);
+    g_WavyActivate = (Wavy_Activate_t)(g_moduleBase + RVA_Wavy_Activate);
+    g_SpinnerActivate = (Spinner_Activate_t)(g_moduleBase + RVA_Spinner_Activate);
+    g_GearAddBall = (Gear_AddBall_t)(g_moduleBase + RVA_Gear_AddBall);
+    g_NormalGravityReset = (NormalGravityReset_t)(g_moduleBase + RVA_NormalGravityReset);
+    g_DropLiftActivate = (DropLift_Activate_t)(g_moduleBase + RVA_DropLift_Activate);
+    g_CPUIDRNG = (CPUID_RNG_Fn_t)(g_moduleBase + RVA_CPUID_RNG_Fn);
+
+    DebugLog("Function pointers resolved");
+
+    /* DIAG probe removed v13.8b (crashed on load for user; in-race diag kept). */
+
+    GetConfigPath();
+    {
+        char dbg_cp[320];
+        wsprintfA(dbg_cp, "GetConfigPath done: path='%s'", g_configPath[0] ? g_configPath : "(empty)");
+        DebugLog(dbg_cp);
+        char dbg_rf[320]; wsprintfA(dbg_rf, "RaceFiles path='%s'", g_raceFilesPath[0] ? g_raceFilesPath : "(empty)");
+        DebugLog(dbg_rf);
+    }
+    // RaceFiles.txt: generate defaults if missing, then load
+    {
+        HANDLE hRf = CreateFileA(g_raceFilesPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (hRf==INVALID_HANDLE_VALUE) {
+            InitRaceFilesDefaults();
+            GenerateRaceFiles();
+            DebugLog("GenerateRaceFiles done (defaults)");
+        } else CloseHandle(hRf);
+    }
+    LoadRaceFiles();
+    DebugLog("LoadRaceFiles done");
+    // Option B: LevelFeatures.txt deprecated — no LoadConfig
+    DebugLog("LevelFeatures.txt deprecated (Option B, S1 collisions)");
+
+    /* LevelData.txt — DEPRECATED Phase1: removed. g_levelData[] stays as
+     * in-memory defaults only; spawns are S1-driven via ScanS1AndAutoEnable + S1Ensure*. */
+    DebugLog("LevelData.txt deprecated — using in-memory defaults + S1 scan");
+
+    InstallExtFreeHook();
+    DebugLog("InstallExtFreeHook done");
+    PatchAllocSizes();
+    DebugLog("PatchAllocSizes done");
+    InstallFileFallbackHook();
+    DebugLog("InstallFileFallbackHook done");
+    InstallBoardCtorHooks();
+    DebugLog("InstallBoardCtorHooks done");
+    InstallUniversalConstructorHook();
+    DebugLog("InstallUniversalConstructorHook done");
+    InstallVtablePatches();
+    DebugLog("InstallVtablePatches done");
+    InstallHook();
+    DebugLog("InstallHook done");
+    InstallFlagRenderHook();
+    DebugLog("InstallFlagRenderHook done");
+    DebugLog("=== PatchThread complete ===\n");
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * DETACH cleanup — restore every patch so an unload leaves a vanilla game.
+ * Verify-before-write everywhere: only touch sites that still point at us.
+ * No logging here (file I/O at detach is unsafe); failures are silent skips.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static void RestoreVtablePatches(void) {
+    int i;
+    for (i = 1; i <= 15; i++) {
+        DWORD vtableAddr = g_levelVtables[i];
+        if (!vtableAddr) continue;
+        { MEMORY_BASIC_INFORMATION mbi; if (!VirtualQuery((void*)vtableAddr, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT || (DWORD)mbi.BaseAddress + mbi.RegionSize < vtableAddr + 0x88) continue; }
+        DWORD oldProtect;
+        /* slot 1 */ {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x04);
+            if (g_origUpdate[i] && *slot == (DWORD)&UniversalBoardUpdate) {
+                VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                *slot = (DWORD)g_origUpdate[i];
+                VirtualProtect(slot, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), slot, 4);
+            }
+        }
+        /* slot 19 */ {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x4C);
+            if (g_origRaceState[i] && *slot == (DWORD)&UniversalRaceState) {
+                VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                *slot = (DWORD)g_origRaceState[i];
+                VirtualProtect(slot, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), slot, 4);
+            }
+        }
+        /* slot 29 */ {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x74);
+            if (g_origDispatch[i] && *slot == (DWORD)&UniversalDispatchCollision) {
+                VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                *slot = (DWORD)g_origDispatch[i];
+                VirtualProtect(slot, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), slot, 4);
+            }
+        }
+        /* slot 33 */ {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x84);
+            if (g_origCreate[i] && *slot == (DWORD)&UniversalCreateDynamicObjects) {
+                VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                *slot = (DWORD)g_origCreate[i];
+                VirtualProtect(slot, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), slot, 4);
+            }
+        }
+        /* slot 24 (only the 6 patched levels) */ {
+            int is_two_param = (i==2 || i==5 || i==10 || i==12 || i==13 || i==14);
+            if (is_two_param) {
+                DWORD *slot = (DWORD *)(vtableAddr + 0x60);
+                if (g_origRender[i] && *slot == (DWORD)&UniversalRender) {
+                    VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                    *slot = (DWORD)g_origRender[i];
+                    VirtualProtect(slot, 4, oldProtect, &oldProtect);
+                    FlushInstructionCache(GetCurrentProcess(), slot, 4);
+                }
+            }
+        }
+    }
+}
+
+static void RestoreAdvanceRaceHook(void) {
+    if (!g_moduleBase) return;
+    unsigned char *orig = (unsigned char *)(g_moduleBase + 0x00027080);
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery(orig, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT) goto freetrap;
+    if (IsBadReadPtr(orig, 5)) goto freetrap;
+    if (orig[0] == 0xE9) {
+        DWORD cur = (DWORD)orig + 5 + *(DWORD *)(orig + 1);
+        if (cur == (DWORD)&Hook_AdvanceRace) {
+            /* Known prologue (binary-verified): mov eax,fs:[0]. */
+            static const unsigned char prologue[6] = {0x64,0xA1,0x00,0x00,0x00,0x00};
+            DWORD oldProtect;
+            if (VirtualProtect(orig, 6, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+                memcpy(orig, prologue, 6);
+                VirtualProtect(orig, 6, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), orig, 6);
+            }
+        }
+    }
+freetrap:
+    if (g_advanceTrampoline) { VirtualFree(g_advanceTrampoline, 0, MEM_RELEASE); g_advanceTrampoline = NULL; }
+    g_origAdvanceRace = NULL;
+}
+
+static void RestoreCtorHook(void) {
+    if (!g_moduleBase) return;
+    unsigned char *orig = (unsigned char *)(g_moduleBase + 0x000273E0);
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery(orig, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT) goto freetrap;
+    if (IsBadReadPtr(orig, 6)) goto freetrap;
+    if (orig[0] == 0xE9) {
+        DWORD cur = (DWORD)orig + 5 + *(DWORD *)(orig + 1);
+        if (cur == (DWORD)&Hook_UniversalConstructor) {
+            /* Known bytes (install-verified): FF 52 48 8B 4E 04. */
+            static const unsigned char orig6[6] = {0xFF,0x52,0x48,0x8B,0x4E,0x04};
+            DWORD oldProtect;
+            if (VirtualProtect(orig, 6, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+                memcpy(orig, orig6, 6);
+                VirtualProtect(orig, 6, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), orig, 6);
+            }
+        }
+    }
+freetrap:
+    if (g_ctorTrampoline) { VirtualFree(g_ctorTrampoline, 0, MEM_RELEASE); g_ctorTrampoline = NULL; }
+}
+
+static void RestoreFileFallbackHook(void) {
+    HMODULE exe = GetModuleHandleA(NULL);
+    if (!exe || IsBadReadPtr(exe, 0x100)) return;
+    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)exe;
+    if (dos->e_magic != 0x5A4D) return;
+    PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((char*)exe + dos->e_lfanew);
+    if (IsBadReadPtr(nt, sizeof(IMAGE_NT_HEADERS))) return;
+    if (nt->Signature != 0x00004550) return;
+    DWORD importRVA = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress;
+    if (!importRVA) return;
+    PIMAGE_IMPORT_DESCRIPTOR imp = (PIMAGE_IMPORT_DESCRIPTOR)((char*)exe + importRVA);
+    for (; imp->Name; imp++) {
+        char *dllName = (char*)exe + imp->Name;
+        if (!dllName || IsBadReadPtr(dllName, 8)) continue;
+        if (my_stricmp(dllName, "KERNEL32.dll") != 0 && my_stricmp(dllName, "kernel32.dll") != 0) continue;
+        PIMAGE_THUNK_DATA thunk = (PIMAGE_THUNK_DATA)((char*)exe + imp->FirstThunk);
+        PIMAGE_THUNK_DATA origThunk = (PIMAGE_THUNK_DATA)((char*)exe + imp->OriginalFirstThunk);
+        int useOrig = (imp->OriginalFirstThunk != 0);
+        for (; thunk->u1.Function; thunk++, origThunk++) {
+            PIMAGE_THUNK_DATA nameThunk = useOrig ? origThunk : thunk;
+            if (IMAGE_SNAP_BY_ORDINAL(nameThunk->u1.Ordinal)) continue;
+            PIMAGE_IMPORT_BY_NAME byName = (PIMAGE_IMPORT_BY_NAME)((char*)exe + nameThunk->u1.AddressOfData);
+            if (IsBadReadPtr(byName, 4)) continue;
+            char *funcName = (char*)byName->Name;
+            if (!funcName || IsBadReadPtr(funcName, 4)) continue;
+            DWORD oldProtect;
+            if (strcmp(funcName, "CreateFileA")==0 && g_origCreateFileA &&
+                thunk->u1.Function == (DWORD)Hook_CreateFileA) {
+                VirtualProtect(&thunk->u1.Function, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                thunk->u1.Function = (DWORD)g_origCreateFileA;
+                VirtualProtect(&thunk->u1.Function, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), &thunk->u1.Function, 4);
+            } else if (strcmp(funcName, "CreateFileW")==0 && g_origCreateFileW &&
+                thunk->u1.Function == (DWORD)Hook_CreateFileW) {
+                VirtualProtect(&thunk->u1.Function, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                thunk->u1.Function = (DWORD)g_origCreateFileW;
+                VirtualProtect(&thunk->u1.Function, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), &thunk->u1.Function, 4);
+            }
+        }
+    }
+    g_origCreateFileA = NULL;
+    g_origCreateFileW = NULL;
+}
+
+static void RestoreAllHooks(void) {
+    RestoreVtablePatches();
+    RestoreAdvanceRaceHook();
+    RestoreCtorHook();
+    RestoreFileFallbackHook();
+    RestoreFlagRenderHook();
+    RestoreBoardCtorHooks();
+    RestoreAllocSizes();
+    /* Drop ext bindings (heap dies with the process; tidy for FreeLibrary). */
+    { int i; for (i = 0; i < MAX_EXT_MAP; i++) {
+        if (g_extMap[i].ext) {
+            if (HeapValidate(GetProcessHeap(), 0, g_extMap[i].ext))
+                HeapFree(GetProcessHeap(), 0, g_extMap[i].ext);
+        }
+        g_extMap[i].board = NULL; g_extMap[i].ext = NULL;
+        g_extMap[i].feat = 0; g_extMap[i].extSize = 0; g_extMap[i].boardSize = 0;
+    } }
+}
+
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
+    if (fdwReason == DLL_PROCESS_ATTACH) {
+        DisableThreadLibraryCalls(hinstDLL);
+        CreateThread(NULL, 0, PatchThread, NULL, 0, NULL);
+    } else if (fdwReason == DLL_PROCESS_DETACH) {
+        RestoreAllHooks();
+    }
+    return TRUE;
+}
