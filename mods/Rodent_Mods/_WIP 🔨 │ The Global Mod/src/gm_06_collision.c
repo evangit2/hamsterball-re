@@ -437,11 +437,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             DWORD snd = *(DWORD *)(app + 0x448);
             if (snd) g_SoundPlay3D((void *)snd, px, py, pz, 1.0f);
         }
-        /* Per-level velocity scale and max speed (verified via Ghidra):
-         * Beginner/Toob: 4.0 scale, 10.0 max (_DAT_004cf41c, _DAT_004cf9f8)
-         * Master:        5.0 scale, 12.0 max (_DAT_004cf55c, _DAT_004cf3dc) */
-        float velScale = (level == 14) ? 5.0f : 4.0f;
-        float maxSpeed = (level == 14) ? 12.0f : 10.0f;
+        /* Bumper-hit velocity (S1-driven, no level hardcode): scale+max
+         * come from ext, fed by the optional N:VELOCITY(max,scale) S1 at
+         * load (defaults 4.0/10.0 — the old base values, Ghidra-verified
+         * _DAT_004cf41c/_DAT_004cf9f8; Master's 5.0/12.0 were unreachable
+         * by file content). Old level==14 gate removed 2026-11-26. */
+        float velScale = *(float *)((char *)ext + UNI_BUMPER_VELSCALE);
+        float maxSpeed = *(float *)((char *)ext + UNI_BUMPER_MAXSPEED);
         int phys = ball[0x69];
         if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
             float vx = *(float *)(phys + 0xCA4);

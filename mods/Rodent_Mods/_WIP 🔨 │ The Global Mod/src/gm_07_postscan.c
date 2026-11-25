@@ -516,6 +516,37 @@ static void BuildCollisionFlags(void *board, void *ext) {
      * is always 0. Toob's bumpers come through the file-scan like the rest.) */
     if (*(BYTE*)((char*)ext + COLL_FLAG_BUMPER))
         OrBoardFeat(board, FEAT_BUMPER_DECAY);
+    /* Bumper velocity tuning (S1-driven, no level hardcode): optional S1
+     * "N:VELOCITY(max,scale)" overrides the defaults (base 10.0 max /
+     * 4.0 scale — the old Beginner/Toob values; Master's 12.0/5.0 were
+     * file-unreachable since its file carries no bumper S1s). Absent or
+     * malformed => defaults. Old level==14 gate removed 2026-11-26. */
+    *(float *)((char *)ext + UNI_BUMPER_MAXSPEED) = 10.0f;
+    *(float *)((char *)ext + UNI_BUMPER_VELSCALE) = 4.0f;
+    {
+        int nn = *(int *)((char *)ext + OFF_COLLISION_COUNT);
+        char *nbase = (char *)ext + OFF_COLLISION_NAMES;
+        int ii;
+        if (nn > MAX_S1_COLLISIONS) nn = MAX_S1_COLLISIONS;
+        for (ii = 0; ii < nn; ii++) {
+            char *vnm = nbase + ii * S1_COLLISION_NAME_LEN;
+            if (my_strnicmp(vnm, "N:VELOCITY(", 11) == 0) {
+                float mx = 0, sc = 0, dv;
+                char *pp = vnm + 11;
+                while (*pp >= '0' && *pp <= '9') { mx = mx * 10 + (*pp - '0'); pp++; }
+                if (*pp == '.') { pp++; dv = 10; while (*pp >= '0' && *pp <= '9') { mx += (*pp - '0') / dv; dv *= 10; pp++; } }
+                if (*pp == ',') { pp++;
+                    while (*pp >= '0' && *pp <= '9') { sc = sc * 10 + (*pp - '0'); pp++; }
+                    if (*pp == '.') { pp++; dv = 10; while (*pp >= '0' && *pp <= '9') { sc += (*pp - '0') / dv; dv *= 10; pp++; } }
+                    if (mx > 0 && sc > 0) {
+                        *(float *)((char *)ext + UNI_BUMPER_MAXSPEED) = mx;
+                        *(float *)((char *)ext + UNI_BUMPER_VELSCALE) = sc;
+                    }
+                }
+                break;
+            }
+        }
+    }
     { char dbg[96]; int cnt=0; for(int i=0;i<COLL_FLAG_COUNT;i++) if(*(BYTE*)((char*)ext+OFF_COLLISION_FLAGS+i)) cnt++; wsprintfA(dbg,"BuildCollisionFlags: %d/%d enabled",cnt,COLL_FLAG_COUNT); DebugLog(dbg); }
 }
 

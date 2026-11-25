@@ -78,7 +78,14 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   POPDOOR in Level9. Until then stock Sky's door falls through to the
   unknown-S1 log (no crash — the most-exercised path in the mod).
 
-## 8. Master(14) velocity constants
+## 8. Master(14) velocity constants (DONE 2026-11-26)
+- Master's 5.0/12.0 were file-unreachable (its file has no bumper S1s);
+  gate cut. Scale+max now come from ext, fed at load by optional S1
+  N:VELOCITY(max,scale) (defaults 4.0/10.0 = old base values).
+- Parser harness-tested (7/7: decimals, ints, malformed-reject,
+  case-insensitive). Rig Beginner clean (defaults path live).
+- REMAINING: none. If your Master file ever gains bumpers and you want
+  5/12 back, add one N:VELOCITY(12.0,5.0) S1 to it.
 - `gm_06_collision.c:460-461` (5.0/12.0 vs 4.0/10.0)
 - Replace with: `N:VELOCITY(max,scale)`-style S1 params, defaults = base
   values. Any level can then tune without code.
