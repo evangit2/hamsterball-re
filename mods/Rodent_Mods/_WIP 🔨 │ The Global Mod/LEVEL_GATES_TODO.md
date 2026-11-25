@@ -77,9 +77,6 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
 - REMAINING (user file edit): rename Sky's single TRAPDOOR S1 to
   POPDOOR in Level9. Until then stock Sky's door falls through to the
   unknown-S1 log (no crash — the most-exercised path in the mod).
-- `gm_05_create.c:1456`
-- Replace with: DAT flag on the S1 ref (door behavior tag), read at spawn.
-- Status: TODO
 
 ## 8. Master(14) velocity constants
 - `gm_06_collision.c:460-461` (5.0/12.0 vs 4.0/10.0)
