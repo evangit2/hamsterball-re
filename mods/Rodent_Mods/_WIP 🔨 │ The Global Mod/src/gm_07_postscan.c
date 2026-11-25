@@ -517,10 +517,11 @@ static void BuildCollisionFlags(void *board, void *ext) {
     if (*(BYTE*)((char*)ext + COLL_FLAG_BUMPER))
         OrBoardFeat(board, FEAT_BUMPER_DECAY);
     /* Bumper velocity tuning (S1-driven, no level hardcode): optional S1
-     * "N:VELOCITY(max,scale)" overrides the defaults (base 10.0 max /
-     * 4.0 scale — the old Beginner/Toob values; Master's 12.0/5.0 were
-     * file-unreachable since its file carries no bumper S1s). Absent or
-     * malformed => defaults. Old level==14 gate removed 2026-11-26. */
+     * "VELOCITY(max,scale)" (N: prefix also accepted) overrides the
+     * defaults (base 10.0 max / 4.0 scale — the old Beginner/Toob values;
+     * Master's 12.0/5.0 were file-unreachable since its file carries no
+     * bumper S1s). Absent or malformed => defaults. Old level==14 gate
+     * removed 2026-11-26. */
     *(float *)((char *)ext + UNI_BUMPER_MAXSPEED) = 10.0f;
     *(float *)((char *)ext + UNI_BUMPER_VELSCALE) = 4.0f;
     {
@@ -530,9 +531,12 @@ static void BuildCollisionFlags(void *board, void *ext) {
         if (nn > MAX_S1_COLLISIONS) nn = MAX_S1_COLLISIONS;
         for (ii = 0; ii < nn; ii++) {
             char *vnm = nbase + ii * S1_COLLISION_NAME_LEN;
-            if (my_strnicmp(vnm, "N:VELOCITY(", 11) == 0) {
-                float mx = 0, sc = 0, dv;
-                char *pp = vnm + 11;
+            char *pp;
+            float mx = 0, sc = 0, dv;
+            if (my_strnicmp(vnm, "N:VELOCITY(", 11) == 0) pp = vnm + 11;
+            else if (my_strnicmp(vnm, "VELOCITY(", 9) == 0) pp = vnm + 9;
+            else continue;
+            {
                 while (*pp >= '0' && *pp <= '9') { mx = mx * 10 + (*pp - '0'); pp++; }
                 if (*pp == '.') { pp++; dv = 10; while (*pp >= '0' && *pp <= '9') { mx += (*pp - '0') / dv; dv *= 10; pp++; } }
                 if (*pp == ',') { pp++;
@@ -630,6 +634,11 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
         }
         // Option B: every N:/E: S1 ref auto-enables its collision event for this board
         if ((name[0]=='N' || name[0]=='E') && name[1]==':') {
+            AddS1CollisionToExt(board, ext, name);
+        }
+        /* Bare VELOCITY(max,scale) S1 (no N: prefix) harvests too — the
+         * bumper-tuning knob lives in the same name table. */
+        if (my_strnicmp(name, "VELOCITY(", 9) == 0) {
             AddS1CollisionToExt(board, ext, name);
         }
     }

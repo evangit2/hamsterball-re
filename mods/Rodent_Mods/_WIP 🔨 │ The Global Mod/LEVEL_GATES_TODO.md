@@ -81,7 +81,8 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
 ## 8. Master(14) velocity constants (DONE 2026-11-26)
 - Master's 5.0/12.0 were file-unreachable (its file has no bumper S1s);
   gate cut. Scale+max now come from ext, fed at load by optional S1
-  N:VELOCITY(max,scale) (defaults 4.0/10.0 = old base values).
+  VELOCITY(max,scale) — N: prefix also accepted
+  (defaults 4.0/10.0 = old base values).
 - Parser harness-tested (7/7: decimals, ints, malformed-reject,
   case-insensitive). Rig Beginner clean (defaults path live).
 - REMAINING: none. If your Master file ever gains bumpers and you want
