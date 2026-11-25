@@ -59,10 +59,6 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
 - REMAINING (user file edit): rename Odd's bare LIFTER S1 to DROPPER in
   the meshworld. Until then stock Odd routes its lifter nowhere (falls
   through unbuilt) — do NOT ship this build to Odd players yet.
-- `gm_05_create.c:1072` (isOdd)
-- Replace with: file contains LAUNCH01-03 S1s (S1 census already counts
-  them — gate on the count, not the slot).
-- Status: TODO
 
 ## 6. Pin behavior: Master(14) vs BonkCyl
 - `gm_05_create.c:1387`
