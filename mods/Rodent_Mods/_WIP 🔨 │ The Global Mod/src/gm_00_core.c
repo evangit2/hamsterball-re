@@ -891,6 +891,7 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_BUMPER_COUNT 0xBEB0
 #define UNI_BUMPER_VELSCALE 0xBEB4
 #define UNI_BUMPER_MAXSPEED 0xBEB8
+#define UNI_BUMPER_DECAYRATE 0xBEBC  /* Glow decay/frame, DECAY(rate) S1, default 0.05 */
 #define BUMPER_EHV2_BYTES(n) ((n) * 0x418)
 
 /* Bumper slot access: slots 1-8 live in ext, 9+ in the EHV2 heap array.

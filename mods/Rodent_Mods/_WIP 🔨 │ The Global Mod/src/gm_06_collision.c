@@ -438,7 +438,7 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
             if (snd) g_SoundPlay3D((void *)snd, px, py, pz, 1.0f);
         }
         /* Bumper-hit velocity (S1-driven, no level hardcode): scale+max
-         * come from ext, fed by the optional VELOCITY(max,scale) S1 at
+         * come from ext, fed by the optional BUMPER(max,scale) S1 at
          * load (defaults 4.0/10.0 — the old base values, Ghidra-verified
          * _DAT_004cf41c/_DAT_004cf9f8; Master's 5.0/12.0 were unreachable
          * by file content). Old level==14 gate removed 2026-11-26. */

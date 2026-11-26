@@ -133,11 +133,11 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   all drawer-driven since parts 1-4A.
 - Status: TODO
 
-## 12. Bumper decay on Beginner/Toob/Master
-- `gm_03_features.c:1662-1664`
-- Replace with: decay params on bumper S1s (per-bumper rate in MESHWORLD),
-  defaults = current base values.
-- Status: TODO
+## 12. Bumper decay on Beginner/Toob/Master (DONE 2026-11-26)
+- Was: hardcoded `val -= 0.05f` in Feature_BumperDecay.
+- Now: DECAY(rate) S1 (bare or N:) into UNI_BUMPER_DECAYRATE 0xBEBC,
+  default 0.05; velocity knob renamed VELOCITY(max,scale) ->
+  BUMPER(max,scale) (legacy still accepted, BUMPER wins).
 
 ## 13. Odd(9) postscan block (DONE 2026-11-26 — absorbed by #10)
 - The gm_07:246 LAUNCH table fill was un-gated as part of #10 (table

@@ -518,38 +518,56 @@ static void BuildCollisionFlags(void *board, void *ext) {
     if (*(BYTE*)((char*)ext + COLL_FLAG_BUMPER))
         OrBoardFeat(board, FEAT_BUMPER_DECAY);
     /* Bumper velocity tuning (S1-driven, no level hardcode): optional S1
-     * "VELOCITY(max,scale)" (N: prefix also accepted) overrides the
+     * "BUMPER(max,scale)" (N: prefix also accepted) overrides the
      * defaults (base 10.0 max / 4.0 scale — the old Beginner/Toob values;
      * Master's 12.0/5.0 were file-unreachable since its file carries no
-     * bumper S1s). Absent or malformed => defaults. Old level==14 gate
-     * removed 2026-11-26. */
+     * bumper S1s). Legacy "VELOCITY(max,scale)" still accepted, BUMPER
+     * wins. Absent or malformed => defaults. Old level==14 gate removed
+     * 2026-11-26. */
     *(float *)((char *)ext + UNI_BUMPER_MAXSPEED) = 10.0f;
     *(float *)((char *)ext + UNI_BUMPER_VELSCALE) = 4.0f;
+    *(float *)((char *)ext + UNI_BUMPER_DECAYRATE) = 0.05f;
     {
         int nn = *(int *)((char *)ext + OFF_COLLISION_COUNT);
         char *nbase = (char *)ext + OFF_COLLISION_NAMES;
         int ii;
+        float bmx = 0, bsc = 0, vmx = 0, vsc = 0, dcy = 0;
         if (nn > MAX_S1_COLLISIONS) nn = MAX_S1_COLLISIONS;
         for (ii = 0; ii < nn; ii++) {
             char *vnm = nbase + ii * S1_COLLISION_NAME_LEN;
             char *pp;
             float mx = 0, sc = 0, dv;
-            if (my_strnicmp(vnm, "N:VELOCITY(", 11) == 0) pp = vnm + 11;
+            int isB = 0, isD = 0;
+            if (my_strnicmp(vnm, "N:BUMPER(", 9) == 0) { pp = vnm + 9; isB = 1; }
+            else if (my_strnicmp(vnm, "BUMPER(", 7) == 0) { pp = vnm + 7; isB = 1; }
+            else if (my_strnicmp(vnm, "N:DECAY(", 8) == 0) { pp = vnm + 8; isD = 1; }
+            else if (my_strnicmp(vnm, "DECAY(", 6) == 0) { pp = vnm + 6; isD = 1; }
+            else if (my_strnicmp(vnm, "N:VELOCITY(", 11) == 0) pp = vnm + 11;
             else if (my_strnicmp(vnm, "VELOCITY(", 9) == 0) pp = vnm + 9;
             else continue;
             {
                 while (*pp >= '0' && *pp <= '9') { mx = mx * 10 + (*pp - '0'); pp++; }
                 if (*pp == '.') { pp++; dv = 10; while (*pp >= '0' && *pp <= '9') { mx += (*pp - '0') / dv; dv *= 10; pp++; } }
-                if (*pp == ',') { pp++;
+                if (isD) { if (mx > 0) dcy = mx; }
+                else if (*pp == ',') { pp++;
                     while (*pp >= '0' && *pp <= '9') { sc = sc * 10 + (*pp - '0'); pp++; }
                     if (*pp == '.') { pp++; dv = 10; while (*pp >= '0' && *pp <= '9') { sc += (*pp - '0') / dv; dv *= 10; pp++; } }
                     if (mx > 0 && sc > 0) {
-                        *(float *)((char *)ext + UNI_BUMPER_MAXSPEED) = mx;
-                        *(float *)((char *)ext + UNI_BUMPER_VELSCALE) = sc;
+                        if (isB) { bmx = mx; bsc = sc; }
+                        else { vmx = mx; vsc = sc; }
                     }
                 }
-                break;
             }
+        }
+        if (bmx > 0 && bsc > 0) {
+            *(float *)((char *)ext + UNI_BUMPER_MAXSPEED) = bmx;
+            *(float *)((char *)ext + UNI_BUMPER_VELSCALE) = bsc;
+        } else if (vmx > 0 && vsc > 0) {
+            *(float *)((char *)ext + UNI_BUMPER_MAXSPEED) = vmx;
+            *(float *)((char *)ext + UNI_BUMPER_VELSCALE) = vsc;
+        }
+        if (dcy > 0) {
+            *(float *)((char *)ext + UNI_BUMPER_DECAYRATE) = dcy;
         }
     }
     { char dbg[96]; int cnt=0; for(int i=0;i<COLL_FLAG_COUNT;i++) if(*(BYTE*)((char*)ext+OFF_COLLISION_FLAGS+i)) cnt++; wsprintfA(dbg,"BuildCollisionFlags: %d/%d enabled",cnt,COLL_FLAG_COUNT); DebugLog(dbg); }
@@ -637,9 +655,12 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
         if ((name[0]=='N' || name[0]=='E') && name[1]==':') {
             AddS1CollisionToExt(board, ext, name);
         }
-        /* Bare VELOCITY(max,scale) S1 (no N: prefix) harvests too — the
-         * bumper-tuning knob lives in the same name table. */
-        if (my_strnicmp(name, "VELOCITY(", 9) == 0) {
+        /* Bare BUMPER(max,scale)/VELOCITY(max,scale)/DECAY(rate) S1
+         * (no N: prefix) harvests too — the bumper-tuning knobs live in
+         * the same table. */
+        if (my_strnicmp(name, "VELOCITY(", 9) == 0 ||
+            my_strnicmp(name, "BUMPER(", 7) == 0 ||
+            my_strnicmp(name, "DECAY(", 6) == 0) {
             AddS1CollisionToExt(board, ext, name);
         }
     }

@@ -1538,9 +1538,11 @@ static void Feature_BumperDecay(void *board, int level) {
     }
 
     int i;
+    float rate = *(float *)((char *)ext + UNI_BUMPER_DECAYRATE);
+    if (!(rate > 0.0f)) rate = 0.05f;
     for (i = 0; i < count; i++) {
         float val = *(float *)((char *)ext + baseOfs + i * 4);
-        val -= 0.05f;
+        val -= rate;
         if (val <= 0.0f) val = 0.0f;
         *(float *)((char *)ext + baseOfs + i * 4) = val;
     }
