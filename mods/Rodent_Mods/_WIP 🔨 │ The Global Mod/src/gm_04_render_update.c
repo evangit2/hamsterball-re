@@ -848,7 +848,20 @@ board_additive:
                                 *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE) |= 1;
                             }
                         }
-                        /* E:HAMMERCHASE (2 quads): bit1/bit2 valid+armed, 0x2CD bit2 edge */
+                        /* E:HAMMERCHASE (2 quads): bit1/bit2 valid+armed, 0x2CD bit2 edge.
+                         * Row 19b sequencing: the chase waits for the popup (bonk
+                         * +0x10FC==0). The CALL and CHASE volumes intersect, so
+                         * containment alone fires both on entry; native orders by
+                         * touch with popup state gating the chase. CURRENT value:
+                         * the CALL block above already ran, so a same-frame entry
+                         * still fires (native sequential dispatch). A suppressed
+                         * edge is consumed (was set): already-inside at popup time
+                         * is no fresh touch, so the chase waits for exit +
+                         * re-entry. */
+                        int popupActive = 0;
+                        { int bchk = BoardHasOffset(board, 0x540C, 4) ? *(int *)((char *)board + 0x540C) : 0;
+                          if (!bchk && pex) { void *svc = !IsBadReadPtr((char *)pex + UNI_BONK_SAVE, 4) ? *(void **)((char *)pex + UNI_BONK_SAVE) : NULL; if (svc && !IsBadReadPtr(svc, 0x1100)) bchk = (int)svc; }
+                          popupActive = (bchk && !IsBadReadPtr((void *)bchk, 0x1100) && *(int *)(bchk + 0x10FC) == 0); }
                         {
                             int qi;
                             for (qi = 0; qi < 2; qi++) {
@@ -863,7 +876,7 @@ board_additive:
                                               bz > qmin[2]-40 && bz < qmax[2]+40);
                                 int was = (*(BYTE *)(b + 0x2CD)) & 4;
                                 st = *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE);
-                                if (inside && !was && (st & (int)vbit)) {
+                                if (inside && !was && (st & (int)vbit) && popupActive) {
                                     /* Canonical bonk slot board+0x540C. */
                                     int b2 = BoardHasOffset(board, 0x540C, 4) ? *(int *)((char *)board + 0x540C) : 0;
                                     /* Row 19: ext fallback (UNI_BONK_SAVE holds the create-time obj). */
@@ -872,6 +885,11 @@ board_additive:
                                     { char hg[192]; wsprintfA(hg, "HAMMER entry CHASE%d bonk=0x%08X board=0x%08X has=%d size=0x%X", qi, b2, (DWORD)board, BoardHasOffset(board, 0x540C, 4), (unsigned)BoardRecordedSize(board)); Gm_LogSkip(hg); }
                                     *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE) &= (DWORD)~vbit;
                                     *(BYTE *)(b + 0x2CD) |= 4;
+                                } else if (inside && !was && (st & (int)vbit) && !popupActive) {
+                                    /* Pre-popup entry: consume (already-inside at popup
+                                     * time is no fresh touch). One line per entry. */
+                                    *(BYTE *)(b + 0x2CD) |= 4;
+                                    { char hg[128]; wsprintfA(hg, "HAMMER CHASE%d suppressed pre-popup", qi); Gm_LogSkip(hg); }
                                 } else if (!inside && was) {
                                     *(BYTE *)(b + 0x2CD) &= (BYTE)~4;
                                     *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE) |= vbit;
