@@ -850,6 +850,7 @@ static void ParseAlertSaw3Presence(void *board, void *ext, const char *meshPath)
                             for (k = 0; k < 11; k++) if (buf[i+k] != tag[k]) break;
                             if (k == 11 && buf[i+11] == 0) {
                                 *(BYTE *)((char *)ext + COLL_FLAG_ALERTSAW3) = 1;
+                                { void Gm_LogSkip(const char *line); Gm_LogSkip("ALERTSAW3 presence: flag set (S6 record found)"); }
                                 break;
                             }
                         }

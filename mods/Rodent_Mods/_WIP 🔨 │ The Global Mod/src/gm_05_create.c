@@ -1166,6 +1166,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             /* Native stores saw2 at board+0x4384 (read by E:ALERTSAW2). */
             if (BoardHasOffset(board, 0x4384, 4)) *(void **)((char *)board + 0x4384) = obj;
             *(void **)((char *)ext + UNI_SAW2_TOOB_OBJ) = obj;
+            { char sl[96]; wsprintfA(sl, "SAW2 pipe obj stored=0x%08X diff=%d", (DWORD)obj, difficulty); Gm_LogSkip(sl); }
             renderOut = ((DWORD*)obj)[0x435];
         }
         if (ext) Gm_CreateSlot(board, ext, 12, x, y, z, x2, y2, z2, obj, name);

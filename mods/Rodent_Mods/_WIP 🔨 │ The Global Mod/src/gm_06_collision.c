@@ -29,6 +29,7 @@ static int g_toobDiagInit = 0;
 void ToobDiag(const char *line) {
     (void)line;
 }
+void Gm_LogSkip(const char *line); /* game-dir globalmod_created.txt (gm_11) */
 
 /* Default collision event assignments (matching original game behavior).
  * These are set on startup, then overridden by [COLLISION] section if present. */
@@ -901,7 +902,15 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     if ((*(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW3)) && my_stricmp(name, "E:ALERTSAW3") == 0) {
         if (difficulty != 0) {
             int saw2Obj = *(int *)((char *)ext + UNI_SAW2_TOOB_OBJ);
-            { char dl[128]; wsprintfA(dl, "ALERTSAW3 saw=0x%08X", saw2Obj); ToobDiag(dl); }
+            /* DIAG 2026-11-26 (throttled 1s, effect never gated): proves the
+             * touch reached dispatch with WHAT name bytes. b11=09 means the
+             * tab is back; saw=0 means the pipe-saw object never spawned. */
+            { static DWORD s_lastAS3Log = 0; DWORD tick = GetTickCount();
+              if (tick - s_lastAS3Log > 1000) { s_lastAS3Log = tick;
+                const unsigned char *nm = (const unsigned char *)name;
+                char lg[192]; wsprintfA(lg, "ALERTSAW3 touch diff=%d flag=%d saw=0x%08X b10=%02X b11=%02X b12=%02X name=%s",
+                    difficulty, *(BYTE*)((char*)ext + COLL_FLAG_ALERTSAW3), saw2Obj, nm[10], nm[11], nm[12], name);
+                Gm_LogSkip(lg); } }
             if (saw2Obj && !IsBadReadPtr((void *)saw2Obj, 0x1110)) *(BYTE *)(saw2Obj + 0x110C) = 1;
         }
     }
