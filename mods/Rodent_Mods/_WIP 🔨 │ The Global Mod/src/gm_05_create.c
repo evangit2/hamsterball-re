@@ -773,7 +773,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             { void *bExt2 = GetBoardExt(board); if (bExt2) *(void **)((char *)bExt2 + UNI_BONK_SAVE) = obj; }
             DWORD *o = (DWORD *)obj;
             renderOut = o[0x43E];
-            { char bg[128]; wsprintfA(bg, "BONK create s1=%.16s obj=0x%08X visual=0x%08X fc=%d", name, (DWORD)obj, renderOut, o ? (int)*(int *)((char *)obj + 0x10FC) : -1); Gm_LogSkip(bg); }
+            { char bg[192]; wsprintfA(bg, "BONK create s1=%.16s obj=0x%08X visual=0x%08X fc=%d board=0x%08X has=%d size=0x%X", name, (DWORD)obj, renderOut, o ? (int)*(int *)((char *)obj + 0x10FC) : -1, (DWORD)board, BoardHasOffset(board, 0x540C, 4), (unsigned)BoardRecordedSize(board)); Gm_LogSkip(bg); }
             int storeOff = UNI_BONK_MESH;
             void* bExt = GetBoardExt(board); if(!bExt) bExt=EnsureBoardExt(board);
             if(bExt) *(void **)((char *)bExt + storeOff) = obj;

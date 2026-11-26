@@ -432,6 +432,15 @@ static int ExtHasOffset(void* ext, DWORD offset, DWORD need) {
     return 0;
 }
 
+/* HAMMER diag (row 19): recorded board alloc size for the 0x540C slot hunt.
+ * Returns 0xFFFFFFFF when the board has no map entry (guard falls back to
+ * VirtualQuery). Same TU as the gm_04/gm_05 log sites (single TU build). */
+static DWORD BoardRecordedSize(void* board) {
+    int i;
+    for (i = 0; i < MAX_EXT_MAP; i++) if (g_extMap[i].board == board) return g_extMap[i].boardSize;
+    return 0xFFFFFFFFu;
+}
+
 static void* GetBoardExt(void* board) {
     if (!board) return NULL;
     int i;

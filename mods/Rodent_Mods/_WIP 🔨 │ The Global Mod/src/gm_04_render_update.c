@@ -838,7 +838,7 @@ board_additive:
                                  * fallbacks are never bonk objects. */
                                 int bonkObj = BoardHasOffset(board, 0x540C, 4) ? *(int *)((char *)board + 0x540C) : 0;
                                 if (bonkObj) ((CreateBonkPopup_t)(g_moduleBase + RVA_CreateBonkPopup))(bonkObj);
-                                { char hg[128]; wsprintfA(hg, "HAMMER entry CALLHAMMER bonk=0x%08X popup10FC=%d", bonkObj, bonkObj && !IsBadReadPtr((void *)bonkObj, 0x1100) ? *(int *)(bonkObj + 0x10FC) : -1); Gm_LogSkip(hg); }
+                                { char hg[192]; wsprintfA(hg, "HAMMER entry CALLHAMMER bonk=0x%08X popup10FC=%d board=0x%08X has=%d size=0x%X", bonkObj, bonkObj && !IsBadReadPtr((void *)bonkObj, 0x1100) ? *(int *)(bonkObj + 0x10FC) : -1, (DWORD)board, BoardHasOffset(board, 0x540C, 4), (unsigned)BoardRecordedSize(board)); Gm_LogSkip(hg); }
                                 *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE) &= (DWORD)~1;
                                 *(BYTE *)(b + 0x2CD) |= 2;
                             } else if (!inside && was) {
@@ -865,7 +865,7 @@ board_additive:
                                     /* Canonical bonk slot board+0x540C. */
                                     int b2 = BoardHasOffset(board, 0x540C, 4) ? *(int *)((char *)board + 0x540C) : 0;
                                     if (b2) ((Hammer_ChaseStart_t)(g_moduleBase + RVA_Hammer_ChaseStart))(b2);
-                                    { char hg[128]; wsprintfA(hg, "HAMMER entry CHASE%d bonk=0x%08X", qi, b2); Gm_LogSkip(hg); }
+                                    { char hg[192]; wsprintfA(hg, "HAMMER entry CHASE%d bonk=0x%08X board=0x%08X has=%d size=0x%X", qi, b2, (DWORD)board, BoardHasOffset(board, 0x540C, 4), (unsigned)BoardRecordedSize(board)); Gm_LogSkip(hg); }
                                     *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE) &= (DWORD)~vbit;
                                     *(BYTE *)(b + 0x2CD) |= 4;
                                 } else if (!inside && was) {
