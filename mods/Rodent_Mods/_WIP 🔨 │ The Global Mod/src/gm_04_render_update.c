@@ -685,9 +685,6 @@ if (!g_TimerInit || !g_TimerCleanup) break;
                 }
         }
     }
-    /* NOTE: bonkcylinder file colors render as-is (tint reverted 2026-11-26
-     * per user — PopCylinder1 white is the file's own material). No
-     * render-side color work here. */
 } // UniversalRenderImpl
 
 /* Naked thunk for UniversalRender — forwards (ECX=board, stack gfx) to

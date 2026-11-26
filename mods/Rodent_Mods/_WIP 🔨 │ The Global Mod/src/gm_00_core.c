@@ -1139,7 +1139,6 @@ static void BumperFreeEHV2(void *ext) {
 #define UNI_BBRIDGE1_MESH    0xB948  /* BBridge1 mesh (Master) */
 #define UNI_BBRIDGE2_MESH    0xB94C  /* BBridge2 mesh (Master) */
 #define UNI_YELLOWLINK_MESH  0xB950  /* YellowLink chain MeshNode (Tower +0x4374) */
-#define UNI_BONKCYL_MESH     0xB954  /* Bonkcylinder tan mesh (Master, dedicated tinted copy) */
 
 /* ── Clobber-fix: dedicated slots in free tail 0xB990+ (were sharing 0x85E8/85F0/8638/863C/8640) ──
  * FALLOUT1 was storing at BRIDGE_COUNTER (0x863C), Toob Saw2 at BRIDGE_STATE (0x8638),

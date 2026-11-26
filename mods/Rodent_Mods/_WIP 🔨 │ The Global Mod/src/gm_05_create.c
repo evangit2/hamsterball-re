@@ -55,10 +55,6 @@ static int BoardMeshOrZero(void *board, DWORD slotOff) {
     return v;
 }
 
-/* Bonkcylinder mesh (Master): process-global cache. Mesh is app/gfx-level,
- * board-independent. File materials render as-is (no tinting). */
-void *g_bonkcylMesh = NULL;
-
 static void* S1EnsureMeshWorld(void* board, void* ext, DWORD offset, const char* path) {
     void* cur = *(void**)((char*)ext + offset);
     if (cur) return cur;
@@ -68,7 +64,6 @@ static void* S1EnsureMeshWorld(void* board, void* ext, DWORD offset, const char*
     if (!gfx || !g_operatorNew || !g_LevelMeshWorldCtor) return NULL;
     void* mem = g_operatorNew(0x10D0);
     if (!mem) return NULL;
-    { void Gm_LogSkip(const char *line); char lg[192]; wsprintfA(lg, "S1MW diag mem=0x%08X gfx=0x%08X path=%.48s", (DWORD)mem, (DWORD)gfx, path); Gm_LogSkip(lg); }
     void* mw = g_LevelMeshWorldCtor(mem, gfx, path);
     if (mw) *(void**)((char*)ext + offset) = mw;
     return mw;
@@ -1390,51 +1385,17 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             if (idxB < 0) idxB = 0; if (idxB > 15) idxB = 15;
             int meshVal = BoardMeshOrZero(board, 0x5420);
             if (!meshVal) {
-                /* Dedicated tan copy: PopCylinder1 loads white; the bridge
-                 * tan (0.843/0.698/0.31, from Level10-Bridge1) is the
-                 * bonkcylinder skin. Process-global cache (mesh is app/gfx
-                 * level, board-independent) — NOT an ext slot: ext+0xB954
-                 * reads back 0x100 on Master (unknown writer, under hunt),
-                 * so slots are untrusted for this. Sky's white/blue pops
-                 * keep their own meshes. */
-                if (!g_bonkcylMesh) {
-                        DWORD appBc = GetBoardApp(board);
-                        void *gfxBc = (appBc && !IsBadReadPtr((void*)appBc, 0x200)) ? *(void**)((char*)appBc + 0x174) : NULL;
-                        if (gfxBc && g_operatorNew && g_LevelMeshWorldCtor) {
-                            void *memBc = g_operatorNew(0x10D0);
-                            if (memBc) {
-                                void *mwBc = g_LevelMeshWorldCtor(memBc, gfxBc, "Levels\\Level9-PopCylinder1");
-                                if (mwBc && !IsBadReadPtr(mwBc, 0x30)) g_bonkcylMesh = mwBc;
-                                /* Native ctor-time parity (Master ctor 0x420927):
-                                 * AssignTexAndScales fills the material array
-                                 * (+0x28, NULL at ctor return). Without it the
-                                 * tint has nothing to write to. */
-                                if (g_LevelAssignTexScales && mwBc && !IsBadReadPtr(mwBc, 0x30)) g_LevelAssignTexScales(board, mwBc);
-                                { char dg[160]; wsprintfA(dg, "BONKCYL load mem=0x%08X mw=0x%08X assign=0x%08X postmats=0x%08X", (DWORD)memBc, (DWORD)mwBc, (DWORD)g_LevelAssignTexScales, (mwBc && !IsBadReadPtr(mwBc, 0x30)) ? *(DWORD*)((char*)mwBc + 0x28) : 0); Gm_LogSkip(dg); }
-                            }
-                        }
-                    }
-                /* File colors are correct as-is (PopCylinder1 white is the
-                 * file's own material, NOT a bug — tint reverted 2026-11-26
-                 * per user: no hardcoded colors). The per-frame update retry
-                 * and tan writes are gone; the dedicated load + AssignTex +
-                 * 0x5420 fill stay so the file's own materials render. */
-                meshVal = g_bonkcylMesh ? (int)g_bonkcylMesh : 0;
-                /* Native parity: the pop visual reads board+0x5420 (Master
-                 * ctor fills it with popcylinder2; ours is free on universal
-                 * boards). The ctor's mesh arg feeds collision/+0x10D0, but
-                 * the white default proves the visual falls back when 0x5420
-                 * is empty — we never filled it. Point it at our tan mesh. */
-                if (meshVal && BoardHasOffset(board, 0x5420, 4)) *(int *)((char *)board + 0x5420) = meshVal;
+                S1EnsureMeshWorld(board, ext, UNI_POPCYL_MESH_BASE, "Levels\\Level9-PopCylinder1");
+                void* pExtM = GetBoardExt(board); if (!pExtM) pExtM = ext;
+                meshVal = pExtM ? *(int*)((char*)pExtM + UNI_POPCYL_MESH_BASE) : *(int*)((char*)ext + UNI_POPCYL_MESH_BASE);
             }
-            if (!meshVal || IsBadReadPtr((void*)meshVal, 0x30)) { DebugLog("POPCYLINDER: mesh pointer is NULL/bad, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+            if (!meshVal) { DebugLog("POPCYLINDER: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
             if (!(GetBoardFeat(board) & FEAT_POP_LISTS)) {
                 if (g_AthenaListInit && BoardHasOffset(board, 0x5428, 4)) g_AthenaListInit((void*)((char*)board + 0x5428), 0);
                 OrBoardFeat(board, FEAT_POP_LISTS);
             }
             void *mem = g_operatorNew(0x10E8);
             if (mem) {
-                { char cd[128]; wsprintfA(cd, "BONKCYL create x=%d y=%d z=%d", (int)x, (int)y, (int)z); Gm_LogSkip(cd); }
                 obj = g_PopCylinderCtor(mem, (int)board, x, y, z, meshVal);
                 g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
                 if (BoardHasOffset(board, 0x5428, 4))
