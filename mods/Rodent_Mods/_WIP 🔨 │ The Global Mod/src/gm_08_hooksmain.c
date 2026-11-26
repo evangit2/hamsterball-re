@@ -559,7 +559,11 @@ static void InstallCatapultFlingHook(void) {
     }
     g_catFlingTramp = VirtualAlloc(NULL, 16, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!g_catFlingTramp) return;
-    memcpy(g_catFlingTramp, orig, 5);
+    /* Trampoline = call Ball_SetVec3AtOffset + jmp back. The copied E8's
+     * rel32 is relative to 0x438179 — recompute it for the trampoline
+     * address (copying it verbatim jumps into the wild: Master crash). */
+    g_catFlingTramp[0] = 0xE8;
+    *(DWORD *)(g_catFlingTramp + 1) = (g_moduleBase + 0x00002A20) - ((DWORD)g_catFlingTramp + 5);
     g_catFlingTramp[5] = 0xE9;
     *(DWORD *)(g_catFlingTramp + 6) = (targetAddr + 5) - ((DWORD)g_catFlingTramp + 10);
     DWORD oldProtect;
