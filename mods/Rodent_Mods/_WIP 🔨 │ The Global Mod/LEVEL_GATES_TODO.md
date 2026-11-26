@@ -128,9 +128,9 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   unreferenced thunks; only 0x43a270 (wheel render via 0x4BB0) unproven.
 - Part 4 Phase B (TODO): if Dizzy screenshot proves no native reader,
   delete the 0x4BBC/0x4BD8 mirrors + create-time native mirrors.
-- `gm_03_features.c:447` (isDizzy)
-- Replace with: S1 presence that the Dizzy path actually needs
-  (WHEELEMBED/JUMPPIPE S1s — gate on them directly).
+- `gm_03_features.c:432` (isDizzy decl) — remaining uses: wheel-creak
+  channel only (capability probe, not a gate). Zone/visual/carry forks
+  all drawer-driven since parts 1-4A.
 - Status: TODO
 
 ## 12. Bumper decay on Beginner/Toob/Master
