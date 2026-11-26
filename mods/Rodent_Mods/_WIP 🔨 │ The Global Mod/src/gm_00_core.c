@@ -617,6 +617,10 @@ typedef void *__thiscall (*VacFace_ctor_t)(void *mem, void *board,
 typedef void *__thiscall (*Magnifier_ctor_t)(void *mem, void *board,
     float x, float y, float z);
 typedef void (__thiscall *Ball_SetTrajectory_t)(void *ball, int unk, float x, float y, float f1, float f2);
+/* DISPROVEN 2026-11-26: the 0x401040 Vec3_Init temp is dead (overwritten by
+ * SetTrajectory locals, never feeds the call — native args 4/5 are ~0).
+ * Kept only to avoid churning the resolver; spawner no longer calls it. */
+typedef void (__thiscall *Board_TrajectoryBuf_t)(void *buf, void *mesh);
 typedef void (__thiscall *Ball_SetVec3AtOffset_t)(void *ball, float *vec);
 typedef void (__thiscall *Vec3_NormalizeAndScale_t)(float *vec, float scale);
 typedef void (__thiscall *Vec3_Copy_t)(float *dst, float *src);
@@ -688,10 +692,12 @@ static CPUID_RNG_t                g_RNG = NULL;
 typedef float (__thiscall *Wave_Fn_t)(void *table, float angle);
 static Wave_Fn_t                  g_WaveSin = NULL;
 /* g_RNG_raw declared earlier (before RNG_call) */
-static BadBall_ctor_t             g_BadBallCtor = NULL;
+static BadBall_ctor_t             g_BadBallCtor = NULL;      /* load-time (CreateBadBalls 0x40BCA0 -> 0x40AFE0) */
+static BadBall_ctor_t             g_BadBallSpawnCtor = NULL; /* runtime spawner (Scene_SpawnBadBall 0x41EE86 -> 0x405D90, Ghidra-verified 2026-11-26) */
 static VacFace_ctor_t             g_VacFaceCtor = NULL;
 static Magnifier_ctor_t           g_MagnifierCtor = NULL;
 static Ball_SetTrajectory_t       g_BallSetTrajectory = NULL;
+static Board_TrajectoryBuf_t      g_BoardTrajectoryBuf = NULL;
 static Ball_SetVec3AtOffset_t     g_BallSetVec3AtOffset = NULL;
 static Vec3_NormalizeAndScale_t   g_Vec3NormalizeAndScale = NULL;
 static Vec3_Copy_t                g_Vec3CopyUpd = NULL;
@@ -722,10 +728,12 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define RVA_FUN_0044fb50              0x0004FB50
 #define RVA_FUN_00405190              0x00005190
 #define RVA_CPUID_RNG                 0x0005DD60
-#define RVA_BadBall_ctor              0x0000AFE0
+#define RVA_BadBall_ctor              0x0000AFE0  /* load-time (CreateBadBalls) — NOT the spawner */
+#define RVA_BadBallSpawn_ctor         0x00005D90  /* runtime spawner (Scene_SpawnBadBall 0x41EE86, Ghidra-verified 2026-11-26) */
 #define RVA_VacFace_ctor              0x00036860
 #define RVA_Magnifier_ctor            0x00036250
 #define RVA_Ball_SetTrajectory        0x00003850
+#define RVA_Board_TrajectoryBuf       0x00001040
 #define RVA_Ball_SetVec3AtOffset      0x00002A20
 #define RVA_Vec3_NormalizeAndScale    0x00001AA0
 #define RVA_Vec3_Copy_Upd             0x00002BF0

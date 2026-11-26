@@ -1376,7 +1376,7 @@ static void Feature_Windmill(void *board, int level) {
 static void Feature_BadBallSpawner(void *board, int level) {
     // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
     if (*(BYTE*)((char*)board+0x874)) return;
-    if (!g_RNG || !g_BadBallCtor || !g_operatorNew || !g_AthenaListAppend) return;
+    if (!g_RNG || !g_BadBallSpawnCtor || !g_operatorNew || !g_AthenaListAppend) return;
     void* ext = GetBoardExt(board);
     /* Get-only (no resurrect): teardown frames must not rebind zombie ext. */
     if (!ext) return;
@@ -1447,7 +1447,7 @@ static void Feature_BadBallSpawner(void *board, int level) {
     /* Create BadBall */
     void *mem = g_operatorNew(0xC64);
     if (!mem) return;
-    void *badball = g_BadBallCtor(mem, (int)board);
+    void *badball = g_BadBallSpawnCtor(mem, (int)board);
     if (!badball) return;
 
     /* Native calls vtable[1] on the fresh badball (state init) before
@@ -1458,8 +1458,11 @@ static void Feature_BadBallSpawner(void *board, int level) {
           if (bbInit) bbInit((DWORD)badball);
       } }
 
-    /* Set trajectory */
-    g_BallSetTrajectory(badball, 0x41EF8A, spawnX, spawnY, spawnZ, 0.0f);
+    /* Set trajectory — native Scene_SpawnBadBall (0x41EE86, Ghidra-verified
+     * 2026-11-26): args are (0x41EF8A, spawnX, spawnY, ~0, ~0). The 0x401040
+     * Vec3_Init temp is dead (overwritten, never feeds the call), so mesh
+     * floats must NOT be passed as args 4/5. */
+    g_BallSetTrajectory(badball, 0x41EF8A, spawnX, spawnY, 0.0f, 0.0f);
 
     /* Set badball fields — store IEEE 754 bits, NOT int casts */
     int *bb = (int *)badball;
@@ -1502,8 +1505,13 @@ static void Feature_BadBallSpawner(void *board, int level) {
         }
     }
 
+    /* Restore list membership (NOAPPEND bisect reverted 2026-11-26): native
+     * spawner appends ONLY to 0x29D4. Without this the balls never render
+     * and BadBall_Update starves — "still 8-balls" is expected. */
     g_AthenaListAppend((void *)((char *)board + UNI_BALL_LIST), (int)badball);
     *(int *)((char *)ext + BRD_BB_TOTAL) = totalSpawned + 1;
+    /* Build tag 5D90 in the log line proves the new ctor shipped. */
+    { char spw[96]; wsprintfA(spw, "ODDSPAWN total=%d bc=%d spawn=5D90", totalSpawned + 1, ballCount + 1); Gm_LogSkip(spw); }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

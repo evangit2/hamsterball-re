@@ -1107,6 +1107,8 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
          * — hence both slots are written here. */
         if (difficulty != 0 && (GetBoardFeat(board) & FEAT_BADBALL)) {
             *(char *)((char *)ext + BRD_BB_FLAG) = 1;
+            /* ODD-FIX2: log the arming moment. */
+            { char al[64]; wsprintfA(al, "ODDARM diff=%d", difficulty); Gm_LogSkip(al); }
             /* Native also sets board+0x4370 (the spawner enable the Odd
              * update reads). Mirror it (preload-gap pattern). */
             if (BoardHasOffset(board, 0x4370, 1)) *(BYTE *)((char *)board + 0x4370) = 1;

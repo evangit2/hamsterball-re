@@ -6,7 +6,7 @@
 #define GM_DYN_BASE   0xBD00  /* header inside fixed ext (free: 0xBBC8-0xC000) */
 #define GM_DYN_MAGIC  0x474D4459  /* 'GMDY' */
 #define GM_DYN_MAXTYPES 16
-#define GM_DYN_PERSLOT 16     /* overflow drawers per family */
+#define GM_DYN_PERSLOT 64     /* overflow drawers per family (Neon needs 22+, Impossible ~45) */
 static void Gm_LogCreated(const char *line);
 #define GM_DYN_OVF_PTR  (GM_DYN_BASE + 0x60 + 16 * 4)  /* void* overflow block */
 #define GM_DYN_OVF_CAP  (GM_DYN_BASE + 0x60 + 16 * 4 + 4)  /* int slots per family */
@@ -284,7 +284,16 @@ static int Gm_CreateSlot(void *board, void *ext, int type,
     }
     if (!Gm_EnsureOverflow(ext)) return -1;
     slot = Gm_DynSlotPtr(ext, type, idx);
-    if (!slot) return -1;
+    if (!slot) {
+        /* Over cap (shouldn't happen now that PERSLOT==cursor clamp): log it
+         * so silent drawer drops never hide again. */
+        char dp[128];
+        wsprintfA(dp, "DYNCREATE: %s #%d DROPPED cap=%d s1='%.48s'",
+            Gm_TypeName(type), idx, GM_DYN_PERSLOT, s1name ? s1name : "?");
+        DebugLog(dp);
+        Gm_LogCreated(dp);
+        return -1;
+    }
     /* 64B word map: 0 mesh,1 render,2 obj,3-5 xyz,6-8 rxyz,9 s1idx,10-15 state */
     ((DWORD *)slot)[0] = 0;            /* mesh (shared singleton used) */
     ((DWORD *)slot)[1] = 0;            /* render */
