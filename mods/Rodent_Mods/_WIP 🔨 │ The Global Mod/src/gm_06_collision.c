@@ -1099,9 +1099,13 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         /* Chrome-ball arming — native OddBoard_CollisionHandler E:PIPERANDOM
          * (Ghidra-verified 2026-09-11): difficulty != 0 -> board+0x4370 = 1,
          * and board+0x4370 IS the Odd BadBall spawn flag (dword-idx 0x10DC
-         * in the decomp = byte 0x4370). Same write lands on SAW1's slot in
-         * other levels (offset reuse) — hence both slots are written here. */
-        if (difficulty != 0 && level == 9) {
+         * in the decomp = byte 0x4370). S1-driven, no level hardcode (old
+         * level==9 half removed 2026-11-26): the feat means the file
+         * carried LAUNCH01-03 (table filled at load), so the mirror lands
+         * on a board that owns the spawner — never a foreign native slot.
+         * Same write lands on SAW1's slot in other levels (offset reuse)
+         * — hence both slots are written here. */
+        if (difficulty != 0 && (GetBoardFeat(board) & FEAT_BADBALL)) {
             *(char *)((char *)ext + BRD_BB_FLAG) = 1;
             /* Native also sets board+0x4370 (the spawner enable the Odd
              * update reads). Mirror it (preload-gap pattern). */

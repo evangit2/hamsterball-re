@@ -95,7 +95,13 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   on 0x768 with no level). No S1 param needed — the check is ball-state
   logic, and a dying ball's inertia write was always meaningless.
 
-## 10. Odd(9) tournament difficulty check
+## 10. Odd(9) tournament difficulty check (DONE 2026-11-26)
+- Table fill un-gated: harvests LAUNCH01-03 wherever they exist (stock:
+  only Odd's file); FEAT_BADBALL arms only when >=1 slot resolves.
+- E:PIPERANDOM arming is now difficulty + FEAT_BADBALL (file carried
+  the spawner table) instead of difficulty + level==9. The feat gate
+  also protects the board+0x4370 mirror — it can only land on a board
+  that owns the spawner, never a foreign native slot.
 - `gm_06_collision.c:1116`
 - Replace with: DAT param on the relevant S1 (difficulty threshold travels
   with the object, not the slot).

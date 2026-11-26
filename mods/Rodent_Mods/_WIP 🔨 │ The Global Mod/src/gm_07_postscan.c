@@ -238,12 +238,12 @@ static void UniversalPostSetup(void *board) {
      * total +0x4378=0, last +0x43A0=-1, table +0x437C/88/94 = S1 positions
      * of LAUNCH01 / LAUNCH02 / LAUNCH03. CHROMESHADOW resolves to a SEPARATE
      * slot (+0x43A4, consumer unknown — NOT a spawn location).
-     * The ONLY writer of +0x10DC in .text is this init-0: no trigger event
-     * (Odd E: set is BELL/SCORE/JUDGES/SAW/HAMMER only) ever sets the flag,
-     * so the vanilla timer-spawner never fires. Replicated dormant-faithful
-     * here (flag=0); starting it (flag=1 at load, or wiring a custom E:
-     * trigger to set it) is a gameplay call, not a fix. */
-    if (level == 9 || ContentFileId(GetBoardExt(board)) == 9) {
+     * S1-driven, no level hardcode (old level==9/content==9 gate removed
+     * 2026-11-26): harvests wherever LAUNCH01-03 exist — stock, only
+     * Odd's file carries them. FEAT_BADBALL arms only when at least one
+     * slot resolves; empty table (counter inits still run) never fires
+     * anything (spawner is feat-gated in the universal update). */
+    {
         DWORD oddMW = *(DWORD *)((char *)board + BOARD_MESHWORLD);
         if (oddMW && !IsBadReadPtr((void *)oddMW, 0x430)) {
             const char *bbSlots[3] = { "LAUNCH01", "LAUNCH02", "LAUNCH03" };
@@ -261,7 +261,8 @@ static void UniversalPostSetup(void *board) {
                     bfound++;
                 }
             }
-            OrBoardFeat(board, FEAT_BADBALL);
+            if (bfound > 0)
+                OrBoardFeat(board, FEAT_BADBALL);
             {
                 char bbdbg[96];
                 wsprintfA(bbdbg, "Odd: BB table init %d/3 (dormant, flag=0 per native)", bfound);
