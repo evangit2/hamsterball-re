@@ -158,6 +158,11 @@ static void Vac_BuildTubes(void *board, void *ext) {
         DebugLog(vdbg);
     }
     if (built > 0) OrBoardFeat(board, FEAT_VACUUM);
+    {
+        char vlg[64];
+        wsprintfA(vlg, "VACBUILT: %d/%d faces", built, nIn);
+        Gm_LogCreated(vlg);
+    }
 }
 
 /* Sky magnifier (native Sky loader 0x410900 tail): MAGNIFYER S1 +op_new
