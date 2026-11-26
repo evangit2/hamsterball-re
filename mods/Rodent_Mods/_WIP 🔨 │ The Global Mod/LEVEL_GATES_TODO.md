@@ -120,10 +120,6 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   harvests wherever LAUNCH01-03 exist, feat arms on bfound>0). Nothing
   level-gated remains in gm_07_postscan.c (verified: zero level==9
   sites).
-- `gm_07_postscan.c:246`
-- Replace with: same S1-presence the block scans for (LAUNCH table build
-  runs when LAUNCH S1s exist).
-- Status: TODO
 
 ## 14. Glass(12) render path
 - `gm_04_render_update.c:152`
