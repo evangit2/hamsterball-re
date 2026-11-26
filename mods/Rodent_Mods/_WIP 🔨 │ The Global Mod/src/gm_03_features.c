@@ -578,7 +578,9 @@ static void Feature_SwirlZones(void *board, int level) {
                      * NOT the weak-slow cause — fields were already at the
                      * visuals (user log: 12 clean HITs). Cause hunt moved to
                      * scale-rate/persistence diag (g_scaledFrames). */
-                    if (isDizzy) {
+                    /* Live pos with S1-home fallback for the unposed first
+                     * frame (native Dizzy form, valid on every board). */
+                    {
                         float lx = *(float *)(zoneIdx + 0x10E0);
                         float ly = *(float *)(zoneIdx + 0x10E4);
                         float lz = *(float *)(zoneIdx + 0x10E8);
@@ -587,10 +589,6 @@ static void Feature_SwirlZones(void *board, int level) {
                             zoneY = *(float *)(zoneIdx + 0x10D8);
                             zoneZ = *(float *)(zoneIdx + 0x10DC);
                         } else { zoneX = lx; zoneY = ly; zoneZ = lz; }
-                    } else {
-                        zoneX = *(float *)(zoneIdx + 0x10E0);
-                        zoneY = *(float *)(zoneIdx + 0x10E4);
-                        zoneZ = *(float *)(zoneIdx + 0x10E8);
                     }
                     float radius = *(float *)(zoneIdx + 0x1100) * 60.0f;
 
@@ -718,12 +716,14 @@ static void Feature_SwirlZones(void *board, int level) {
         /* Primary swirl mesh rotation — compose into timerBuf (drawn below),
          * never the persistent gfx object (same class as bridge/windmill). */
         if (swirlDbg < 3) DebugLog("  [swirl] step3a: primary mesh rotation");
-        /* Native angle lives at board+0x4BBC on Dizzy-class boards (zeroed
-         * per WATERWHEEL S1 at create, decremented here); ext mirror else. */
-        float *pAngW = isDizzy ? (float *)((char *)board + 0x4BBC)
-                               : (float *)((char *)ext + OFF_SWIRL_ANGLE1);
+        /* Angle lives in ext on every board (drawer model, seeded from
+         * S1 at create); mirror to the native slot where one exists
+         * (BoardHasOffset-probed Dizzy struct) so any native reader keeps
+         * fresh values. No level gate. */
+        float *pAngW = (float *)((char *)ext + OFF_SWIRL_ANGLE1);
         float angle1 = *pAngW - 0.5f;
         *(float*)((char*)ext + OFF_SWIRL_SPEED)=0.5f; *pAngW=angle1;
+        if (BoardHasOffset(board, 0x4BBC, 4)) *(float *)((char *)board + 0x4BBC) = angle1;
         if (swirlDbg < 3) DebugLog("  [swirl] step3a: calling Matrix44Zero");
         g_Matrix44Zero((int *)timerBuf);
         if (swirlDbg < 3) DebugLog("  [swirl] step3a: calling GfxScaleY");
@@ -742,14 +742,14 @@ static void Feature_SwirlZones(void *board, int level) {
         if (swirlDbg < 3) DebugLog("  [swirl] step3a: Gfx calls done, calling render");
         // Re-enabled after ext-heap fix — heap overflow was corrupting spatial tree at +0x18
         {
-            /* Dizzy-class: draw the NATIVE mesh (board+0x4BA8, vtbl 0x58/0x54
-             * — exactly the native update's draw calls); else ext render. */
-            DWORD drawObj = isDizzy ? *(DWORD *)((char *)board + 0x4BA8)
-                                    : *(DWORD*)((char*)ext + UNI_MESH_1);
+            /* Draw the ext-seeded mesh (create mirrors S1 mesh/pos into
+             * ext on every board); native slots stay fresh via the mirrors
+             * in create + the angle mirror above. */
+            DWORD drawObj = *(DWORD*)((char*)ext + UNI_MESH_1);
             /* Native wheel center for sound below. */
-            float wcx = isDizzy ? *(float *)((char *)board + 0x4BB0) : *(float*)((char*)ext + OFF_WHEEL_EMBED_X);
-            float wcy = isDizzy ? *(float *)((char *)board + 0x4BB4) : *(float*)((char*)ext + OFF_WHEEL_EMBED_Y);
-            float wcz = isDizzy ? *(float *)((char *)board + 0x4BB8) : *(float*)((char*)ext + OFF_WHEEL_EMBED_Z);
+            float wcx = *(float*)((char*)ext + OFF_WHEEL_EMBED_X);
+            float wcy = *(float*)((char*)ext + OFF_WHEEL_EMBED_Y);
+            float wcz = *(float*)((char*)ext + OFF_WHEEL_EMBED_Z);
             /* Wheel creak (native block 3 tail): distance attenuation at the
              * wheel center, played through the ctor-grabbed channel +0x4BDC. */
             if (isDizzy && g_SoundCalcDistAtten && g_SoundPlay3DAtPos) {
@@ -784,8 +784,7 @@ static void Feature_SwirlZones(void *board, int level) {
                 void *gfxM = *(void **)(app + 0x174);
                 if (gfxM) {
                     int wi;
-                    DWORD sharedMesh = isDizzy ? *(DWORD *)((char *)board + 0x4BA8)
-                                              : *(DWORD*)((char*)ext + UNI_MESH_1);
+                    DWORD sharedMesh = *(DWORD*)((char*)ext + UNI_MESH_1);
                     for (wi = 1; wi < nw && wi < 64; wi++) {
                         void *slot = Gm_DynSlotPtr(ext, 1, wi);
                         char mtimer[68];
@@ -836,24 +835,24 @@ static void Feature_SwirlZones(void *board, int level) {
         g_TimerInit(timerBuf);
 
         float swirlSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 0.5f;
-        /* Native angle lives at board+0x4BD8 on Dizzy-class boards; ext else. */
-        float *pAngS = isDizzy ? (float *)((char *)board + 0x4BD8)
-                               : (float *)((char *)ext + OFF_SWIRL_ANGLE2);
+        /* Angle lives in ext on every board; mirror to the native slot
+         * where one exists (see step3a). */
+        float *pAngS = (float *)((char *)ext + OFF_SWIRL_ANGLE2);
         *pAngS = *pAngS + swirlSpeed;
+        if (BoardHasOffset(board, 0x4BD8, 4)) *(float *)((char *)board + 0x4BD8) = *pAngS;
         if (swirlDbg < 3) DebugLog("  [swirl] step3b: calling Matrix44Zero");
         g_Matrix44Zero((int *)timerBuf);
         if (swirlDbg < 3) DebugLog("  [swirl] step3b: calling GfxScaleX");
         g_GfxScaleX(timerBuf, *pAngS);
         if (swirlDbg < 3) DebugLog("  [swirl] step3b: calling GfxSetPosition");
         g_GfxSetPosition(timerBuf,
-            isDizzy ? *(float *)((char *)board + 0x4BCC) : *(float *)((char *)ext + OFF_SWIRL_POS_X),
-            isDizzy ? *(float *)((char *)board + 0x4BD0) : *(float *)((char *)ext + OFF_SWIRL_POS_Y),
-            isDizzy ? *(float *)((char *)board + 0x4BD4) : *(float *)((char *)ext + OFF_SWIRL_POS_Z));
+            *(float *)((char *)ext + OFF_SWIRL_POS_X),
+            *(float *)((char *)ext + OFF_SWIRL_POS_Y),
+            *(float *)((char *)ext + OFF_SWIRL_POS_Z));
         if (swirlDbg < 3) DebugLog("  [swirl] step3b: Gfx calls done, calling render");
         {
-            /* Dizzy-class: draw the NATIVE mesh (board+0x4BC4); else ext render. */
-            DWORD drawS = isDizzy ? *(DWORD *)((char *)board + 0x4BC4)
-                                  : *(DWORD*)((char*)ext + UNI_MESH_7);
+            /* Draw the ext-seeded swirl mesh (see step3a). */
+            DWORD drawS = *(DWORD*)((char*)ext + UNI_MESH_7);
             DWORD swirlRender = drawS;
             if (swirlRender && !IsBadReadPtr((void*)swirlRender, 4)) {
                 DWORD *vtbl = *(DWORD**)swirlRender;
@@ -878,8 +877,7 @@ static void Feature_SwirlZones(void *board, int level) {
                 if (gfxS && !IsBadReadPtr(gfxS, 4)) {
                     int wi;
                     float sspd = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 0.5f;
-                    DWORD sDraw = isDizzy ? *(DWORD *)((char *)board + 0x4BC4)
-                                          : *(DWORD*)((char*)ext + UNI_MESH_7);
+                    DWORD sDraw = *(DWORD*)((char*)ext + UNI_MESH_7);
                     for (wi = 1; wi < ns && wi < 64; wi++) {
                         void *slot = Gm_DynSlotPtr(ext, 2, wi);
                         char st[68];
@@ -907,128 +905,12 @@ static void Feature_SwirlZones(void *board, int level) {
             }
         }
     }
-    /* Dizzy riders: wheel (ball+0x778) and swirl (ball+0x779) carry.
-     * Native blocks 4/5: the ball's center-relative offset is rotated
-     * through the live Gfx matrix and the ball repositioned (kinematic
-     * carry); the swirl also steers velocity with a release countdown at
-     * ball+0x78C and a capture cap at ball+0x788. */
-    if (isDizzy && g_TimerInit && g_TimerCleanup && g_GfxScaleY && g_GfxScaleX &&
-        g_MatrixTransformVec3 && app) {
-        void *gfxR = *(void **)(app + 0x174);
-        if (gfxR && !IsBadReadPtr(gfxR, 4)) {
-        float wcx2 = *(float *)((char *)board + 0x4BB0);
-        float wcy2 = *(float *)((char *)board + 0x4BB4);
-        float wcz2 = *(float *)((char *)board + 0x4BB8);
-        float scx = *(float *)((char *)board + 0x4BCC);
-        float scy = *(float *)((char *)board + 0x4BD0);
-        float scz = *(float *)((char *)board + 0x4BD4);
-        float sdelta = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 0.5f;
-        int ri = g_AthenaListGetIterator((void *)((char *)board + UNI_BALL_LIST));
-        *(int *)((char *)board + UNI_BALL_ITER + ri * 4) = 0;
-        int rcount = *(int *)((char *)board + UNI_BALL_COUNT);
-        int rb = 0;
-        if (rcount > 0) {
-            DWORD rarr = *(DWORD *)((char *)board + UNI_BALL_ARRAY);
-            if (rarr && !IsBadReadPtr((void *)rarr, 4)) {
-                rb = *(int *)rarr;
-                *(int *)((char *)board + UNI_BALL_ITER + ri * 4) = 1;
-            }
-        }
-        while (rb) {
-            /* Wheel carry (native 0x41DC80: Scale 0x457C90(-speed) mode 3 +
-             * inline matrix, center board+0x4BB0). Builder 0x45AE21 keeps
-             * row0=[1,0,0] => Rx (NOT Ry): x unchanged,
-             * y'=c*y-s*z, z'=s*y+c*z with the FIXED -0.5 step
-             * (c=0.9999619, s=-0.0087265). Never route through the Scale
-             * helpers. */
-            if (*(char *)(rb + 0x778)) {
-                float ry = *(float *)(rb + BALL_POS_Y_OFS) - wcy2;
-                float rz = *(float *)(rb + BALL_POS_Z_OFS) - wcz2;
-                *(float *)(rb + BALL_POS_Y_OFS) = wcy2 + 0.9999619f * ry + 0.0087265f * rz;
-                *(float *)(rb + BALL_POS_Z_OFS) = wcz2 - 0.0087265f * ry + 0.9999619f * rz;
-            }
-            /* Swirl capture / carry (native block 5). */
-            if (*(char *)(rb + 0x779) == 0) {
-                int cd = *(int *)(rb + 0x78C);
-                if (cd != 0) {
-                    cd--;
-                    *(int *)(rb + 0x78C) = cd;
-                    if (cd == 0) {
-                        float cap = (float)(*(int *)(rb + 0x788)) * 0.0001f;
-                        DWORD phys = *(DWORD *)(rb + BALL_PHYS_PTR_OFS);
-                        if (phys && !IsBadReadPtr((void *)phys, 0xCB0) && cap > 0.0f) {
-                            float vx = *(float *)(phys + BALL_PHYS_VEL_X);
-                            float vy = *(float *)(phys + BALL_PHYS_VEL_Y);
-                            float vz = *(float *)(phys + BALL_PHYS_VEL_Z);
-                            float sp = sqrtf(vx*vx + vy*vy + vz*vz);
-                            if (sp > cap && sp > 0.0f) {
-                                float s = cap / sp;
-                                *(float *)(phys + BALL_PHYS_VEL_X) = vx * s;
-                                *(float *)(phys + BALL_PHYS_VEL_Y) = vy * s;
-                                *(float *)(phys + BALL_PHYS_VEL_Z) = vz * s;
-                            }
-                        }
-                    }
-                }
-            } else {
-                *(int *)(rb + 0x78C) = 5;
-                {
-                float rel[3];
-                float ox = *(float *)(rb + BALL_POS_X_OFS);
-                float oy = *(float *)(rb + BALL_POS_Y_OFS);
-                float oz = *(float *)(rb + BALL_POS_Z_OFS);
-                rel[0] = ox - scx; rel[1] = oy - scy; rel[2] = oz - scz;
-                float old0 = rel[0], old1 = rel[1], old2 = rel[2];
-                /* Manual Scale (native 0x41DE90: Scale 0x457C60(+step)
-                 * mode 4 + inline matrix, center board+0x4BCC, angle is the
-                 * FIXED +0.5 step from frame slot 0x2C — NOT the accumulated
-                 * board+0x4BD8 (that feeds the POSE at 0x41DE0C only).
-                 * Builder 0x45AEBD keeps row1=[0,1,0] => Ry (NOT Rx):
-                 * y unchanged, x'=c*x+s*z, z'=-s*x+c*z
-                 * (c=cos0.5=0.9999619, s=sin0.5=0.0087265). Never route
-                 * through the Scale helpers. */
-                { float nx = 0.9999619f * rel[0] + 0.0087265f * rel[2];
-                  float nz = -0.0087265f * rel[0] + 0.9999619f * rel[2];
-                  rel[0] = nx; rel[2] = nz; }
-                *(float *)(rb + BALL_POS_X_OFS) = scx + rel[0];
-                *(float *)(rb + BALL_POS_Y_OFS) = scy + rel[1];
-                *(float *)(rb + BALL_POS_Z_OFS) = scz + rel[2];
-                DWORD phys = *(DWORD *)(rb + BALL_PHYS_PTR_OFS);
-                if (phys && !IsBadReadPtr((void *)phys, 0xCB0)) {
-                    float vx = *(float *)(phys + BALL_PHYS_VEL_X);
-                    float vy = *(float *)(phys + BALL_PHYS_VEL_Y);
-                    float vz = *(float *)(phys + BALL_PHYS_VEL_Z);
-                    float osp = sqrtf(vx*vx + vy*vy + vz*vz);
-                    *(int *)(rb + 0x788) = (int)(osp * 10000.0f);
-                    float nvx = vx + (rel[0] - old0) * 0.1f;
-                    float nvy = vy + (rel[1] - old1) * 0.1f;
-                    float nvz = vz + (rel[2] - old2) * 0.1f;
-                    float nsp = sqrtf(nvx*nvx + nvy*nvy + nvz*nvz);
-                    if (nsp > osp && osp > 0.0f && nsp > 0.0f) {
-                        float s = osp / nsp;
-                        nvx *= s; nvy *= s; nvz *= s;
-                    }
-                    *(float *)(phys + BALL_PHYS_VEL_X) = nvx;
-                    *(float *)(phys + BALL_PHYS_VEL_Y) = nvy;
-                    *(float *)(phys + BALL_PHYS_VEL_Z) = nvz;
-                }
-                }
-            }
-            int rn = *(int *)((char *)board + UNI_BALL_ITER + ri * 4);
-            if (*(int *)((char *)board + UNI_BALL_COUNT) <= rn) break;
-            { DWORD rarr2 = *(DWORD *)((char *)board + UNI_BALL_ARRAY);
-            if (!rarr2 || IsBadReadPtr((void *)rarr2, (rn + 1) * 4)) break;
-            rb = *(int *)(rarr2 + rn * 4);
-            *(int *)((char *)board + UNI_BALL_ITER + ri * 4) = rn + 1; }
-        }
-        }
-    }
-    /* Global Mod: ext-path rider carry (non-Dizzy boards with wheels/
-     * swirls). Native carry above is isDizzy-gated on native board slots;
+    /* Rider carry (drawer-driven, every board): the ball's center-relative
+     * offset is rotated kinematically (native Dizzy blocks 4/5 constants);
      * custom levels marked riders (+0x778/+0x779) but never carried them
      * (and +0x778 is sticky). Drive every wheel/swirl drawer center here:
      * nearest center within 500u carries, none in range clears the mark. */
-    if (!isDizzy && (Gm_DrawerCount(ext, 1) > 0 || Gm_DrawerCount(ext, 2) > 0)) {
+    if (Gm_DrawerCount(ext, 1) > 0 || Gm_DrawerCount(ext, 2) > 0) {
         int ci = g_AthenaListGetIterator((void *)((char *)board + UNI_BALL_LIST));
         *(int *)((char *)board + UNI_BALL_ITER + ci * 4) = 0;
         int cn = *(int *)((char *)board + UNI_BALL_COUNT);

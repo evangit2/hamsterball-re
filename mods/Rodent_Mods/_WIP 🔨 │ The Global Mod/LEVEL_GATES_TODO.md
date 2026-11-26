@@ -114,10 +114,20 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   check. +0x4378 init/append gates stay (memory safety, unread now).
   Side effect: Master's slow zones likely resurrected (old ext branch
   walked an empty UNI_LIST_6).
-- Part 3 (zone-center home fallback): TODO — delete the isDizzy branch,
-  keep fallback for all (zero-check, verified live==home).
-- Part 4 (wheelembed/tipper block, gm_03 ~723-840: 0x4BA8/0x4BB0/etc.
-  native vs ext reads): TODO — gate on WHEELEMBED S1 presence directly.
+- Part 3 (zone-center home fallback, DONE 2026-11-26): isDizzy branch
+  replaced by the native Dizzy form everywhere (live +0x10E0 + zero
+  fallback to S1 home). Guard kept, gate removed.
+- Part 4 Phase A (DONE 2026-11-26): all per-frame board-slot READS moved
+  to ext/drawers (create already seeds every mirror from S1:
+  UNI_MESH_1/7, WHEELEMBED, SWIRL_POS; angles computed in ext).
+  Per-frame native WRITES kept behind BoardHasOffset probes (compat shim
+  for any native reader: 0x4BBC/0x4BD8). Native rider-carry block deleted
+  (116 lines); ext drawer carry un-gated (was !isDizzy). Wheel creak
+  stays isDizzy+probe (ctor channel exists only on Dizzy struct).
+  Disasm: per-frame readers lived in dead Dizzy update 0x41d50e /
+  unreferenced thunks; only 0x43a270 (wheel render via 0x4BB0) unproven.
+- Part 4 Phase B (TODO): if Dizzy screenshot proves no native reader,
+  delete the 0x4BBC/0x4BD8 mirrors + create-time native mirrors.
 - `gm_03_features.c:447` (isDizzy)
 - Replace with: S1 presence that the Dizzy path actually needs
   (WHEELEMBED/JUMPPIPE S1s — gate on them directly).
