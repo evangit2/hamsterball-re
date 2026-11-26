@@ -683,16 +683,19 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
     }
 
     /* ── Up/Impossible: E:HELPINERTIA ──
-     * Impossible gates this on (char)ball[0x768] != 0; Up does not. */
+     * Was gated on ball+0x768 only on Impossible; now universal. The
+     * 0x768 check (live-ball gate, same as SquareWobbly/Wavy/Rotator/Gear
+     * below) is ball-state logic, not level logic. (Old level!=15 half
+     * removed 2026-11-26.) */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_HELPINERTIA)) && my_stricmp(name, "E:HELPINERTIA") == 0) {
-        if (level != 15 || (char)*(int *)((char *)ball + 0x768))
+        if ((char)*(int *)((char *)ball + 0x768))
             ball[0xA9] = 0x40200000;
     }
 
     /* ── Up/Impossible: E:UNHELPINERTIA ──
-     * Impossible gates this on (char)ball[0x768] != 0; Up does not. */
+     * Same un-gating as HELPINERTIA above. */
     if ((*(BYTE*)((char*)ext + COLL_FLAG_UNHELPINERTIA)) && my_stricmp(name, "E:UNHELPINERTIA") == 0) {
-        if (level != 15 || (char)*(int *)((char *)ball + 0x768))
+        if ((char)*(int *)((char *)ball + 0x768))
             ball[0xA9] = 0x40A00000;
     }
 

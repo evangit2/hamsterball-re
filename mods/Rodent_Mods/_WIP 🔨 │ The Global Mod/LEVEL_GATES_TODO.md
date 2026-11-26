@@ -88,7 +88,12 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
 - REMAINING: none. If your Master file ever gains bumpers and you want
   5/12 back, add one N:VELOCITY(12.0,5.0) S1 to it.
 
-## 9. Impossible(15) kill-floor exception (x2)
+## 9. Impossible(15) kill-floor exception (DONE 2026-11-26)
+- The two level!=15 halves on E:HELP/UNHELPINERTIA are cut; the pure
+  ball+0x768 live-ball check now runs everywhere. This converges with
+  the file's own pattern (SquareWobbly/Wavy/Rotator/Gear already gate
+  on 0x768 with no level). No S1 param needed — the check is ball-state
+  logic, and a dying ball's inertia write was always meaningless.
 - `gm_06_collision.c:703,710`
 - Replace with: kill-floor S1/DAT opt-out tag (MESHWORLD declares its own
   kill planes; absence = no kill).
