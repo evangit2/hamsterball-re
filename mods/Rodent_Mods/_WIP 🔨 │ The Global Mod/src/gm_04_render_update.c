@@ -629,6 +629,12 @@ void UniversalRenderImpl(void *board, int unk) {
                             py = *(DWORD *)&g_skyPillarPos[pi * 3 + 1];
                             pz = *(DWORD *)&g_skyPillarPos[pi * 3 + 2];
 /* Full 52, no cull (per user 2026-11-22). */
+/* Zero the timer: Timer_Init sets the vtable only, so the matrix at
+                             * +0x4 would start as stack garbage and the pose
+                             * composes onto it (origin-burst spaghetti on
+                             * unlucky stacks). Fresh stacks are zeroed, which
+                             * is why the rig looked clean. */
+{ int zi; for (zi = 0; zi < 68; zi++) timerBuf[zi] = 0; }
 
 if (!g_TimerInit || !g_TimerCleanup) break;
                             g_TimerInit(timerBuf);
@@ -651,16 +657,18 @@ if (!g_TimerInit || !g_TimerCleanup) break;
                                 : : [x] "m" (px), [y] "m" (py), [z] "m" (pz),
                                     [t] "r" (timerBuf), [f] "r" (fnPose)
                                 : "eax", "ecx", "edx", "memory");
-/* MAT01-proven (user-confirmed 2026-11-22): pose leaves m12=0
-                             * (X zeroed), m13=fileX, m14=fileZ. Renderer is
-                             * D3D standard (X=m12,Y=m13,Z=m14), so write
-                             * full file XYZ: m12=fileX, m13=fileY, m14=fileZ.
-                             * (The old mm[13]=X/mm[14]=Y stacked all 52 at
-                             * x=0 = invisible.) */
+/* Index-base caution (revert 2026-11-26 — the row-20 change wrote the
+                             * wrong slots): MAT01's m12/m13/m14 are MATRIX-
+                             * relative, but mm[] here is TIMER-relative and
+                             * the matrix starts at timer+0x4. So trans-X/Y/Z
+                             * = T[13]/T[14]/T[15], i.e. mm[13]=fileX (trans-X)
+                             * and mm[14]=fileY (trans-Y); T[15] keeps the
+                             * pose's fileZ (trans-Z). The row-20 mm[12..14]
+                             * wrote M[11] (rotation row!) + shifted slots =
+                             * origin-burst spaghetti. LFL-proven form. */
                             { float *mm = (float *)timerBuf;
-                              mm[12] = *(float *)&px;
-                              mm[13] = *(float *)&py;
-                              mm[14] = *(float *)&pz; }
+                              mm[13] = *(float *)&px;
+                              mm[14] = *(float *)&py; }
                             
 
                             __asm__ volatile (
