@@ -1024,12 +1024,12 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
                 }
             }
         }
-        /* Ship state: return (NULL,NULL) for JUDGE. The game-side JUDGE
-         * consumer crashes on a non-null out1 (proven: (judge,0)+link
-         * crashes, (0,0)+link runs). Judges are driven via the 0x4BBC
-         * board link above, so NULL outs lose nothing. */
+        /* Judges draw via CD4 like every other out1=obj family (tippers
+         * prove the path). Old (judge,0)-crash note retired 2026-11-26:
+         * re-test loads Expert clean — the crash belonged to an older
+         * board state (pre-0x4BBC-init). Native parity: out1=judge. */
         if (ext) Gm_CreateSlot(board, ext, 12, x, y, z, x2, y2, z2, obj, name);
-        *(int*)out1 = 0; *(int*)out2 = 0;
+        *(int*)out1 = (int)obj; *(int*)out2 = 0;
         { char jb[128]; wsprintfA(jb, "SPAWN %s x=%d y=%d z=%d obj=0x%X", name, (int)x, (int)y, (int)z, (int)obj); ImpDiag(jb); }
         return;
     }
