@@ -103,7 +103,16 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   also protects the board+0x4370 mirror — it can only land on a board
   that owns the spawner, never a foreign native slot.
 
-## 11. Dizzy(4) flag
+## 11. Dizzy(4) flag — split into parts (IN PROGRESS 2026-11-26)
+- Part 1 (ambient-tarbubble gate, DONE): gate is now tar-content-driven
+  (tarCount>0 from TARBUBBLE S1 harvest; stock: Dizzy Level3 36 +
+  Master Level10 54) instead of level==4. Contentless boards never
+  touch the native slot; empty list can't fire regardless.
+- Part 2 (zone source board+0x4378 vs ext): TODO — verify native
+  gluebie create appends board+0x4378 on every board, then gate on
+  GLUEBIE S1 presence.
+- Part 3 (zone-center home fallback): TODO — delete the isDizzy branch,
+  keep fallback for all (zero-check, verified live==home).
 - `gm_03_features.c:447` (isDizzy)
 - Replace with: S1 presence that the Dizzy path actually needs
   (WHEELEMBED/JUMPPIPE S1s — gate on them directly).

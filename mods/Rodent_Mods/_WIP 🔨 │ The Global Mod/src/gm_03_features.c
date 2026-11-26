@@ -432,12 +432,19 @@ static void Feature_SwirlZones(void *board, int level) {
      * Dizzy file in any slot behaves identically. */
     int isDizzy = (level == 4) || (ContentFileId(ext) == 4);
 
-    /* Native ambient-tarbubble gate (Dizzy update head): spawn only when
+    /* Ambient-tarbubble gate (native Dizzy update head): spawn only when
      * size(board+0x362C) != 1 or the player ball's +0x14C flag is clear.
-     * Board_ctor inits the list the same under the mod, so the gate reads
-     * identically. Non-Dizzy keeps the legacy always-try behavior. */
+     * Tar-content-gated, no level check: the gate reads only when the
+     * tar list is non-empty (harvested from TARBUBBLE S1s at load —
+     * stock: Dizzy + Master), so contentless boards never touch the
+     * native slot. Empty list => block below can't fire regardless. */
+    DWORD *tarListGate = (DWORD *)((char *)ext + tarListOfs);
+    int tarCountGate = 0;
+    if (!IsBadReadPtr(tarListGate, 0x410)) {
+        tarCountGate = *(int *)(tarListGate + 1);  /* count at +0x04 */
+    }
     int ambientGate = 1;
-    if (isDizzy && g_AthenaListGetSize) {
+    if (tarCountGate > 0 && g_AthenaListGetSize) {
         int sz362C = g_AthenaListGetSize((void *)((char *)board + 0x362C));
         int p1ball = *(int *)(app + 0x5DC);
         char b14c = (p1ball && !IsBadReadPtr((void *)p1ball, 0x150)) ? *(char *)(p1ball + 0x14C) : 0;
