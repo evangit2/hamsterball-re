@@ -115,7 +115,11 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   defaults = current base values.
 - Status: TODO
 
-## 13. Odd(9) postscan block
+## 13. Odd(9) postscan block (DONE 2026-11-26 — absorbed by #10)
+- The gm_07:246 LAUNCH table fill was un-gated as part of #10 (table
+  harvests wherever LAUNCH01-03 exist, feat arms on bfound>0). Nothing
+  level-gated remains in gm_07_postscan.c (verified: zero level==9
+  sites).
 - `gm_07_postscan.c:246`
 - Replace with: same S1-presence the block scans for (LAUNCH table build
   runs when LAUNCH S1s exist).
