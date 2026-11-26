@@ -108,11 +108,16 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   (tarCount>0 from TARBUBBLE S1 harvest; stock: Dizzy Level3 36 +
   Master Level10 54) instead of level==4. Contentless boards never
   touch the native slot; empty list can't fire regardless.
-- Part 2 (zone source board+0x4378 vs ext): TODO — verify native
-  gluebie create appends board+0x4378 on every board, then gate on
-  GLUEBIE S1 presence.
+- Part 2 (zone source, DONE 2026-11-26): native board+0x4378/ext fork
+  replaced by a drawer-registry walk (legacy UNI_GLUEBIE_OBJ 0xBBAC +
+  type-3 drawers, bells pattern). Same objects, same fields, no level
+  check. +0x4378 init/append gates stay (memory safety, unread now).
+  Side effect: Master's slow zones likely resurrected (old ext branch
+  walked an empty UNI_LIST_6).
 - Part 3 (zone-center home fallback): TODO — delete the isDizzy branch,
   keep fallback for all (zero-check, verified live==home).
+- Part 4 (wheelembed/tipper block, gm_03 ~723-840: 0x4BA8/0x4BB0/etc.
+  native vs ext reads): TODO — gate on WHEELEMBED S1 presence directly.
 - `gm_03_features.c:447` (isDizzy)
 - Replace with: S1 presence that the Dizzy path actually needs
   (WHEELEMBED/JUMPPIPE S1s — gate on them directly).

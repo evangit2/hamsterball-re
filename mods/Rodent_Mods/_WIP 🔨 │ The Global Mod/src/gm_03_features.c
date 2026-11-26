@@ -423,9 +423,8 @@ static void Feature_SwirlZones(void *board, int level) {
     /* Unified lists live in ext — one address for every race. The old
      * _M aliases are #defined to the same offsets (lf_00_core.c), so no
      * content fork is needed here. */
-    int swirlListOfs = BRD_SWIRL_LIST;
     int tarListOfs = BRD_TARBUBBLE_LIST;
-    // swirlListOfs/tarListOfs are UNI offsets >=0x6500 — use ext
+    // tarListOfs is a UNI offset >=0x6500 — use ext
 
     /* Dizzy-class boards use NATIVE slots/list walks (native Dizzy update
      * parity); other levels keep the ext-unified path. Content-keyed so a
@@ -514,30 +513,40 @@ static void Feature_SwirlZones(void *board, int level) {
         if (swirlDbg < 3) DebugLog("  [swirl] step2c done");
     }
 
-    /* Zone source: native board+0x4378 gluebie list on Dizzy-class boards
-     * (native behavior — gluebies ARE the proximity zones, with per-gluebie
-     * radius at +0x1100); ext unified zones on other levels. */
-    void *zoneBase = isDizzy ? board : ext;
-    DWORD zoneOff = isDizzy ? 0x4378 : (DWORD)swirlListOfs;
+    /* Zone registry: legacy singleton (drawer 0, UNI_GLUEBIE_OBJ) +
+     * type-3 gluebie drawers (dynamic loader registry). Every gluebie on
+     * every board holds a drawer with its obj pointer (create-time,
+     * unconditional) — the same objects the native board+0x4378 list
+     * holds on Dizzy, so walking drawers reads identical fields with no
+     * level check. (Old native/ext fork removed 2026-11-26.) */
+    int zones[65];
+    int zoneCount = 0;
+    {
+        int gz0 = *(int *)((char *)ext + UNI_GLUEBIE_OBJ);
+        if (gz0 && !IsBadReadPtr((void *)gz0, 0x1108) && zoneCount < 65)
+            zones[zoneCount++] = gz0;
+    }
+    {
+        int zd = Gm_DrawerCount(ext, 3);
+        int zi;
+        for (zi = 1; zi < zd && zi < 64 && zoneCount < 65; zi++) {
+            void *slot = Gm_DynSlotPtr(ext, 3, zi);
+            int zo = (slot && !IsBadReadPtr(slot, 16)) ? *(int *)((char *)slot + 8) : 0;
+            if (zo && !IsBadReadPtr((void *)zo, 0x1108))
+                zones[zoneCount++] = zo;
+        }
+    }
 
     /* NATIVE PARITY (Dizzy 0x41D510 lines 92-107): clear every zone's +0x1104
      * at frame start, before the ball loop sets the hit ones. LFL set 1 on
      * hit but never cleared — first touch froze that gluebie's anim forever
      * (native gluebie update reads the flag for its motion branch). */
-    if (g_AthenaListGetIterator && g_AthenaListGetSize) {
-        int clrIter = g_AthenaListGetIterator((void *)((char *)zoneBase + zoneOff));
-        if (clrIter >= 0) {
-            int clrCount = *(int *)((char *)zoneBase + zoneOff + 4);
-            DWORD clrArr = *(DWORD *)((char *)zoneBase + zoneOff + 0x40C);
-            if (clrCount > 0 && clrArr && !IsBadReadPtr((void *)clrArr, clrCount * 4)) {
-                int k;
-                for (k = 0; k < clrCount; k++) {
-                    int z = *(int *)(clrArr + k * 4);
-                    if (z && !IsBadReadPtr((void *)z, 0x1108))
-                        *(BYTE *)((char *)z + 0x1104) = 0;
-                }
-            }
-            *(int *)((char *)zoneBase + zoneOff + 8 + clrIter * 4) = 0;
+    {
+        int k;
+        for (k = 0; k < zoneCount; k++) {
+            int z = zones[k];
+            if (z && !IsBadReadPtr((void *)z, 0x1108))
+                *(BYTE *)((char *)z + 0x1104) = 0;
         }
     }
 
@@ -548,18 +557,9 @@ static void Feature_SwirlZones(void *board, int level) {
             /* Per-ball hit flag (native ball+0x2BC: set when any zone hits
              * this frame, cleared otherwise — gates the contact sound). */
             int anyHit = 0;
-            /* Check proximity to each swirl zone */
-            int zoneIter = g_AthenaListGetIterator((void *)((char *)zoneBase + zoneOff));
-            *(int *)((char *)zoneBase + zoneOff + 8 + zoneIter * 4) = 0;
-            int zoneCount = *(int *)((char *)zoneBase + zoneOff + 4);
-            int zoneIdx = 0;
-            if (zoneCount > 0) {
-                DWORD zoneArrayPtr = *(DWORD *)((char *)zoneBase + zoneOff + 0x40C);
-                if (zoneArrayPtr && !IsBadReadPtr((void *)zoneArrayPtr, 4)) {
-                    zoneIdx = *(int *)zoneArrayPtr;
-                    *(int *)((char *)zoneBase + zoneOff + 8 + zoneIter * 4) = 1;
-                }
-            }
+            /* Check proximity to each swirl zone (drawer registry) */
+            int zonePos = 0;
+            int zoneIdx = (zoneCount > 0) ? zones[0] : 0;
 
             while (zoneIdx) {
                 if (*(int *)(ballIdx + 0x18) >= 0) {
@@ -660,12 +660,9 @@ static void Feature_SwirlZones(void *board, int level) {
                         }
                     }
                 }
-                int next = *(int *)((char *)zoneBase + zoneOff + 8 + zoneIter * 4);
-                if (*(int *)((char *)zoneBase + zoneOff + 4) <= next) break;
-                DWORD zoneArr = *(DWORD *)((char *)zoneBase + zoneOff + 0x40C);
-                if (!zoneArr || IsBadReadPtr((void *)zoneArr, (next + 1) * 4)) break;
-                zoneIdx = *(int *)(zoneArr + next * 4);
-                *(int *)((char *)zoneBase + zoneOff + 8 + zoneIter * 4) = next + 1;
+                zonePos++;
+                if (zonePos >= zoneCount) break;
+                zoneIdx = zones[zonePos];
             }
             /* Native ball+0x2BC write: 1 when any zone hit this frame, else 0. */
             *(BYTE *)((char *)ballIdx + BALL_TAR_SOUND_FLAG) = (BYTE)anyHit;

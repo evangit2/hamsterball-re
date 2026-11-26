@@ -1032,6 +1032,7 @@ static void BumperFreeEHV2(void *ext) {
 #define UNI_SAW_MESH         0x86CC  /* Saw mesh (Toob) */
 #define UNI_FALLOUT_MESH     0x86D0  /* Fallout mesh (Toob) */
 #define UNI_GLUEBIE_MESH     0x86D4  /* Gluebie mesh (Dizzy) */
+#define UNI_GLUEBIE_OBJ      0xBBAC  /* First gluebie obj (drawer 0 legacy, bells pattern) */
 #define UNI_TIPPER_POSES     0xBB00  /* 8 tipper poses x,y,z,yaw (16B each) */
 #define UNI_TIPPER_POSE_N    0xBB80  /* tipper pose count */
 #define UNI_PUMP_SKIP        0xBBA8  /* v13.28: 0=unscanned 1=skip(native walks) 2=pump */

@@ -377,10 +377,10 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         OrBoardFeat(board, FEAT_SWIRL);
         // Mirror for legacy OFF_* readers (alias, same addr) — use outer ext, no shadow.
         if (ext) { *(void**)((char*)ext+OFF_SWIRL_MESH)=obj; *(int*)((char*)ext+OFF_SWIRL_RENDER)=renderOut; *(float*)((char*)ext+OFF_SWIRL_POS_X)=x; *(float*)((char*)ext+OFF_SWIRL_POS_Y)=y; *(float*)((char*)ext+OFF_SWIRL_POS_Z)=z; }
-        /* NOTE: no ext zone object — Feature_SwirlZones walks the NATIVE
-         * board+0x4378 gluebie list (native Dizzy behavior; the gluebies ARE
-         * the proximity zones). Ext zones were misplaced (SWIRL S1 pos, not
-         * gluebie pos) and are retired. */
+        /* NOTE: Feature_SwirlZones walks the type-3 gluebie drawers
+         * (same objects the native board+0x4378 list holds on Dizzy).
+         * Ext zones were misplaced (SWIRL S1 pos, not gluebie pos) and
+         * are retired. */
         if (ext) Gm_CreateSlot(board, ext, 2, x, y, z, 0, 0, 0, obj, name);
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
@@ -428,7 +428,11 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
              * TIPPER/WATERWHEEL/SWIRL S1) never got FEAT_SWIRL — the slow
              * never ran at all. Gluebies ARE the zones; enable it here. */
             OrBoardFeat(board, FEAT_SWIRL);
-            if (ext) Gm_CreateSlot(board, ext, 3, x, y, z, 0, 0, 0, obj, name);
+            if (ext) { int gi = Gm_CreateSlot(board, ext, 3, x, y, z, 0, 0, 0, obj, name);
+                /* Drawer 0 (legacy singleton) has no overflow slot — mirror
+                 * its obj so the drawer-driven zone walk sees every gluebie
+                 * (bells pattern: UNI_BELL_OBJ + drawers 1+). */
+                if (gi == 0 && obj) *(int *)((char *)ext + UNI_GLUEBIE_OBJ) = (int)obj; }
         }
         *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
         return;
