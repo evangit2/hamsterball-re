@@ -147,8 +147,10 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   level-gated remains in gm_07_postscan.c (verified: zero level==9
   sites).
 
-## 14. Glass(12) render path
-- `gm_04_render_update.c:152`
-- Replace with: material/render flags from the file (glass S4 mats?),
-  not slot 12.
-- Status: TODO
+## 14. Glass(12) render path (DONE 2026-11-26)
+- Was: `level == 12 && ContentFileId == 12` + COLL_FLAG_GLASS gate.
+- Now: presence-only `flag && orig`. Disasm of 0x417C00: zero globals,
+  all inputs SMASHER-written board slots (any board, any slot) + app
+  devices + hook-filled DAT. Rig: stock Glass (RACE 12) clean 32s+;
+  stock Beginner (RACE 2) clean. Swapped-slot native path proven by
+  disasm only (content id is filename-derived, no stock file isolates it).
