@@ -834,6 +834,60 @@ void ImpDiag(const char *msg) {
  * with universal handlers. Saves original pointers for delegation.
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* Row 25 diag: Sky-dtor entry probe. Level-close crash 0001:0001FC48 lands
+ * in the Sky board destructor (0x41FBC0 via slot0 thunk 0x425140) deleting
+ * board+0x4388 — on a "Board (Master)" close. Vtable-slot override from the
+ * init thread (approved pattern: data-pointer patch, no SEH-interior cave).
+ * Reads only + conditional MessageBox (no file I/O in teardown context).
+ * Silent passthrough unless a deleted slot holds a bad pointer. */
+static DWORD g_origSkyDtorSlot = 0;
+
+void SkyDtorDiag(void *obj, int flag) {
+    static const DWORD offs[6] = {0x436C, 0x4370, 0x4374, 0x4384, 0x4388, 0x438C};
+    int i, bad = -1;
+    DWORD badVal = 0;
+    if (!obj || IsBadReadPtr(obj, 0x43C0)) return;
+    for (i = 0; i < 6; i++) {
+        DWORD v = *(DWORD *)((char *)obj + offs[i]);
+        if (v) {
+            DWORD vt = 0;
+            if (IsBadReadPtr((void *)v, 4)) { bad = i; badVal = v; break; }
+            vt = *(DWORD *)v;
+            if (vt < 0x400000 || vt >= 0x500000 || IsBadReadPtr((void *)vt, 4)) { bad = i; badVal = v; break; }
+        }
+    }
+    if (bad >= 0) {
+        char nm[20]; int k;
+        char *np = IsBadReadPtr(obj, 0x86C) ? NULL : *(char **)((char *)obj + 0x868);
+        for (k = 0; k < 19; k++) {
+            if (!np || IsBadReadPtr(np + k, 1)) break;
+            nm[k] = np[k];
+            if (!np[k]) break;
+        }
+        nm[19] = 0;
+        { char msg[256]; wsprintfA(msg, "SKYDTOR diag obj=0x%08X flag=%d name=%.19s badslot=+0x%X val=0x%08X", (DWORD)obj, flag, nm, offs[bad], badVal);
+          MessageBoxA(NULL, msg, "GlobalMod SKYDTOR DIAG", 0); }
+    }
+}
+
+__attribute__((naked)) static void SkyDtorWrapper(void) {
+    __asm__ volatile (
+        "pushl %ebp\n\t"
+        "movl %esp, %ebp\n\t"
+        "pushl %edx\n\t"
+        "pushl %ecx\n\t"
+        "pushl 8(%ebp)\n\t"
+        "pushl %ecx\n\t"
+        "call _SkyDtorDiag\n\t"
+        "addl $8, %esp\n\t"
+        "popl %ecx\n\t"
+        "popl %edx\n\t"
+        "popl %ebp\n\t"
+        "movl _g_origSkyDtorSlot, %eax\n\t"
+        "jmp *%eax\n\t"
+    );
+}
+
 static void InstallVtablePatches(void) {
     int i;
     for (i = 1; i <= 15; i++) {
@@ -912,6 +966,21 @@ static void InstallVtablePatches(void) {
         }
     }
     DebugLog("Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)");
+    /* Row 25 diag: Sky-dtor entry probe (vtable 0x4D0FC8 slot0). Verify-or-skip
+     * + self-heal-safe: only patch when the slot still holds the stock thunk. */
+    {
+        DWORD *slot = (DWORD *)0x4D0FC8;
+        if (!IsBadReadPtr(slot, 4) && *slot == (DWORD)0x425140 && !g_origSkyDtorSlot) {
+            DWORD oldProtect;
+            g_origSkyDtorSlot = *slot;
+            if (VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+                *slot = (DWORD)&SkyDtorWrapper;
+                VirtualProtect(slot, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), slot, 4);
+                Gm_LogSkip("SKYDTOR probe installed");
+            } else g_origSkyDtorSlot = 0;
+        }
+    }
 }
 
 static DWORD WINAPI PatchThread(LPVOID param) {
@@ -1200,6 +1269,19 @@ static void RestoreVtablePatches(void) {
                     FlushInstructionCache(GetCurrentProcess(), slot, 4);
                 }
             }
+        }
+    }
+    /* Row 25 diag: restore Sky-dtor probe (verify-before-write). */
+    {
+        DWORD *slot = (DWORD *)0x4D0FC8;
+        if (g_origSkyDtorSlot && !IsBadReadPtr(slot, 4) && *slot == (DWORD)&SkyDtorWrapper) {
+            DWORD oldProtect;
+            if (VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+                *slot = g_origSkyDtorSlot;
+                VirtualProtect(slot, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), slot, 4);
+            }
+            g_origSkyDtorSlot = 0;
         }
     }
 }
