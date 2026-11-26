@@ -102,10 +102,6 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   the spawner table) instead of difficulty + level==9. The feat gate
   also protects the board+0x4370 mirror — it can only land on a board
   that owns the spawner, never a foreign native slot.
-- `gm_06_collision.c:1116`
-- Replace with: DAT param on the relevant S1 (difficulty threshold travels
-  with the object, not the slot).
-- Status: TODO
 
 ## 11. Dizzy(4) flag
 - `gm_03_features.c:447` (isDizzy)
