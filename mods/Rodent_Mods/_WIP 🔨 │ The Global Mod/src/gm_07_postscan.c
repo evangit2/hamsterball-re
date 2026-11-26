@@ -1034,7 +1034,10 @@ static void ParseHammerQuads(void *board, void *ext, void *meshWorld, const char
     *(DWORD *)((char *)ext + OFF_HAMMER_TRIG_VALID) = 0;
     *(DWORD *)((char *)ext + OFF_HAMMER_TRIG_STATE) = 0;
     if (!board || !ext || !meshWorld || !meshPath || !meshPath[0]) return;
-    if (!(*(BYTE *)((char *)ext + COLL_FLAG_CALLHAMMER)) && !(*(BYTE *)((char *)ext + COLL_FLAG_HAMMERCHASE))) return;
+    /* NO S1-flag gate (fixed 2026-11-26): E:CALLHAMMER/E:HAMMERCHASE live
+     * as S6 quads with no S1 refs, so the S1-derived COLL flags are always
+     * 0 and the old early-return starved the whole hammer chain (no popup,
+     * no chase, bridge never breaks). Presence is proven per-quad below. */
     DWORD objDb = *(DWORD *)((char *)meshWorld + 0x480);
     if (!objDb || IsBadReadPtr((void *)objDb, 0x444)) return;
     float *verts = *(float **)(objDb + 0x440);
@@ -1056,15 +1059,24 @@ static void ParseHammerQuads(void *board, void *ext, void *meshWorld, const char
         if (!ReadFile(h, buf, fsize, &br, NULL) || br != fsize) { HeapFree(GetProcessHeap(), 0, buf); CloseHandle(h); return; }
         CloseHandle(h);
     }
-    if (*(BYTE *)((char *)ext + COLL_FLAG_CALLHAMMER))
-        ParseOneHammerQuad(board, ext, verts, buf, fsize, "E:CALLHAMMER", 12, 13, 0,
-                           OFF_CALLHAMMER_MIN, OFF_CALLHAMMER_MAX, 1, "HAMMERQUAD-CALL");
-    if (*(BYTE *)((char *)ext + COLL_FLAG_HAMMERCHASE)) {
-        ParseOneHammerQuad(board, ext, verts, buf, fsize, "E:HAMMERCHASE", 13, 14, 0,
-                           OFF_HAMMERCHASE_MIN, OFF_HAMMERCHASE_MAX, 2, "HAMMERQUAD-CHASE");
-        ParseOneHammerQuad(board, ext, verts, buf, fsize, "E:HAMMERCHASE", 13, 14, 1,
-                           OFF_HAMMERCHASE2_MIN, OFF_HAMMERCHASE2_MAX, 4, "HAMMERQUAD-CHASE2");
-    }
+    /* Unconditional: presence is proven by the byte-scan itself (S6 quads
+     * have no S1 refs, so flag-gating here would skip everything). */
+    ParseOneHammerQuad(board, ext, verts, buf, fsize, "E:CALLHAMMER", 12, 13, 0,
+                       OFF_CALLHAMMER_MIN, OFF_CALLHAMMER_MAX, 1, "HAMMERQUAD-CALL");
+    ParseOneHammerQuad(board, ext, verts, buf, fsize, "E:HAMMERCHASE", 13, 14, 0,
+                       OFF_HAMMERCHASE_MIN, OFF_HAMMERCHASE_MAX, 2, "HAMMERQUAD-CHASE");
+    ParseOneHammerQuad(board, ext, verts, buf, fsize, "E:HAMMERCHASE", 13, 14, 1,
+                       OFF_HAMMERCHASE2_MIN, OFF_HAMMERCHASE2_MAX, 4, "HAMMERQUAD-CHASE2");
+    /* Mirror presence into the dispatcher flags (S6-driven, same as
+     * BRANCHQUAD/ALERTSAW3): the S1 table never carries these names. */
+    { DWORD v = *(DWORD *)((char *)ext + OFF_HAMMER_TRIG_VALID);
+      if (v & 1) *(BYTE *)((char *)ext + COLL_FLAG_CALLHAMMER) = 1;
+      if (v & 6) *(BYTE *)((char *)ext + COLL_FLAG_HAMMERCHASE) = 1;
+      { void Gm_LogSkip(const char *line); char hg[128];
+        wsprintfA(hg, "HAMMERQUADS valid=0x%X callham=%d chase=%d", v,
+          *(BYTE *)((char *)ext + COLL_FLAG_CALLHAMMER),
+          *(BYTE *)((char *)ext + COLL_FLAG_HAMMERCHASE));
+        Gm_LogSkip(hg); } }
     HeapFree(GetProcessHeap(), 0, buf);
 }
 /* Odd gravity zones (E:GRAVITY<TYPE>X</TYPE> volumes, any suffix) for the
