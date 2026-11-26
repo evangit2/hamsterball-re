@@ -18,6 +18,7 @@ static void FireBranchTeleport(void *board, int *ball, const char *branchName, i
  * Must be non-static for asm reference from the naked thunk. */
 void ToobDiag(const char *line);
 void ImpDiag(const char *msg);
+void Gm_LogSkip(const char *line); /* game-dir globalmod_created.txt (gm_11) */
 static void *Gm_DynSlotPtr(void *ext, int type, int idx);
 static int Gm_DrawerCount(void *ext, int type);
 /* Sky pre-base box (native order 0x410E80: BOX then Level_RenderDynamicObjects).
@@ -589,18 +590,22 @@ void UniversalRenderImpl(void *board, int unk) {
      * not items). Per pillar: Timer_Init, Timer-v[0x8] pose, mesh-v[0x1C]
      * render, Timer_Cleanup. Both v-calls are callee-clean (ret 12 / ret 8)
      * — hand-rolled asm, MinGW __thiscall caller-cleans and would corrupt
-     * ESP (verified by objdump of thiscall shape). */
-    if (features & REND_SKY_BOX) {
+     * ESP (verified by objdump of thiscall shape).
+     * GATE (fixed 2026-11-26): presence-driven on pmesh + count, NOT on
+     * REND_SKY_BOX. Stock Level9 carries 52 PILLAR S1s but no CLOUDSCAPE S1,
+     * so the skybox-sprite gate hid every pillar; the 11-21 hybrid
+     * retirement (native render no longer runs) made it total. */
+    {
         extern float g_skyPillarPos[128 * 3];
         extern int g_skyPillarCount;
         DWORD pmesh = *(DWORD *)((char *)board + 0x436C);
         { static int pgOnce = 0; if (!pgOnce) { pgOnce = 1;
           char pg[96]; wsprintfA(pg, "SKY-PILLARS render n=%d mesh=0x%X",
             g_skyPillarCount, pmesh);
-          SkyDiag(pg);
+          Gm_LogSkip(pg);
           { char av[128]; wsprintfA(av, "SKY-ARR0 xyz=%d,%d,%d",
             (int)g_skyPillarPos[0], (int)g_skyPillarPos[1], (int)g_skyPillarPos[2]);
-            SkyDiag(av);
+            Gm_LogSkip(av);
 } } }
         if (pmesh && !IsBadReadPtr((void *)pmesh, 8) &&
             g_skyPillarCount > 0 && g_skyPillarCount <= 128) {
