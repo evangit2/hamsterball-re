@@ -327,19 +327,10 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         *(float*)((char*)ext + UNI_WATER_ROT_X) = x2;
         *(float*)((char*)ext + UNI_WATER_ROT_Y) = y2;
         *(float*)((char*)ext + UNI_WATER_ROT_Z) = z2;
-        /* Mirror into native slots (ctor Step 8b ran when ext was empty, so
-         * native slots hold NULLs — re-mirror now that meshes are loaded).
-         * Native Dizzy create reads +0x4BA8 as the mesh and writes S1 pos
-         * to +0x4BB0/4/8, zeroing +0x4BBC (wheel angle) per S1. */
-        if (BoardHasOffset(board, 0x4BA8, 4) && BoardHasOffset(board, 0x4BBC, 4)) {
-            *(int *)((char *)board + 0x4BA8) = *(int *)((char *)ext + UNI_MESH_0);
-            *(int *)((char *)board + 0x4BAC) = *(int *)((char *)ext + UNI_MESH_1);
-            *(float *)((char *)board + 0x4BB0) = x;
-            *(float *)((char *)board + 0x4BB4) = y;
-            *(float *)((char *)board + 0x4BB8) = z;
-            *(int *)((char *)board + 0x4BBC) = 0;
-        }
-        if (!obj) { obj = *(void **)((char *)board + 0x4BA8); renderOut = *(int *)((char *)board + 0x4BAC); }
+        /* Native slots retired (Phase B 2026-11-26, Dizzy-verified): the
+         * mod reads ext mirrors everywhere; nothing native consumes the
+         * board slots. */
+        if (!obj) { obj = *(void **)((char *)ext + UNI_MESH_0); renderOut = *(int *)((char *)ext + UNI_MESH_1); }
         *(DWORD *)((char *)ext + UNI_JUDGE_LIST) = 0;
         OrBoardFeat(board, FEAT_SWIRL);
         {
@@ -362,18 +353,10 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         *(float *)((char *)ext + UNI_MESH_15) = x;
         *(float *)((char *)ext + UNI_MESH_12) = y;
         *(float *)((char *)ext + UNI_MESH_13) = z;
-        /* Mirror into native slots (Step 8b ran on empty ext — re-mirror now).
-         * Native Dizzy create reads +0x4BC4 as the mesh, writes S1 pos to
-         * +0x4BCC/D0/D4, returns (mesh, render) as outs, no appends. */
-        if (BoardHasOffset(board, 0x4BC4, 4) && BoardHasOffset(board, 0x4BCC, 4)) {
-            *(int *)((char *)board + 0x4BC4) = *(int *)((char *)ext + UNI_MESH_6);
-            *(int *)((char *)board + 0x4BC8) = *(int *)((char *)ext + UNI_MESH_7);
-            *(float *)((char *)board + 0x4BCC) = x;
-            *(float *)((char *)board + 0x4BD0) = y;
-            *(float *)((char *)board + 0x4BD4) = z;
-        }
-        obj = *(void **)((char *)board + 0x4BC4);
-        renderOut = *(int *)((char *)board + 0x4BC8);
+        /* Native slots retired (Phase B 2026-11-26, Dizzy-verified) —
+         * outs come from the ext mirrors (same values the mirrors held). */
+        obj = *(void **)((char *)ext + UNI_MESH_6);
+        renderOut = *(int *)((char *)ext + UNI_MESH_7);
         OrBoardFeat(board, FEAT_SWIRL);
         // Mirror for legacy OFF_* readers (alias, same addr) — use outer ext, no shadow.
         if (ext) { *(void**)((char*)ext+OFF_SWIRL_MESH)=obj; *(int*)((char*)ext+OFF_SWIRL_RENDER)=renderOut; *(float*)((char*)ext+OFF_SWIRL_POS_X)=x; *(float*)((char*)ext+OFF_SWIRL_POS_Y)=y; *(float*)((char*)ext+OFF_SWIRL_POS_Z)=z; }

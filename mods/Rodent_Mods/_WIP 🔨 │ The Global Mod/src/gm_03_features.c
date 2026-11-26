@@ -717,13 +717,10 @@ static void Feature_SwirlZones(void *board, int level) {
          * never the persistent gfx object (same class as bridge/windmill). */
         if (swirlDbg < 3) DebugLog("  [swirl] step3a: primary mesh rotation");
         /* Angle lives in ext on every board (drawer model, seeded from
-         * S1 at create); mirror to the native slot where one exists
-         * (BoardHasOffset-probed Dizzy struct) so any native reader keeps
-         * fresh values. No level gate. */
+         * S1 at create). Native slots retired Phase B (Dizzy-verified). */
         float *pAngW = (float *)((char *)ext + OFF_SWIRL_ANGLE1);
         float angle1 = *pAngW - 0.5f;
         *(float*)((char*)ext + OFF_SWIRL_SPEED)=0.5f; *pAngW=angle1;
-        if (BoardHasOffset(board, 0x4BBC, 4)) *(float *)((char *)board + 0x4BBC) = angle1;
         if (swirlDbg < 3) DebugLog("  [swirl] step3a: calling Matrix44Zero");
         g_Matrix44Zero((int *)timerBuf);
         if (swirlDbg < 3) DebugLog("  [swirl] step3a: calling GfxScaleY");
@@ -835,11 +832,9 @@ static void Feature_SwirlZones(void *board, int level) {
         g_TimerInit(timerBuf);
 
         float swirlSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.25f : 0.5f;
-        /* Angle lives in ext on every board; mirror to the native slot
-         * where one exists (see step3a). */
+        /* Angle lives in ext on every board (native slots retired). */
         float *pAngS = (float *)((char *)ext + OFF_SWIRL_ANGLE2);
         *pAngS = *pAngS + swirlSpeed;
-        if (BoardHasOffset(board, 0x4BD8, 4)) *(float *)((char *)board + 0x4BD8) = *pAngS;
         if (swirlDbg < 3) DebugLog("  [swirl] step3b: calling Matrix44Zero");
         g_Matrix44Zero((int *)timerBuf);
         if (swirlDbg < 3) DebugLog("  [swirl] step3b: calling GfxScaleX");
