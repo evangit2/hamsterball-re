@@ -55,11 +55,9 @@ static int BoardMeshOrZero(void *board, DWORD slotOff) {
     return v;
 }
 
-/* Bonkcylinder tan mesh (Master): process-global cache + tint flag.
- * Published for the per-frame render retry in gm_04 (materials arrive
- * after the create burst). Mesh is app/gfx-level, board-independent. */
+/* Bonkcylinder mesh (Master): process-global cache. Mesh is app/gfx-level,
+ * board-independent. File materials render as-is (no tinting). */
 void *g_bonkcylMesh = NULL;
-int g_bonkcylTan = 0;
 
 static void* S1EnsureMeshWorld(void* board, void* ext, DWORD offset, const char* path) {
     void* cur = *(void**)((char*)ext + offset);
@@ -1402,22 +1400,11 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
                             }
                         }
                     }
-                /* Materials arrive after construction (mats=NULL at ctor
-                 * return), so retry the tint on every create until it
-                 * sticks. Idempotent once tan. */
-                if (g_bonkcylMesh && !g_bonkcylTan && !IsBadReadPtr(g_bonkcylMesh, 0x30)) {
-                    /* RenderFull-proven (0x4701FB): mats = *(*(mesh+8)+0x28),
-                     * NOT mesh+0x28. */
-                    void *mdb = *(void**)((char*)g_bonkcylMesh + 8);
-                    void *mats = (mdb && !IsBadReadPtr(mdb, 0x30)) ? *(void**)((char*)mdb + 0x28) : NULL;
-                    if (mats && !IsBadReadPtr(mats, 0x50)) {
-                        float *amb = (float*)mats, *dif = (float*)((char*)mats + 16);
-                        amb[0]=0.843f; amb[1]=0.698f; amb[2]=0.31f;
-                        dif[0]=0.843f; dif[1]=0.698f; dif[2]=0.31f;
-                        g_bonkcylTan = 1;
-                        { char tg[96]; wsprintfA(tg, "BONKCYL tan applied mesh=0x%08X", (DWORD)g_bonkcylMesh); Gm_LogSkip(tg); }
-                    }
-                }
+                /* File colors are correct as-is (PopCylinder1 white is the
+                 * file's own material, NOT a bug — tint reverted 2026-11-26
+                 * per user: no hardcoded colors). The per-frame update retry
+                 * and tan writes are gone; the dedicated load + AssignTex +
+                 * 0x5420 fill stay so the file's own materials render. */
                 meshVal = g_bonkcylMesh ? (int)g_bonkcylMesh : 0;
                 /* Native parity: the pop visual reads board+0x5420 (Master
                  * ctor fills it with popcylinder2; ours is free on universal
