@@ -195,6 +195,20 @@ static void UniversalConstructor(void *board, int raceIndex) {
             DebugLog("Calling Board_Setup (vtable+0x80)...");
             boardSetup(board);
             DebugLog("Board_Setup done");
+            /* Row 19: canonical bonk slot hunt. Native Master Setup zeroes
+             * board+0x540C after vtable33 create on universal boards (Expert
+             * setup doesn't). Re-fill from the create-time save so the
+             * hammer driver/dispatcher read the true bonk obj. Logged to
+             * prove the wipe point: exit-zero + restore-fires = wiped
+             * inside Setup; exit-nonzero = wiped later. */
+            { int setupSlot = BoardHasOffset(board, 0x540C, 4) ? *(int *)((char *)board + 0x540C) : 0xDEAD;
+              void *rExt = GetBoardExt(board);
+              void *saved = (rExt && !IsBadReadPtr((char *)rExt + UNI_BONK_SAVE, 4)) ? *(void **)((char *)rExt + UNI_BONK_SAVE) : NULL;
+              { char sl[160]; wsprintfA(sl, "SETUP exit bonk540C=0x%08X save=0x%08X board=0x%08X", setupSlot, (DWORD)saved, (DWORD)board); Gm_LogSkip(sl); }
+              if (!setupSlot && saved && !IsBadReadPtr(saved, 0x1100) && BoardHasOffset(board, 0x540C, 4)) {
+                  *(void **)((char *)board + 0x540C) = saved;
+                  { char rl[128]; wsprintfA(rl, "BONKSLOT restore board=0x%08X obj=0x%08X", (DWORD)board, (DWORD)saved); Gm_LogSkip(rl); }
+              } }
             /* Global Mod: true drawer totals (creates ran inside Setup). */
             { void *sumExt = GetBoardExt(board);
               if (sumExt) Gm_WriteSummary(board, sumExt); }

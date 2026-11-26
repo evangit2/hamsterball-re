@@ -837,6 +837,8 @@ board_additive:
                                 /* Canonical bonk slot board+0x540C — mesh
                                  * fallbacks are never bonk objects. */
                                 int bonkObj = BoardHasOffset(board, 0x540C, 4) ? *(int *)((char *)board + 0x540C) : 0;
+                                /* Row 19: ext fallback (UNI_BONK_SAVE holds the create-time obj). */
+                                if (!bonkObj && pex) { void *sv = !IsBadReadPtr((char *)pex + UNI_BONK_SAVE, 4) ? *(void **)((char *)pex + UNI_BONK_SAVE) : NULL; if (sv && !IsBadReadPtr(sv, 0x1100)) bonkObj = (int)sv; }
                                 if (bonkObj) ((CreateBonkPopup_t)(g_moduleBase + RVA_CreateBonkPopup))(bonkObj);
                                 { char hg[192]; wsprintfA(hg, "HAMMER entry CALLHAMMER bonk=0x%08X popup10FC=%d board=0x%08X has=%d size=0x%X", bonkObj, bonkObj && !IsBadReadPtr((void *)bonkObj, 0x1100) ? *(int *)(bonkObj + 0x10FC) : -1, (DWORD)board, BoardHasOffset(board, 0x540C, 4), (unsigned)BoardRecordedSize(board)); Gm_LogSkip(hg); }
                                 *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE) &= (DWORD)~1;
@@ -864,6 +866,8 @@ board_additive:
                                 if (inside && !was && (st & (int)vbit)) {
                                     /* Canonical bonk slot board+0x540C. */
                                     int b2 = BoardHasOffset(board, 0x540C, 4) ? *(int *)((char *)board + 0x540C) : 0;
+                                    /* Row 19: ext fallback (UNI_BONK_SAVE holds the create-time obj). */
+                                    if (!b2 && pex) { void *sv2 = !IsBadReadPtr((char *)pex + UNI_BONK_SAVE, 4) ? *(void **)((char *)pex + UNI_BONK_SAVE) : NULL; if (sv2 && !IsBadReadPtr(sv2, 0x1100)) b2 = (int)sv2; }
                                     if (b2) ((Hammer_ChaseStart_t)(g_moduleBase + RVA_Hammer_ChaseStart))(b2);
                                     { char hg[192]; wsprintfA(hg, "HAMMER entry CHASE%d bonk=0x%08X board=0x%08X has=%d size=0x%X", qi, b2, (DWORD)board, BoardHasOffset(board, 0x540C, 4), (unsigned)BoardRecordedSize(board)); Gm_LogSkip(hg); }
                                     *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE) &= (DWORD)~vbit;
@@ -882,7 +886,9 @@ board_additive:
                          * latch +0x10FC, skip once broken). */
                         {
                             int bonkObj = BoardHasOffset(board, 0x540C, 4) ? *(int *)((char *)board + 0x540C) : 0;
-                            if (!bonkObj) bonkObj = *(int *)((char *)pex + UNI_BONK_MESH);
+                            /* Row 19: ext fallback is UNI_BONK_SAVE (the create-time bonk obj).
+                             * (Old UNI_BONK_MESH fallback read a mesh pointer as an obj.) */
+                            if (!bonkObj) { void *svb = !IsBadReadPtr((char *)pex + UNI_BONK_SAVE, 4) ? *(void **)((char *)pex + UNI_BONK_SAVE) : NULL; if (svb && !IsBadReadPtr(svb, 0x1100)) bonkObj = (int)svb; }
                             if (bonkObj && !IsBadReadPtr((void *)bonkObj, 0x1108) && *(int *)(bonkObj + 0x10FC) == 0) {
                                 float hx = *(float *)(bonkObj + 0x10D4), hy = *(float *)(bonkObj + 0x10D8), hz = *(float *)(bonkObj + 0x10DC);
                                 float ddx = bx-hx, ddy = by-hy, ddz = bz-hz;
