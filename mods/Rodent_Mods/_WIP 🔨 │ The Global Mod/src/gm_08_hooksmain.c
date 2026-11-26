@@ -204,7 +204,7 @@ static void UniversalConstructor(void *board, int raceIndex) {
             { int setupSlot = BoardHasOffset(board, 0x540C, 4) ? *(int *)((char *)board + 0x540C) : 0xDEAD;
               void *rExt = GetBoardExt(board);
               void *saved = (rExt && !IsBadReadPtr((char *)rExt + UNI_BONK_SAVE, 4)) ? *(void **)((char *)rExt + UNI_BONK_SAVE) : NULL;
-              { char sl[160]; wsprintfA(sl, "SETUP exit bonk540C=0x%08X save=0x%08X board=0x%08X", setupSlot, (DWORD)saved, (DWORD)board); Gm_LogSkip(sl); }
+              { char sl[192]; wsprintfA(sl, "SETUP exit bonk540C=0x%08X save=0x%08X board=0x%08X vt=0x%08X", setupSlot, (DWORD)saved, (DWORD)board, IsBadReadPtr(board, 4) ? 0 : *(DWORD *)board); Gm_LogSkip(sl); }
               if (!setupSlot && saved && !IsBadReadPtr(saved, 0x1100) && BoardHasOffset(board, 0x540C, 4)) {
                   *(void **)((char *)board + 0x540C) = saved;
                   { char rl[128]; wsprintfA(rl, "BONKSLOT restore board=0x%08X obj=0x%08X", (DWORD)board, (DWORD)saved); Gm_LogSkip(rl); }
@@ -843,31 +843,39 @@ void ImpDiag(const char *msg) {
 static DWORD g_origSkyDtorSlot = 0;
 
 void SkyDtorDiag(void *obj, int flag) {
+    /* Row 25: log-only probe (MessageBox removed per user — boxes don't show
+     * on their setup). Raw Win32 WriteFile via Gm_LogSkip, same as the
+     * per-frame HAMMER lines that already land reliably; no CRT, no heap
+     * allocs, balanced stack. Always logs (board destroys are rare). */
     static const DWORD offs[6] = {0x436C, 0x4370, 0x4374, 0x4384, 0x4388, 0x438C};
-    int i, bad = -1;
-    DWORD badVal = 0;
+    DWORD vals[6] = {0,0,0,0,0,0};
+    int i, badmask = 0;
+    char nm[20]; int k;
+    char *np;
+    char msg[300];
     if (!obj || IsBadReadPtr(obj, 0x43C0)) return;
     for (i = 0; i < 6; i++) {
         DWORD v = *(DWORD *)((char *)obj + offs[i]);
+        vals[i] = v;
         if (v) {
             DWORD vt = 0;
-            if (IsBadReadPtr((void *)v, 4)) { bad = i; badVal = v; break; }
-            vt = *(DWORD *)v;
-            if (vt < 0x400000 || vt >= 0x500000 || IsBadReadPtr((void *)vt, 4)) { bad = i; badVal = v; break; }
+            if (IsBadReadPtr((void *)v, 4)) badmask |= (1 << i);
+            else {
+                vt = *(DWORD *)v;
+                if (vt < 0x400000 || vt >= 0x500000 || IsBadReadPtr((void *)vt, 4)) badmask |= (1 << i);
+            }
         }
     }
-    if (bad >= 0) {
-        char nm[20]; int k;
-        char *np = IsBadReadPtr(obj, 0x86C) ? NULL : *(char **)((char *)obj + 0x868);
-        for (k = 0; k < 19; k++) {
-            if (!np || IsBadReadPtr(np + k, 1)) break;
-            nm[k] = np[k];
-            if (!np[k]) break;
-        }
-        nm[19] = 0;
-        { char msg[256]; wsprintfA(msg, "SKYDTOR diag obj=0x%08X flag=%d name=%.19s badslot=+0x%X val=0x%08X", (DWORD)obj, flag, nm, offs[bad], badVal);
-          MessageBoxA(NULL, msg, "GlobalMod SKYDTOR DIAG", 0); }
+    np = IsBadReadPtr(obj, 0x86C) ? NULL : *(char **)((char *)obj + 0x868);
+    for (k = 0; k < 19; k++) {
+        if (!np || IsBadReadPtr(np + k, 1)) break;
+        nm[k] = np[k];
+        if (!np[k]) break;
     }
+    nm[19] = 0;
+    wsprintfA(msg, "SKYDTOR obj=0x%08X flag=%d name=%.19s badmask=0x%X 6C=0x%08X 70=0x%08X 74=0x%08X 84=0x%08X 88=0x%08X 8C=0x%08X",
+        (DWORD)obj, flag, nm, badmask, vals[0], vals[1], vals[2], vals[3], vals[4], vals[5]);
+    Gm_LogSkip(msg);
 }
 
 __attribute__((naked)) static void SkyDtorWrapper(void) {
