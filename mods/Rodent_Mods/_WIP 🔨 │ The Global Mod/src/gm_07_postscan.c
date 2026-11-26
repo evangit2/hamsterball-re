@@ -21,7 +21,7 @@ static int FindS1Position(void *meshWorld, const char *want, float *out) {
     if (!g_AthenaListGetIterator || !g_AthenaListGetSize) return 0;
     if (!VirtualQuery((void*)(objDb + 0x894), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return 0;
     iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
-    if (iter <0 || iter>16) return 0;
+    if (iter <0 || iter>255) return 0;
     if (!VirtualQuery((void*)(objDb + 0x89C + iter*4), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return 0;
     savedIter = *(DWORD*)(objDb + 0x89C + iter*4);
     *(DWORD *)(objDb + 0x89C + iter*4) = 0;
@@ -85,7 +85,7 @@ static void Vac_BuildTubes(void *board, void *ext) {
     if (!VirtualQuery((void*)objDb, &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
     if (!VirtualQuery((void*)(objDb + 0x894), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
     iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
-    if (iter <0 || iter>16) return;
+    if (iter <0 || iter>255) return;
     if (!VirtualQuery((void*)(objDb + 0x89C + iter*4), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
     savedIter = *(DWORD*)(objDb + 0x89C + iter*4);
     *(DWORD *)(objDb + 0x89C + iter*4) = 0;
@@ -308,6 +308,7 @@ static void SkySceneTails(void *board, void *ext) {
     DWORD *array;
     DWORD savedIter;
     (void)ext;
+    { void Gm_LogSkip(const char *line); char el[128]; wsprintfA(el, "SKYTAILS enter board=0x%08X mw=0x%08X", (DWORD)board, board ? *(DWORD *)((char *)board + BOARD_MESHWORLD) : 0); Gm_LogSkip(el); }
     { char sdbg[96]; wsprintfA(sdbg, "SKYREPLICA enter board=0x%08X", (DWORD)board); SkyDiag(sdbg); }
     g_skyFoundPillars = 0;
     g_skyPillarCount = 0;
@@ -322,14 +323,17 @@ static void SkySceneTails(void *board, void *ext) {
     if (!VirtualQuery((void*)(objDb + 0x894), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
     /* Hook registry must exist (native ctor inits board+0x4394 header). */
     listHdr = *(DWORD *)((char *)board + 0x4394);
+    { void Gm_LogSkip(const char *line); char hl[128]; wsprintfA(hl, "SKYTAILS listHdr=0x%08X objDb=0x%08X", listHdr, objDb); Gm_LogSkip(hl); }
     if (!listHdr) return;
     iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
-    if (iter <0 || iter>16) return;
+    { void Gm_LogSkip(const char *line); char il[96]; wsprintfA(il, "SKYTAILS iter=%d", iter); Gm_LogSkip(il); }
+    if (iter <0 || iter>255) return;
     if (!VirtualQuery((void*)(objDb + 0x89C + iter*4), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
     savedIter = *(DWORD*)(objDb + 0x89C + iter*4);
     *(DWORD *)(objDb + 0x89C + iter*4) = 0;
     if (!VirtualQuery((void*)(objDb + 0x898), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
     count = *(int *)(objDb + 0x898);
+    { void Gm_LogSkip(const char *line); char cl[96]; wsprintfA(cl, "SKYTAILS count=%d", count); Gm_LogSkip(cl); }
     if (count <=0 || count>8192) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
     if (!VirtualQuery((void*)(objDb + 0xCA0), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) { *(DWORD*)(objDb + 0x89C + iter*4)=savedIter; return; }
     array = *(DWORD **)(objDb + 0xCA0);
@@ -374,6 +378,7 @@ static void SkySceneTails(void *board, void *ext) {
     { char sdbg[96]; wsprintfA(sdbg, "SKYREPLICA hooks done count=%d", count); SkyDiag(sdbg); }
     { char hdbg[96];
       wsprintfA(hdbg, "SKY-PILLARS stored=%d", g_skyPillarCount); SkyDiag(hdbg); }
+    { void Gm_LogSkip(const char *line); char sl[96]; wsprintfA(sl, "SKYTAILS stored=%d found=%d", g_skyPillarCount, g_skyFoundPillars); Gm_LogSkip(sl); }
     /* CLOUDSCAPE mesh ref (native 0x4109FE-0x410A2C). Re-enabled 2026-11-21
      * with exact native shape (the 2026-11-16 crash was MinGW __thiscall
      * caller-cleanup vs native callee-clean ret $0xC). */
@@ -596,7 +601,7 @@ static void ScanS1AndAutoEnable(void *board, void *ext, void *meshWorld) {
     /* Validate AthenaList header without IsBad* */
     if (!VirtualQuery((void*)(objDb + 0x894), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
     int iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
-    if (iter <0 || iter>16) return;
+    if (iter <0 || iter>255) return;
     if (!VirtualQuery((void*)(objDb + 0x89C + iter*4), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
     DWORD savedIter = *(DWORD*)(objDb + 0x89C + iter*4);
     *(DWORD *)(objDb + 0x89C + iter*4) = 0;
@@ -1213,7 +1218,7 @@ static void ScanS1ReferencedMeshesForCollisions(void *board, void *ext, void *me
     if (!g_AthenaListGetIterator || !g_AthenaListGetSize) return;
     if (!VirtualQuery((void*)(objDb + 0x894), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
     int iter = g_AthenaListGetIterator((void *)(objDb + 0x894));
-    if (iter <0 || iter>16) return;
+    if (iter <0 || iter>255) return;
     if (!VirtualQuery((void*)(objDb + 0x89C + iter*4), &mbi, sizeof(mbi)) || mbi.State!=MEM_COMMIT) return;
     DWORD savedIter = *(DWORD*)(objDb + 0x89C + iter*4);
     *(DWORD *)(objDb + 0x89C + iter*4) = 0;
