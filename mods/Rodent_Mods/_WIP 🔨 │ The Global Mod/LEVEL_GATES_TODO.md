@@ -94,10 +94,6 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   the file's own pattern (SquareWobbly/Wavy/Rotator/Gear already gate
   on 0x768 with no level). No S1 param needed — the check is ball-state
   logic, and a dying ball's inertia write was always meaningless.
-- `gm_06_collision.c:703,710`
-- Replace with: kill-floor S1/DAT opt-out tag (MESHWORLD declares its own
-  kill planes; absence = no kill).
-- Status: TODO
 
 ## 10. Odd(9) tournament difficulty check
 - `gm_06_collision.c:1116`
