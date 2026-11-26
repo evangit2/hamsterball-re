@@ -651,12 +651,16 @@ if (!g_TimerInit || !g_TimerCleanup) break;
                                 : : [x] "m" (px), [y] "m" (py), [z] "m" (pz),
                                     [t] "r" (timerBuf), [f] "r" (fnPose)
                                 : "eax", "ecx", "edx", "memory");
-/* File XYZ (user: Y based on X is wrong). X=fileX (m12 fix),
-                             * Y=fileY (m13, exact S1 height, not fileX),
-                             * Z=fileZ (m14, pose). */
+/* MAT01-proven (user-confirmed 2026-11-22): pose leaves m12=0
+                             * (X zeroed), m13=fileX, m14=fileZ. Renderer is
+                             * D3D standard (X=m12,Y=m13,Z=m14), so write
+                             * full file XYZ: m12=fileX, m13=fileY, m14=fileZ.
+                             * (The old mm[13]=X/mm[14]=Y stacked all 52 at
+                             * x=0 = invisible.) */
                             { float *mm = (float *)timerBuf;
-                              mm[13] = *(float *)&px;
-                              mm[14] = *(float *)&py; }
+                              mm[12] = *(float *)&px;
+                              mm[13] = *(float *)&py;
+                              mm[14] = *(float *)&pz; }
                             
 
                             __asm__ volatile (
