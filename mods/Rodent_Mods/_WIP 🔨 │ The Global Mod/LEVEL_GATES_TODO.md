@@ -103,7 +103,7 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   also protects the board+0x4370 mirror — it can only land on a board
   that owns the spawner, never a foreign native slot.
 
-## 11. Dizzy(4) flag — split into parts (IN PROGRESS 2026-11-26)
+## 11. Dizzy(4) flag (DONE 2026-11-26 — split into parts)
 - Part 1 (ambient-tarbubble gate, DONE): gate is now tar-content-driven
   (tarCount>0 from TARBUBBLE S1 harvest; stock: Dizzy Level3 36 +
   Master Level10 54) instead of level==4. Contentless boards never
