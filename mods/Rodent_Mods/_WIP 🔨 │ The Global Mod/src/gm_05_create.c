@@ -1433,6 +1433,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             }
             void *mem = g_operatorNew(0x10E8);
             if (mem) {
+                { char cd[128]; wsprintfA(cd, "BONKCYL create x=%d y=%d z=%d", (int)x, (int)y, (int)z); Gm_LogSkip(cd); }
                 obj = g_PopCylinderCtor(mem, (int)board, x, y, z, meshVal);
                 g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
                 if (BoardHasOffset(board, 0x5428, 4))
