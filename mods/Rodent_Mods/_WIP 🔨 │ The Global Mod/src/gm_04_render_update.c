@@ -685,6 +685,9 @@ if (!g_TimerInit || !g_TimerCleanup) break;
                 }
         }
     }
+    /* NOTE: bonkcylinder tan lives in UniversalBoardUpdate (slot 1 runs on
+     * all 15 levels); UniversalRenderImpl does NOT run on Master, so no
+     * render-side copy here (proven dead by the missing tick line). */
 } // UniversalRenderImpl
 
 /* Naked thunk for UniversalRender — forwards (ECX=board, stack gfx) to
@@ -1014,9 +1017,26 @@ board_additive:
     }
     if (featDbg < 3) featDbg++;
 
-    /* Note: Bumper decay, neon camera, and sky popcylinder are handled in
+    /* Note: Bumper decay, neon camera, and sky popcylinders are handled in
        UniversalRaceState (slot 19), NOT here. In the original game, these
        are in the RaceState handler, not Board_Update. */
+    /* Bonkcylinder tan retry (Master): mesh materials arrive after the
+     * create burst (mats NULL at ctor return), so the tint needs a
+     * per-frame attempt until it sticks. Update (slot 1) runs on all 15
+     * levels; render does not (Master uses its own path). Shared mesh =>
+     * all cylinders flip together. */
+    { extern void *g_bonkcylMesh; extern int g_bonkcylTan;
+      if (g_bonkcylMesh && !g_bonkcylTan && !IsBadReadPtr(g_bonkcylMesh, 0x30)) {
+          void *mdb = *(void**)((char*)g_bonkcylMesh + 8);
+          void *mats = (mdb && !IsBadReadPtr(mdb, 0x30)) ? *(void**)((char*)mdb + 0x28) : NULL;
+          if (mats && !IsBadReadPtr(mats, 0x50)) {
+              float *amb = (float*)mats, *dif = (float*)((char*)mats + 16);
+              amb[0]=0.843f; amb[1]=0.698f; amb[2]=0.31f;
+              dif[0]=0.843f; dif[1]=0.698f; dif[2]=0.31f;
+              g_bonkcylTan = 1;
+              { char tg[96]; wsprintfA(tg, "BONKCYL tan applied mesh=0x%08X", (DWORD)g_bonkcylMesh); Gm_LogSkip(tg); }
+          }
+      } }
 }
 
 /* Naked thunk for vtable slot 1 (Board_Update) */
