@@ -144,13 +144,17 @@ void UniversalRenderImpl(void *board, int unk) {
 #endif
 
     /* Glass slot-24: delegate to native 0x417C00 via orig[12]. It does base +
-     * the full multi-buffer pane-timer sequence (3+ bufs, early v2, dual
-     * dev-v7 per pane). The single-buffer replica was structurally wrong and
-     * each partial fix risked wrong draws. DAT is hook-filled so native
-     * inputs match vanilla exactly. Stock slot+content 12 only; swapped
-     * slots keep the replica path below (guarded, no crash). */
-    if (ext && level == 12 && ContentFileId(ext) == 12 &&
-        *(BYTE *)((char *)ext + COLL_FLAG_GLASS) && g_origRender[12]) {
+     * the full multi-buffer pane-timer sequence (3+ bufs, dual dev-v7 per
+     * pane). The single-buffer replica was structurally wrong and each
+     * partial fix risked wrong draws. Gate is presence-only (N:GLASS flag):
+     * disasm 2026-11-26 proves 0x417C00 reads ZERO globals/slot state —
+     * every input is SMASHER-written board slots (0x436C/70/74 + 0x4384 +
+     * 0x438C flag / 0x4378/7C/80 + 0x4388 + 0x438D flag, create-mirrored
+     * from SMASHER1/2 S1s on any board, any slot) + app devices + the
+     * hook-filled DAT + render ctx. No level==12, no content gate. Boards
+     * with the flag but no SMASHERs feed zeros (degenerate scale-0 panes,
+     * nothing drawn, no crash) — same inputs the replica consumed. */
+    if (ext && *(BYTE *)((char *)ext + COLL_FLAG_GLASS) && g_origRender[12]) {
         g_origRender[12](board, unk);
         return;
     }
