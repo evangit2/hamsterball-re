@@ -829,9 +829,16 @@ board_additive:
                         if ((*(int *)((char *)pex + OFF_HAMMER_TRIG_VALID)) & 1) {
                             float *qmin = (float *)((char *)pex + OFF_CALLHAMMER_MIN);
                             float *qmax = (float *)((char *)pex + OFF_CALLHAMMER_MAX);
-                            int inside = (bx > qmin[0]-40 && bx < qmax[0]+40 &&
-                                          by > qmin[1]-40 && by < qmax[1]+40 &&
-                                          bz > qmin[2]-40 && bz < qmax[2]+40);
+                            /* Row 19c margin: exact-box entry (8u) = face-crossing
+                             * order = native touch order. The CALL and CHASE
+                             * boxes intersect (file-verified), so the old 40u
+                             * fattening merged the two entries (chase edge
+                             * fired before/at the popup). 8u keeps ball-speed
+                             * robustness (thin axes are 109u+) without
+                             * swallowing the call-only corridor. */
+                            int inside = (bx > qmin[0]-8 && bx < qmax[0]+8 &&
+                                          by > qmin[1]-8 && by < qmax[1]+8 &&
+                                          bz > qmin[2]-8 && bz < qmax[2]+8);
                             int was = (*(BYTE *)(b + 0x2CD)) & 2;
                             if (inside && !was && (st & 1)) {
                                 /* Canonical bonk slot board+0x540C — mesh
@@ -871,9 +878,10 @@ board_additive:
                                 if (!((*(int *)((char *)pex + OFF_HAMMER_TRIG_VALID)) & (int)vbit)) continue;
                                 float *qmin = (float *)((char *)pex + minOff);
                                 float *qmax = (float *)((char *)pex + maxOff);
-                                int inside = (bx > qmin[0]-40 && bx < qmax[0]+40 &&
-                                              by > qmin[1]-40 && by < qmax[1]+40 &&
-                                              bz > qmin[2]-40 && bz < qmax[2]+40);
+                                /* Row 19c: same 8u exact-box margin as CALL above. */
+                                int inside = (bx > qmin[0]-8 && bx < qmax[0]+8 &&
+                                              by > qmin[1]-8 && by < qmax[1]+8 &&
+                                              bz > qmin[2]-8 && bz < qmax[2]+8);
                                 int was = (*(BYTE *)(b + 0x2CD)) & 4;
                                 st = *(DWORD *)((char *)pex + OFF_HAMMER_TRIG_STATE);
                                 if (inside && !was && (st & (int)vbit) && popupActive) {
