@@ -1079,9 +1079,12 @@ void __fastcall UniversalRaceState(void *board) {
      * 10 of 15 native origs already WERE base (slot19==0x41B130); the
      * customs: Beginner decayed dead +0x642C timers (mod decays ext instead),
      * Toob added an intro zoom clamp (dropped per user — visual check later),
-     * Up walked an always-empty +0x436C list calling the deleting dtor
-     * v[0] (a landmine, never a driver — lifters live in 0x2578, driven by
-     * the v[11] walk), Neon/Sky/Tower already owned mod-side. */
+     * Up walked its +0x436C VAC-face list calling v[0] (vacuum update
+     * 0x43D160 — CORRECTION 2026-11-26: not the deleting dtor; v[2] is the
+     * dtor. The list was empty under the mod only because no VAC builder
+     * existed yet). Faces now build into an ext list (Vac_BuildTubes,
+     * presence-only) and Feature_Vacuum drives the same v[0] call shape.
+     * Neon/Sky/Tower already owned mod-side. */
     g_BoardUpdateRaceState(board);
     if (s_rsCount <= 4) DebugLog("  [raceState] base call returned");
 
@@ -1100,4 +1103,8 @@ racestate_features:
     /* Sky popcylinder activator (Sky) */
     if (features & FEAT_SKY_POPCYL)
         Feature_SkyPopcylinder(board, level);
+
+    /* VAC transport tubes (Up): v[0] tick on each ext-list face */
+    if (features & FEAT_VACUUM)
+        Feature_Vacuum(board, level);
 }

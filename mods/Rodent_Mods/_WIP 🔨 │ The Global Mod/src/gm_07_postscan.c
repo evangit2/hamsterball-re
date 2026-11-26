@@ -57,13 +57,12 @@ static int FindS1Position(void *meshWorld, const char *want, float *out) {
 /* Up VAC transport tubes (native Up scene loader 0x411620 tail,
  * disasm-verified 2026-09-11 via objdump): for each S1 "VAC-IN*" (len-6
  * prefix), suffix is reused verbatim ("-1", "-02" both work); "VAC-OUT*"
- * + "VAC-VEC*" resolved by name; op_new(0x38) + VacFace_ctor; appended
- * to the NATIVE board+0x436C list (orig Up RaceState iterates it — LFL
- * calls orig for level 6, so faces must sit exactly where vanilla puts
- * them). Two-pass (collect then build): FindS1Position nests AthenaList
- * iterator use and must not run inside an open walk. List (re)inited
- * here — PostSetup always precedes CreateDynamicObjects appends, so it
- * is empty at this point; bounds-guarded for file-swapped small boards. */
+ * + "VAC-VEC*" resolved by name; op_new(0x38) + VacFace_ctor. Faces live
+ * in an EXT list (UNI_VAC_FACES, driven per-frame by Feature_Vacuum —
+ * no native-list dependency since no native orig runs anywhere). Two-pass
+ * (collect then build): FindS1Position nests AthenaList iterator use and
+ * must not run inside an open walk. Presence-only: builds wherever VAC-IN
+ * S1s exist, no slot/content gate. */
 static void Vac_BuildTubes(void *board, void *ext) {
     MEMORY_BASIC_INFORMATION mbi;
     DWORD meshWorld, objDb, *array, savedIter;
@@ -72,10 +71,10 @@ static void Vac_BuildTubes(void *board, void *ext) {
     float inPos[8][3];
     int nIn = 0;
     if (!board || !ext) return;
-    /* Faces live in board+0x436C, which is Up's lifter list — only Up's
-     * RaceState iterates it. On other slots 0x436C has per-level meanings
-     * (Dizzy tipper mesh), so building here would corrupt them (fix 2026-09-18). */
-    if (GetCurrentLevel(board) != 6) return;
+    /* Faces live in the ext VAC list (driven mod-side); the native
+     * board+0x436C slot keeps its per-level meanings (Dizzy tipper mesh
+     * etc.), so nothing is written there. Presence-only: no slot gate,
+     * nIn==0 below no-ops on levels without VAC-IN S1s. */
     if (!g_operatorNew || !g_VacFaceCtor || !g_AthenaListAppend ||
         !g_AthenaListInit || !g_AthenaListGetIterator) return;
     meshWorld = *(DWORD *)((char *)board + BOARD_MESHWORLD);
@@ -120,9 +119,9 @@ static void Vac_BuildTubes(void *board, void *ext) {
     }
     *(DWORD*)(objDb + 0x89C + iter*4)=savedIter;
     if (nIn == 0) return;
-    /* List must fit: native Up board holds it; file-swapped small boards skip */
-    if (!BoardHasOffset(board, 0x436C, 0x410)) { DebugLog("VAC: board too small, tubes skipped"); return; }
-    g_AthenaListInit((void *)((char *)board + 0x436C), 0);
+    /* Ext list replaces the native board+0x436C list (kept native-meanings
+     * intact everywhere). Zero the count; pass 2 fills it. */
+    *(int *)((char *)ext + UNI_VAC_COUNT) = 0;
     /* Pass 2: resolve OUT/VEC + build faces */
     for (idx=0; idx<nIn; idx++) {
         char outName[64], vecName[64];
@@ -144,14 +143,21 @@ static void Vac_BuildTubes(void *board, void *ext) {
             inPos[idx][0], inPos[idx][1], inPos[idx][2],
             outP[0], outP[1], outP[2], vecP[0], vecP[1], vecP[2]);
         if (!face) continue;
-        g_AthenaListAppend((void *)((char *)board + 0x436C), (int)face);
-        built++;
+        {
+            int vc = *(int *)((char *)ext + UNI_VAC_COUNT);
+            if (vc >= 0 && vc < 8) {
+                *(DWORD *)((char *)ext + UNI_VAC_FACES + vc * 4) = (DWORD)face;
+                *(int *)((char *)ext + UNI_VAC_COUNT) = vc + 1;
+                built++;
+            }
+        }
     }
     {
         char vdbg[64];
         wsprintfA(vdbg, "VAC: built %d/%d tubes", built, nIn);
         DebugLog(vdbg);
     }
+    if (built > 0) OrBoardFeat(board, FEAT_VACUUM);
 }
 
 /* Sky magnifier (native Sky loader 0x410900 tail): MAGNIFYER S1 +op_new

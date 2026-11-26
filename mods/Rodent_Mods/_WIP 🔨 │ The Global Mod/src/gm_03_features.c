@@ -1549,6 +1549,34 @@ static void Feature_BumperDecay(void *board, int level) {
  * Replicates FUN_00424790 (Neon slot[19])
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+/* VAC tube driver (native Up RaceState 0x420660 walk, disasm-verified):
+ * calls v[0] (vacuum update 0x43D160 — suction/transport) on each tube
+ * face. Native walked board+0x436C; faces live in the ext VAC list now
+ * (same objects, same call shape). Presence-gated by FEAT_VACUUM. */
+static void Feature_Vacuum(void *board, int level) {
+    void *ext;
+    int n, i;
+    (void)level;
+    if (*(BYTE*)((char*)board+0x874)) return;
+    ext = GetBoardExt(board);
+    if (!ext) return;
+    n = *(int *)((char *)ext + UNI_VAC_COUNT);
+    if (n <= 0 || n > 8) return;
+    for (i = 0; i < n; i++) {
+        DWORD face = *(DWORD *)((char *)ext + UNI_VAC_FACES + i * 4);
+        if (!face || IsBadReadPtr((void *)face, 4)) continue;
+        {
+            DWORD vt = *(DWORD *)face;
+            if (!vt || IsBadReadPtr((void *)vt, 4)) continue;
+            {
+                typedef void (__thiscall *VacTick_t)(void *);
+                VacTick_t tick = (VacTick_t)*(DWORD *)vt;
+                if (tick) tick((void *)face);
+            }
+        }
+    }
+}
+
 static void Feature_NeonCamera(void *board, int level) {
     // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
     if (*(BYTE*)((char*)board+0x874)) return;

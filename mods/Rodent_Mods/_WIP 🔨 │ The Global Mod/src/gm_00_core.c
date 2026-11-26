@@ -349,6 +349,7 @@ typedef enum {
                                      spinner branch, which must NOT mark 4BBC
                                      done order-independently) */
     FEAT_POP_LISTS     = 1 << 11, /* Master pop list 5428 inited (own bit) */
+    FEAT_VACUUM        = 1 << 12, /* VAC-IN/OUT/VEC tube faces built (ext list) */
 } UpdateFeature;
 
 /* Render feature flags — separate from update features.
@@ -892,6 +893,8 @@ static Scene_AddObject_t          g_SceneAddObject = NULL;
 #define UNI_BUMPER_VELSCALE 0xBEB4
 #define UNI_BUMPER_MAXSPEED 0xBEB8
 #define UNI_BUMPER_DECAYRATE 0xBEBC  /* Glow decay/frame, DECAY(rate) S1, default 0.05 */
+#define UNI_VAC_COUNT 0xBEC0        /* dword: VAC tube face count (max 8) */
+#define UNI_VAC_FACES 0xBEC4        /* 8 dwords: vacuum face obj ptrs (ext list) */
 #define BUMPER_EHV2_BYTES(n) ((n) * 0x418)
 
 /* Bumper slot access: slots 1-8 live in ext, 9+ in the EHV2 heap array.
