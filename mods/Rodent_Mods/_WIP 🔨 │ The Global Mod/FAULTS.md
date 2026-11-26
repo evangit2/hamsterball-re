@@ -603,3 +603,4 @@ mark them FIXED with the version instead.
   0x2578 contains the same 5 (judge vtable 0x4D52B8 in both lists).
   Not visually seen (judges spawn at x~4600, far from start, no
   driving) — presence proven, Windows eyes still needed for visible.
+| 24 | Master+Tower / catapult fling | MOD | 2026-11-26 | Per-instance S1 vectors CATAPULT(up,fwd); bare CATAPULT=(12,-12) Tower default. Release hook at 0x438179 (call Ball_SetVec3AtOffset) swaps native dir for the S1 vector; +0x1100=1 on Master content (native parity fallback). NOTE: CATAPULT<n> numeric suffix scales +0x10F4 = 50-frame arm DELAY, not strength. Need: Tower S1 CATAPULT(12,-12), Master S1 CATAPULT(24.4,-11.2). Awaiting user test. |

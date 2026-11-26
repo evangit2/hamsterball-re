@@ -520,6 +520,57 @@ static void InstallExtFreeHook(void) {
     DebugLog("InstallExtFreeHook: hooked Tournament_AdvanceRace");
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Catapult fling hook (0x438179: call Ball_SetVec3AtOffset in the slot-11
+ * release block). Both native profiles converge here; the stub swaps the
+ * native dir for the per-instance CATAPULT(up,fwd) vector (default
+ * Tower (12,-12)). Verify-or-skip: 50 E8 A2 A8 FC FF.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+static unsigned char *g_catFlingTramp __attribute__((used)) = NULL;
+void CatapultFlingOverride(void *obj, float *dir); /* gm_00_core.c */
+__attribute__((naked)) static void Hook_CatapultFling(void) {
+    __asm__ volatile (
+        "pushfl\n\t"
+        "pushal\n\t"
+        "movl 24(%esp), %eax\n\t"
+        "movl 36(%esp), %edx\n\t"
+        "pushl %edx\n\t"
+        "pushl %eax\n\t"
+        "call _CatapultFlingOverride\n\t"
+        "addl $8, %esp\n\t"
+        "popal\n\t"
+        "popfl\n\t"
+        "movl _g_catFlingTramp, %eax\n\t"
+        "jmpl *%eax\n\t"
+    );
+}
+static void InstallCatapultFlingHook(void) {
+    DWORD targetAddr = g_moduleBase + 0x00038179;
+    unsigned char *orig = (unsigned char *)targetAddr;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (!VirtualQuery(orig, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT) return;
+    if (!(mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY))) return;
+    /* Verify: push %eax (0x438178) + call 0x402A20 (0x438179). Skip silently
+     * on mismatch (native fallback: +0x1100 profile still set at create). */
+    if (orig[-1] != 0x50 || orig[0] != 0xE8 || orig[1] != 0xA2 || orig[2] != 0xA8 ||
+        orig[3] != 0xFC || orig[4] != 0xFF) {
+        DebugLog("CATFLING hook skipped (bytes mismatch)");
+        return;
+    }
+    g_catFlingTramp = VirtualAlloc(NULL, 16, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!g_catFlingTramp) return;
+    memcpy(g_catFlingTramp, orig, 5);
+    g_catFlingTramp[5] = 0xE9;
+    *(DWORD *)(g_catFlingTramp + 6) = (targetAddr + 5) - ((DWORD)g_catFlingTramp + 10);
+    DWORD oldProtect;
+    VirtualProtect(orig, 5, PAGE_EXECUTE_READWRITE, &oldProtect);
+    orig[0] = 0xE9;
+    *(DWORD *)(orig + 1) = (DWORD)Hook_CatapultFling - (targetAddr + 5);
+    VirtualProtect(orig, 5, oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), orig, 5);
+    Gm_LogSkip("CATFLING hook installed");
+}
+
 static void InstallHook(void) {
     /* DEPRECATED: SEH trampoline on DispatchCollisionEvents (0x40C5D0) caused
      * stack/exception chain corruption (skill: Manual trampoline detour hooks
@@ -1064,6 +1115,8 @@ static DWORD WINAPI PatchThread(LPVOID param) {
     DebugLog("InstallVtablePatches done");
     InstallHook();
     DebugLog("InstallHook done");
+    InstallCatapultFlingHook();
+    DebugLog("InstallCatapultFlingHook done");
     InstallFlagRenderHook();
     DebugLog("InstallFlagRenderHook done");
     DebugLog("=== PatchThread complete ===\n");

@@ -444,6 +444,20 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             obj = g_CatapultCtor(mem, (int)board, meshVal);
             DWORD *o = (DWORD *)obj;
             memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
+            /* Per-instance fling vector: CATAPULT(up,fwd), e.g.
+             * CATAPULT(24.4,-11.2). Bare CATAPULT = Tower default (12,-12).
+             * Applied directly at release via the 0x438179 hook. */
+            { float vup = 12.0f, vfwd = -12.0f;
+              if (name[8] == '(' && !CatapultParseVec(name, &vup, &vfwd)) {
+                  Gm_LogSkip("CATAPULT vec parse failed, default (12,-12)");
+                  vup = 12.0f; vfwd = -12.0f;
+              }
+              CatapultSetVec(obj, vup, vfwd);
+              { char cv[96]; wsprintfA(cv, "CATAPULT vec obj=0x%08X up=%d fwd=%d", (DWORD)obj, (int)(vup * 100.0f), (int)(vfwd * 100.0f)); Gm_LogSkip(cv); } }
+            /* Native parity: Master content builds +0x1100=1 (steeper fling
+             * profile); Tower leaves the ctor default 0. The hook overrides
+             * velocity anyway, but this keeps the native fallback correct. */
+            if (ContentFileId(ext) == 14) o[0x440] = 1;
             /* Dynamic fling power: CATAPULT<n> S1 suffix = percent of the
              * native 50 (e.g. CATAPULT150 = 75). Stashed here, applied after
              * Launch in E:CATAPULTBOTTOM (Launch always resets 0x10F4 to 50).

@@ -586,6 +586,61 @@ static int CatapultGetPower(void *obj) {
     for (i = 0; i < g_catPwrCount; i++) if (g_catPwrObj[i] == obj) return g_catPwrVal[i];
     return 0;
 }
+/* Catapult per-instance fling vector (UP, FWD), applied DIRECTLY as the
+ * ball velocity at release (no normalize). S1 syntax: CATAPULT(24.4,-11.2).
+ * Bare CATAPULT (no parens) defaults to Tower's (12.0,-12.0).
+ * NOTE: the old CATAPULT<n> suffix scales +0x10F4, which is a 50-frame arm
+ * DELAY, not strength. Strength lives here. */
+#define CATAPULT_VEC_MAX 16
+static void *g_catVecObj[CATAPULT_VEC_MAX];
+static float g_catVecUp[CATAPULT_VEC_MAX];
+static float g_catVecFwd[CATAPULT_VEC_MAX];
+static int g_catVecCount = 0;
+static void CatapultSetVec(void *obj, float up, float fwd) {
+    int i;
+    if (!obj) return;
+    for (i = 0; i < g_catVecCount; i++) if (g_catVecObj[i] == obj) { g_catVecUp[i] = up; g_catVecFwd[i] = fwd; return; }
+    if (g_catVecCount < CATAPULT_VEC_MAX) { g_catVecObj[g_catVecCount] = obj; g_catVecUp[g_catVecCount] = up; g_catVecFwd[g_catVecCount] = fwd; g_catVecCount++; }
+}
+static int CatapultGetVec(void *obj, float *up, float *fwd) {
+    int i;
+    for (i = 0; i < g_catVecCount; i++) if (g_catVecObj[i] == obj) { *up = g_catVecUp[i]; *fwd = g_catVecFwd[i]; return 1; }
+    return 0;
+}
+/* Tiny paren-pair parser: "(24.4,-11.2)" -> up/fwd. Returns 1 on success.
+ * No libc float parsing under -nostdlib; handles sign, int/frac, spaces. */
+static float CatapultParseNum(const char **pp) {
+    const char *p = *pp; float v = 0.0f, frac = 0.0f, div = 1.0f; int neg = 0, any = 0;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == '-') { neg = 1; p++; } else if (*p == '+') p++;
+    while (*p >= '0' && *p <= '9') { v = v * 10.0f + (float)(*p - '0'); p++; any = 1; }
+    if (*p == '.') { p++; while (*p >= '0' && *p <= '9') { frac = frac * 10.0f + (float)(*p - '0'); div *= 10.0f; p++; any = 1; } }
+    while (*p == ' ' || *p == '\t') p++;
+    *pp = p;
+    v += frac / div;
+    if (!any) return 0.0f;
+    return neg ? -v : v;
+}
+static int CatapultParseVec(const char *name, float *up, float *fwd) {
+    const char *p = name;
+    while (*p && *p != '(') p++;
+    if (*p != '(') return 0;
+    p++;
+    *up = CatapultParseNum(&p);
+    if (*p != ',') return 0;
+    p++;
+    *fwd = CatapultParseNum(&p);
+    if (*p != ')') return 0;
+    return 1;
+}
+/* Fling override, called from the 0x438179 hook stub (obj in ESI at the
+ * Ball_SetVec3AtOffset call). Replaces the native dir with (0,up,fwd). */
+void CatapultFlingOverride(void *obj, float *dir) {
+    float up, fwd;
+    if (CatapultGetVec(obj, &up, &fwd)) {
+        dir[0] = 0.0f; dir[1] = up; dir[2] = fwd;
+    }
+}
 typedef void (__fastcall *Timer_Init_t)(void *out);
 typedef void (__fastcall *Timer_Cleanup_t)(void *timer); /* native 0x457A40: ECX-only, re-stamps vtable */
 typedef void (__stdcall *Matrix_TransformVec3_t)(float *out, float *in);
