@@ -1219,15 +1219,18 @@ static void BumperFreeEHV2(void *ext) {
 static int IsS1CollisionEnabled(void *board, const char *eventName);
 #define MAX_S1_COLLISIONS 128
 #define S1_COLLISION_NAME_LEN 32
-/* AthenaList slots (8 × 0x410 = 0x2080 bytes) */
-#define UNI_LIST_0    0x8800
-#define UNI_LIST_1    0x8C10
-#define UNI_LIST_2    0x9020
-#define UNI_LIST_3    0x9430
-#define UNI_LIST_4    0x9840
-#define UNI_LIST_5    0x9C50
-#define UNI_LIST_6    0xA060
-#define UNI_LIST_7    0xA470
+/* AthenaList slots (8 x 0x418 = 0x20C0 bytes; stride MUST equal list size
+   0x418 — 0x410 spacing overlapped each list's [0x414] with the next
+   list's count and crashed appends (Megamix: 5 JUDGEs then MACE).
+   Region 0x87C0-0xA880; render data starts at 0xA880, SKY timer ends 0x8744. */
+#define UNI_LIST_0    0x87C0
+#define UNI_LIST_1    0x8BD8
+#define UNI_LIST_2    0x8FF0
+#define UNI_LIST_3    0x9408
+#define UNI_LIST_4    0x9820
+#define UNI_LIST_5    0x9C38
+#define UNI_LIST_6    0xA050
+#define UNI_LIST_7    0xA468
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Dedicated Render Data Section (0xA880–0xA8D0, 80 bytes)
@@ -1241,7 +1244,7 @@ static int IsS1CollisionEnabled(void *board, const char *eventName);
  *   Glass:  smasher1_xyz(12) + smasher2_xyz(12) + transp1(4) + transp2(4) + flags(2) = 34B
  *   Tower:  windmill_render(4) + chomper_mesh(4) + turret_render(4) = 12B
  *   Sky:    mesh(4) + sprite(4) + sprite_xyz(12) = 20B
- *   Sky render list uses UNI_LIST_7 (already allocated, 0x410 bytes at 0xA470)
+ *   Sky render list uses UNI_LIST_7 (already allocated, 0x418 bytes at 0xA468)
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Glass render data — written by SMASHER1/SMASHER2 handlers, read by REND_GLASS.

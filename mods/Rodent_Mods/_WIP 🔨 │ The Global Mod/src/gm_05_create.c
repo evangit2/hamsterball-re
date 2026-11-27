@@ -1695,7 +1695,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
 
     /* ── TARBUBBLE (Dizzy) ──
      * S1: TARBUBBLE — DizzyBoard_Update uses board+0x11E4 list.
-     * Mod stores into ext+UNI_TARBUBBLE_LIST (0x9430) so Feature_SwirlZones can spawn bubbles. */
+     * Mod stores into ext+UNI_TARBUBBLE_LIST so Feature_SwirlZones can spawn bubbles. */
     if (my_strnicmp(name, "TARBUBBLE", 9) == 0) {
         void *entry = g_operatorNew(0x20);
         if (entry) {
