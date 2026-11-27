@@ -350,6 +350,7 @@ typedef enum {
                                      done order-independently) */
     FEAT_POP_LISTS     = 1 << 11, /* Master pop list 5428 inited (own bit) */
     FEAT_VACUUM        = 1 << 12, /* VAC-IN/OUT/VEC tube faces built (ext list) */
+    FEAT_GLUEBIE_LIST  = 1 << 13, /* Dizzy gluebie list 4378 lazy-inited at first append (any filename) */
 } UpdateFeature;
 
 /* Render feature flags — separate from update features.

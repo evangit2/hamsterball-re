@@ -401,12 +401,20 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
              * UNI_MESH_3 (0x85EC) is a mesh SLOT, not an AthenaList — appending to it
              * clobbers mesh pointers at 0x8620-0x862C via the iter array. */
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            /* board+0x4378 is Dizzy's gluebie list (inited in 9a-extra2 for
-             * Dizzy content). Native Dizzy create appends here AND 0x2578 —
-             * the update walks 0x4378 for tar/swirl proximity. Gate on
-             * content (not slot): Dizzy file in any slot drives it. */
-            if (GetCurrentLevel(board) == 4 || ContentFileId(GetBoardExt(board)) == 4)
+            /* board+0x4378 is Dizzy's gluebie list. Native Dizzy create appends
+             * here AND 0x2578 — the update walks 0x4378 for tar/swirl
+             * proximity. Gate on content (not slot): Dizzy file in any slot
+             * drives it. Lazy init (FEAT_GLUEBIE_LIST): a custom-named file
+             * in the Dizzy slot passes the slot half of the gate with content
+             * 0, so ctor init can't be trusted — init here at first append,
+             * post-Setup, same pattern as Tower/Expert lists. */
+            if (GetCurrentLevel(board) == 4 || ContentFileId(GetBoardExt(board)) == 4) {
+                if (!(GetBoardFeat(board) & FEAT_GLUEBIE_LIST) && g_AthenaListInit && BoardHasOffset(board, 0x4378, 4)) {
+                    g_AthenaListInit((void *)((char *)board + 0x4378), 0);
+                    OrBoardFeat(board, FEAT_GLUEBIE_LIST);
+                }
                 g_AthenaListAppend((void*)((char*)board + 0x4378), (int)obj);
+            }
             /* Gluebie-only boards (custom levels with GLUEBIE but no
              * TIPPER/WATERWHEEL/SWIRL S1) never got FEAT_SWIRL — the slow
              * never ran at all. Gluebies ARE the zones; enable it here. */

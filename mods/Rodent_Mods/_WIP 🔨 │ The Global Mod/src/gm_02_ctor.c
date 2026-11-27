@@ -924,7 +924,8 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
      * board+0x4378. Native Dizzy ctor inits it (base Board_ctor does NOT —
      * verified by disasm: it inits 0x8B8/0xCD4/0x10EC/0x2578/... but never
      * 0x436C/0x4378). Without this, GLUEBIE appends to garbage → heap
-     * corruption on every Dizzy race open (fix 2026-09-18). */
+     * corruption on every Dizzy race open (fix 2026-09-18). Custom filenames
+     * are covered by lazy init at the append site (FEAT_GLUEBIE_LIST). */
     if (g_loadingContentId == 4 && g_AthenaListInit) {
         g_AthenaListInit((void *)((char *)mem + 0x4378), 0);
         DebugLog("Step 9a-extra2: gluebie list at board+0x4378 for Dizzy");
@@ -943,7 +944,8 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
      * board+0x43B8 (catapult), 0x47D0 (trapdoor), 0x4BE8 (drawbridge),
      * 0x5000 (mace). Base Board_ctor never inits them (verified live:
      * they hold small-int garbage, not list heads); appends corrupted the
-     * heap on every Tower open (fix 2026-10-21). */
+     * heap on every Tower open (fix 2026-10-21). Customs covered by lazy
+     * init at each append site (FEAT_TOWER_LISTS). */
     if (g_loadingContentId == 5 && g_AthenaListInit) {
         g_AthenaListInit((void *)((char *)mem + 0x43B8), 0);
         g_AthenaListInit((void *)((char *)mem + 0x47D0), 0);
@@ -953,7 +955,8 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
     }
     /* Expert (level 8) spinner lists: board+0x4380 ("1") / +0x4798 ("2").
      * Base Board_ctor never inits them; native slot33 appended directly.
-     * Init here or the spinner append corrupts the heap at load. */
+     * Init here or the spinner append corrupts the heap at load. Customs
+     * covered by lazy init at the append sites (FEAT_EXPERT_LISTS). */
     if (g_loadingContentId == 8 && g_AthenaListInit) {
         g_AthenaListInit((void *)((char *)mem + 0x4380), 0);
         g_AthenaListInit((void *)((char *)mem + 0x4798), 0);
