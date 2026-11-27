@@ -920,48 +920,15 @@ void __cdecl UniversalBoardCtorLogic(void *mem, int app) {
         DebugLog("Step 9a-extra: legacy AthenaList at board+0x436C for Up");
     }
 
-    /* 9a-extra2: Dizzy race (level 4) needs a gluebie object list at
-     * board+0x4378. Native Dizzy ctor inits it (base Board_ctor does NOT —
-     * verified by disasm: it inits 0x8B8/0xCD4/0x10EC/0x2578/... but never
-     * 0x436C/0x4378). Without this, GLUEBIE appends to garbage → heap
-     * corruption on every Dizzy race open (fix 2026-09-18). Custom filenames
-     * are covered by lazy init at the append site (FEAT_GLUEBIE_LIST). */
-    if (g_loadingContentId == 4 && g_AthenaListInit) {
-        g_AthenaListInit((void *)((char *)mem + 0x4378), 0);
-        DebugLog("Step 9a-extra2: gluebie list at board+0x4378 for Dizzy");
-    }
-
-    /* 9a-extra2b: Dizzy race also needs the tarbubble/vector list at
-     * board+0x4790. Native Dizzy ctor inits it; base Board_ctor does not.
-     * Native update appends ambient tarbubbles and splash particles here —
-     * without init those appends corrupt the heap (same class as 9a-extra2). */
-    if (g_loadingContentId == 4 && g_AthenaListInit) {
-        g_AthenaListInit((void *)((char *)mem + 0x4790), 0);
-        DebugLog("Step 9a-extra2b: tarbubble list at board+0x4790 for Dizzy");
-    }
-
-    /* 9a-extra3: Tower race (level 5) needs native object lists at
-     * board+0x43B8 (catapult), 0x47D0 (trapdoor), 0x4BE8 (drawbridge),
-     * 0x5000 (mace). Base Board_ctor never inits them (verified live:
-     * they hold small-int garbage, not list heads); appends corrupted the
-     * heap on every Tower open (fix 2026-10-21). Customs covered by lazy
-     * init at each append site (FEAT_TOWER_LISTS). */
-    if (g_loadingContentId == 5 && g_AthenaListInit) {
-        g_AthenaListInit((void *)((char *)mem + 0x43B8), 0);
-        g_AthenaListInit((void *)((char *)mem + 0x47D0), 0);
-        g_AthenaListInit((void *)((char *)mem + 0x4BE8), 0);
-        g_AthenaListInit((void *)((char *)mem + 0x5000), 0);
-        DebugLog("Step 9a-extra3: Tower native lists 43B8/47D0/4BE8/5000");
-    }
-    /* Expert (level 8) spinner lists: board+0x4380 ("1") / +0x4798 ("2").
-     * Base Board_ctor never inits them; native slot33 appended directly.
-     * Init here or the spinner append corrupts the heap at load. Customs
-     * covered by lazy init at the append sites (FEAT_EXPERT_LISTS). */
-    if (g_loadingContentId == 8 && g_AthenaListInit) {
-        g_AthenaListInit((void *)((char *)mem + 0x4380), 0);
-        g_AthenaListInit((void *)((char *)mem + 0x4798), 0);
-        DebugLog("Step 9a-extra4: Expert native lists 4380/4798");
-    }
+    /* 9a-extra2/2b/3/4 REMOVED (presence-gated): the old content==4/5/8
+     * ctor inits for board+0x4378 (gluebie), +0x4790 (tarbubble),
+     * +0x43B8/0x47D0/0x4BE8/0x5000 (Tower 2nd-lists) and +0x4380/0x4798
+     * (Expert spinner lists) now happen once at the first family-S1
+     * build in create (FEAT_GLUEBIE_LIST / FEAT_TOWER_LISTS /
+     * FEAT_EXPERT_LISTS once-guards; the S1 under construction is the
+     * presence proof). Identical coverage: every appender runs after
+     * its own init, on every content. (+0x4790 had no appenders left
+     * under the mod — ext drawers carry tar now — so its init is gone.) */
 
     /* 9b: eh_vector — lives in ext if offset >=0x6500 */
     if (g_ehVectorCtor && g_ehVectorCtorFn && g_Vec3ListFree &&

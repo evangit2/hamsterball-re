@@ -154,3 +154,71 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   devices + hook-filled DAT. Rig: stock Glass (RACE 12) clean 32s+;
   stock Beginner (RACE 2) clean. Swapped-slot native path proven by
   disasm only (content id is filename-derived, no stock file isolates it).
+
+## 15. Windmill content==5 driver fork (DONE 2026-11-27)
+- Was: Feature_Windmill ran a native-slot path for content==5 and a
+  separate ext-mirror path (with an unproven 4-state machine + wrong
+  swoosh channel 0x4A8) for everything else. A renamed Tower file took
+  the ext path, which died on missing app (no g_lastAppParam fallback)
+  — Tower windmill static in foreign slots.
+- Now: single presence-gated driver for all contents/slots (native
+  sequence 1:1 vs 0x41E7C4-0x41E85E: plain rate advance, %90==45 swoosh
+  via app+0x4A4, fn58-then-fn54 draw on board+0x437C w/ ext render
+  fallback, ext angle mirrored to board). Runs wherever a WINDMILL S1
+  built a render; chomper tail gated on REND_TOWER_CHOMPER.
+
+## 16. isDizzy tar/creak fork (DONE 2026-11-27)
+- Was: `isDizzy = (level==4)||(content==4)` gated the wheel-creak sound.
+- Now: gated on the ctor-grabbed channel itself (+0x4BDC valid). Silent
+  before meant no channel; plays wherever a waterwheel grabbed one.
+
+## 17. Gluebie board+0x4378 list gate (DONE 2026-11-27)
+- Was: init+append iff level==4||content==4.
+- Now: init+append iff no live object owns the slot (probe: committed
+  pointer-sized value). Glass smasher X / DFLOOR / mace / spinner
+  mirrors and Master live objects keep their slot; Dizzy-family
+  boards init on first GLUEBIE build. Mod proximity walks the ext
+  drawers, so the native mirror is vestigial either way.
+
+## 18. Tower 2nd-list content gates + ctor 9a-extra2/2b/3/4 (DONE 2026-11-27)
+- Was: create-time `content != 5` at 4 sites (catapult/mace/drawbridge/
+  trapdoor) + ctor 9a-extra2 (0x4378, content 4), 2b (0x4790, content 4),
+  3 (Tower lists, content 5), 4 (Expert lists, content 8).
+- Now: create sites init-once on FEAT bit alone (the S1 under
+  construction is the presence proof); ctor blocks deleted. Coverage
+  identical: every appender runs after its own init on every content.
+  (+0x4790 had no appenders left under the mod — ext drawers carry tar.)
+
+## 19. Catapult Master +0x1100 profile (DONE 2026-11-27)
+- Was: `content == 14` set obj+0x1100=1.
+- Now: set iff Master-family S1s present (BBRIDGE/BONKCYLINDER) without
+  Tower-family markers (Tower wins ties → mixed files behave like
+  Tower). No +0x1100 reader remains in update/Launch/CATAPULTBOTTOM
+  under the mod (verified by disasm); hook drives velocity from S1.
+
+## 20. Trapdoor level!=13 x2 (DONE 2026-11-27)
+- Was: `level != 13` at create (gm_05) + collision scan (gm_07); stock
+  Sky's TRAPDOOR S1 fell through to unknown (needed a file rename).
+- Now: SKY markers without Tower markers route TRAPDOOR S1s into the
+  popdoor build (same Rotator path as POPDOOR); everything else builds
+  the trapdoor. No rename needed — both S1 spellings converge.
+
+## 21. Neon slot==7 follower-slot nulling (DONE 2026-11-27)
+- Was: NULL 0x436C/0x4370 only on level 7.
+- Now: NULL them iff no live object owns the slots (probe). Neon
+  garbage cleared everywhere; Dizzy tipper / Up lifter live slots
+  untouched on any slot.
+
+## Kept (not splits)
+- UniversalXInit per-content chain (gm_02:638+): construction, not
+  behavior — the board class/vtable must follow the file or nothing
+  works in any slot. File identity is the only signal at ctor time.
+- Up 9a-extra (board+0x436C list, content==6): kept pending VAC-driver
+  audit (Up objects may still walk it; no mod appender found, but the
+  native Up paths that read it are not fully mapped yet).
+- effSlot orig dispatches (render/update/racestate/create/dispatch/
+  slot34) + level==0 guards: uniform "call your own native" routing
+  and unknown-board safety, not behavior forks.
+- Dead/diag: #if 0 Tower render, content==10 native-ctor replica
+  (flag always 0), 0&&content==15, Sky content==13 logs, CTORDECISION
+  log.

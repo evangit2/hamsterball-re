@@ -401,19 +401,27 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
              * UNI_MESH_3 (0x85EC) is a mesh SLOT, not an AthenaList — appending to it
              * clobbers mesh pointers at 0x8620-0x862C via the iter array. */
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            /* board+0x4378 is Dizzy's gluebie list. Native Dizzy create appends
-             * here AND 0x2578 — the update walks 0x4378 for tar/swirl
-             * proximity. Gate on content (not slot): Dizzy file in any slot
-             * drives it. Lazy init (FEAT_GLUEBIE_LIST): a custom-named file
-             * in the Dizzy slot passes the slot half of the gate with content
-             * 0, so ctor init can't be trusted — init here at first append,
-             * post-Setup, same pattern as Tower/Expert lists. */
-            if (GetCurrentLevel(board) == 4 || ContentFileId(GetBoardExt(board)) == 4) {
-                if (!(GetBoardFeat(board) & FEAT_GLUEBIE_LIST) && g_AthenaListInit && BoardHasOffset(board, 0x4378, 4)) {
-                    g_AthenaListInit((void *)((char *)board + 0x4378), 0);
-                    OrBoardFeat(board, FEAT_GLUEBIE_LIST);
+            /* board+0x4378 is the native Dizzy gluebie list. Init + append
+             * iff no live object owns the slot: Glass smasher X, DFLOOR/
+             * mace/spinner/blockdawg mirrors and Master live objects share
+             * this offset on other families (their files carry no GLUEBIE
+             * S1s, so the slot stays theirs). The GLUEBIE S1 under
+             * construction is itself the tar-content proof — no level or
+             * content IDs. (Mod proximity walks the ext drawers, so
+             * skipping here only drops the vestigial native mirror.) */
+            {
+                int slotLive = 0;
+                if (BoardHasOffset(board, 0x4378, 4)) {
+                    int sv = *(int *)((char *)board + 0x4378);
+                    if (sv && !IsBadReadPtr((void *)sv, 16)) slotLive = 1;
                 }
-                g_AthenaListAppend((void*)((char*)board + 0x4378), (int)obj);
+                if (!slotLive) {
+                    if (!(GetBoardFeat(board) & FEAT_GLUEBIE_LIST) && g_AthenaListInit && BoardHasOffset(board, 0x4378, 4)) {
+                        g_AthenaListInit((void*)((char*)board + 0x4378), 0);
+                        OrBoardFeat(board, FEAT_GLUEBIE_LIST);
+                    }
+                    g_AthenaListAppend((void*)((char*)board + 0x4378), (int)obj);
+                }
             }
             /* Gluebie-only boards (custom levels with GLUEBIE but no
              * TIPPER/WATERWHEEL/SWIRL S1) never got FEAT_SWIRL — the slow
@@ -457,10 +465,15 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
               }
               CatapultSetVec(obj, vup, vfwd);
               { char cv[96]; wsprintfA(cv, "CATAPULT vec obj=0x%08X up=%d fwd=%d", (DWORD)obj, (int)(vup * 100.0f), (int)(vfwd * 100.0f)); Gm_LogSkip(cv); } }
-            /* Native parity: Master content builds +0x1100=1 (steeper fling
-             * profile); Tower leaves the ctor default 0. The hook overrides
-             * velocity anyway, but this keeps the native fallback correct. */
-            if (ContentFileId(ext) == 14) o[0x440] = 1;
+            /* Fling profile: Master-family files build +0x1100=1 (steeper
+             * fling), Tower-family keeps the ctor default 0; Tower wins
+             * ties so mixed files behave like Tower. S1-family presence
+             * (UNI_S1_PRESENT mask), never a content ID. No +0x1100 reader
+             * remains in the update/Launch/CATAPULTBOTTOM paths under the
+             * mod (verified by disasm) — the hook drives velocity from the
+             * S1 vector; this keeps the native fallback correct. */
+            if (S1FamPresent(ext, S1P_MASTERFAM) && !S1FamPresent(ext, S1P_TOWERFAM))
+                o[0x440] = 1;
             /* Dynamic fling power: CATAPULT<n> S1 suffix = percent of the
              * native 50 (e.g. CATAPULT150 = 75). Stashed here, applied after
              * Launch in E:CATAPULTBOTTOM (Launch always resets 0x10F4 to 50).
@@ -469,9 +482,11 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             int listOff = UNI_CATAPULT_LIST;
             g_AthenaListAppend((void*)((char*)ext + listOff), (int)obj);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            /* Cross-level: Tower 2nd-lists exist natively only on Tower content
-             * (9a-extra3). Init once here for other contents. */
-            if (ContentFileId(ext) != 5 && !(GetBoardFeat(board) & FEAT_TOWER_LISTS) && g_AthenaListInit && BoardHasOffset(board, 0x5000, 4)) {
+            /* Tower 2nd-lists (0x43B8/0x47D0/0x4BE8/0x5000): init once at the
+             * first family S1 build (catapult/mace/drawbridge/trapdoor are
+             * the only appenders) — the S1 under construction is the
+             * presence proof, no content ID. */
+            if (!(GetBoardFeat(board) & FEAT_TOWER_LISTS) && g_AthenaListInit && BoardHasOffset(board, 0x5000, 4)) {
                 g_AthenaListInit((void*)((char*)board + 0x43B8), 0);
                 g_AthenaListInit((void*)((char*)board + 0x47D0), 0);
                 g_AthenaListInit((void*)((char*)board + 0x4BE8), 0);
@@ -524,7 +539,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             DWORD *o = (DWORD *)obj;
             memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            if (ContentFileId(ext) != 5 && !(GetBoardFeat(board) & FEAT_TOWER_LISTS) && g_AthenaListInit && BoardHasOffset(board, 0x5000, 4)) {
+            if (!(GetBoardFeat(board) & FEAT_TOWER_LISTS) && g_AthenaListInit && BoardHasOffset(board, 0x5000, 4)) {
                 g_AthenaListInit((void*)((char*)board + 0x43B8), 0);
                 g_AthenaListInit((void*)((char*)board + 0x47D0), 0);
                 g_AthenaListInit((void*)((char*)board + 0x4BE8), 0);
@@ -574,7 +589,7 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             DWORD *o = (DWORD *)obj;
             memcpy(&o[0x436], &x, 4); memcpy(&o[0x437], &y, 4); memcpy(&o[0x438], &z, 4);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            if (ContentFileId(ext) != 5 && !(GetBoardFeat(board) & FEAT_TOWER_LISTS) && g_AthenaListInit && BoardHasOffset(board, 0x5000, 4)) {
+            if (!(GetBoardFeat(board) & FEAT_TOWER_LISTS) && g_AthenaListInit && BoardHasOffset(board, 0x5000, 4)) {
                 g_AthenaListInit((void*)((char*)board + 0x43B8), 0);
                 g_AthenaListInit((void*)((char*)board + 0x47D0), 0);
                 g_AthenaListInit((void*)((char*)board + 0x4BE8), 0);
@@ -650,15 +665,38 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         return;
     }
 
-    /* ── TRAPDOOR (Tower, level!=13) ── — Sky TRAPDOOR (level 13) uses Rotator POPDOOR path below */
-    if (my_strnicmp(name, "TRAPDOOR", 8) == 0 && GetCurrentLevel(board) != 13) {
+    /* ── TRAPDOOR on Sky-family files: same Rotator popdoor as POPDOOR ──
+     * Stock Sky's door S1 is still named TRAPDOOR; route it by family
+     * presence (SKY markers without Tower markers → popdoor) instead of
+     * renaming the file. Tower wins ties; family-less files keep the
+     * trapdoor below (the S1's own name). Same file, same door, any slot. */
+    if (my_strnicmp(name, "TRAPDOOR", 8) == 0 && S1FamPresent(ext, S1P_SKYFAM) && !S1FamPresent(ext, S1P_TOWERFAM)) {
+        float pdat = *(float *)(g_moduleBase + 0xCF44C);
+        S1EnsureMeshWorld(board, ext, UNI_SKY_TRAPDOOR, "Levels\\Level9-TrapDoor");
+        int pmeshVal = *(int*)((char*)ext + UNI_SKY_TRAPDOOR);
+        if (!pmeshVal) { DebugLog("TRAPDOOR-as-POPDOOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
+        void *pmem = g_operatorNew(0x10F4);
+        if (pmem) {
+            obj = g_RotatorCtor(pmem, (int)board, x, y, z, pdat - fparam, pmeshVal);
+            *(void **)((char *)ext + UNI_NEON_TRAPDOOR) = obj;
+            g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
+            g_AthenaListAppend((void*)((char*)ext + UNI_TRAPDOOR_LIST), (int)obj);
+            renderOut = ((DWORD*)obj)[0x43C];
+        }
+        if (ext) Gm_CreateSlot(board, ext, 14, x, y, z, x2, y2, z2, obj, name);
+        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
+        return;
+    }
+
+    /* ── TRAPDOOR (Tower-family, or family-less: the S1's own name) ── */
+    if (my_strnicmp(name, "TRAPDOOR", 8) == 0) {
         void *mem = g_operatorNew(0x10F8);
         if (mem) {
             obj = g_TrapdoorCtor(mem, (int)board);
             DWORD *o = (DWORD *)obj;
             memcpy(&o[0x438], &x, 4); memcpy(&o[0x439], &y, 4); memcpy(&o[0x43A], &z, 4);
             g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            if (ContentFileId(ext) != 5 && !(GetBoardFeat(board) & FEAT_TOWER_LISTS) && g_AthenaListInit && BoardHasOffset(board, 0x5000, 4)) {
+            if (!(GetBoardFeat(board) & FEAT_TOWER_LISTS) && g_AthenaListInit && BoardHasOffset(board, 0x5000, 4)) {
                 g_AthenaListInit((void*)((char*)board + 0x43B8), 0);
                 g_AthenaListInit((void*)((char*)board + 0x47D0), 0);
                 g_AthenaListInit((void*)((char*)board + 0x4BE8), 0);

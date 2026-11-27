@@ -426,10 +426,9 @@ static void Feature_SwirlZones(void *board, int level) {
     int tarListOfs = BRD_TARBUBBLE_LIST;
     // tarListOfs is a UNI offset >=0x6500 — use ext
 
-    /* Dizzy-class boards use NATIVE slots/list walks (native Dizzy update
-     * parity); other levels keep the ext-unified path. Content-keyed so a
-     * Dizzy file in any slot behaves identically. */
-    int isDizzy = (level == 4) || (ContentFileId(ext) == 4);
+    /* Tar-content slow zones: the zone registry is drawer-driven (legacy
+     * singleton UNI_GLUEBIE_OBJ + type-3 drawers); walking drawers reads
+     * identical fields on every board with no content fork. */
 
     /* Ambient-tarbubble gate (native Dizzy update head): spawn only when
      * size(board+0x362C) != 1 or the player ball's +0x14C flag is clear.
@@ -748,8 +747,10 @@ static void Feature_SwirlZones(void *board, int level) {
             float wcy = *(float*)((char*)ext + OFF_WHEEL_EMBED_Y);
             float wcz = *(float*)((char*)ext + OFF_WHEEL_EMBED_Z);
             /* Wheel creak (native block 3 tail): distance attenuation at the
-             * wheel center, played through the ctor-grabbed channel +0x4BDC. */
-            if (isDizzy && g_SoundCalcDistAtten && g_SoundPlay3DAtPos) {
+             * wheel center, played through the ctor-grabbed channel +0x4BDC.
+             * Presence-gated on the channel itself (wherever a waterwheel
+             * was built and grabbed one) — not on Dizzy content. */
+            if (g_SoundCalcDistAtten && g_SoundPlay3DAtPos) {
                 float atten = g_SoundCalcDistAtten(*(int *)(app + 0x178), wcx, wcy, wcz);
                 int wch = BoardHasOffset(board, 0x4BDC, 4) ? *(int *)((char *)board + 0x4BDC) : 0;
                 if (wch) g_SoundPlay3DAtPos(wch, atten);
@@ -1233,23 +1234,45 @@ static void DiagChomper(void *board, DWORD app) {
 static void Feature_Windmill(void *board, int level) {
     // Pause gate: board+0x874 !=0 means paused (ESC) — freeze anim + sound
     if (*(BYTE*)((char*)board+0x874)) return;
-    /* Tower content (any slot): drive the NATIVE board slots (native Tower
-     * update never runs under the mod). Replicates Tower slot-1 windmill
-     * sequence 1:1 — angle on +0x438C, sound at 45 mod 90 via app+0x4A4,
-     * matrix compose + vtbl[0x16]/[0x15] on the native +0x437C render.
+    /* Windmill (Tower-family S1s, any content, any slot): drive the native
+     * board slots (native Tower update never runs under the mod). Replicates
+     * the native windmill sequence 1:1 — angle advance, sound at 45 mod 90
+     * via app+0x4A4, matrix compose + vtbl[0x58]/[0x54] on the board+0x437C
+     * object. Angle source of truth is ext (create-seeded, mirrored to the
+     * board slot); draw target prefers the board object, ext render fallback.
      * Native Tower render reads these slots, so the windmill visibly spins. */
-    if (ContentFileId(GetBoardExt(board)) == 5) {
+    /* Single presence-gated driver (all contents, any slot): replicate the
+     * native Tower update windmill sequence 1:1 (verified vs native
+     * 0x41E7C4-0x41E85E): angle advance, swoosh at angle%90==45 via
+     * app+0x4A4, matrix compose + vtbl[0x58]/[0x54] on the board+0x437C
+     * object. Old content==5/ext-mirror fork removed — the same file now
+     * behaves identically in any slot. */
+    {
         /* NOTE: native Tower ctor leaves board+0x878 (app) as 0 — fall back
          * to the app captured at Logic time, else every app read fails. */
         extern int g_lastAppParam;
         DWORD app5 = *(DWORD *)((char *)board + BOARD_APP_PTR);
         if (!app5) app5 = (DWORD)g_lastAppParam;
         if (!app5 || IsBadReadPtr((void *)app5, 0x500)) return;
-        float *bAng = (float *)((char *)board + 0x438C);
+        void *ext5 = GetBoardExt(board);
+        if (!ext5) return;
+        /* Angle lives in ext (create-seeded); mirror to the native board
+         * slot every frame for native readers. */
+        float *extAng = (float *)((char *)ext5 + UNI_WINDMILL_ANGLE);
         float rate = (*(int *)(app5 + APP_DIFFICULTY) == 0) ? 0.5f : 1.0f;
-        *bAng = *bAng + rate;
+        *extAng = *extAng + rate;
+        if (BoardHasOffset(board, 0x438C, 4))
+            *(float *)((char *)board + 0x438C) = *extAng;
+        /* Draw target: native board+0x437C object when valid (today's Tower
+         * visual), else the ext REND_TOWER_WINDMILL render. */
+        DWORD wmr = 0;
+        if (BoardHasOffset(board, 0x437C, 4)) {
+            DWORD bm = *(DWORD *)((char *)board + 0x437C);
+            if (bm && !IsBadReadPtr((void *)bm, 4)) wmr = bm;
+        }
+        if (!wmr) wmr = *(DWORD *)((char *)ext5 + REND_TOWER_WINDMILL);
         {
-            int ai = (int)*bAng;
+            int ai = (int)*extAng;
             if (ai % 0x5A == 0x2D && g_SoundPlay3D) {
                 DWORD snd = *(DWORD *)(app5 + 0x4A4);
                 if (snd) g_SoundPlay3D((void *)snd,
@@ -1258,7 +1281,6 @@ static void Feature_Windmill(void *board, int level) {
                     *(float *)((char *)board + 0x4388), 1.0f);
             }
         }
-        DWORD wmr = *(DWORD *)((char *)board + 0x437C);
         if (wmr && !IsBadReadPtr((void *)wmr, 4) &&
             g_TimerInit && g_TimerCleanup && g_GfxScaleY && g_GfxSetPosition) {
             /* Native Tower (0x41E80B-0x41E85E): TimerInit(T) -> ScaleY(T,angle)
@@ -1270,7 +1292,7 @@ static void Feature_Windmill(void *board, int level) {
               if (ext5) *(float *)((char *)ext5 + UNI_CHOMP_TIMER) += 3.0f; }
             char timerBuf[68];
             g_TimerInit(timerBuf);
-            g_GfxScaleY(timerBuf, *bAng);
+            g_GfxScaleY(timerBuf, *extAng);
             g_GfxSetPosition(timerBuf,
                 *(float *)((char *)board + 0x4380),
                 *(float *)((char *)board + 0x4384),
@@ -1284,87 +1306,15 @@ static void Feature_Windmill(void *board, int level) {
             }
             g_TimerCleanup(timerBuf);
         }
-        /* Native 0x41E760 falls through to the chomper states — the old
-         * early-return skipped them (frozen jaw, no bite, no sound). */
-        { void *ext5 = GetBoardExt(board);
-          if (ext5) Gm_WindmillDrawers(board, ext5, app5, wmr); }
-        Feature_ChomperStates(board, app5);
-        DiagChomper(board, app5);
+        /* Native 0x41E760 falls through to the chomper states. Presence-
+         * gated: only drive them when a chomper was actually built. */
+        Gm_WindmillDrawers(board, ext5, app5, wmr);
+        if (*(DWORD *)((char *)ext5 + REND_TOWER_CHOMPER)) {
+            Feature_ChomperStates(board, app5);
+            DiagChomper(board, app5);
+        }
         return;
     }
-    void* ext = GetBoardExt(board);
-    DWORD app = *(DWORD *)((char *)board + BOARD_APP_PTR);
-    if (!app || IsBadReadPtr((void *)app, 0x500)) return;
-    float *anglePtr; float *speedPtr; int *statePtr; int *counterPtr; float *decayPtr; float *posX; float *posY; float *posZ;
-    DWORD *renderPtr;
-    if (!ext) return;
-    anglePtr = (float*)((char*)ext + UNI_WINDMILL_ANGLE);
-    speedPtr = (float*)((char*)ext + UNI_WINDMILL_SPEED);
-    statePtr = (int*)((char*)ext + UNI_WINDMILL_STATE);
-    counterPtr = (int*)((char*)ext + UNI_WINDMILL_COUNTER);
-    decayPtr = (float*)((char*)ext + UNI_WINDMILL_DECAY);
-    posX = (float*)((char*)ext + UNI_WINDMILL_X);
-    posY = (float*)((char*)ext + UNI_WINDMILL_Y);
-    posZ = (float*)((char*)ext + UNI_WINDMILL_Z);
-    renderPtr = (DWORD*)((char*)ext + REND_TOWER_WINDMILL);
-    /* No BONK_STORE fallback here (v13.25): on drawbridge levels BONK_STORE
-     * holds the TILTING DECK mesh, and posing it with the unbounded windmill
-     * angle propellers the whole deck at constant velocity + swoop sound.
-     * Windmill-less levels (Catapult-only etc.) exit here; the chomper tail
-     * below keeps its own presence gate. */
-    if (!*renderPtr) {
-        if (*(DWORD *)((char *)ext + REND_TOWER_CHOMPER))
-            Feature_ChomperStates(board, app);
-        return;
-    }
-    float rotSpeed = (*(int *)(app + APP_DIFFICULTY) == 0) ? 0.5f : 1.0f;
-    *anglePtr = *anglePtr + rotSpeed;
-    *(float*)((char*)ext + UNI_CHOMP_TIMER) += 3.0f; /* mirror board+0x43A4 (_DAT_004CF418) */
-    {
-        int angleInt = (int)*anglePtr;
-        if (angleInt % 0x5A == 0x2D) {
-            if (g_SoundPlay3D) {
-                DWORD snd = *(DWORD *)(app + 0x4A4);
-                if (snd) g_SoundPlay3D((void *)snd, *posX, *posY, *posZ, 1.0f);
-            }
-        }
-    }
-    if (g_TimerInit && g_TimerCleanup && g_GfxScaleY && g_GfxSetPosition && app) {
-        void *gfx = *(void **)(app + 0x174);
-        if (gfx) {
-        /* Compose into the fresh timer buffer (native Tower pattern), never
-         * the persistent gfx object. Draw below uses timerBuf. */
-        char timerBuf[68];
-        g_TimerInit(timerBuf);
-        g_GfxScaleY(timerBuf, *anglePtr);
-        g_GfxSetPosition(timerBuf, *posX, *posY, *posZ);
-        DWORD renderObj = *renderPtr;
-        if (renderObj) {
-            DWORD *vtbl = *(DWORD **)renderObj;
-            if (vtbl) {
-                void (__fastcall *fn58)(DWORD, DWORD) = (void (__fastcall *)(DWORD, DWORD))vtbl[0x16];
-                void (__thiscall *fn54)(DWORD, void *) = (void (__thiscall *)(DWORD, void *))vtbl[0x15]; /* native: ECX=obj + push timer, ret $0x4 */
-                if (fn58) fn58((DWORD)renderObj, (DWORD)vtbl);
-                if (fn54) fn54((DWORD)renderObj, timerBuf);
-            }
-        }
-        g_TimerCleanup(timerBuf);
-        }
-    }
-    int wmState = *statePtr;
-    switch (wmState) {
-    case 0: { float speed = *speedPtr; if (speed == 0.0f) speed = 0.25f; speed *= 1.2f; *speedPtr = speed; if (speed > 25.0f) { *speedPtr = 25.0f; *statePtr = 1; *counterPtr = 0x19; *decayPtr = 50.0f; } } break;
-    case 1: { int c = *counterPtr - 1; *counterPtr = c; if (c < 1) { *statePtr = 2; if (g_SoundPlay3D) { DWORD snd = *(DWORD *)(app + 0x4A8); if (snd) g_SoundPlay3D((void *)snd, *posX, *posY, *posZ, 1.0f); } } } break;
-    case 2: { float speed = *speedPtr * 0.25f; *speedPtr = speed; if (speed < 1.0f) { *speedPtr = 0.0f; if (g_RNG) { int rng = RNG_call((void *)0x4F7360, 0, 2, 0); if (rng != 0) { *statePtr = 3; int rng2 = RNG_call((void *)0x4F7360, 0, 100, 0); *counterPtr = rng2 + 100; } else { *statePtr = 0; } } } } break;
-    case 3: { float decay = *decayPtr - 2.0f; if (decay < 0.0f) decay = 0.0f; *decayPtr = decay; int c = *counterPtr - 1; *counterPtr = c; if (c < 1) *statePtr = 0; } break;
-    }
-    /* Global Mod: extra windmills on any level (drawers #1+). */
-    Gm_WindmillDrawers(board, ext, app, *renderPtr);
-    /* Tower objects on non-Tower content: drive the native board chomper
-     * slots too, presence-gated on our loaded chomper mesh. */
-    if (*(DWORD *)((char *)ext + REND_TOWER_CHOMPER))
-        Feature_ChomperStates(board, app);
-    // No board mirror — ext is source of truth
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

@@ -515,12 +515,20 @@ static void Neon_PostSetup(void *board, void *ext, int raceIndex, const char *me
         return;
     }
     if (has) {
-        /* Native lights win. On the Neon slot only, NULL the follower slots
-         * so no reader derefs stale garbage (other slots: Dizzy tipper at
-         * 0x436C / Up lifter list — never touch those). */
-        if (GetCurrentLevel(board) == 7 && BoardHasOffset(board, 0x436C, 8)) {
-            *(DWORD *)((char *)board + 0x436C) = 0;
-            *(DWORD *)((char *)board + 0x4370) = 0;
+        /* Native lights win. NULL the follower slots only when no live
+         * object owns them (stale garbage would crash a deref); other
+         * families keep live objects here (Dizzy tipper render at 0x436C,
+         * Up lifter list) — object presence, never the slot ID. */
+        if (BoardHasOffset(board, 0x436C, 8)) {
+            int live = 0;
+            { DWORD v1 = *(DWORD *)((char *)board + 0x436C);
+              DWORD v2 = *(DWORD *)((char *)board + 0x4370);
+              if (v1 && !IsBadReadPtr((void *)v1, 16)) live = 1;
+              if (v2 && !IsBadReadPtr((void *)v2, 16)) live = 1; }
+            if (!live) {
+                *(DWORD *)((char *)board + 0x436C) = 0;
+                *(DWORD *)((char *)board + 0x4370) = 0;
+            }
         }
         wsprintfA(dbg, "Neon: '%s' has native S3 light(s), glow skipped", meshPath);
         DebugLog(dbg);

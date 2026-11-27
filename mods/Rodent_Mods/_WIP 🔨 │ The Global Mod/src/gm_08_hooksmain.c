@@ -331,6 +331,27 @@ static void S1Inventory(void *board, void *ext) {
                                         else if (k == 2) mask |= S1P_BRIDGE;
                                         else if (k == 3) mask |= S1P_BRIDGESPIN;
                                         else if (k == 4) mask |= S1P_BBRIDGE;
+                                        /* Family bits (presence routing for trapdoor/catapult;
+                                         * never slot/content IDs). Tower wins ties by design
+                                         * (TRAPDOOR builds a trapdoor, CATAPULT keeps Tower
+                                         * profile) — same file, same behavior in any slot. */
+                                        if (my_strnicmp(name, "WINDMILL", 8) == 0 ||
+                                            my_strnicmp(name, "CHOMPER", 7) == 0 ||
+                                            my_strnicmp(name, "TURRET", 6) == 0 ||
+                                            my_strnicmp(name, "TRAPDOOR", 8) == 0 ||
+                                            my_strnicmp(name, "HAMMER", 6) == 0 ||
+                                            my_strnicmp(name, "MACE", 4) == 0 ||
+                                            my_strnicmp(name, "DRAWBRIDGE", 10) == 0 ||
+                                            my_strnicmp(name, "CATAPULT", 8) == 0)
+                                            mask |= S1P_TOWERFAM;
+                                        if (my_strnicmp(name, "PILLAR", 6) == 0 ||
+                                            my_strnicmp(name, "POPCYLINDER", 11) == 0 ||
+                                            my_strnicmp(name, "POPDOOR", 7) == 0 ||
+                                            my_strnicmp(name, "CLOUDSCAPE", 10) == 0)
+                                            mask |= S1P_SKYFAM;
+                                        if (k == 4 ||
+                                            my_strnicmp(name, "BONKCYLINDER", 12) == 0)
+                                            mask |= S1P_MASTERFAM;
                                     }
                                 }
                                 idx++;
