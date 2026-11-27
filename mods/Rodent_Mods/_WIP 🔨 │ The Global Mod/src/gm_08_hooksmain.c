@@ -204,7 +204,7 @@ static void UniversalConstructor(void *board, int raceIndex) {
             { int setupSlot = BoardHasOffset(board, 0x540C, 4) ? *(int *)((char *)board + 0x540C) : 0xDEAD;
               void *rExt = GetBoardExt(board);
               void *saved = (rExt && !IsBadReadPtr((char *)rExt + UNI_BONK_SAVE, 4)) ? *(void **)((char *)rExt + UNI_BONK_SAVE) : NULL;
-              { char sl[192]; wsprintfA(sl, "SETUP exit bonk540C=0x%08X save=0x%08X board=0x%08X vt=0x%08X", setupSlot, (DWORD)saved, (DWORD)board, IsBadReadPtr(board, 4) ? 0 : *(DWORD *)board); Gm_LogSkip(sl); }
+              { char sl[256]; wsprintfA(sl, "SETUP exit bonk540C=0x%08X save=0x%08X board=0x%08X vt=0x%08X m18=0x%08X m1c=0x%08X", setupSlot, (DWORD)saved, (DWORD)board, IsBadReadPtr(board, 4) ? 0 : *(DWORD *)board, BoardHasOffset(board, 0x5418, 4) ? *(DWORD *)((char *)board + 0x5418) : 0, BoardHasOffset(board, 0x541C, 4) ? *(DWORD *)((char *)board + 0x541C) : 0); Gm_LogSkip(sl); }
               if (!setupSlot && saved && !IsBadReadPtr(saved, 0x1100) && BoardHasOffset(board, 0x540C, 4)) {
                   *(void **)((char *)board + 0x540C) = saved;
                   { char rl[128]; wsprintfA(rl, "BONKSLOT restore board=0x%08X obj=0x%08X", (DWORD)board, (DWORD)saved); Gm_LogSkip(rl); }

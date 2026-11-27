@@ -859,12 +859,14 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
      * the native-correct timing. Ext slots are fallback where the board
      * does not extend to the native slots. */
     if (my_stricmp(name, "BONKPOPUP") == 0 || my_stricmp(name, "E:BONKPOPUP") == 0) {
+        { char pp[160]; wsprintfA(pp, "BONKPOPUP touch diff=%d brk=0x%08X", difficulty, (DWORD)g_BreakBridgeBreak); Gm_LogSkip(pp); }
         if (difficulty != 0 && g_BreakBridgeBreak) {
             void *be3 = GetBoardExt(board); if (!be3) be3 = ext;
             int h1 = BoardHasOffset(board, 0x5418, 4) ? *(int*)((char*)board + 0x5418) : 0;
             int h2 = BoardHasOffset(board, 0x541C, 4) ? *(int*)((char*)board + 0x541C) : 0;
             if (!h1 && be3) h1 = *(int*)((char*)be3 + UNI_BBRIDGE1_OBJ);
             if (!h2 && be3) h2 = *(int*)((char*)be3 + UNI_BBRIDGE2_OBJ);
+            { char pq[192]; wsprintfA(pq, "BONKPOPUP break h1=0x%08X h2=0x%08X", h1, h2); Gm_LogSkip(pq); }
             if (h1 && !IsBadReadPtr((void *)h1, 0x1100)) g_BreakBridgeBreak((void *)h1, 0);
             if (h2 && !IsBadReadPtr((void *)h2, 0x1100)) g_BreakBridgeBreak((void *)h2, 1);
         }
