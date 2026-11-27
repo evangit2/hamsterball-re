@@ -42,6 +42,7 @@ void ImpDiag(const char *msg);
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 #define RVA_DispatchCollisionEvents  0x0000C5D0
+#define RVA_MasterSlot34Touch         0x00012F80
 #define RVA_Sound_Play3D             0x00059860
 #define RVA_Scene_CollectByNameFilter 0x000602F0
 #define RVA_AthenaList_Init          0x00053210
@@ -706,6 +707,11 @@ typedef void (__fastcall *RaceState_t)(void *board);
 static RaceState_t g_origRaceState[16] = { NULL }; /* index 1-15 */
 static void *g_origUpdate[16] = { NULL };   /* slot 1 orig (for DETACH restore) */
 static void *g_origDispatch[16] = { NULL }; /* slot 29 orig (for DETACH restore) */
+/* Saved original vtable[34] (+0x88, object-touch routing) per level.
+ * Master's (0x412F80) handles BONKPOPUP (break halves + sound) and BONKBASH
+ * (bonk consumes popcylinders); most classes are no-ops. */
+typedef void (__thiscall *Slot34Touch_t)(void *board, void *touched);
+static Slot34Touch_t g_origSlot34[16] = { NULL }; /* index 1-15 */
 /* Saved original vtable[33] (CreateDynamicObjects) per level — used by the
  * native-ctor fast path (UNI_NATIVE_CTOR): native-built boards get native
  * objects via the orig create instead of our replicating handler. */

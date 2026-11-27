@@ -346,6 +346,32 @@ static void FireBranchTeleport(void *board, int *ball, const char *branchName, i
     }
 }
 
+/* Universal object-touch routing (board vtable +0x88, slot 34).
+ * Native per-class slot 34: Master's (0x412F80) handles BONKPOPUP (breaks the
+ * halves at 0x5418/0x541C + sound) and BONKBASH (bonk consumes the 0x5428
+ * popcylinders); most classes are no-ops. Master-file-in-another-slot broke
+ * nothing because the slot's no-op ran — same file, different class table.
+ * Presence gate (never filename/slot): run Master's handler only when this
+ * board actually carries Master touch objects (halves / bonk / inited pop
+ * list); otherwise run the slot's own orig (preserves native behavior). */
+void __thiscall UniversalSlot34Touch(void *board, void *touched) {
+    void *ext = GetBoardExt(board);
+    int hasMasterTouch = 0;
+    if (ext && !IsBadReadPtr((char *)ext + UNI_BBRIDGE1_OBJ, 4)) {
+        if (*(void **)((char *)ext + UNI_BBRIDGE1_OBJ) || *(void **)((char *)ext + UNI_BONK_SAVE))
+            hasMasterTouch = 1;
+        else if (GetBoardFeat(board) & FEAT_POP_LISTS)
+            hasMasterTouch = 1;
+    }
+    if (hasMasterTouch) {
+        ((Slot34Touch_t)(g_moduleBase + RVA_MasterSlot34Touch))(board, touched);
+        return;
+    }
+    { int lvl = GetCurrentLevel(board);
+      if (lvl >= 1 && lvl <= 15 && g_origSlot34[lvl])
+          ((Slot34Touch_t)g_origSlot34[lvl])(board, touched); }
+}
+
 void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair) {
 
     if (!board || !ball || !collPair) goto call_global;

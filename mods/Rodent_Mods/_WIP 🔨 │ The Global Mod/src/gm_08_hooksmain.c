@@ -901,7 +901,7 @@ static void InstallVtablePatches(void) {
     for (i = 1; i <= 15; i++) {
         DWORD vtableAddr = g_levelVtables[i];
         if (!vtableAddr) continue;
-        { MEMORY_BASIC_INFORMATION mbi; if (!VirtualQuery((void*)vtableAddr, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT || (DWORD)mbi.BaseAddress + mbi.RegionSize < vtableAddr + 0x88) continue; }
+        { MEMORY_BASIC_INFORMATION mbi; if (!VirtualQuery((void*)vtableAddr, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT || (DWORD)mbi.BaseAddress + mbi.RegionSize < vtableAddr + 0x8C) continue; }
 
         DWORD oldProtect;
 
@@ -956,6 +956,21 @@ static void InstallVtablePatches(void) {
             FlushInstructionCache(GetCurrentProcess(), slot, 4);
         }
 
+        /* Slot 34 (offset +0x88): object-touch routing → UniversalSlot34Touch.
+         * Row 27: native slot 34 is per-class (Master 0x412F80 = BONKPOPUP/
+         * BONKBASH; most classes no-op). Master file in another slot broke
+         * nothing because the slot's no-op ran. Presence-gated inside. */
+        {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x88);
+            if (i >= 1 && i <= 15) {
+                g_origSlot34[i] = (Slot34Touch_t)*slot;
+            }
+            VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+            *slot = (DWORD)&UniversalSlot34Touch;
+            VirtualProtect(slot, 4, oldProtect, &oldProtect);
+            FlushInstructionCache(GetCurrentProcess(), slot, 4);
+        }
+
         /* Slot 24 (offset +0x60): Per-level render — per-level RET convention.
          * Two call sites: 0x0046C8C7 (1-param RET 0) vs 0x0046C9F0 (2-param RET 4).
          * Only the 6 levels that use 2-param render (2=Beginner,5=Tower,10=Toob,12=Glass,13=Sky,14=Master) are patched. */
@@ -973,7 +988,7 @@ static void InstallVtablePatches(void) {
             }
         }
     }
-    DebugLog("Vtable slots [1,19,29,33] patched (slot 24 per-level: 2,5,10,12,13,14)");
+    DebugLog("Vtable slots [1,19,29,33,34] patched (slot 24 per-level: 2,5,10,12,13,14)");
     /* Row 25 diag: Sky-dtor entry probe (vtable 0x4D0FC8 slot0). Verify-or-skip
      * + self-heal-safe: only patch when the slot still holds the stock thunk. */
     {
@@ -1228,7 +1243,7 @@ static void RestoreVtablePatches(void) {
     for (i = 1; i <= 15; i++) {
         DWORD vtableAddr = g_levelVtables[i];
         if (!vtableAddr) continue;
-        { MEMORY_BASIC_INFORMATION mbi; if (!VirtualQuery((void*)vtableAddr, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT || (DWORD)mbi.BaseAddress + mbi.RegionSize < vtableAddr + 0x88) continue; }
+        { MEMORY_BASIC_INFORMATION mbi; if (!VirtualQuery((void*)vtableAddr, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT || (DWORD)mbi.BaseAddress + mbi.RegionSize < vtableAddr + 0x8C) continue; }
         DWORD oldProtect;
         /* slot 1 */ {
             DWORD *slot = (DWORD *)(vtableAddr + 0x04);
@@ -1276,6 +1291,15 @@ static void RestoreVtablePatches(void) {
                     VirtualProtect(slot, 4, oldProtect, &oldProtect);
                     FlushInstructionCache(GetCurrentProcess(), slot, 4);
                 }
+            }
+        }
+        /* slot 34 (all 15) */ {
+            DWORD *slot = (DWORD *)(vtableAddr + 0x88);
+            if (g_origSlot34[i] && *slot == (DWORD)&UniversalSlot34Touch) {
+                VirtualProtect(slot, 4, PAGE_EXECUTE_READWRITE, &oldProtect);
+                *slot = (DWORD)g_origSlot34[i];
+                VirtualProtect(slot, 4, oldProtect, &oldProtect);
+                FlushInstructionCache(GetCurrentProcess(), slot, 4);
             }
         }
     }
