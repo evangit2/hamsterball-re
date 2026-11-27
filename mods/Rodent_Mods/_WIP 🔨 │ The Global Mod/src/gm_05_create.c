@@ -465,15 +465,13 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
               }
               CatapultSetVec(obj, vup, vfwd);
               { char cv[96]; wsprintfA(cv, "CATAPULT vec obj=0x%08X up=%d fwd=%d", (DWORD)obj, (int)(vup * 100.0f), (int)(vfwd * 100.0f)); Gm_LogSkip(cv); } }
-            /* Fling profile: Master-family files build +0x1100=1 (steeper
-             * fling), Tower-family keeps the ctor default 0; Tower wins
-             * ties so mixed files behave like Tower. S1-family presence
-             * (UNI_S1_PRESENT mask), never a content ID. No +0x1100 reader
-             * remains in the update/Launch/CATAPULTBOTTOM paths under the
-             * mod (verified by disasm) — the hook drives velocity from the
-             * S1 vector; this keeps the native fallback correct. */
-            if (S1FamPresent(ext, S1P_MASTERFAM) && !S1FamPresent(ext, S1P_TOWERFAM))
-                o[0x440] = 1;
+            /* Fling profile: obj+0x1100 left at the ctor default 0 (Tower).
+             * The old Master content==14 write is gone: no +0x1100 reader
+             * remains in the update/Launch/CATAPULTBOTTOM paths under the mod
+             * (verified by disasm) — the 0x438179 hook drives release velocity
+             * from the S1 vector, so the field is a dead write. Per design rule
+             * (no inference from neighboring S1s), a bare CATAPULT keeps the
+             * Tower default everywhere; authors set per-instance vectors. */
             /* Dynamic fling power: CATAPULT<n> S1 suffix = percent of the
              * native 50 (e.g. CATAPULT150 = 75). Stashed here, applied after
              * Launch in E:CATAPULTBOTTOM (Launch always resets 0x10F4 to 50).
@@ -665,30 +663,10 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
         return;
     }
 
-    /* ── TRAPDOOR on Sky-family files: same Rotator popdoor as POPDOOR ──
-     * Stock Sky's door S1 is still named TRAPDOOR; route it by family
-     * presence (SKY markers without Tower markers → popdoor) instead of
-     * renaming the file. Tower wins ties; family-less files keep the
-     * trapdoor below (the S1's own name). Same file, same door, any slot. */
-    if (my_strnicmp(name, "TRAPDOOR", 8) == 0 && S1FamPresent(ext, S1P_SKYFAM) && !S1FamPresent(ext, S1P_TOWERFAM)) {
-        float pdat = *(float *)(g_moduleBase + 0xCF44C);
-        S1EnsureMeshWorld(board, ext, UNI_SKY_TRAPDOOR, "Levels\\Level9-TrapDoor");
-        int pmeshVal = *(int*)((char*)ext + UNI_SKY_TRAPDOOR);
-        if (!pmeshVal) { DebugLog("TRAPDOOR-as-POPDOOR: mesh pointer is NULL, skipping"); *(int*)out1 = 0; *(int*)out2 = 0; return; }
-        void *pmem = g_operatorNew(0x10F4);
-        if (pmem) {
-            obj = g_RotatorCtor(pmem, (int)board, x, y, z, pdat - fparam, pmeshVal);
-            *(void **)((char *)ext + UNI_NEON_TRAPDOOR) = obj;
-            g_AthenaListAppend((void*)((char*)board + UNI_OBJ_LIST), (int)obj);
-            g_AthenaListAppend((void*)((char*)ext + UNI_TRAPDOOR_LIST), (int)obj);
-            renderOut = ((DWORD*)obj)[0x43C];
-        }
-        if (ext) Gm_CreateSlot(board, ext, 14, x, y, z, x2, y2, z2, obj, name);
-        *(int*)out1 = (int)obj; *(int*)out2 = renderOut;
-        return;
-    }
-
-    /* ── TRAPDOOR (Tower-family, or family-less: the S1's own name) ── */
+    /* ── TRAPDOOR (Tower version, by name — always) ──
+     * A TRAPDOOR S1 builds the Tower trapdoor, in any file, any slot.
+     * Sky's door needs the POPDOOR S1 spelling (see POPDOOR branch) —
+     * no inference from neighboring S1s, per explicit design rule. */
     if (my_strnicmp(name, "TRAPDOOR", 8) == 0) {
         void *mem = g_operatorNew(0x10F8);
         if (mem) {

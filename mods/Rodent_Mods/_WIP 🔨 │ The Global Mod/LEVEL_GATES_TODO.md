@@ -189,19 +189,26 @@ Guards (`level == 0`, range checks) stay — they are not hardcoding.
   identical: every appender runs after its own init on every content.
   (+0x4790 had no appenders left under the mod — ext drawers carry tar.)
 
-## 19. Catapult Master +0x1100 profile (DONE 2026-11-27)
+## 19. Catapult Master +0x1100 profile (DONE 2026-11-27, REVISED name-only)
 - Was: `content == 14` set obj+0x1100=1.
-- Now: set iff Master-family S1s present (BBRIDGE/BONKCYLINDER) without
-  Tower-family markers (Tower wins ties → mixed files behave like
-  Tower). No +0x1100 reader remains in update/Launch/CATAPULTBOTTOM
-  under the mod (verified by disasm); hook drives velocity from S1.
+- Interim (reverted same day): Master/Tower file-family inference —
+  rejected (design rule: no inference from neighboring S1s).
+- Now: field left at ctor default 0 (Tower) everywhere. No +0x1100 reader
+  remains in update/Launch/CATAPULTBOTTOM under the mod (verified by
+  disasm) — the 0x438179 hook drives release velocity from the S1 vector,
+  so the write was dead. Bare CATAPULT = Tower default; authors set
+  per-instance vectors (Tower (12,-12) vs Master (24.4,-11.2) convention).
 
-## 20. Trapdoor level!=13 x2 (DONE 2026-11-27)
+## 20. Trapdoor level!=13 x2 (DONE 2026-11-27, REVISED name-only)
 - Was: `level != 13` at create (gm_05) + collision scan (gm_07); stock
   Sky's TRAPDOOR S1 fell through to unknown (needed a file rename).
-- Now: SKY markers without Tower markers route TRAPDOOR S1s into the
-  popdoor build (same Rotator path as POPDOOR); everything else builds
-  the trapdoor. No rename needed — both S1 spellings converge.
+- Interim (reverted same day): SKY/Tower file-family routing — rejected
+  (design rule: TRAPDOOR = Tower version by name, POPDOOR = Sky version;
+  no inference from neighboring S1s).
+- Now: name-only. TRAPDOOR S1 → Tower trapdoor + Trapdoor1/2 plate scan,
+  any file, any slot. Sky's door needs the POPDOOR S1 spelling (original
+  TODO #7 rename plan restored — stock Level9 still carries TRAPDOOR, so
+  its door builds as the Tower version until renamed).
 
 ## 21. Neon slot==7 follower-slot nulling (DONE 2026-11-27)
 - Was: NULL 0x436C/0x4370 only on level 7.

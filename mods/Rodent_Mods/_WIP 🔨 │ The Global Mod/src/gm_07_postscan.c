@@ -1274,14 +1274,11 @@ static void ScanS1ReferencedMeshesForCollisions(void *board, void *ext, void *me
                 }
                 f += pn + 1; { size_t ml = strlen(f); f += ml + 1; }
             }
-            /* Tower trapdoors: bare TRAPDOOR S1s load Levels\Level4-Trapdoor1/2
-             * (both carry the N:TRAPDOOR trigger plate; the fallback above
-             * used to point at the Sky file, now points at Trapdoor1).
-             * Sky-family files route their TRAPDOOR S1 to the popdoor path
-             * at create (no trigger plate on Sky's door), so skip the scan
-             * there — same family condition, never a level ID. */
-            if (my_strnicmp(name, "TRAPDOOR", 8) == 0 &&
-                !(S1FamPresent(ext, S1P_SKYFAM) && !S1FamPresent(ext, S1P_TOWERFAM))) {
+            /* TRAPDOOR S1s load Levels\Level4-Trapdoor1/2 (both carry the
+             * N:TRAPDOOR trigger plate the Tower version needs). By name,
+             * any file, any slot — a TRAPDOOR S1 is the Tower version,
+             * so its plates come with it. */
+            if (my_strnicmp(name, "TRAPDOOR", 8) == 0) {
                 ScanFileForCollisions(board, ext, "Levels\\Level4-Trapdoor1");
                 ScanFileForCollisions(board, ext, "Levels\\Level4-Trapdoor1.MESHWORLD");
                 ScanFileForCollisions(board, ext, "Levels\\Level4-Trapdoor2");

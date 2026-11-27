@@ -1475,9 +1475,6 @@ typedef enum { K_UNKNOWN = 0, K_TIPPER = 1, K_BRIDGE = 2, K_BRIDGESPIN = 3, K_BB
 #define S1P_BRIDGE    (1 << 1)
 #define S1P_BRIDGESPIN (1 << 2)
 #define S1P_BBRIDGE   (1 << 3)
-#define S1P_SKYFAM    (1 << 4)  /* PILLAR/POPCYLINDER/POPDOOR/CLOUDSCAPE in file */
-#define S1P_TOWERFAM  (1 << 5)  /* WINDMILL CHOMPER TURRET HAMMER-area MACE DRAWBRIDGE (never TRAPDOOR/CATAPULT: the routed S1 must not vote for its own legacy family) */
-#define S1P_MASTERFAM (1 << 6)  /* BBRIDGE/BONKCYLINDER in file */
 static int S1KindFor(const char *name) {
     if (!name || IsBadReadPtr((void *)name, 8)) return 0; /* K_UNKNOWN */
     if (my_strnicmp(name, "TIPPER", 6) == 0) return 1; /* K_TIPPER */
@@ -1487,13 +1484,6 @@ static int S1KindFor(const char *name) {
         return 2; /* K_BRIDGE (drawbridge, incl NOCOLLIDE variants) */
     }
     return 0; /* K_UNKNOWN */
-}
-/* S1 family presence (set by S1Inventory's full file walk, before any
- * create dispatch). Routing helper: trapdoor sky-vs-tower, catapult
- * Master-vs-Tower profile. Never slot/content IDs. */
-static int S1FamPresent(void *ext, int bits) {
-    if (!ext || IsBadReadPtr((char *)ext + UNI_S1_PRESENT, 4)) return 0;
-    return (*(int *)((char *)ext + UNI_S1_PRESENT) & bits) != 0;
 }
 /* Native board-field ownership: some boards' ctors build live objects at
  * +0x4374/+0x4378 (Master: 0x420870/0x4208A6 store heap objects). LFL
