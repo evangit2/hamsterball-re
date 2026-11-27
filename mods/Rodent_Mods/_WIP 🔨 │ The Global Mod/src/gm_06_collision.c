@@ -357,8 +357,12 @@ static void FireBranchTeleport(void *board, int *ball, const char *branchName, i
 void __thiscall UniversalSlot34Touch(void *board, void *touched) {
     void *ext = GetBoardExt(board);
     int hasMasterTouch = 0;
-    if (ext && !IsBadReadPtr((char *)ext + UNI_BBRIDGE1_OBJ, 4)) {
-        if (*(void **)((char *)ext + UNI_BBRIDGE1_OBJ) || *(void **)((char *)ext + UNI_BONK_SAVE))
+    if (ext && !IsBadReadPtr((char *)ext + UNI_BBRIDGE1_OBJ, 8)) {
+        /* Break needs BOTH halves: native 0x412F80 derefs 0x5418/0x541C with
+         * no null check (touch-crash 0001:00035E7C on bonk-only boards —
+         * stock Expert has a Bonk S1 but no BBRIDGE S1s, leaving those slots
+         * uninitialized garbage). Bonk alone never arms the Master delegate. */
+        if (*(void **)((char *)ext + UNI_BBRIDGE1_OBJ) && *(void **)((char *)ext + UNI_BBRIDGE2_OBJ))
             hasMasterTouch = 1;
         else if (GetBoardFeat(board) & FEAT_POP_LISTS)
             hasMasterTouch = 1;
@@ -888,10 +892,11 @@ void __thiscall UniversalDispatchCollision(void *board, int *ball, int *collPair
         { char pp[160]; wsprintfA(pp, "BONKPOPUP touch diff=%d brk=0x%08X", difficulty, (DWORD)g_BreakBridgeBreak); Gm_LogSkip(pp); }
         if (difficulty != 0 && g_BreakBridgeBreak) {
             void *be3 = GetBoardExt(board); if (!be3) be3 = ext;
-            int h1 = BoardHasOffset(board, 0x5418, 4) ? *(int*)((char*)board + 0x5418) : 0;
-            int h2 = BoardHasOffset(board, 0x541C, 4) ? *(int*)((char*)board + 0x541C) : 0;
-            if (!h1 && be3) h1 = *(int*)((char*)be3 + UNI_BBRIDGE1_OBJ);
-            if (!h2 && be3) h2 = *(int*)((char*)be3 + UNI_BBRIDGE2_OBJ);
+            /* Halves trust (touch-crash 0001:00035E7C): board 0x5418/0x541C are
+             * uninitialized garbage on bonk-only boards and native break has
+             * no null check — break only mod-built halves (ext identity). */
+            int h1 = be3 ? *(int*)((char*)be3 + UNI_BBRIDGE1_OBJ) : 0;
+            int h2 = be3 ? *(int*)((char*)be3 + UNI_BBRIDGE2_OBJ) : 0;
             { char pq[192]; wsprintfA(pq, "BONKPOPUP break h1=0x%08X h2=0x%08X", h1, h2); Gm_LogSkip(pq); }
             if (h1 && !IsBadReadPtr((void *)h1, 0x1100)) g_BreakBridgeBreak((void *)h1, 0);
             if (h2 && !IsBadReadPtr((void *)h2, 0x1100)) g_BreakBridgeBreak((void *)h2, 1);

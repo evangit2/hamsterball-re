@@ -889,7 +889,7 @@ board_additive:
                         int popupActive = 0;
                         { int bchk = BoardHasOffset(board, 0x540C, 4) ? *(int *)((char *)board + 0x540C) : 0;
                           if (!bchk && pex) { void *svc = !IsBadReadPtr((char *)pex + UNI_BONK_SAVE, 4) ? *(void **)((char *)pex + UNI_BONK_SAVE) : NULL; if (svc && !IsBadReadPtr(svc, 0x1100)) bchk = (int)svc; }
-                          popupActive = (bchk && !IsBadReadPtr((void *)bchk, 0x1100) && *(int *)(bchk + 0x10FC) == 0); }
+                          popupActive = (bchk && !IsBadReadPtr((void *)bchk, 0x1100) && *(BYTE *)(bchk + 0x10FC) == 0); }
                         {
                             int qi;
                             for (qi = 0; qi < 2; qi++) {
@@ -936,18 +936,22 @@ board_additive:
                             /* Row 19: ext fallback is UNI_BONK_SAVE (the create-time bonk obj).
                              * (Old UNI_BONK_MESH fallback read a mesh pointer as an obj.) */
                             if (!bonkObj) { void *svb = !IsBadReadPtr((char *)pex + UNI_BONK_SAVE, 4) ? *(void **)((char *)pex + UNI_BONK_SAVE) : NULL; if (svb && !IsBadReadPtr(svb, 0x1100)) bonkObj = (int)svb; }
-                            if (bonkObj && !IsBadReadPtr((void *)bonkObj, 0x1108) && *(int *)(bonkObj + 0x10FC) == 0) {
+                            /* Popup state is BYTE +0x10FC (native ctor sets 1, popup clears to 0);
+                             * the post-popup +0x10FD=1 makes int reads 0x100 — never use int here. */
+                            if (bonkObj && !IsBadReadPtr((void *)bonkObj, 0x1108) && *(BYTE *)(bonkObj + 0x10FC) == 0) {
                                 float hx = *(float *)(bonkObj + 0x10D4), hy = *(float *)(bonkObj + 0x10D8), hz = *(float *)(bonkObj + 0x10DC);
                                 float ddx = bx-hx, ddy = by-hy, ddz = bz-hz;
                                 if (ddx*ddx + ddy*ddy + ddz*ddz < 100.0f*100.0f) {
-                                    int h1 = BoardHasOffset(board, 0x5418, 4) ? *(int *)((char *)board + 0x5418) : 0;
-                                    int h2 = BoardHasOffset(board, 0x541C, 4) ? *(int *)((char *)board + 0x541C) : 0;
-                                    if (!h1) h1 = *(int *)((char *)pex + UNI_BBRIDGE1_OBJ);
-                                    if (!h2) h2 = *(int *)((char *)pex + UNI_BBRIDGE2_OBJ);
+                                    /* Halves trust (touch-crash 0001:00035E7C): board 0x5418/0x541C
+                                     * are uninitialized garbage on bonk-only boards (stock Expert
+                                     * has a Bonk S1 but no BBRIDGE S1s) and native break has no
+                                     * null check — break only mod-built halves (ext identity). */
+                                    int h1 = *(int *)((char *)pex + UNI_BBRIDGE1_OBJ);
+                                    int h2 = *(int *)((char *)pex + UNI_BBRIDGE2_OBJ);
                                     { char hg[160]; wsprintfA(hg, "HAMMER stage2 break dist=%d h1=0x%08X h2=0x%08X", (int)sqrtf(ddx*ddx + ddy*ddy + ddz*ddz), h1, h2); Gm_LogSkip(hg); }
-                                    if (h1 && !IsBadReadPtr((void *)h1, 0x1100) && *(int *)(h1 + 0x10FC) == 0)
+                                    if (h1 && !IsBadReadPtr((void *)h1, 0x1100) && *(BYTE *)(h1 + 0x10FC) == 0)
                                         ((BreakBridge_Break_t)(g_moduleBase + RVA_BreakBridge_break))((void *)h1, 0);
-                                    if (h2 && !IsBadReadPtr((void *)h2, 0x1100) && *(int *)(h2 + 0x10FC) == 0)
+                                    if (h2 && !IsBadReadPtr((void *)h2, 0x1100) && *(BYTE *)(h2 + 0x10FC) == 0)
                                         ((BreakBridge_Break_t)(g_moduleBase + RVA_BreakBridge_break))((void *)h2, 1);
                                 }
                             }
