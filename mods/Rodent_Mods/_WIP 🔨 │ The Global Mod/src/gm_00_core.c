@@ -1476,7 +1476,7 @@ typedef enum { K_UNKNOWN = 0, K_TIPPER = 1, K_BRIDGE = 2, K_BRIDGESPIN = 3, K_BB
 #define S1P_BRIDGESPIN (1 << 2)
 #define S1P_BBRIDGE   (1 << 3)
 #define S1P_SKYFAM    (1 << 4)  /* PILLAR/POPCYLINDER/POPDOOR/CLOUDSCAPE in file */
-#define S1P_TOWERFAM  (1 << 5)  /* WINDMILL CHOMPER TURRET TRAPDOOR HAMMER-area MACE DRAWBRIDGE CATAPULT */
+#define S1P_TOWERFAM  (1 << 5)  /* WINDMILL CHOMPER TURRET HAMMER-area MACE DRAWBRIDGE (never TRAPDOOR/CATAPULT: the routed S1 must not vote for its own legacy family) */
 #define S1P_MASTERFAM (1 << 6)  /* BBRIDGE/BONKCYLINDER in file */
 static int S1KindFor(const char *name) {
     if (!name || IsBadReadPtr((void *)name, 8)) return 0; /* K_UNKNOWN */
