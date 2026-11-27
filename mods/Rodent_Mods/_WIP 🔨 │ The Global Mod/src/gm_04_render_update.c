@@ -711,6 +711,7 @@ __attribute__((naked)) void UniversalRender(void) {
 }
 
 typedef void (__thiscall *BoardUpdate_t)(void *board); /* native slot-1 orig (ECX=board, no stack args) */
+static DWORD GetBoardApp(void *board); /* defined in gm_05_create.c */
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * Universal Board_Update — replaces all 15 per-level Board_Update functions
@@ -721,6 +722,26 @@ typedef void (__thiscall *BoardUpdate_t)(void *board); /* native slot-1 orig (EC
 
 void __fastcall UniversalBoardUpdate(void *board) {
     if (!g_SceneUpdate || !board) return;
+
+    /* Self-healing hammyjudge nodes (board+0x4BB0/4/8): native setup wipes
+     * them after S1 creates on replicated boards, and the judge render
+     * derefs +0x4BB0 unconditionally. Rebuild when missing; gated on
+     * FEAT_EXPERT_JUDGE so boards without judges pay 1 bit-test/frame. */
+    { if ((GetBoardFeat(board) & FEAT_EXPERT_JUDGE) && BoardHasOffset(board, 0x4BB8, 4) &&
+        g_operatorNew && g_MeshNodeCtor) {
+        DWORD appU = GetBoardApp(board);
+        if (appU && !IsBadReadPtr((void *)appU, 0x200)) {
+            int ji;
+            for (ji = 0; ji < 3; ji++) {
+                void **slot = (void **)((char *)board + 0x4BB0 + ji * 4);
+                if (!*slot || IsBadReadPtr(*slot, 4)) {
+                    void *jm = g_operatorNew(0x18);
+                    if (jm) *slot = g_MeshNodeCtor(jm, *(void **)(appU + 0x174), "meshes\\hammyjudge");
+                }
+            }
+        }
+    }
+    }
 
     /* Native-ctor fast path: native-built boards run their NATIVE slot-1
      * handler (orig), which drives level-specific machinery the shared base

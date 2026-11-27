@@ -536,6 +536,11 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
             if (g_AthenaListGetSize((void*)((char*)board + 0x5000)) == 1) {
                 o[0x43A] = 0x42A00000; o[0x43D] = 1; o[0x43E] = 0x32;
             }
+            /* Mod-built maces have no sound channel (+0x10FC = ctor garbage):
+             * the native update would call 0x458EE0 with a wild channel
+             * every frame. Gate both sound paths off (silent maces on
+             * replicated boards) until a valid channel can be wired. */
+            o[0x43E] = 0; o[0x43F] = 0;
             renderOut = o[0x435];
         }
         if (ext) Gm_CreateSlot(board, ext, 5, x, y, z, x2, y2, z2, obj, name);
@@ -1051,6 +1056,20 @@ void __thiscall UniversalCreateDynamicObjectsImpl(void *board, char *name, void 
          * prove the path). Old (judge,0)-crash note retired 2026-11-26:
          * re-test loads Expert clean — the crash belonged to an older
          * board state (pre-0x4BBC-init). Native parity: out1=judge. */
+        /* Native judge render derefs board+0x4BB0/4/8 (three hammyjudge
+         * MeshNodes, built only by content-gated Expert setup). Build them
+         * lazily on JUDGE presence so custom levels with judges render. */
+        if (BoardHasOffset(board, 0x4BB8, 4) && g_operatorNew && g_MeshNodeCtor) {
+            DWORD app = GetBoardApp(board);
+            int ji;
+            for (ji = 0; ji < 3 && app && !IsBadReadPtr((void *)app, 0x200); ji++) {
+                void **slot = (void **)((char *)board + 0x4BB0 + ji * 4);
+                if (!*slot || IsBadReadPtr(*slot, 4)) {
+                    void *jm = g_operatorNew(0x18);
+                    if (jm) *slot = g_MeshNodeCtor(jm, *(void **)(app + 0x174), "meshes\\hammyjudge");
+                }
+            }
+        }
         if (ext) Gm_CreateSlot(board, ext, 12, x, y, z, x2, y2, z2, obj, name);
         *(int*)out1 = (int)obj; *(int*)out2 = 0;
         { char jb[128]; wsprintfA(jb, "SPAWN %s x=%d y=%d z=%d obj=0x%X", name, (int)x, (int)y, (int)z, (int)obj); ImpDiag(jb); }
